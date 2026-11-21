@@ -3,7 +3,7 @@
 
 use super::flow::{edges, q99_edge, vpin_value, Ep, DAY_MS, HOUR_MS, MIN_MS, NB};
 use super::npcompat::ss_right_f64;
-use super::tox::{read_input, run, tox_coin, tox_features, Scratch, ToxCfg, Win, TOX};
+use super::tox::{read_input, run, tox_coin, tox_features, vpin_fused, Scratch, ToxCfg, Win, TOX};
 use super::trades::{DaySrc, DayTrades, DayTradesP};
 use anyhow::Result;
 use std::collections::BTreeMap;
@@ -481,4 +481,64 @@ fn run_writes_rows_in_input_order() -> Result<()> {
         assert_eq!(read_input(&c)?[0].side, side);
     }
     Ok(())
+}
+
+#[test]
+fn vpin_fused_equals_flow_vpin_bitwise() {
+    let mut rng = Rng(0xdead_beef_1234_5678);
+    for n in [0usize, 1, 2, 9, 10, 49, 50, 51, 120, 777, 5_000, 40_000] {
+        let d = gen_day(&mut rng, D0, n, 0, DAY_MS, 100.0);
+        let (mut v, mut b) = (d.v.clone(), d.buy.clone());
+        for (lo, hi) in [(0, n), (n / 3, n), (n / 4, n - n / 5), (n, n)] {
+            assert_eq!(
+                vpin_fused(&v, &b, lo, hi).to_bits(),
+                vpin_value(&v, &b, lo, hi).to_bits(),
+                "n = {n}, [{lo}, {hi})"
+            );
+        }
+        // нулевые обороты и одна сторона
+        for x in v.iter_mut().step_by(3) {
+            *x = 0.0;
+        }
+        b.fill(true);
+        assert_eq!(
+            vpin_fused(&v, &b, 0, n).to_bits(),
+            vpin_value(&v, &b, 0, n).to_bits()
+        );
+        v.fill(0.0);
+        assert!(vpin_fused(&v, &b, 0, n).is_nan() && vpin_value(&v, &b, 0, n).is_nan());
+    }
+}
+
+#[test]
+fn scratch_reuse_across_rows_equals_fresh_scratch() {
+    let mut rng = Rng(0x0fed_cba9_8765_4321);
+    let d = gen_day(&mut rng, D0, 40_000, 0, DAY_MS, 80.0);
+    let w = win_of(&[&d]);
+    // порядок строк: возрастание, убывание, скачки (левое / правое достраивание и замена не примыкающего отрезка кэша markout)
+    let offs = [
+        7 * HOUR_MS,
+        7 * HOUR_MS + 20_000,
+        7 * HOUR_MS + 400_000,
+        7 * HOUR_MS + 2_000_000,
+        7 * HOUR_MS + 2_000_000,
+        6 * HOUR_MS + 1_000,
+        6 * HOUR_MS + 3_100_000,
+        20 * HOUR_MS,
+        9 * HOUR_MS + 5,
+        9 * HOUR_MS + 4,
+        9 * HOUR_MS + 1_790_000,
+        9 * HOUR_MS + 31_000,
+        14 * HOUR_MS,
+        14 * HOUR_MS + 61_000,
+    ];
+    let mut shared = Scratch::default();
+    shared.new_window();
+    for off in offs {
+        let sig = D0 * DAY_MS + off;
+        let a = tox_features(&w, sig, 1, Some(2.0), Some(0), D0 * DAY_MS, &mut shared);
+        let b = feats(&w, sig, 1, Some(2.0), D0 * DAY_MS);
+        assert!(same(&a, &b), "off = {off}: {a:?} против {b:?}");
+        assert!(a[idx("mk60_1800")].is_finite());
+    }
 }

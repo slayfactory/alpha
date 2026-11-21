@@ -7,7 +7,7 @@
 //! Эпизоды монеты идут по времени; окно сделок суток — хвост предыдущих суток (последние 6 ч + одна запись до них, на ней держится «цена до окна»)
 //! плюс текущие сутки до последнего σ: результат тот же, что у склейки двух целых суток.
 
-use super::flow::{q99_edge, vpin_value, Ep, HistSink, DAY_MS, HOUR_MS, MIN_MS, NB};
+use super::flow::{q99_edge, Ep, HistSink, DAY_MS, HOUR_MS, MIN_MS, NB};
 use super::npcompat::{np_mean, np_sum, ss_left_i64};
 use super::pdcompat::{parse_date, parse_i64};
 use super::trades::{DaySrc, DayTradesP, HistDay};
@@ -37,6 +37,8 @@ pub const TOX: [&str; 13] = [
 const SAC_MIN_N: usize = 30;
 const MK_MIN_N: usize = 10;
 const NAN: f64 = f64::NAN;
+/// Допуск границы корзины VPIN (`tk594_feat.VPIN_TOL`).
+const VPIN_TOL: f64 = 1e-12;
 /// Глубина хвоста предыдущих суток: самое длинное окно вперёд-назад от начала суток — vpin 6 ч (kyle 240 мин и окна 1800 с короче).
 const TAIL_MS: i64 = 6 * HOUR_MS;
 
@@ -91,7 +93,56 @@ struct View<'a> {
     b: &'a [bool],
 }
 
-/// Рабочие буферы строки (переиспользуются, без выделений на строку после прогрева).
+/// Слагаемые markout по записям окна: `x[i] = v_i · mk_i` для `i ∈ [lo, hi)`, NaN — цена записи или цена через `h` не положительна.
+/// Слагаемое записи не зависит от σ (`t_i + h < σ`: все записи до `t_i + h` уже до σ) — строки одних суток считают каждую запись один раз.
+#[derive(Default)]
+struct MkCache {
+    lo: usize,
+    hi: usize,
+    x: Vec<f64>,
+}
+
+impl MkCache {
+    /// Слагаемые записей `[lo, hi)` окна `w` для горизонта `h_ms` готовы (достраиваются слева и справа; не примыкающий отрезок заменяет прежний).
+    fn ensure(&mut self, w: &View, h_ms: i64, lo: usize, hi: usize) {
+        if self.x.len() < w.t.len() {
+            self.x.resize(w.t.len(), 0.0);
+        }
+        if self.hi <= self.lo || hi < self.lo || lo > self.hi {
+            self.lo = lo;
+            self.hi = lo;
+        }
+        if lo < self.lo {
+            self.fill(w, h_ms, lo, self.lo);
+            self.lo = lo;
+        }
+        if hi > self.hi {
+            self.fill(w, h_ms, self.hi, hi);
+            self.hi = hi;
+        }
+    }
+
+    fn fill(&mut self, w: &View, h_ms: i64, a: usize, z: usize) {
+        let n = w.t.len();
+        let mut j = a;
+        for i in a..z {
+            // последняя запись с t ≤ t_i + h (searchsorted справа − 1; t_i растёт — указатель не возвращается)
+            let lim = w.t[i] + h_ms;
+            while j < n && w.t[j] <= lim {
+                j += 1;
+            }
+            let (pf, p0) = (w.p[j - 1], w.p[i]);
+            self.x[i] = if gt0(pf) && gt0(p0) {
+                let sgn = if w.b[i] { 1e4 } else { -1e4 };
+                w.v[i] * (sgn * (pf / p0).ln())
+            } else {
+                NAN
+            };
+        }
+    }
+}
+
+/// Рабочие буферы строки (переиспользуются, без выделений на строку после прогрева). `new_window` — при смене окна сделок (`Win`).
 #[derive(Default)]
 pub struct Scratch {
     edges: Vec<usize>,
@@ -100,6 +151,59 @@ pub struct Scratch {
     qk: Vec<f64>,
     a: Vec<f64>,
     b: Vec<f64>,
+    mk: [MkCache; 2],
+}
+
+impl Scratch {
+    /// Окно сделок сменилось: слагаемые markout прежнего окна недействительны.
+    pub fn new_window(&mut self) {
+        for c in &mut self.mk {
+            c.lo = 0;
+            c.hi = 0;
+        }
+    }
+}
+
+/// `flow::vpin_value` без промежуточных массивов: проход 1 — общий оборот (`cumsum[-1]`), проход 2 — накопления на границах корзин; те же операции в том же порядке.
+pub(super) fn vpin_fused(v: &[f64], b: &[bool], lo: usize, hi: usize) -> f64 {
+    let (vv, bb) = (&v[lo..hi], &b[lo..hi]);
+    let Some((&first, rest)) = vv.split_first() else {
+        return NAN;
+    };
+    let total = rest.iter().fold(first, |acc, &x| acc + x);
+    if !gt0(total) {
+        return NAN;
+    }
+    let mut tg = [0.0f64; 50];
+    for (k, t) in tg.iter_mut().enumerate().skip(1) {
+        *t = k as f64 * total / 50.0 * (1.0 - VPIN_TOL);
+    }
+    // pv[k], pb[k] — накопленный оборот / оборот покупок на записи, закрывшей границу k (первая запись с накопленным ≥ цели k)
+    let (mut pv, mut pb) = ([0.0f64; 51], [0.0f64; 51]);
+    let (mut cum, mut cb, mut k) = (0.0f64, 0.0f64, 1usize);
+    for (i, (&x, &m)) in vv.iter().zip(bb).enumerate() {
+        let xb = if m { x } else { 0.0 };
+        (cum, cb) = if i == 0 { (x, xb) } else { (cum + x, cb + xb) };
+        while k < 50 && cum >= tg[k] {
+            pv[k] = cum;
+            pb[k] = cb;
+            k += 1;
+        }
+    }
+    (pv[50], pb[50]) = (cum, cb);
+    let mut r = [0.0f64; 50];
+    let mut n = 0;
+    for k in 0..50 {
+        let (tot, bu) = (pv[k + 1] - pv[k], pb[k + 1] - pb[k]);
+        if tot > 0.0 {
+            r[n] = (2.0 * bu - tot).abs() / tot;
+            n += 1;
+        }
+    }
+    if n < 10 {
+        return NAN;
+    }
+    np_mean(&r[..n])
 }
 
 /// `(kyle_W, amih_W)` по `W` полным минутам перед σ (§13.25 п. 3.2).
@@ -225,23 +329,10 @@ fn markout(w: &View, sig: i64, h_ms: i64, w_ms: i64, sc: &mut Scratch) -> f64 {
     if hi < lo + MK_MIN_N {
         return NAN;
     }
-    let n = w.t.len();
-    sc.a.clear();
-    let mut j = lo;
-    for i in lo..hi {
-        // последняя запись с t ≤ t_i + h (searchsorted справа − 1; t_i растёт — указатель не возвращается)
-        let lim = w.t[i] + h_ms;
-        while j < n && w.t[j] <= lim {
-            j += 1;
-        }
-        let (pf, p0) = (w.p[j - 1], w.p[i]);
-        if !(gt0(pf) && gt0(p0)) {
-            return NAN;
-        }
-        let sgn = if w.b[i] { 1e4 } else { -1e4 };
-        sc.a.push(w.v[i] * (sgn * (pf / p0).ln()));
-    }
-    np_sum(&sc.a) / np_sum(&w.v[lo..hi])
+    let c = &mut sc.mk[usize::from(h_ms != 10_000)];
+    c.ensure(w, h_ms, lo, hi);
+    // NaN слагаемого (цена ≤ 0) даёт NaN суммы — как явный возврат NaN у Python
+    np_sum(&c.x[lo..hi]) / np_sum(&w.v[lo..hi])
 }
 
 /// TOX13 одной строки. `t, p, v, b` — записи монеты в порядке времени (могут содержать `t ≥ σ` — отрезаются); `avail_from` — начало загруженных данных (мс).
@@ -269,7 +360,7 @@ pub fn tox_features(
         let wm = w_h * HOUR_MS;
         if coin_first.is_some_and(|c| c <= sig - wm) && sig - wm >= avail_from {
             let lo = vw.t.partition_point(|&x| x < sig - wm);
-            f[k] = vpin_value(vw.v, vw.b, lo, i_hi);
+            f[k] = vpin_fused(vw.v, vw.b, lo, i_hi);
         }
     }
     for (wm, kk, ka) in [(30usize, 2usize, 4usize), (240, 3, 5)] {
@@ -383,6 +474,7 @@ pub fn tox_coin(src: &dyn DaySrc, sym: &str, eps: &[Ep]) -> Result<CoinTox> {
                 Some(c) => {
                     let max_sig = idx.iter().map(|&e| eps[e].sig).max().unwrap_or(0);
                     win.build(prev.as_ref(), c, d, max_sig);
+                    sc.new_window();
                     let avail_from = if prev.is_none() {
                         d * DAY_MS
                     } else {

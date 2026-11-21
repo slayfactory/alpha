@@ -1,6 +1,6 @@
 """TK-671: ворота порта TOX13 на Rust (`alpha-feat tox`) против Python (`tk600_feat.py tox`) на настоящих строках сигналов.
 
-  python3 tk671_tox_gate.py --rust-bin <alpha-feat> [--out-dir /data/p42-tk671/tox-gate] [--procs 3] [--threads 3]
+  python3 tk671_tox_gate.py --rust-bin <alpha-feat> [--out-dir /data/p42-tk671/tox-gate] [--procs 3] [--threads 3] [--reuse-python]
 
 Выборка из `<side>-sigsx.csv` прогона (sym, sig_ms — мс от `--base-date`):
   dense  — `--dense-coins` монет по `--dense-rows` подряд идущих строк (плотно по монето-дням, как в боевом счёте; чётные монеты — лонг, нечётные — шорт;
@@ -124,6 +124,7 @@ def main():
     ap.add_argument("--seed", type=int, default=671)
     ap.add_argument("--tol", type=float, default=1e-9)
     ap.add_argument("--sets", default="dense,spread")
+    ap.add_argument("--reuse-python", action="store_true", help="не пересчитывать Python, если py-<набор>.parquet уже есть (время — из .info.json)")
     a = ap.parse_args()
     os.makedirs(a.out_dir, exist_ok=True)
     sets = pick(a)
@@ -132,7 +133,11 @@ def main():
         pq, csv, df = write_eps(sets[name], a.out_dir, name)
         py_pq, rs_csv = f"{a.out_dir}/py-{name}.parquet", f"{a.out_dir}/rust-{name}.csv"
         t_rs, info = run_rust(csv, rs_csv, a)
-        t_py = run_python(pq, py_pq, a)
+        if a.reuse_python and os.path.exists(py_pq):
+            with open(py_pq + ".info.json", encoding="utf-8") as f:
+                t_py = float(json.load(f)["seconds"])
+        else:
+            t_py = run_python(pq, py_pq, a)
         cmp = compare(df, py_pq, rs_csv, a.tol, f"{a.out_dir}/mismatch-{name}.csv")
         n = len(df)
         cmp.update({"rows": n, "coins": int(df.sym.nunique()), "coin_days": int(len(df.assign(d=df.sig_ms // DAY_MS).groupby(["sym", "d"]))),
