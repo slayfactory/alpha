@@ -435,7 +435,8 @@ def n24_pass(twin, data):
     """Для сделок двойника: n24 ≥ 220000 в строке данных `(win, sym, sig_ms)`. Строки с одним ключом, не согласные по порогу, и сделки без строки считаются и НЕ проходят."""
     g = data[["win", "sym", "meta_sig_ms", "n24"]].copy()
     g["n24"] = g["n24"].astype(float)
-    agg = g.groupby(["win", "sym", "meta_sig_ms"])["n24"].agg(["min", "max", "count", "size"]).reset_index()
+    g["win"], g["sym"] = g["win"].astype(str), g["sym"].astype(str)       # category + groupby без observed — декартово произведение категорий (OOM 21.11)
+    agg = g.groupby(["win", "sym", "meta_sig_ms"], observed=True)["n24"].agg(["min", "max", "count", "size"]).reset_index()
     agg = agg.rename(columns={"meta_sig_ms": "sig_rel"})
     m = twin[["win", "sym", "sig_rel"]].merge(agg, on=["win", "sym", "sig_rel"], how="left")
     has = m["size"].notna().to_numpy()
