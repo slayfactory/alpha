@@ -33,6 +33,8 @@ WIN = {x.name: x for x in st.TRADE_WINDOWS}
 SIDEN = {"L": "long", "S": "short"}
 
 
+EQ_COLS = [c for c in bd.COLS if c != "bd_mode"]          # G-eq против TK-648 — без bd_mode: решение координатора 21.11 (по снимкам строго до σ), оригинал считал по метке суток
+
 def cache_original_days():
     """Оригинальный `bf.load_day` без изменений, но с памятью (монето-сутки читаются один раз): иначе эталон по строкам в одиночку слишком долог."""
     import functools
@@ -101,7 +103,7 @@ def cmd_eq48(a):
             rows = rows_from_keys(win, SIDEN[sd], sym, ms)
             got = bd.compute(rows, win, SIDEN[sd], procs=3)
             r = {}
-            for c in bd.COLS:
+            for c in EQ_COLS:
                 ok, nbad, mx, nan_ok = same(got[c].to_numpy(), orig[c].to_numpy())
                 r[c] = dict(bad=nbad, max_rel=mx, nan_ok=nan_ok)
                 bad += nbad
@@ -164,19 +166,21 @@ def cmd_eq(a):
                     union[k][rid] = f[k]
         t_old = time.time() - t0
         r = {}
-        for c in bd.COLS:
+        for c in EQ_COLS:
             ok, nbad, mx, nan_ok = same(got[c].to_numpy(), want[c])
             r[c] = dict(bad=nbad, max_rel=mx, nan_ok=nan_ok)
             bad += nbad
         n_def = int(np.isfinite(want["bd_imb1"]).sum())
+        bm_a, bm_b = got["bd_mode"].to_numpy(), np.asarray(want["bd_mode"])
+        mode_info = dict(rows_both=int((np.isfinite(bm_a) & np.isfinite(bm_b)).sum()), differs=int((np.isfinite(bm_a) & np.isfinite(bm_b) & (bm_a != bm_b)).sum()), nan_pattern_differs=int((np.isnan(bm_a) != np.isnan(bm_b)).sum()))
         diff_rows = np.zeros(len(rows), dtype=bool)
-        for c in bd.COLS:
+        for c in EQ_COLS:
             a_, b_ = np.asarray(union[c]), np.asarray(want[c])
             diff_rows |= ~((np.isnan(a_) & np.isnan(b_)) | (np.abs(a_ - b_) <= 1e-9 * np.maximum(np.abs(b_), 1e-300)))
-        only_thin = all(not (np.isfinite(union[c][diff_rows]) | np.isfinite(want[c][diff_rows])).any() or c in ("bd_thin5", "bd_thin30") for c in bd.COLS)
-        cols_diff = {c: int((~((np.isnan(union[c]) & np.isnan(want[c])) | (np.abs(union[c] - want[c]) <= 1e-9 * np.maximum(np.abs(want[c]), 1e-300)))).sum()) for c in bd.COLS}
+        only_thin = all(not (np.isfinite(union[c][diff_rows]) | np.isfinite(want[c][diff_rows])).any() or c in ("bd_thin5", "bd_thin30") for c in EQ_COLS)
+        cols_diff = {c: int((~((np.isnan(union[c]) & np.isnan(want[c])) | (np.abs(union[c] - want[c]) <= 1e-9 * np.maximum(np.abs(want[c]), 1e-300)))).sum()) for c in EQ_COLS}
         res["%s-%s" % (win, sd)] = dict(rows=len(rows), defined=n_def, sec_new=round(t_new, 2), sec_orig=round(t_old, 2), cols=r,
-                                       union_original_differs_rows=int(diff_rows.sum()), union_original_differs_by_col=cols_diff)
+                                       union_original_differs_rows=int(diff_rows.sum()), union_original_differs_by_col=cols_diff, bd_mode_vs_day_label=mode_info)
         tot += len(rows)
     res.update(total_rows=tot, total_defined=sum(v["defined"] for v in res.values() if isinstance(v, dict)), total_bad=bad,
                total_union_differs=sum(v["union_original_differs_rows"] for v in res.values() if isinstance(v, dict)))
@@ -222,9 +226,9 @@ def cmd_causal(a):
             q2 = qv.copy()
             q2[int(tmin[0]):] = rng.integers(-10 ** 12, 10 ** 12, size=len(q2) - int(tmin[0]))
             turn_d = bd.turn1h_from_qv(q2, tmin)
-            cols = [c for c in bd.COLS if c != "bd_mode"]
+            cols = list(bd.COLS)                                                                      # включая bd_mode: по снимкам строго до σ, мусор после границы его не меняет
             n += 1
-            bad_f += not all(same(clean[c], dirty[c], 0.0)[0] for c in cols + ["bd_mode"])           # значения: bd_mode не меняется (метки времени те же)
+            bad_f += not all(same(clean[c], dirty[c], 0.0)[0] for c in cols)
             bad_t += not all(same(clean[c], dirty_t[c], 0.0)[0] for c in cols)
             bad_q += not same(turn, turn_d, 0.0)[0]
             # bd_mode: по снимкам суток ТОЛЬКО до границы — совпадает ли с режимом всех снимков суток (информационно)

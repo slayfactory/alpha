@@ -1,0 +1,13 @@
+ВЫПИСКА /data/p42-tk671/code/tk671_steps.tsv: шагов 11
+  ГОТОВО  sig: /data/p42-tk671/prod/sig-wc-short
+  ГОТОВО  siglv: /data/p42-tk671/prod/siglv-wc-short
+  ГОТОВО  twin: /data/p42-tk671/gate-pf/wc/out
+  ГОТОВО  lvl-lab: /data/p42-tk671/prod/lab-wc-short
+  ГОТОВО  bkep: /data/p42-tk671/fam/bkep/wc.csv
+  СЧИТАЕМ feat-rust, стоимость неизвестна
+  СЧИТАЕМ pyfam, стоимость неизвестна
+  СЧИТАЕМ asm, стоимость неизвестна
+  СЧИТАЕМ gate-cov, стоимость неизвестна
+  СЧИТАЕМ fit, стоимость неизвестна
+  СЧИТАЕМ replica, стоимость неизвестна
+ИТОГО: готово 5, считаем 6, оценка неизвестна (6 шагов без прошлых прогонов)

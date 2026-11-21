@@ -83,6 +83,13 @@ def test_duplicate_timestamp_band_last_wins():
         assert m[5, 0] == 123.5 and len(t) == 10                                            # снимок 5, полоса −5 %: дубль последний
 
 
+def brute_mode(t, i):
+    """bd_mode по определению (решение координатора 21.11): последние до 20 снимков суток снимка i с индексом ≤ i; доля меток «на 2…6 с после узла» > 0,5."""
+    day = int(t[i] // 86400)
+    js = [j for j in range(max(0, i - 19), i + 1) if int(t[j] // 86400) == day]
+    return float(np.mean([int(round(t[j])) % 30 >= 2 for j in js]) > 0.5)
+
+
 def test_features_vec_equals_scalar_original():
     rng = np.random.default_rng(5)
     n = 400
@@ -96,7 +103,6 @@ def test_features_vec_equals_scalar_original():
     turn = rng.uniform(1e5, 1e8, size=300)
     turn[3], turn[4] = 0.0, np.nan
     got = bd.features_vec(t, m, s, long_side, turn)
-    modes = f48.day_mode(t)
     for k in range(300):
         want = bf.features_at(t, m, s[k], bool(long_side[k]), float(turn[k]))
         for name in bf.FEATS:
@@ -105,7 +111,7 @@ def test_features_vec_equals_scalar_original():
         age_ok = i >= 0 and s[k] - t[i] <= bf.MAX_AGE_S
         assert np.isnan(got["bd_age_s"][k]) == (not age_ok)
         if age_ok:
-            assert got["bd_age_s"][k] == s[k] - t[i] and got["bd_mode"][k] == modes[int(t[i] // 86400)]
+            assert got["bd_age_s"][k] == s[k] - t[i] and got["bd_mode"][k] == brute_mode(t, i)
 
 
 def test_causal_rule_boundary_and_hole():
@@ -269,6 +275,29 @@ def test_arg_checks():
         except ValueError:
             continue
         raise AssertionError("ошибка аргументов не поймана")
+
+
+def test_bd_mode_only_before_signal_and_day_boundary():
+    # снимки через границу суток: режим считается по снимкам суток использованного снимка, не по всем снимкам суток
+    t = 86400.0 - 600.0 + 30.0 * np.arange(60)
+    t[:20] += 3.0                                                                           # первые 20 снимков (сутки 0): метка +3 с → режим A (1)
+    t[20:] += 1.0                                                                           # дальше метка +1 с → режим B (0)
+    t = np.sort(t)
+    m = np.ones((len(t), 12)) * 1e6
+    s = np.array([t[10] + 40.0, t[30] + 40.0, t[55] + 40.0])
+    g = bd.features_vec(t, m, s, np.array([True] * 3), np.full(3, 1e7))
+    for k in range(3):
+        i = int(np.searchsorted(t, s[k] - bf_lag(), side="right")) - 1
+        assert g["bd_mode"][k] == brute_mode(t, i), (k, i)
+    # мусор метки после σ — режим строки не меняется
+    t2 = t.copy()
+    t2[40:] += 2.0
+    g2 = bd.features_vec(t2, m, s[:2], np.array([True] * 2), np.full(2, 1e7))
+    assert g2["bd_mode"][0] == g["bd_mode"][0] and g2["bd_mode"][1] == g["bd_mode"][1]
+
+
+def bf_lag():
+    return bd.bf.LAG_S
 
 
 if __name__ == "__main__":
