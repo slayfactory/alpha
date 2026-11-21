@@ -1,0 +1,50 @@
+{
+ "auc": {
+  "100": 0.578267833532788,
+  "200": 0.5767414701339547,
+  "25": 0.5741700454998099,
+  "50": 0.5767678838117546
+ },
+ "constants_dropped": [
+  "rules_side",
+  "emp2h",
+  "m60"
+ ],
+ "criterion": "AUC validation, max; tie -> smaller N",
+ "data_file": "short.parquet",
+ "data_sha256": "b159127bef3813e556018df146395132872b89b80176e7a2632355f13cdb7c3b",
+ "data_size_bytes": 387128658,
+ "feature_list_sha256": "7a054afb2ba5630b1e3a25dc407e6e082fb7b40c7b8522fe8f0d28a5917830f1",
+ "grid": [
+  25,
+  50,
+  100,
+  200
+ ],
+ "lib": "lgb",
+ "n_features": 311,
+ "n_train": 88022,
+ "n_val": 43319,
+ "nstar": 100,
+ "params": {
+  "deterministic": true,
+  "force_row_wise": true,
+  "is_unbalance": true,
+  "iterations": 200,
+  "lambda_l2": 3.0,
+  "learning_rate": 0.05,
+  "max_bin": 128,
+  "min_child_samples": 100,
+  "num_leaves": 64,
+  "objective": "binary",
+  "seed": 672,
+  "verbosity": -1
+ },
+ "pos_rate_train": 0.48916180045897617,
+ "pos_rate_val": 0.5105842701816755,
+ "side": "short",
+ "train": "signal 2026-07-01..2026-07-20, exit <= 2026-07-21T00:00Z",
+ "validate": "signal 2026-07-22..2026-07-30",
+ "version": "lightgbm 4.7.0",
+ "y_cutoff_ms": 1785542400000
+}

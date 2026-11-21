@@ -1,0 +1,48 @@
+{
+ "auc": {
+  "100": 0.5988118999346499,
+  "200": 0.5998600629537788,
+  "25": 0.5929679366314331,
+  "50": 0.5970398025377766
+ },
+ "constants_dropped": [
+  "rules_side",
+  "emp2h",
+  "m60"
+ ],
+ "criterion": "AUC validation, max; tie -> smaller N",
+ "data_file": "short.parquet",
+ "data_sha256": "b159127bef3813e556018df146395132872b89b80176e7a2632355f13cdb7c3b",
+ "data_size_bytes": 387128658,
+ "feature_list_sha256": "7a054afb2ba5630b1e3a25dc407e6e082fb7b40c7b8522fe8f0d28a5917830f1",
+ "grid": [
+  25,
+  50,
+  100,
+  200
+ ],
+ "lib": "cb",
+ "n_features": 311,
+ "n_train": 88022,
+ "n_val": 43319,
+ "nstar": 200,
+ "params": {
+  "allow_writing_files": false,
+  "auto_class_weights": "Balanced",
+  "border_count": 128,
+  "depth": 6,
+  "iterations": 200,
+  "l2_leaf_reg": 3,
+  "learning_rate": 0.05,
+  "loss_function": "Logloss",
+  "random_seed": 672,
+  "verbose": 0
+ },
+ "pos_rate_train": 0.48916180045897617,
+ "pos_rate_val": 0.5105842701816755,
+ "side": "short",
+ "train": "signal 2026-07-01..2026-07-20, exit <= 2026-07-21T00:00Z",
+ "validate": "signal 2026-07-22..2026-07-30",
+ "version": "catboost 1.2.10",
+ "y_cutoff_ms": 1785542400000
+}

@@ -1,0 +1,10 @@
+ВЫПИСКА /data/p42-tk672/code/tk672_steps.tsv: шагов 8
+  ГОТОВО  siglv: /data/p42-tk671/prod/siglv-wc-short
+  ГОТОВО  twin: /data/p42-tk671/gate-pf/wc/out
+  ГОТОВО  bkep: /data/p42-tk671/fam/bkep/wc.csv
+  ГОТОВО  data671: /data/p42-tk671/data/short.parquet
+  СЧИТАЕМ rules, стоимость неизвестна
+  СЧИТАЕМ fit-cb, стоимость неизвестна
+  СЧИТАЕМ fit-lgb, стоимость неизвестна
+  СЧИТАЕМ report, стоимость неизвестна
+ИТОГО: готово 4, считаем 4, оценка неизвестна (4 шагов без прошлых прогонов)
