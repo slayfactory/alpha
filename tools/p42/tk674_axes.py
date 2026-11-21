@@ -179,6 +179,8 @@ def cell_assign(side, assign):
     if "t_low" in patch or "t_high" in patch:
         if float(patch.get("t_low", 1)) >= float(patch.get("t_high", 5)):
             return patch, filt, False, "t_low ≥ t_high"
+    if float(patch.get("lx", 0)) != 0 and float(patch.get("tf", 60)) != 60:
+        return patch, filt, False, "lx ≠ 0 требует tf = 60 (params.rs validate)"
     if min_lot_usd(patch) < MIN_LOT_USD:
         return patch, filt, False, "наименьшая ступень тейка < 5 $"
     if filt:

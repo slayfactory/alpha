@@ -4,6 +4,7 @@
   python3 tk674_run.py gates     — G-bin, G-base: 6 строк баз (L, S × wa / wb / wc) новым бинарём = готовым базам h775 байт в байт
   python3 tk674_run.py counts    — пороги признаков (абсолютные), столбцы `--ftab` составных фильтров, колонки на сделках базы — без P&L
   python3 tk674_run.py plan      — клетки всех пар, канонические ключи, поиск в БД летописи: «есть / считаем» по сеткам, оценка часов → res/plan674-<сторона>.json
+  python3 tk674_run.py validate  — сухой разбор строк клеток движком (одна монета, без P&L): недопустимые сочетания ключей → res/invalid674-<сторона>.json
   python3 tk674_run.py cells     — движок: только клетки «считаем» (окна wa / wb / wc, `P42_SIDES` — одна сторона), юниты `tk674-*`
   python3 tk674_run.py tables --entry L-N — метрики клеток (В-169) → БД летописи (строки `metric` с каноническим ключом); охраны G7, G-off, G-key, G-tape, c-проверка Lmax
   python3 tk674_run.py map       — карта пар из БД: охраны (а)–(е), победитель пары, плато, таблица top 15 по стороне → res/map674-<сторона>.json
@@ -43,17 +44,31 @@ def _bin():
     return sha
 
 
+def invalid_path(side):
+    return os.path.join(ROOT, "res", "invalid674-%s.json" % side)
+
+
+def load_invalid(side):
+    """{cid: причина} клеток, которые движок отвергает при разборе строки (стадия `validate`); пусто, пока стадия не запускалась."""
+    f = invalid_path(side)
+    return json.load(open(f, encoding="utf-8")) if os.path.exists(f) else {}
+
+
 def build_cells(side, thr=None):
     """{канонический ключ: клетка} по всем парам: клетка = dict(ckey, cid, patch, filt, sig (ключ прохода), pairs (где встречается));
     thr — {признак: {метка: порог}} для фильтровых клеток (None — фильтровые клетки пропускаются). Недопустимые позиции — в bad."""
     grids, skipped = ax.pair_grids(side)
     cells, bad = {}, {}
+    inv = load_invalid(side)
     for (a, b), g in grids.items():
         for pos, (patch, filt, ok, why) in g["cells"].items():
             if filt and thr is None:
                 continue
             if not ok:
                 bad[(a, b, pos)] = why
+                continue
+            if ax.cell_id(patch, filt) in inv:
+                bad[(a, b, pos)] = "движок: " + inv[ax.cell_id(patch, filt)]
                 continue
             ft = [(thr[n][lab][0], thr[n][lab][1], thr[n][lab][2]) for n, lab in filt] if filt else []
             ck = ax.canon(ax.BASE_LINE(side) + (" " + ax.patch_str(patch) if patch else ""), ft)
@@ -360,6 +375,57 @@ def cmd_plan(a):
     say("plan готово: считаем %d клеток, ≈ %.1f ч движка (оба направления, 3 окна)" % (tot_new, tot_h))
 
 
+def cmd_validate(a):
+    """Сухой разбор строк всех клеток к счёту движком на одной монете (без P&L): движок отвергает недопустимые сочетания ключей до счёта; отвергнутые — в `res/invalid674-<сторона>.json`."""
+    import subprocess
+    import tk625_run as r5
+    st, r5, _, _ = t._srv()
+    _bin()
+    u = r5.Uni(UNI)
+    w = st.TRADE_WINDOWS[0]
+    coin = open(u.coins_file, encoding="utf-8").read().strip().split(",")[0]
+    store = chron_store(ro=True)
+    import tk604_run as r4
+    for side in SIDES:
+        cells, _, _, _, found = plan_side(side, store)
+        todo = [c for k, c in cells.items() if k not in found]
+        cols = json.load(open(os.path.join(ROOT, "res", "ftabcols674-%s.json" % side), encoding="utf-8"))
+        lines = {}
+        for c in todo:
+            line = t.variant_line(r5, u, side, c["patch"])
+            if c["filt"]:
+                line += " fa=%s fo=lo fv=%g" % (cols[c["ckey"].split("F=", 1)[1]], ax.FV_PASS)
+            lines[c["cid"]] = line
+        inv = {}
+        d = u.wdir(w.name)
+        out = os.path.join(ROOT, "validate", "%s-%s" % (w.name, side))
+        os.makedirs(out, exist_ok=True)
+        for it in range(400):
+            vf = out + ".variants.txt"
+            with open(vf, "w", encoding="utf-8") as f:
+                f.write("".join("%s %s\n" % (k, v) for k, v in lines.items() if k not in inv))
+            cmd = [r4.BIN, "breakout", "tick", "--cache", d + "/cache", "--trades", d + "/aggtrades", "--variants", vf, "--symbols", coin, "--out", out, "--threads", "2",
+                   "--ftab", t.q("ftab674", "%s-%s.csv" % (w.name, side))] + r5.TICK_STORE
+            env = dict(os.environ, P42_T0=w.t0, **one_side_env(side))
+            r = subprocess.run(cmd, env=env, capture_output=True, text=True)
+            if r.returncode == 0:
+                break
+            msg = r.stderr
+            if "Error: " not in msg or "Caused by:" not in msg:
+                raise SystemExit("validate %s: сбой не при разборе варианта:\n%s" % (side, msg[-600:]))
+            err = msg.split("Error: ", 1)[1]
+            first = err.split("\n", 1)[0].split()[0]
+            why = err.split("Caused by:", 1)[1].strip().split("\n")[0].strip()
+            if first not in lines or first in inv:
+                raise SystemExit("validate %s: неопознанный вариант «%s»: %s" % (side, first, msg[-400:]))
+            inv[first] = why
+        else:
+            raise SystemExit("validate %s: > 400 отвергнутых" % side)
+        json.dump(inv, open(invalid_path(side), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        say("validate %s: вариантов %d, отвергнуто движком %d%s" % (side, len(lines), len(inv), "".join("\n   %s: %s" % (k, v) for k, v in list(inv.items())[:10])))
+    say("validate готово")
+
+
 def cmd_cells(a):
     st, r5, _, _ = t._srv()
     sha = _bin()
@@ -592,7 +658,7 @@ def cmd_map(a):
 
 
 
-COMMANDS = {"probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "cells": cmd_cells, "tables": cmd_tables, "map": cmd_map}
+COMMANDS = {"probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "validate": cmd_validate, "cells": cmd_cells, "tables": cmd_tables, "map": cmd_map}
 
 
 def main():
