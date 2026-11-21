@@ -1,0 +1,3 @@
+A_pkpb lat=4 latx=4 fh=4 fk=120 fm=50 fb=0.5 ew=5 ex=0 rf=0.2 rs=20 t24=12 pk=1 pb=1 p=100000 c=0 m=1000000 s_glob=1000000 ww=0 busy=0 reentry=2
+B_nopk lat=4 latx=4 fh=4 fk=120 fm=50 fb=0.5 ew=5 ex=0 rf=0.2 rs=20 t24=12 pk=0 pb=0 p=100000 c=0 m=1000000 s_glob=1000000 ww=0 busy=0 reentry=2
+C_nofresh lat=4 latx=4 pk=1 pb=1 ew=5 ex=0 rf=0.2 rs=20 t24=12 p=100000 c=0 m=1000000 s_glob=1000000 ww=0 busy=0 reentry=2

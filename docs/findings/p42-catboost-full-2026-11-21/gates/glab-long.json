@@ -1,0 +1,40 @@
+{
+ "side": "long",
+ "cells": {
+  "L_ind": {
+   "twin_trades": 885,
+   "found": 883,
+   "exact": 883,
+   "share_found": 0.99774,
+   "share_exact_of_found": 1.0,
+   "pass": true
+  }
+ },
+ "missing": [
+  {
+   "twin": "L_ind",
+   "win": "wb",
+   "sym": "PUMPUSDT",
+   "sig_ms": 2901611343,
+   "level": 13,
+   "entry_px_e8": 493249,
+   "rows_same_sym_sig": 0,
+   "rows_labeled": 0,
+   "rows_other_entry": 0,
+   "src_levels": []
+  },
+  {
+   "twin": "L_ind",
+   "win": "wb",
+   "sym": "PUMPUSDT",
+   "sig_ms": 2901847016,
+   "level": 13,
+   "entry_px_e8": 493149,
+   "rows_same_sym_sig": 0,
+   "rows_labeled": 0,
+   "rows_other_entry": 0,
+   "src_levels": []
+  }
+ ],
+ "pass": true
+}
