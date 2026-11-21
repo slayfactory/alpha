@@ -65,7 +65,7 @@ def build(side, asm, out):
     for win, w in WINS.items():
         a = pd.read_parquet(f"{asm}/{win}-{side}.parquet")
         r = pd.read_parquet(f"{PROD}/lvl-{win}-{side}/rows.parquet", columns=["row_id", "sig_ms", "dist_e8"]).set_index("row_id")
-        a = a.set_index("row_id", drop=False)
+        a = a.set_index("row_id", drop=False).rename_axis(None)
         assert a.index.is_unique and set(r.index) == set(a.index), f"{win}: row_id сборки и rows.parquet не совпали"
         a["meta_sig_ms"] = r.loc[a.index, "sig_ms"].to_numpy()
         a["meta_dist_e8"] = r.loc[a.index, "dist_e8"].to_numpy()
@@ -85,6 +85,7 @@ def build(side, asm, out):
     feats = [c for c in d.columns if c not in meta + ycols + ["win", "row_id", "sym"]]
     d = d[["win", "row_id", "sym"] + meta + ycols + feats]
     d["win"] = d["win"].astype("category")
+    d["sym"] = d["sym"].astype(str).astype("category")           # категории окон разные — склейка дала бы object
     d.to_parquet(f"{out}/{side}.parquet", compression="zstd", index=False)
     info.update(rows=int(len(d)), labeled=int(d["y_has"].sum()), n_features=len(feats) + 1, meta=meta, y=ycols)
     with open(f"{out}/{side}.info.json", "w", encoding="utf-8") as f:
