@@ -78,6 +78,7 @@ def build(side, win, dumps, out, gap_min=60, sources=None):
     rows["side"] = side
     rows["win"] = win
     rows = rows.drop(columns=["bit"]).sort_values(["sig_ms", "dist_e8", "sym", "level"], kind="stable").reset_index(drop=True)
+    rows.insert(0, "row_id", np.arange(len(rows), dtype=np.int64))          # ключ строки внутри (окно, сторона): порядок файла
     pq.write_table(pa.Table.from_pandas(rows, preserve_index=False), os.path.join(out, "rows.parquet"), compression="zstd")
     # ftab: 1.0 у строк, закреплённых за источником (по ключу (sym, sig_ms, level)), 0.0 у остальных сигналов окна
     stat["rows"] = int(len(rows)); stat["rows_before_dedup"] = int(len(allr))

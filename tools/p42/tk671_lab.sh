@@ -4,7 +4,7 @@
 # Один прогон движка на источник (свой `--ftab`), `--sig-cache` — общий для окна; память прогона ограничена `--cap-gb`.
 set -uo pipefail
 WIN=$1; SIDE=$2; LVL=$3; OUT=$4; THR=$5; shift 5
-BIN=${TK671_BIN:-/data/p42-tk668/bin/alpha-lx}
+BIN=${TK671_BIN:-/data/p42-tk671/bin/alpha-lx-sides}   # с P42_SIDES (одна сторона)
 W=/data/p42-tk621/$WIN
 COINS=$(cat /data/p42-tk621/universe/symbols-all.txt)
 STORE="--tick-store /data/p42-tk599/tick-store --tick-store-cap-gb 3 --tick-store-min-free-gb 5"
@@ -22,7 +22,7 @@ for SRC in "$@"; do
   esac
   echo "lab_${SRC} $BASE $EX $SK $SIG" > "$OUT/variants-$SRC.txt"
   S=$(date +%s)
-  P42_T0=$T0 $BIN breakout tick --cache $W/cache --trades $W/aggtrades --variants "$OUT/variants-$SRC.txt" --symbols "$COINS" --out "$OUT/$SRC" \
+  P42_SIDES=$SIDE P42_T0=$T0 $BIN breakout tick --cache $W/cache --trades $W/aggtrades --variants "$OUT/variants-$SRC.txt" --symbols "$COINS" --out "$OUT/$SRC" \
     --threads "$THR" --cap-gb 4 --ftab "$LVL/ftab-$SRC.csv" --sig-cache "$OUT/sigcache" $STORE > "$OUT/$SRC.log" 2>&1
   echo "$SRC rc=$? sec=$(( $(date +%s) - S ))" | tee -a "$OUT/done.log"
 done
