@@ -7,7 +7,8 @@
 Столбцы (8) — как у `tk648_feat.py` (определения TK-595 `bookdepth_feat.features_at` без изменений, формулы импортируются оттуда: BANDS / BI / LAG_S / MAX_AGE_S / FEATS):
   bd_imb02 bd_imb1 bd_imb2 bd_thin5 bd_thin30 bd_depth_turn   — `bookdepth_feat.FEATS`
   bd_age_s   возраст использованного снимка на сигнале, с (в протоколе §13.71 — `bd_age`; имя столбца — `bd_age_s`, как в TK-648)
-  bd_mode    режим метки суток снимка (A = 1, B = 0; `tk648_feat.day_mode`; считается по ВСЕМ снимкам суток — свойство фазы меток архива, не значений книги; см. G-causal отчёта)
+  bd_mode    режим меток снимков (A = 1: метка на 2…6 с после узла 30-секундной сетки, B = 0: на узле) — РЕШЕНИЕ КООРДИНАТОРА 21.11: по снимкам строго до сигнала (последние `MODE_N` = 20 снимков той же суток,
+             индекс ≤ индекса использованного снимка, т. е. ts + 30 с ≤ σ), а не метка суток по всем снимкам (как в TK-648, заглядывала в будущее суток; у 5,5 % строк значение другое)
 Причинность (без изменений): снимок с `ts + 30 с ≤ σ` (последний такой), возраст `σ − ts ≤ 600 с`, иначе NaN. σ = `t0_ms/1000 + sig_ms/1000` (float, как `tk648_feat.abs_s`: при совпадении σ − 30 с с целой секундой снимка
 сложение двух float может дать σ на ulp меньше → снимок отбрасывается, то есть строже, не мягче точной арифметики).
 Охват: архив есть только для суток 14.09–13.11 без 08.10 (`tk648_feat.in_omega`, по суткам СИГНАЛА); остальные строки — NaN без чтения файлов (≈ 41 % строк окон). Сутки ≥ 14.11 не читаются (охрана `check_day`).
@@ -43,6 +44,7 @@ ZIP = f48.ZIP
 CACHE_ROOT = "/data/p42-tk621"
 FEATS = tuple(bf.FEATS)
 COLS = list(FEATS) + ["bd_age_s", "bd_mode"]
+MODE_N = 20                                     # bd_mode: доля меток «на 2…6 с после узла сетки» среди последних 20 снимков суток до сигнала (≈ 10 мин)
 _EPOCH = dt.date(1970, 1, 1)
 OMEGA_LO_D = (f48.OMEGA_LO - _EPOCH).days
 OMEGA_HI_D = (f48.OMEGA_HI - _EPOCH).days
@@ -154,12 +156,14 @@ def features_vec(t, m, s, long_side, turn):
     with np.errstate(invalid="ignore", divide="ignore"):
         out["bd_depth_turn"] = np.where(v, a1 / turn, np.nan)
     out["bd_age_s"] = np.where(ok, age, np.nan)
-    modes = f48.day_mode(t)
-    dd = np.floor(t[ic] / 86400.0).astype(np.int64)
-    mode = np.full(n, np.nan)
-    for d, val in modes.items():
-        mode[dd == d] = val
-    out["bd_mode"] = np.where(ok, mode, np.nan)
+    # bd_mode (решение координатора 21.11): по снимкам строго до сигнала — последние до MODE_N снимков суток использованного снимка с индексом ≤ i (все с ts + 30 с ≤ σ), не метка суток по всем снимкам
+    rr = (np.mod(np.round(t).astype(np.int64), 30) >= 2).astype(np.int64)
+    cs = np.concatenate([[0], np.cumsum(rr)])
+    day_first = np.searchsorted(dsnap, dsnap[ic], side="left")
+    lo = np.maximum(np.maximum(i - (MODE_N - 1), day_first), 0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        frac = (cs[np.maximum(i, 0) + 1] - cs[lo]) / np.maximum(i - lo + 1, 1)
+    out["bd_mode"] = np.where(ok, (frac > 0.5).astype(np.float64), np.nan)
     return out
 
 

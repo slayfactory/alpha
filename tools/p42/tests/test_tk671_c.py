@@ -191,6 +191,12 @@ def test_hist_vector_equals_brute_and_is_causal():
                     want = brute(cr, "long", "AAAUSDT", int(t), d, m) if v else np.nan
                     got = g.loc[i, f5.col_name(m, d)]
                     assert got == want or (np.isnan(got) and np.isnan(want)), (i, m, d, got, want)
+        # группировка по монетам = прямой вызов TK-625 на всём наборе (одинаковые значения)
+        for pref, sd in (("", "long"), ("x", "short")):
+            direct = f5.ok_matrix(f5.features(hist[sd], np.array(["AAAUSDT"] * 60, dtype=object), ts))
+            for k, v in direct.items():
+                w = g[pref + k].to_numpy()
+                assert np.array_equal(np.isnan(v), np.isnan(w)) and np.array_equal(v[~np.isnan(v)], w[~np.isnan(w)]), k
         # причинность: исход события, закрывающегося после t (09.07), признак на t = 05.07 01:00 не меняет
         t = utc_ms(7, 5, 1)
         one = pd.DataFrame({"row_id": [0], "sym": ["AAAUSDT"], "abs_ms": [t]})

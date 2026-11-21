@@ -47,6 +47,19 @@ def load(ev_dir=EV_DIR, coindays=COINDAYS, universe=UNIVERSE):
     return _C[key]
 
 
+def features_by_coin(h, sym, t):
+    """`ok_matrix(features(h, sym, t))` по группам одной монеты: те же функции TK-625, но маски `sym == s` считаются на малых массивах (на всём наборе — O(монет × строк))."""
+    order = np.argsort(sym, kind="stable")
+    ss = sym[order]
+    bounds = np.concatenate([[0], np.flatnonzero(ss[1:] != ss[:-1]) + 1, [len(ss)]])
+    out = {c: np.full(len(t), np.nan) for c in f5.COLS}
+    for a, b in zip(bounds[:-1], bounds[1:]):
+        idx = order[a:b]
+        for k, v in f5.ok_matrix(f5.features(h, sym[idx], t[idx])).items():
+            out[k][idx] = v
+    return out
+
+
 def compute(rows: pd.DataFrame, win: str, side: str, procs: int = 3, **kw) -> pd.DataFrame:
     """rows: row_id (индекс или столбец), sym, abs_ms. Возвращает DataFrame (индекс row_id) со столбцами COLUMNS; строки не выбрасываются."""
     if side not in OPP:
@@ -58,7 +71,7 @@ def compute(rows: pd.DataFrame, win: str, side: str, procs: int = 3, **kw) -> pd
     _, hist = load(**kw)
     out = {}
     for pref, s in (("", side), ("x", OPP[side])):
-        for k, v in f5.ok_matrix(f5.features(hist[s], sym, t)).items():
+        for k, v in features_by_coin(hist[s], sym, t).items():
             out[pref + k] = v
     return pd.DataFrame({c: out[c] for c in COLUMNS}, index=r.index)
 
