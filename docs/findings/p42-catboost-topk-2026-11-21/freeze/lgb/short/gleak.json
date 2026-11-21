@@ -1,0 +1,32 @@
+{
+ "2026-08-clf": {
+  "max_abs_rho": 0.19553454427301661,
+  "max_feature": "bk60",
+  "n_sample": 134825,
+  "threshold": 0.5
+ },
+ "2026-09-clf": {
+  "max_abs_rho": 0.07066866491855917,
+  "max_feature": "depth_mean_bp",
+  "n_sample": 150000,
+  "threshold": 0.5
+ },
+ "2026-10-clf": {
+  "max_abs_rho": 0.07625860508689104,
+  "max_feature": "depth_mean_bp",
+  "n_sample": 150000,
+  "threshold": 0.5
+ },
+ "2026-11-clf": {
+  "max_abs_rho": 0.0799003688018203,
+  "max_feature": "depth_mean_bp",
+  "n_sample": 150000,
+  "threshold": 0.5
+ },
+ "nstar": {
+  "max_abs_rho": 0.0956981217474184,
+  "max_feature": "bk40",
+  "n_sample": 88022,
+  "threshold": 0.5
+ }
+}
