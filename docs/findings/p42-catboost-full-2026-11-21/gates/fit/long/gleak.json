@@ -1,0 +1,68 @@
+{
+ "2026-08-clf": {
+  "max_abs_rho": 0.15791965620265383,
+  "max_feature": "natr_bp",
+  "n_sample": 38968,
+  "threshold": 0.5
+ },
+ "2026-08-reg": {
+  "max_abs_rho": 0.15648374721206804,
+  "max_feature": "natr_bp",
+  "n_sample": 150000,
+  "threshold": 0.5
+ },
+ "2026-09-clf": {
+  "max_abs_rho": 0.15597525048204267,
+  "max_feature": "natr_bp",
+  "n_sample": 81376,
+  "threshold": 0.5
+ },
+ "2026-09-reg": {
+  "max_abs_rho": 0.15851319479479098,
+  "max_feature": "natr_bp",
+  "n_sample": 150000,
+  "threshold": 0.5
+ },
+ "2026-10-clf": {
+  "max_abs_rho": 0.15671664697205828,
+  "max_feature": "natr_bp",
+  "n_sample": 124200,
+  "threshold": 0.5
+ },
+ "2026-10-reg": {
+  "max_abs_rho": 0.15766508719392225,
+  "max_feature": "natr_bp",
+  "n_sample": 150000,
+  "threshold": 0.5
+ },
+ "2026-11-clf": {
+  "max_abs_rho": 0.15974753182842844,
+  "max_feature": "natr_bp",
+  "n_sample": 150000,
+  "threshold": 0.5
+ },
+ "2026-11-reg": {
+  "max_abs_rho": 0.1586955163131599,
+  "max_feature": "natr_bp",
+  "n_sample": 150000,
+  "threshold": 0.5
+ },
+ "nstar": {
+  "max_abs_rho": 0.15256436727575245,
+  "max_feature": "natr_bp",
+  "n_sample": 104231,
+  "threshold": 0.5
+ },
+ "plc-2026-10-reg": {
+  "max_abs_rho": 0.039023997871437476,
+  "max_feature": "sg1",
+  "n_sample": 150000,
+  "threshold": 0.5
+ },
+ "plc-2026-11-reg": {
+  "max_abs_rho": 0.03662065299035491,
+  "max_feature": "kz40",
+  "n_sample": 150000,
+  "threshold": 0.5
+ }
+}

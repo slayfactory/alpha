@@ -1,0 +1,33 @@
+{
+ "files": {
+  "features.json": "46fb2e9025d164c8509f018f7753912b4fe65daa063d582f1700da9e89136038",
+  "models.sha256": "64f7c79cdf2dea65420b13d8d1f6cd4b8b301c9fe2ace6eef2c4ae7824cc3cba",
+  "nstar.json": "9af931eb7027e45e0fe52d217b27142a3bfa23b33bd8005f3ee70de00a23ac21",
+  "pred.parquet": "3f0e4c5740b6f5712b0640ce5947988ffdad8287abaf0e4c2f4d3eaf5e165325"
+ },
+ "side": "short",
+ "steps": {
+  "months": {
+   "N": 100,
+   "months": [
+    "2026-08",
+    "2026-09",
+    "2026-10",
+    "2026-11"
+   ],
+   "wall_s": 236.57010464998893
+  },
+  "nstar": {
+   "nstar": 100,
+   "wall_s": 102.47370969387703
+  },
+  "plc": {
+   "N": 100,
+   "months": [
+    "2026-10",
+    "2026-11"
+   ],
+   "wall_s": 107.18621111102402
+  }
+ }
+}

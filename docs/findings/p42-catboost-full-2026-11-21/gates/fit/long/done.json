@@ -1,0 +1,33 @@
+{
+ "files": {
+  "features.json": "46fb2e9025d164c8509f018f7753912b4fe65daa063d582f1700da9e89136038",
+  "models.sha256": "74463307ca6964ce7d8865be5224b9e110897ab483abdb7a845ec6476f3dfbd8",
+  "nstar.json": "93773d498fcb778a5bcf99f1a3b6ca542e066d97372481da00c8c4e58c2a2c20",
+  "pred.parquet": "1a2cd0b61ce4634b1d45e80626cd9dbd51a1b80a6c80408f963b7e4c60376920"
+ },
+ "side": "long",
+ "steps": {
+  "months": {
+   "N": 100,
+   "months": [
+    "2026-08",
+    "2026-09",
+    "2026-10",
+    "2026-11"
+   ],
+   "wall_s": 241.5134668929968
+  },
+  "nstar": {
+   "nstar": 100,
+   "wall_s": 122.98601956805214
+  },
+  "plc": {
+   "N": 100,
+   "months": [
+    "2026-10",
+    "2026-11"
+   ],
+   "wall_s": 99.04077831213363
+  }
+ }
+}

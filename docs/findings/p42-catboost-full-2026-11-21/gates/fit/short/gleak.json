@@ -1,0 +1,68 @@
+{
+ "2026-08-clf": {
+  "max_abs_rho": 0.058928968818384754,
+  "max_feature": "depth_mean_bp",
+  "n_sample": 33632,
+  "threshold": 0.5
+ },
+ "2026-08-reg": {
+  "max_abs_rho": 0.10268641281463456,
+  "max_feature": "bk60",
+  "n_sample": 134825,
+  "threshold": 0.5
+ },
+ "2026-09-clf": {
+  "max_abs_rho": 0.050972724289734414,
+  "max_feature": "depth_mean_bp",
+  "n_sample": 67816,
+  "threshold": 0.5
+ },
+ "2026-09-reg": {
+  "max_abs_rho": 0.04528090775164287,
+  "max_feature": "depth_mean_bp",
+  "n_sample": 150000,
+  "threshold": 0.5
+ },
+ "2026-10-clf": {
+  "max_abs_rho": 0.04878142644444241,
+  "max_feature": "depth_mean_bp",
+  "n_sample": 101761,
+  "threshold": 0.5
+ },
+ "2026-10-reg": {
+  "max_abs_rho": 0.04197781898350306,
+  "max_feature": "depth_mean_bp",
+  "n_sample": 150000,
+  "threshold": 0.5
+ },
+ "2026-11-clf": {
+  "max_abs_rho": 0.04641695359742793,
+  "max_feature": "depth_mean_bp",
+  "n_sample": 139769,
+  "threshold": 0.5
+ },
+ "2026-11-reg": {
+  "max_abs_rho": 0.046573898511781175,
+  "max_feature": "depth_mean_bp",
+  "n_sample": 150000,
+  "threshold": 0.5
+ },
+ "nstar": {
+  "max_abs_rho": 0.07460126280722792,
+  "max_feature": "bk40",
+  "n_sample": 88022,
+  "threshold": 0.5
+ },
+ "plc-2026-10-reg": {
+  "max_abs_rho": 0.022619259940500798,
+  "max_feature": "bd_mode",
+  "n_sample": 150000,
+  "threshold": 0.5
+ },
+ "plc-2026-11-reg": {
+  "max_abs_rho": 0.02303253204787702,
+  "max_feature": "peerall15",
+  "n_sample": 150000,
+  "threshold": 0.5
+ }
+}
