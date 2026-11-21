@@ -3,7 +3,7 @@
   python3 tk671_t668_gate.py --rows <rows-slice.parquet> --win wa --side long --out <gate.json> [--procs 3] [--k-causal 600]
 
 G-eq-A  все строки среза 12 источников: X24 / X7 / XP / XV / r_h / σ_h / bz — `compute` = оригинал `tk668_feat` построчно (точное равенство, одинаковый рисунок NaN).
-G-eq-B  все строки баз TK-668 (3 окна × 2 стороны, 1 897 строк, дамп уровней базы — реальный): все 14 столбцов и «свой уровень» = `tk668_run.compute_rows` (оригинальный драйвер).
+G-eq-B  все строки баз TK-668 (3 окна × 2 стороны, 1 897 строк, дамп уровней базы — реальный): все 14 столбцов и «свой уровень» = `tk668_run.compute_rows` (оригинальный драйвер, точно) и готовым таблицам `/data/p42-tk668/feat` (допуск 1e-10, их печать — 12 цифр).
 G-causal-A  k строк среза: мусор в минутках монеты и BTC с минуты t (`tk668_feat.garbage_from`) не меняет X24 / X7 / XP / XV / r_h / σ_h / bz; контроль силы — те же значения на минуте t + 1 меняются.
 G-causal-B  k строк баз: мусор в метках уровней позже t (рождение, конец, версии цены, выдуманные уровни; `garbage_levels`) не меняет R и «свой уровень»; контроль силы — доля строк, где мусор что-то менял.
 Дамп уровней у строк 12 источников на момент проверки отсутствует (нужен `P42_LEVELS=1` в прогоне `sigsx` — см. отчёт), поэтому R на строках среза не сверяется; ядро R проверено на реальных уровнях базы."""
@@ -88,10 +88,17 @@ def g_eq_b(procs):
             got = fam.compute(df, w.name, side, procs=procs, level_paths={0: lvp}, info=info)
             ref = {c: [x[c] for x in ref_rows] for c in fam.FEATURES}
             bad, mx = cmp_cols(got, ref, fam.FEATURES)
+            tab = r.load_feat(w.name, code)                                    # готовая таблица TK-668 (12 значащих цифр): допуск 1e-10, рисунок NaN / inf точный
+            tab_bad = 0
+            for c in fam.FEATURES:
+                x, y = got[c].to_numpy(), np.asarray(tab[c], dtype=float)
+                fin = np.isfinite(x) & np.isfinite(y)
+                tab_bad += int((np.isnan(x) != np.isnan(y)).sum() + (np.isinf(x) != np.isinf(y)).sum() + (np.sign(np.where(np.isinf(x), x, 0)) != np.sign(np.where(np.isinf(y), y, 0))).sum())
+                tab_bad += int((np.abs(x[fin] - y[fin]) > 1e-10 * np.maximum(1.0, np.abs(y[fin]))).sum())
             own_ref = int(sum(1 for x in ref_rows if x["own"]))
             own_got = info["levels"][fam._source_names()[0]]["own"]
-            n_bad = sum(bad.values()) + int(own_ref != own_got)
-            out["%s-%s" % (w.name, side)] = dict(rows=len(df), dups_in_original=dups, mismatches=bad, max_abs=mx, own_ref=own_ref, own_mine=own_got, R_inf=int(np.isinf(got["R"]).sum()), R_finite=int(np.isfinite(got["R"]).sum()))
+            n_bad = sum(bad.values()) + int(own_ref != own_got) + tab_bad
+            out["%s-%s" % (w.name, side)] = dict(rows=len(df), dups_in_original=dups, mismatches=bad, max_abs=mx, own_ref=own_ref, own_mine=own_got, vs_tk668_table_beyond_tol=tab_bad, R_inf=int(np.isinf(got["R"]).sum()), R_finite=int(np.isfinite(got["R"]).sum()))
             nbad_all += n_bad
             rows_all += len(df)
     return dict(rows_total=rows_all, groups=out), nbad_all
