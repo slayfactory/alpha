@@ -645,11 +645,24 @@ def cmd_map(a):
             full = [c for c in ok3 if c[2]["g"]]
             pair_rows.append(dict(pair=gname, cells=len(cand), guarded3=len(ok3), guarded_all=len(full), winner=rep_cell(pick(full), bsh), best_no_plateau=rep_cell(pick(ok3), bsh)))
         bx = brow["extra"]
-        out = dict(side=side, base=dict(ckey=base_ck, sharpe=bsh, usd=brow["usd"], n=brow["trades"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"]), pairs=pair_rows, n_cells=len(rows))
+        # счётчик испытаний (§13.73.1 разд. 3): все клетки стороны в БД (карта + прежние), шум σ·√(2 ln m) — верхняя оценка для независимых клеток
+        m_side = sum(r["n"] for r in store.cells_count() if r["side"] == SIDENAME[side] and r["uni"] == UNI and r["win"] == WIN)
+        shs = np.array([r["sharpe"] for r in rows.values() if r["sharpe"] == r["sharpe"]])
+        sig_sh = float(shs.std()) if len(shs) > 1 else float("nan")
+        noise = sig_sh * float(np.sqrt(2 * np.log(max(m_side, 2))))
+        # G-dup: клетки с побайтно одинаковыми сделками (trades_sig) — разные заплатки, один результат
+        by_sig = {}
+        for k, r in rows.items():
+            by_sig.setdefault(r["extra"].get("trades_sig"), []).append(k)
+        dup = [v for k_, v in by_sig.items() if k_ and len(v) > 1]
+        out = dict(side=side, base=dict(ckey=base_ck, sharpe=bsh, usd=brow["usd"], n=brow["trades"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"]), pairs=pair_rows, n_cells=len(rows),
+                   m=m_side, sharpe_sd=sig_sh, noise_max=noise, g_dup=dict(groups=len(dup), cells=sum(len(v) for v in dup), examples=dup[:5]))
         json.dump(out, open(t.q("res", "map674-%s.json" % side), "w", encoding="utf-8"), ensure_ascii=False)
         top = sorted([p for p in pair_rows if p["winner"]], key=lambda p: -p["winner"]["gain"])[:15]
         say("== %s: база Шарп %.2f, Σ %+.0f $, просадка %.0f $ (%.0f %%), перехай %d сут.; пар %d, с победителем %d" % (
             side, bsh, brow["usd"], bx["maxdd"], bx["maxdd_pct"], bx["kpi"]["gap_longest"], len(pair_rows), sum(1 for p in pair_rows if p["winner"])))
+        say("   m (все клетки стороны в БД) %d, σ Шарпа клеток %.2f, ожидаемый максимум шума ≈ %.2f (верхняя оценка: клетки зависимы); G-dup: %d групп / %d клеток с одинаковыми сделками" % (
+            m_side, sig_sh, noise, len(dup), sum(len(v) for v in dup)))
         for p in top:
             w = p["winner"]
             say("   %-18s %-34s Шарп %5.2f (%+.2f)  Σ %+6.0f $  просадка %4.0f $  перехай %3d  сделок %4d  плато %s" % (
