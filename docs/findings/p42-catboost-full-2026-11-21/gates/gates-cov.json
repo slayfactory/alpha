@@ -1,0 +1,246 @@
+{
+ "cov_base": {
+  "wa/L_base": {
+   "trades": 171,
+   "covered": 171,
+   "share": 1.0,
+   "trades_all_file": 186,
+   "share_all_file": 0.919355,
+   "path": "/data/p42-tk642/cells/wa/L_base/long-trades.csv",
+   "pass": true
+  },
+  "wa/L_n24": {
+   "trades": 80,
+   "covered": 80,
+   "share": 1.0,
+   "trades_all_file": 86,
+   "share_all_file": 0.930233,
+   "path": "/data/p42-tk638/ladd-h775/wa-L/N24_q60/long-trades.csv",
+   "pass": true
+  },
+  "wa/S_base": {
+   "trades": 143,
+   "covered": 142,
+   "share": 0.993007,
+   "trades_all_file": 154,
+   "share_all_file": 0.922078,
+   "path": "/data/p42-tk642/cells/wa/S_base/short-trades.csv",
+   "pass": true
+  },
+  "wa/D_S": {
+   "trades": 537,
+   "covered": 537,
+   "share": 1.0,
+   "trades_all_file": 564,
+   "share_all_file": 0.952128,
+   "path": "/data/p42-tk668/e4/cells/wa/S_lx1/short-trades.csv",
+   "pass": true
+  },
+  "wb/L_base": {
+   "trades": 123,
+   "covered": 122,
+   "share": 0.99187,
+   "trades_all_file": 194,
+   "share_all_file": 0.628866,
+   "path": "/data/p42-tk642/cells/wb/L_base/long-trades.csv",
+   "pass": true
+  },
+  "wb/L_n24": {
+   "trades": 49,
+   "covered": 48,
+   "share": 0.979592,
+   "trades_all_file": 81,
+   "share_all_file": 0.592593,
+   "path": "/data/p42-tk638/ladd-h775/wb-L/N24_q60/long-trades.csv",
+   "pass": true
+  },
+  "wb/S_base": {
+   "trades": 88,
+   "covered": 88,
+   "share": 1.0,
+   "trades_all_file": 142,
+   "share_all_file": 0.619718,
+   "path": "/data/p42-tk642/cells/wb/S_base/short-trades.csv",
+   "pass": true
+  },
+  "wb/D_S": {
+   "trades": 284,
+   "covered": 284,
+   "share": 1.0,
+   "trades_all_file": 463,
+   "share_all_file": 0.613391,
+   "path": "/data/p42-tk668/e4/cells/wb/S_lx1/short-trades.csv",
+   "pass": true
+  },
+  "wc/L_base": {
+   "trades": 134,
+   "covered": 134,
+   "share": 1.0,
+   "trades_all_file": 194,
+   "share_all_file": 0.690722,
+   "path": "/data/p42-tk642/cells/wc/L_base/long-trades.csv",
+   "pass": true
+  },
+  "wc/L_n24": {
+   "trades": 52,
+   "covered": 52,
+   "share": 1.0,
+   "trades_all_file": 78,
+   "share_all_file": 0.666667,
+   "path": "/data/p42-tk638/ladd-h775/wc-L/N24_q60/long-trades.csv",
+   "pass": true
+  },
+  "wc/S_base": {
+   "trades": 88,
+   "covered": 87,
+   "share": 0.988636,
+   "trades_all_file": 139,
+   "share_all_file": 0.625899,
+   "path": "/data/p42-tk642/cells/wc/S_base/short-trades.csv",
+   "pass": true
+  },
+  "wc/D_S": {
+   "trades": 416,
+   "covered": 416,
+   "share": 1.0,
+   "trades_all_file": 551,
+   "share_all_file": 0.754991,
+   "path": "/data/p42-tk668/e4/cells/wc/S_lx1/short-trades.csv",
+   "pass": true
+  }
+ },
+ "uni": {
+  "wa/long": {
+   "rows": 313835,
+   "row_id_unique": true,
+   "dup_keys": 0,
+   "in_range": true,
+   "lo": "2026-07-01",
+   "hi": "2026-08-25",
+   "first_day": "2026-07-01",
+   "last_day": "2026-08-25",
+   "pass": true
+  },
+  "wa/short": {
+   "rows": 270681,
+   "row_id_unique": true,
+   "dup_keys": 0,
+   "in_range": true,
+   "lo": "2026-07-01",
+   "hi": "2026-08-25",
+   "first_day": "2026-07-01",
+   "last_day": "2026-08-25",
+   "pass": true
+  },
+  "wb/long": {
+   "rows": 226756,
+   "row_id_unique": true,
+   "dup_keys": 0,
+   "in_range": true,
+   "lo": "2026-08-26",
+   "hi": "2026-10-02",
+   "first_day": "2026-08-26",
+   "last_day": "2026-10-02",
+   "pass": true
+  },
+  "wb/short": {
+   "rows": 195273,
+   "row_id_unique": true,
+   "dup_keys": 0,
+   "in_range": true,
+   "lo": "2026-08-26",
+   "hi": "2026-10-02",
+   "first_day": "2026-08-26",
+   "last_day": "2026-10-02",
+   "pass": true
+  },
+  "wc/long": {
+   "rows": 239505,
+   "row_id_unique": true,
+   "dup_keys": 0,
+   "in_range": true,
+   "lo": "2026-10-03",
+   "hi": "2026-11-13",
+   "first_day": "2026-10-03",
+   "last_day": "2026-11-13",
+   "pass": true
+  },
+  "wc/short": {
+   "rows": 225209,
+   "row_id_unique": true,
+   "dup_keys": 0,
+   "in_range": true,
+   "lo": "2026-10-03",
+   "hi": "2026-11-13",
+   "first_day": "2026-10-03",
+   "last_day": "2026-11-13",
+   "pass": true
+  },
+  "windows": {
+   "disjoint": true,
+   "contiguous": true,
+   "days": 136,
+   "first": "2026-07-01",
+   "last": "2026-11-13",
+   "pass": true
+  }
+ },
+ "lab_join": {
+  "wa/long": {
+   "label_trades": 301425,
+   "label_trades_outside_zachet": 252358,
+   "duplicate_keys": 0,
+   "trades_of_other_source_rows": 696,
+   "orphan_key_not_in_any_row": 0,
+   "rows": 313835,
+   "pass": true
+  },
+  "wa/short": {
+   "label_trades": 248184,
+   "label_trades_outside_zachet": 96958,
+   "duplicate_keys": 0,
+   "trades_of_other_source_rows": 236,
+   "orphan_key_not_in_any_row": 0,
+   "rows": 270681,
+   "pass": true
+  },
+  "wb/long": {
+   "label_trades": 217338,
+   "label_trades_outside_zachet": 345612,
+   "duplicate_keys": 0,
+   "trades_of_other_source_rows": 441,
+   "orphan_key_not_in_any_row": 0,
+   "rows": 226756,
+   "pass": true
+  },
+  "wb/short": {
+   "label_trades": 176054,
+   "label_trades_outside_zachet": 137125,
+   "duplicate_keys": 0,
+   "trades_of_other_source_rows": 140,
+   "orphan_key_not_in_any_row": 0,
+   "rows": 195273,
+   "pass": true
+  },
+  "wc/long": {
+   "label_trades": 227595,
+   "label_trades_outside_zachet": 0,
+   "duplicate_keys": 0,
+   "trades_of_other_source_rows": 528,
+   "orphan_key_not_in_any_row": 0,
+   "rows": 239505,
+   "pass": true
+  },
+  "wc/short": {
+   "label_trades": 207220,
+   "label_trades_outside_zachet": 0,
+   "duplicate_keys": 0,
+   "trades_of_other_source_rows": 107,
+   "orphan_key_not_in_any_row": 0,
+   "rows": 225209,
+   "pass": true
+  }
+ },
+ "pass": true,
+ "threshold": 0.95
+}

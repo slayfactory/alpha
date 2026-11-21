@@ -1,0 +1,10 @@
+{
+ "rows": 700,
+ "bad_values": 0,
+ "bad_timestamps": 0,
+ "bad_turn1h": 0,
+ "bd_mode_rows": 700,
+ "bd_mode_differs_if_computed_only_before_sigma": 133,
+ "seed": 671,
+ "ok": true
+}

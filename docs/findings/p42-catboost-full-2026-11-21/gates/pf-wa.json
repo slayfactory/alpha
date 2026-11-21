@@ -1,0 +1,42 @@
+{
+ "win": "wa",
+ "cells": {
+  "L_ind": {
+   "twin_trades": 379,
+   "replica_trades": 186,
+   "base_trades": 186,
+   "common": 186,
+   "only_replica": 0,
+   "only_base": 0,
+   "sum_replica": 87.42048499999999,
+   "sum_base": 87.42048499999999,
+   "d_sum": 0.0,
+   "pass": true
+  },
+  "S_ind": {
+   "twin_trades": 228,
+   "replica_trades": 154,
+   "base_trades": 154,
+   "common": 154,
+   "only_replica": 0,
+   "only_base": 0,
+   "sum_replica": 123.585158,
+   "sum_base": 123.585158,
+   "d_sum": 0.0,
+   "pass": true
+  },
+  "D_ind": {
+   "twin_trades": 761,
+   "replica_trades": 564,
+   "base_trades": 564,
+   "common": 564,
+   "only_replica": 0,
+   "only_base": 0,
+   "sum_replica": 463.399838,
+   "sum_base": 463.399838,
+   "d_sum": 0.0,
+   "pass": true
+  }
+ },
+ "pass": true
+}
