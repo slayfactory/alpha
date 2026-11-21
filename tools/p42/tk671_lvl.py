@@ -4,7 +4,10 @@
   python3 tk671_lvl.py build --side long|short --win wa|wb|wc --dumps <каталог с <источник>/<side>-sigsx.csv> --out <каталог> [--gap-min 60] [--sources p30n1,...]
 
 Эпизод = первый сигнал уровня и каждый следующий, если с прошлого сигнала ЭТОГО уровня прошло > `gap-min` минут (§13.71 п. 3). Строки окна ограничены зачётными сутками окна (lo…hi, `tk604_stats`):
-сигналы раньше — только для разметки эпизодов (состояние уровня), строки не создают. Одинаковые `(sym, sig_ms, level_px_e8)` из разных источников — одна строка (маска источников, метка — по первому источнику
+сигналы раньше — только для разметки эпизодов (состояние уровня), строки не создают. К эпизодам добавляются ВСЕ сигналы, на которых база могла бы войти (`--twin`: сделки и несостоявшиеся входы двойников `L_ind` / `S_ind` / `D_ind` — фильтры баз, каждая строка торгуется независимо, `tk671_twin.sh`):
+замер 21.11 (wa, лонг): только 32 % сделок `L_base` лежат на начале эпизода (остальные — на более позднем сигнале того же подхода, медиана 1,2 мин после предыдущей строки монеты), ворота G-cov-base (≥ 95 %) без добавки не проходят.
+Добавка — строки `ep_start = 0`, `base_pass` (бит 1 — двойник p60n2, бит 2 — двойник `D_S`); их ключи зависят только от признаков на момент сигнала (фильтры баз причинны), метки не участвуют.
+Одинаковые `(sym, sig_ms, level_px_e8)` из разных источников — одна строка (маска источников, метка — по первому источнику
 в порядке `SOURCES`). Выход: `rows.parquet` (строки), `ftab-<источник>.csv` (`sym,sig_ms,ROW`: 1.0 у строк, закреплённых за источником, 0.0 у ВСЕХ остальных его сигналов, в т.ч. вне зачётных суток: сигнал без строки в таблице движок пропускает), `lvl.json` (счётчики).
 Время в файлах — мс от T0 окна (как в дампе движка); абсолютные мс — столбец `abs_ms`."""
 from __future__ import annotations
@@ -25,7 +28,7 @@ sys.path.insert(0, HERE)
 SOURCES = ["p30n1", "p30n2", "p30n3", "p60n1", "p60n2", "p60n3", "p240n1", "p240n2", "p240n3", "lxD", "lxW", "lxP"]
 MIN_MS, DAY_MS = 60_000, 86_400_000
 COLS = ["sym", "level", "sig_ms", "dist_e8", "level_px_e8", "natr_e8", "born", "end", "first_bar", "members"]
-KEEP = ["src", "sym", "level", "sig_ms", "dist_e8", "level_px_e8", "natr_e8", "born", "end", "first_bar", "members", "n_ep"]
+KEEP = ["src", "sym", "level", "sig_ms", "dist_e8", "level_px_e8", "natr_e8", "born", "end", "first_bar", "members", "n_ep", "ep_start", "base_pass"]
 
 
 def read_sigsx(path):
@@ -48,7 +51,7 @@ def mark_episodes(df, gap_ms):
     return d.sort_values("pos", kind="stable")
 
 
-def build(side, win, dumps, out, gap_min=60, sources=None):
+def build(side, win, dumps, out, gap_min=60, sources=None, twin=None):
     import tk604_stats as st
     w = {x.name: x for x in st.TRADE_WINDOWS}[win]
     st.check_dates(w.t0, w.hi)
@@ -62,18 +65,42 @@ def build(side, win, dumps, out, gap_min=60, sources=None):
         df = mark_episodes(read_sigsx(path), gap_ms)
         inwin = ((df["sig_ms"] >= lo_ms) & (df["sig_ms"] < hi_ms)).to_numpy()
         rows = df[df["ep"].to_numpy() & inwin].copy()
+        rows["ep_start"] = 1
+        rows["base_pass"] = 0
+        tw = (twin or {}).get(src)
+        if tw is not None:
+            tr = pacsv.read_csv(tw, convert_options=pacsv.ConvertOptions(include_columns=["sym", "sig_ms"], column_types={"sym": pa.string()})).to_pandas()
+            # ключ (sym, sig_ms): индексы уровней двойника (pk / pb / fresh меняют набор уровней) и дампа без фильтров могут не совпасть; сигнал базы есть и в дампе без фильтров
+            tk = set(zip(tr["sym"].tolist(), tr["sig_ms"].tolist()))
+            # сигналы базы без входа (`entryrej`: вход не состоялся) — тоже строки: заполнение входа — будущее, членство в наборе от него зависеть не должно
+            rj = tw.replace("-trades.csv", "-entryrej.csv")
+            if os.path.exists(rj):
+                er = pacsv.read_csv(rj, convert_options=pacsv.ConvertOptions(include_columns=["sym", "sig_ms"], column_types={"sym": pa.string()})).to_pandas()
+                tk |= set(zip(er["sym"].tolist(), er["sig_ms"].tolist()))
+                stat["sources"].setdefault(src, {})["twin_entryrej"] = int(len(er))
+            hit = np.fromiter(((a, b) in tk for a, b in zip(df["sym"].tolist(), df["sig_ms"].tolist())), dtype=bool, count=len(df)) & inwin
+            bit = 2 if src.startswith("lx") else 1
+            df.loc[hit, "bp"] = bit
+            rows = df[(df["ep"].to_numpy() & inwin) | hit].copy()
+            rows["ep_start"] = rows["ep"].astype(int)
+            rows["base_pass"] = rows["bp"].fillna(0).astype(int)
+            stat["sources"].setdefault(src, {})["twin_trades"] = int(len(tr)); stat["sources"][src]["twin_signals_in_dump"] = int(hit.sum())
         rows["src"] = si
         parts.append(rows[KEEP])
         per[src] = df[["sym", "sig_ms"]]
-        stat["sources"][src] = {"signals": int(len(df)), "signals_win": int(inwin.sum()), "levels": int(df.groupby(["sym", "level"]).ngroups), "episodes_win": int(len(rows))}
+        stat["sources"].setdefault(src, {}).update({"signals": int(len(df)), "signals_win": int(inwin.sum()), "levels": int(df.groupby(["sym", "level"]).ngroups), "rows_win": int(len(rows))})
     allr = pa.concat_tables([pa.Table.from_pandas(p, preserve_index=False) for p in parts]).to_pandas()
     # дедупликация: одна строка на (sym, sig_ms, level_px_e8); метка — по первому источнику; маска — все источники
     allr["bit"] = np.left_shift(1, allr["src"].to_numpy(dtype=np.int64))
     g = allr.groupby(["sym", "sig_ms", "level_px_e8"], sort=False)
     first = g["src"].idxmin()
     mask = g["bit"].sum()
+    eps = g["ep_start"].max()
+    bpm = g["base_pass"].max()
     rows = allr.loc[first.to_numpy()].reset_index(drop=True)
     rows["mask"] = mask.to_numpy()
+    rows["ep_start"] = eps.to_numpy()
+    rows["base_pass"] = bpm.to_numpy()
     rows["abs_ms"] = rows["sig_ms"].astype(np.int64) + w.t0_ms
     rows["side"] = side
     rows["win"] = win
@@ -106,8 +133,14 @@ def main():
     b.add_argument("--out", required=True)
     b.add_argument("--gap-min", type=int, default=60)
     b.add_argument("--sources")
+    b.add_argument("--twin", help="каталог twin-<окно>/out с L_ind / S_ind / D_ind (tk671_twin.sh): добавка строк-сигналов базы")
     a = ap.parse_args()
-    s = build(a.side, a.win, a.dumps, a.out, a.gap_min, a.sources.split(",") if a.sources else None)
+    tw = None
+    if a.twin:
+        tw = {"p60n2": os.path.join(a.twin, "L_ind" if a.side == "long" else "S_ind", f"{a.side}-trades.csv")}
+        if a.side == "short":
+            tw["lxD"] = os.path.join(a.twin, "D_ind", "short-trades.csv")
+    s = build(a.side, a.win, a.dumps, a.out, a.gap_min, a.sources.split(",") if a.sources else None, tw)
     print(json.dumps({k: v for k, v in s.items() if k != "sources"}, ensure_ascii=False))
 
 
