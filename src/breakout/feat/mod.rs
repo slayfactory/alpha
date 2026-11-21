@@ -11,6 +11,7 @@ pub mod io;
 pub mod npcompat;
 pub mod pdcompat;
 pub mod tcount;
+pub mod tox;
 pub mod trades;
 pub mod tsize;
 
@@ -20,5 +21,7 @@ mod f12_tests;
 mod tcount_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tox_tests;
 #[cfg(test)]
 mod tsize_tests;

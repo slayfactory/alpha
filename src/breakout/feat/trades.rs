@@ -29,6 +29,29 @@ pub struct DayTrades {
     pub unsorted: bool,
 }
 
+/// Сутки сделок с ценой записи (TK-671, `tox`): то же, что `DayTrades`, плюс `p` — цена `f64` (`v = p · quantity`; Python `read_trades_day_p`).
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct DayTradesP {
+    pub t: Vec<i64>,
+    /// Цена записи (десятичная запись → `f64`, как pandas).
+    pub p: Vec<f64>,
+    pub v: Vec<f64>,
+    pub buy: Vec<bool>,
+    pub unsorted: bool,
+}
+
+impl DayTradesP {
+    /// Без цены — для потребителей `DaySrc::day`.
+    pub fn into_plain(self) -> DayTrades {
+        DayTrades {
+            t: self.t,
+            v: self.v,
+            buy: self.buy,
+            unsorted: self.unsorted,
+        }
+    }
+}
+
 /// Что потребителю гистограммы нужно знать о сутках кроме самой гистограммы.
 #[derive(Debug, Clone, Copy)]
 pub struct HistDay {
@@ -41,6 +64,11 @@ pub struct HistDay {
 /// Источник суточных файлов сделок: `None` — файла нет.
 pub trait DaySrc: Sync {
     fn day(&self, sym: &str, abs_day: i64) -> Result<Option<DayTrades>>;
+
+    /// Сутки с ценой записи (`tox`, TK-671); источник без цены — ошибка.
+    fn day_p(&self, _sym: &str, _abs_day: i64) -> Result<Option<DayTradesP>> {
+        bail!("источник суток не отдаёт цену записей")
+    }
 
     /// Сутки только в часовую гистограмму `log10 v` (`h` — `24·NB` нулей на входе); `None` — файла нет. Результат тот же, что у
     /// `day` + `hist_add_day`; источник вправе обойтись без массивов записей.
@@ -70,8 +98,14 @@ pub struct ZipDaySrc {
     pub roots: Vec<PathBuf>,
 }
 
-impl DaySrc for ZipDaySrc {
-    fn day(&self, sym: &str, abs_day: i64) -> Result<Option<DayTrades>> {
+impl ZipDaySrc {
+    /// Первый существующий zip суток → `parse` (разбор CSV из `unzip -p`); `None` — файла нет.
+    fn load<T>(
+        &self,
+        sym: &str,
+        abs_day: i64,
+        parse: impl FnOnce(BufReader<std::process::ChildStdout>) -> Result<T>,
+    ) -> Result<Option<T>> {
         let name = format!("{sym}-aggTrades-{}", date_str(abs_day));
         for root in &self.roots {
             let path = root.join(sym).join(format!("{name}.zip"));
@@ -87,7 +121,7 @@ impl DaySrc for ZipDaySrc {
                 .spawn()
                 .with_context(|| format!("unzip {}", path.display()))?;
             let out = child.stdout.take().context("unzip: нет stdout")?;
-            let parsed = parse_trades_csv(BufReader::with_capacity(1 << 20, out));
+            let parsed = parse(BufReader::with_capacity(1 << 20, out));
             let status = child.wait()?;
             let d = parsed.with_context(|| path.display().to_string())?;
             if !status.success() {
@@ -96,6 +130,16 @@ impl DaySrc for ZipDaySrc {
             return Ok(Some(d));
         }
         Ok(None)
+    }
+}
+
+impl DaySrc for ZipDaySrc {
+    fn day(&self, sym: &str, abs_day: i64) -> Result<Option<DayTrades>> {
+        self.load(sym, abs_day, parse_trades_csv)
+    }
+
+    fn day_p(&self, sym: &str, abs_day: i64) -> Result<Option<DayTradesP>> {
+        self.load(sym, abs_day, parse_trades_csv_p)
     }
 }
 
@@ -174,6 +218,38 @@ pub(super) fn from_store(d: &StoredDay, abs_day: i64) -> Option<DayTrades> {
     })
 }
 
+/// `from_store` с ценой записи: `p = px / 1e8` (одно деление `f64`, то же значение, что в `v = p · q`).
+pub(super) fn from_store_p(d: &StoredDay, abs_day: i64) -> Option<DayTradesP> {
+    let n = d.ticks.len();
+    if d.flags != 0 || d.stat.out_of_day != 0 || d.stat.bad_rows != 0 || d.qty.len() != n {
+        return None;
+    }
+    let base = abs_day * DAY_MS;
+    let p10 = if n == 0 {
+        1.0
+    } else {
+        QTY_P10[usize::from(d.qty_dec)]
+    };
+    Some(DayTradesP {
+        t: d.ticks.iter().map(|tk| base + i64::from(tk.off)).collect(),
+        p: d.ticks.iter().map(|tk| tk.px as f64 / 1e8).collect(),
+        v: d.ticks
+            .iter()
+            .zip(&d.qty)
+            .map(|(tk, &q)| (tk.px as f64 / 1e8) * (q as f64 / p10))
+            .collect(),
+        buy: d.ticks.iter().map(|tk| !tk.bm).collect(),
+        unsorted: d.stat.unsorted_files > 0,
+    })
+}
+
+fn same_day_p(a: &DayTradesP, b: &DayTradesP) -> bool {
+    let bits = |x: &[f64], y: &[f64]| {
+        x.len() == y.len() && x.iter().zip(y).all(|(u, w)| u.to_bits() == w.to_bits())
+    };
+    a.t == b.t && a.buy == b.buy && a.unsorted == b.unsorted && bits(&a.p, &b.p) && bits(&a.v, &b.v)
+}
+
 /// `10^k`, `k ≤ 18`, — как `POW10` склада (`DayTrades::qty_f64`).
 const QTY_P10: [f64; 19] = [
     1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16,
@@ -228,6 +304,34 @@ impl DaySrc for StoreDaySrc {
         day_hist_via_day(self, sym, abs_day, h)
     }
 
+    /// `day` с ценой записи: те же правила склада / отступлений / сверки.
+    fn day_p(&self, sym: &str, abs_day: i64) -> Result<Option<DayTradesP>> {
+        let idx = abs_day - self.day0;
+        if idx < 0 {
+            return self.exact.day_p(sym, abs_day);
+        }
+        for z in &self.srcs {
+            let Some(stored) = z.read_day(sym, idx as usize)? else {
+                continue;
+            };
+            let Some(got) = from_store_p(&stored, abs_day) else {
+                self.fallback.fetch_add(1, Ordering::Relaxed);
+                return self.exact.day_p(sym, abs_day);
+            };
+            if self.verify {
+                let want = self.exact.day_p(sym, abs_day)?;
+                if !want.as_ref().is_some_and(|w| same_day_p(w, &got)) {
+                    if self.mismatch.fetch_add(1, Ordering::Relaxed) < 5 {
+                        eprintln!("склад ≠ zip: {sym} {}", date_str(abs_day));
+                    }
+                    return Ok(want);
+                }
+            }
+            return Ok(Some(got));
+        }
+        Ok(None)
+    }
+
     fn day(&self, sym: &str, abs_day: i64) -> Result<Option<DayTrades>> {
         let idx = abs_day - self.day0;
         if idx < 0 {
@@ -268,10 +372,15 @@ fn is_true(b: &[u8]) -> bool {
 }
 
 /// CSV суток (`agg_trade_id,price,quantity,first_trade_id,last_trade_id,transact_time,is_buyer_maker`) → сделки.
-pub fn parse_trades_csv(mut rd: impl BufRead) -> Result<DayTrades> {
+pub fn parse_trades_csv(rd: impl BufRead) -> Result<DayTrades> {
+    Ok(parse_trades_csv_p(rd)?.into_plain())
+}
+
+/// `parse_trades_csv` с ценой записи (`tk600_feat.read_trades_day_p`): та же сортировка при убывании времени, `v = price · quantity`.
+pub fn parse_trades_csv_p(mut rd: impl BufRead) -> Result<DayTradesP> {
     let mut line = Vec::with_capacity(256);
     if rd.read_until(b'\n', &mut line)? == 0 {
-        return Ok(DayTrades::default());
+        return Ok(DayTradesP::default());
     }
     let head: Vec<&[u8]> = trim_eol(&line).split(|&c| c == b',').collect();
     let (ip, iq, it, ib) = (
@@ -281,7 +390,7 @@ pub fn parse_trades_csv(mut rd: impl BufRead) -> Result<DayTrades> {
         find_col(&head, "is_buyer_maker")?,
     );
     let need = ip.max(iq).max(it).max(ib) + 1;
-    let mut d = DayTrades::default();
+    let mut d = DayTradesP::default();
     loop {
         line.clear();
         if rd.read_until(b'\n', &mut line)? == 0 {
@@ -309,13 +418,16 @@ pub fn parse_trades_csv(mut rd: impl BufRead) -> Result<DayTrades> {
             bail!("строка с {cnt} полями: {:?}", String::from_utf8_lossy(l));
         }
         d.t.push(parse_i64(t)?);
-        d.v.push(parse_f64(p)? * parse_f64(q)?);
+        let price = parse_f64(p)?;
+        d.p.push(price);
+        d.v.push(price * parse_f64(q)?);
         d.buy.push(!is_true(b));
     }
     if d.t.len() > 1 && d.t.windows(2).any(|w| w[1] < w[0]) {
         let mut ord: Vec<usize> = (0..d.t.len()).collect();
         ord.sort_by_key(|&i| d.t[i]);
         d.t = ord.iter().map(|&i| d.t[i]).collect();
+        d.p = ord.iter().map(|&i| d.p[i]).collect();
         d.v = ord.iter().map(|&i| d.v[i]).collect();
         d.buy = ord.iter().map(|&i| d.buy[i]).collect();
         d.unsorted = true;

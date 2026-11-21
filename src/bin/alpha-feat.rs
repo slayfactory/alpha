@@ -11,6 +11,7 @@ use alpha::breakout::feat::f12::{self, F12Cfg, StorePxSrc, ZipPxSrc};
 use alpha::breakout::feat::io::{run, Cfg, Mode, StoreCfg};
 use alpha::breakout::feat::pdcompat::parse_date;
 use alpha::breakout::feat::tcount::{self, TcCfg};
+use alpha::breakout::feat::tox::{self, ToxCfg};
 use alpha::breakout::feat::trades::{StoreDaySrc, ZipDaySrc};
 use alpha::breakout::feat::tsize::{self, TsCfg};
 use alpha::breakout::store::{StoreOpts, TickStore};
@@ -41,6 +42,35 @@ enum Cmd {
     Tcount(TcOpts),
     /// число сделок и оборот монеты за 1 / 6 / 12 / 24 ч до минуты сигнала (TK-639)
     Tsize(TcOpts),
+    /// токсичный поток TOX13 по aggTrades до σ (TK-671; порт `tk600_feat.py tox`)
+    Tox(ToxOpts),
+}
+
+#[derive(Args)]
+struct ToxOpts {
+    /// CSV со столбцами `sym`, `sig_ms` и необязательным `side` (long|short)
+    #[arg(long)]
+    eps: PathBuf,
+    /// CSV результата: `sym,sig_ms,<13 TOX>`
+    #[arg(long)]
+    out: PathBuf,
+    /// дата, от которой отсчитан sig_ms (UTC)
+    #[arg(long, default_value = "2026-09-01")]
+    base_date: String,
+    #[arg(long, default_value_t = 4)]
+    threads: usize,
+    /// только эти монеты (через запятую)
+    #[arg(long)]
+    coins: Option<String>,
+    /// корни aggTrades через `:` (по умолчанию SIGFEAT_TRADES или /data/aggtrades/binance)
+    #[arg(long)]
+    trades: Option<String>,
+    /// склад суток TK-607: только чтение
+    #[arg(long)]
+    store: Option<PathBuf>,
+    /// сторона, если во входе нет столбца `side`: long | short
+    #[arg(long, default_value = "long")]
+    side: String,
 }
 
 #[derive(Args)]
@@ -283,6 +313,46 @@ fn run_tsize(o: TcOpts) -> Result<()> {
     Ok(())
 }
 
+fn run_tox(o: ToxOpts) -> Result<()> {
+    let roots: Vec<PathBuf> = o
+        .trades
+        .unwrap_or_else(|| env_or("SIGFEAT_TRADES", "/data/aggtrades/binance"))
+        .split(':')
+        .map(PathBuf::from)
+        .collect();
+    let cfg = ToxCfg {
+        eps: o.eps,
+        out: o.out,
+        base_date: o.base_date,
+        threads: o.threads,
+        coins: o
+            .coins
+            .filter(|c| !c.is_empty())
+            .map(|c| c.split(',').map(str::to_string).collect()),
+        side: if o.side == "long" { 1 } else { -1 },
+    };
+    let rows = tox::read_input(&cfg)?;
+    let Some(dir) = o.store else {
+        let src = ZipDaySrc { roots };
+        println!("{}", tox::run(&cfg, &rows, &src)?.json());
+        return Ok(());
+    };
+    let st = Arc::new(TickStore::open(&StoreOpts {
+        dir,
+        cap_gb: 0,
+        min_free_gb: 0,
+    })?);
+    let src = StoreDaySrc::new(&roots, &st, tox::first_day(&cfg, &rows)?, false)?;
+    let sum = tox::run(&cfg, &rows, &src)?;
+    eprintln!(
+        "склад: {} суток из zip по отступлениям; {}",
+        src.fallback.load(Ordering::Relaxed),
+        st.summary()
+    );
+    println!("{}", sum.json());
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let (mode, o) = match Cli::parse().cmd {
         Cmd::Flow(o) => (Mode::Flow, o),
@@ -291,6 +361,7 @@ fn main() -> Result<()> {
         Cmd::F12(o) => return run_f12(o),
         Cmd::Tcount(o) => return run_tcount(o),
         Cmd::Tsize(o) => return run_tsize(o),
+        Cmd::Tox(o) => return run_tox(o),
     };
     let trades = o
         .trades

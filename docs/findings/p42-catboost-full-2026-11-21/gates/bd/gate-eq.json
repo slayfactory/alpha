@@ -1,0 +1,239 @@
+{
+ "wb-long": {
+  "rows": 500,
+  "defined": 373,
+  "sec_new": 13.61,
+  "sec_orig": 37.56,
+  "cols": {
+   "bd_imb02": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_imb1": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_imb2": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_thin5": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_thin30": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_depth_turn": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_age_s": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   }
+  },
+  "union_original_differs_rows": 0,
+  "union_original_differs_by_col": {
+   "bd_imb02": 0,
+   "bd_imb1": 0,
+   "bd_imb2": 0,
+   "bd_thin5": 0,
+   "bd_thin30": 0,
+   "bd_depth_turn": 0,
+   "bd_age_s": 0
+  },
+  "bd_mode_vs_day_label": {
+   "rows_both": 373,
+   "differs": 62,
+   "nan_pattern_differs": 0
+  }
+ },
+ "wb-short": {
+  "rows": 500,
+  "defined": 371,
+  "sec_new": 12.58,
+  "sec_orig": 32.31,
+  "cols": {
+   "bd_imb02": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_imb1": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_imb2": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_thin5": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_thin30": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_depth_turn": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_age_s": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   }
+  },
+  "union_original_differs_rows": 0,
+  "union_original_differs_by_col": {
+   "bd_imb02": 0,
+   "bd_imb1": 0,
+   "bd_imb2": 0,
+   "bd_thin5": 0,
+   "bd_thin30": 0,
+   "bd_depth_turn": 0,
+   "bd_age_s": 0
+  },
+  "bd_mode_vs_day_label": {
+   "rows_both": 371,
+   "differs": 53,
+   "nan_pattern_differs": 0
+  }
+ },
+ "wc-long": {
+  "rows": 500,
+  "defined": 208,
+  "sec_new": 8.04,
+  "sec_orig": 16.39,
+  "cols": {
+   "bd_imb02": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_imb1": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_imb2": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_thin5": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_thin30": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_depth_turn": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_age_s": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   }
+  },
+  "union_original_differs_rows": 1,
+  "union_original_differs_by_col": {
+   "bd_imb02": 0,
+   "bd_imb1": 0,
+   "bd_imb2": 0,
+   "bd_thin5": 0,
+   "bd_thin30": 1,
+   "bd_depth_turn": 0,
+   "bd_age_s": 0
+  },
+  "bd_mode_vs_day_label": {
+   "rows_both": 208,
+   "differs": 27,
+   "nan_pattern_differs": 0
+  }
+ },
+ "wc-short": {
+  "rows": 500,
+  "defined": 178,
+  "sec_new": 9.11,
+  "sec_orig": 14.88,
+  "cols": {
+   "bd_imb02": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_imb1": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_imb2": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_thin5": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_thin30": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_depth_turn": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   },
+   "bd_age_s": {
+    "bad": 0,
+    "max_rel": 0.0,
+    "nan_ok": true
+   }
+  },
+  "union_original_differs_rows": 0,
+  "union_original_differs_by_col": {
+   "bd_imb02": 0,
+   "bd_imb1": 0,
+   "bd_imb2": 0,
+   "bd_thin5": 0,
+   "bd_thin30": 0,
+   "bd_depth_turn": 0,
+   "bd_age_s": 0
+  },
+  "bd_mode_vs_day_label": {
+   "rows_both": 178,
+   "differs": 25,
+   "nan_pattern_differs": 0
+  }
+ },
+ "total_rows": 2000,
+ "total_defined": 1130,
+ "total_bad": 0,
+ "total_union_differs": 1,
+ "ok": true
+}

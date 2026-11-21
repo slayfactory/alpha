@@ -1,0 +1,45 @@
+{
+ "catboost_version": "1.2.10",
+ "constants_dropped": [
+  "rules_side",
+  "emp2h",
+  "m60"
+ ],
+ "data_file": "long.parquet",
+ "data_sha256": "e032172f9485266394d5281192203c0ef943fcfd4b2bd796dfafdd796897f6fb",
+ "data_size_bytes": 434486050,
+ "feature_list_sha256": "390a9b2e411dd275ad9c9f2410a400910328b31540d28b67ac0f36b9e3ee444c",
+ "grid": [
+  100,
+  200,
+  400,
+  800
+ ],
+ "n_features": 303,
+ "n_train": 104231,
+ "n_train_used": 104231,
+ "n_val": 45139,
+ "nstar": 100,
+ "params": {
+  "allow_writing_files": false,
+  "border_count": 128,
+  "depth": 6,
+  "iterations": 800,
+  "l2_leaf_reg": 3,
+  "learning_rate": 0.05,
+  "loss_function": "RMSE",
+  "random_seed": 671,
+  "verbose": 0
+ },
+ "rmse": {
+  "100": 5.228717932632512,
+  "200": 5.23105570789367,
+  "400": 5.241007742020711,
+  "800": 5.253981782879083
+ },
+ "side": "long",
+ "subsample_fraction": 1.0,
+ "train": "signal 2026-07-01..2026-07-20, exit <= 2026-07-21T00:00Z",
+ "validate": "signal 2026-07-22..2026-07-30",
+ "y_cutoff_ms": 1785542400000
+}

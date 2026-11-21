@@ -1,0 +1,60 @@
+{
+ "side": "short",
+ "cells": {
+  "S_ind": {
+   "twin_trades": 451,
+   "found": 448,
+   "exact": 448,
+   "share_found": 0.993348,
+   "share_exact_of_found": 1.0,
+   "pass": true
+  },
+  "D_ind": {
+   "twin_trades": 1779,
+   "found": 1779,
+   "exact": 1779,
+   "share_found": 1.0,
+   "share_exact_of_found": 1.0,
+   "pass": true
+  }
+ },
+ "missing": [
+  {
+   "twin": "S_ind",
+   "win": "wa",
+   "sym": "BEUSDT",
+   "sig_ms": 5407920042,
+   "level": 30,
+   "entry_px_e8": 21146885100,
+   "rows_same_sym_sig": 0,
+   "rows_labeled": 0,
+   "rows_other_entry": 0,
+   "src_levels": []
+  },
+  {
+   "twin": "S_ind",
+   "win": "wa",
+   "sym": "BEUSDT",
+   "sig_ms": 5407980565,
+   "level": 30,
+   "entry_px_e8": 21146885100,
+   "rows_same_sym_sig": 0,
+   "rows_labeled": 0,
+   "rows_other_entry": 0,
+   "src_levels": []
+  },
+  {
+   "twin": "S_ind",
+   "win": "wc",
+   "sym": "KATUSDT",
+   "sig_ms": 5098726315,
+   "level": 43,
+   "entry_px_e8": 413159,
+   "rows_same_sym_sig": 0,
+   "rows_labeled": 0,
+   "rows_other_entry": 0,
+   "src_levels": []
+  }
+ ],
+ "pass": true
+}
