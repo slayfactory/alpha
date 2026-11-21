@@ -23,6 +23,6 @@ for SRC in "$@"; do
   echo "lab_${SRC} $BASE $EX $SK $SIG" > "$OUT/variants-$SRC.txt"
   S=$(date +%s)
   P42_SIDES=$SIDE P42_T0=$T0 $BIN breakout tick --cache $W/cache --trades $W/aggtrades --variants "$OUT/variants-$SRC.txt" --symbols "$COINS" --out "$OUT/$SRC" \
-    --threads "$THR" --cap-gb 4 --ftab "$LVL/ftab-$SRC.csv" --sig-cache "$OUT/sigcache" $STORE > "$OUT/$SRC.log" 2>&1
+    --threads "$THR" --cap-gb 4 --ftab "$LVL/ftab-$SRC.csv" --sig-cache "/data/p42-tk671/sigcache/$WIN" $STORE > "$OUT/$SRC.log" 2>&1
   echo "$SRC rc=$? sec=$(( $(date +%s) - S ))" | tee -a "$OUT/done.log"
 done
