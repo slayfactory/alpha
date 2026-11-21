@@ -51,18 +51,28 @@ def rust_blocks(win, side, key):
     ek = read_csv(f"{d}/eps-key.csv")
     assert (ek["row_id"].to_numpy() == key["row_id"].to_numpy()).all() or set(ek["row_id"]) == set(key["row_id"])
     out = {}
+    # f12 и all (flow+deriv) идут в порядке выхода f12 (не в порядке eps-key): связь по ключу (sym, sig_ms, цена уровня); `ep_id` файла all = «e<позиция строки f12>»
     f12 = read_csv(f"{d}/f12.csv")
-    assert len(f12) == len(ek) and (f12["sym"].to_numpy() == ek["sym"].to_numpy()).all() and (f12["sig_ms"].to_numpy() == ek["sig_ms"].to_numpy()).all(), "f12: ключи не совпали с eps-key"
+    fk = pd.MultiIndex.from_arrays([f12["sym"], f12["sig_ms"], f12["lp_e8"]])
+    ekm = pd.MultiIndex.from_arrays([ek["sym"], ek["sig_ms"], ek["level_px_e8"]])
+    assert len(f12) == len(ek) and fk.is_unique and ekm.is_unique, "f12: число строк / дубли ключа (sym, sig_ms, lp_e8)"
+    pos = ekm.get_indexer(fk)
+    assert (pos >= 0).all(), "f12: ключ строки не найден среди eps-key"
+    f12_rid = ek["row_id"].to_numpy()[pos]
     cols = list(f12.columns)
-    out["f12"] = f12[cols[cols.index(F12_META_END) + 1:]]
-    out["flow_deriv"] = read_csv(f"{d}/all.csv").drop(columns=["ep_id"])
+    out["f12"] = f12[cols[cols.index(F12_META_END) + 1:]].copy()
+    out["f12"].index = f12_rid
+    al = read_csv(f"{d}/all.csv")
+    ei = al["ep_id"].str.slice(1).astype(np.int64).to_numpy()
+    assert len(al) == len(f12) and (ei == np.arange(len(f12))).all(), "all: ep_id не e0…e(n-1) в порядке f12"
+    al = al.drop(columns=["ep_id"])
+    al.index = f12_rid
+    out["flow_deriv"] = al
     for n in ("tcount", "tsize", "tox"):
         x = read_csv(f"{d}/{n}.csv")
         assert len(x) == len(ek) and (x["sym"].to_numpy() == ek["sym"].to_numpy()).all() and (x["sig_ms"].to_numpy() == ek["sig_ms"].to_numpy()).all(), f"{n}: ключи не совпали с eps-key"
         out[n] = x.drop(columns=["sym", "sig_ms"])
-    for k in out:
-        assert len(out[k]) == len(ek), (k, len(out[k]), len(ek))
-        out[k].index = ek["row_id"].to_numpy()
+        out[n].index = ek["row_id"].to_numpy()
     return out
 
 
@@ -71,6 +81,7 @@ def main():
     ap.add_argument("--win", required=True, choices=("wa", "wb", "wc"))
     ap.add_argument("--side", required=True, choices=("long", "short"))
     ap.add_argument("--out", default="/data/p42-tk671/asm")
+    ap.add_argument("--skip-missing", action="store_true", help="проверочный прогон: семейства без файла пропустить (в рабочем прогоне не использовать)")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     t0 = time.time()
@@ -81,11 +92,15 @@ def main():
     fams = {"rules": rules(rows)}
     fams.update(rust_blocks(a.win, a.side, rows))
     for n in PY_FAMS:
-        f = pd.read_parquet(f"{FAM}/{n}/{a.win}-{a.side}.parquet")
+        pth = f"{FAM}/{n}/{a.win}-{a.side}.parquet"
+        if a.skip_missing and not os.path.exists(pth):
+            print("пропуск семейства (нет файла):", n)
+            continue
+        f = pd.read_parquet(pth)
         if "row_id" in f.columns:
             f = f.set_index("row_id")
         fams[n] = f
-    order = ["rules", "f12", "flow_deriv", "tcount", "tsize", "tox"] + PY_FAMS
+    order = [n for n in ["rules", "f12", "flow_deriv", "tcount", "tsize", "tox"] + PY_FAMS if n in fams]
     cov = dict(win=a.win, side=a.side, rows=len(rows), families={}, dups=[], renamed=[])
     cols, seen = {}, {}
     for n in order:
