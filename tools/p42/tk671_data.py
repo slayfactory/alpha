@@ -95,29 +95,38 @@ def build(side, asm, out):
 
 
 def glab(side, out="/data/p42-tk671/data", twin_root="/data/p42-tk671/gate-pf"):
-    """G-lab: сделка двойника (те же сигнал и вход, другие фильтры источника — не влияют на исход принятого сигнала) = метка строки по ключу (win, sym, sig_ms, entry_px_e8): net, entry_ms, exit_ms, kind совпадают.
-    Печатаются только числа: сколько сделок двойника, найдено среди меток, расхождений по каждому полю."""
-    d = pd.read_parquet(f"{out}/{side}.parquet", columns=["win", "sym", "meta_sig_ms", "y_has", "y_net", "y_entry_ms", "y_exit_ms", "y_entry_px_e8", "y_stop"])
-    d = d[d["y_has"]]
+    """G-lab (определение редакции 2, исправлено 21.11 — см. карточку TK-671 и вердикт критика): сделки двойника баз в зачётном диапазоне окна (`lo_ms <= sig_ms < hi_ms`, как у баз) против меток строк.
+    Ключ строки `(sym, sig_ms, entry_px_e8)` неоднозначен (у строк разных источников/уровней тот же вход), поэтому: «найдено» = у сделки есть хоть одна строка-кандидат с меткой по ключу;
+    «точно» = среди кандидатов есть строка с теми же `net, entry_ms, exit_ms, kind`. Ворота: найдено >= 95 % и точно = 100 % найденных, найдено >= 200 сделок.
+    Печатаются числа и ключи ненайденных сделок (без `net`/`kind`); для каждой — есть ли в окне строка с тем же `(sym, sig_ms)` без метки / с иным входом / вообще нет."""
+    d = pd.read_parquet(f"{out}/{side}.parquet", columns=["win", "sym", "meta_sig_ms", "meta_src", "meta_level", "y_has", "y_net", "y_entry_ms", "y_exit_ms", "y_entry_px_e8", "y_stop"])
     twins = {"long": ["L_ind"], "short": ["S_ind", "D_ind"]}[side]
-    res = {"side": side, "cells": {}}
+    res = {"side": side, "cells": {}, "missing": []}
     ok = True
     for tw in twins:
-        tot = found = bad_net = bad_entry = bad_exit = bad_kind = 0
+        tot = found = exact = 0
         for win, w in WINS.items():
+            lo_ms = (w.lod - w.t0d).days * 86_400_000
+            hi_ms = ((w.hid - w.t0d).days + 1) * 86_400_000
             t = read_trades(f"{twin_root}/{win}/out/{tw}/{side}-trades.csv")
-            lab = d[d["win"] == win]
-            m = t.merge(lab, left_on=["sym", "sig_ms", "entry_px_e8"], right_on=["sym", "meta_sig_ms", "y_entry_px_e8"], how="left", suffixes=("", "_lab"))
-            hit = m["y_has"].notna()
+            t = t[(t["sig_ms"] >= lo_ms) & (t["sig_ms"] < hi_ms)].reset_index(drop=True)
+            lab = d[(d["win"] == win) & d["y_has"]]
+            m = t.reset_index().merge(lab, left_on=["sym", "sig_ms", "entry_px_e8"], right_on=["sym", "meta_sig_ms", "y_entry_px_e8"], how="left")
+            m["found"] = m["y_has"].notna()
+            m["same"] = m["found"] & (np.abs(m["net"] - m["y_net"]) <= 1e-9) & (m["entry_ms"] + w.t0_ms == m["y_entry_ms"]) & (m["exit_ms"] + w.t0_ms == m["y_exit_ms"])                 & ((m["kind"] == "stop").astype(float) == m["y_stop"])
+            g = m.groupby("index").agg(found=("found", "max"), same=("same", "max"))
             tot += len(t)
-            found += int(hit.sum())
-            h = m[hit]
-            bad_net += int((np.abs(h["net"].to_numpy() - h["y_net"].to_numpy()) > 1e-9).sum())
-            bad_entry += int((h["entry_ms"].to_numpy(dtype=np.int64) + w.t0_ms != h["y_entry_ms"].to_numpy(dtype=np.int64)).sum())
-            bad_exit += int((h["exit_ms"].to_numpy(dtype=np.int64) + w.t0_ms != h["y_exit_ms"].to_numpy(dtype=np.int64)).sum())
-            bad_kind += int(((h["kind"].to_numpy() == "stop").astype(float) != h["y_stop"].to_numpy()).sum())
-        c = dict(twin_trades=tot, found=found, share=round(found / tot, 6) if tot else 1.0, bad_net=bad_net, bad_entry=bad_entry, bad_exit=bad_exit, bad_kind=bad_kind)
-        c["pass"] = found >= 200 and bad_net == bad_entry == bad_exit == bad_kind == 0 and found / max(tot, 1) >= 0.95
+            found += int(g["found"].sum())
+            exact += int(g["same"].sum())
+            allrows = d[d["win"] == win]
+            for i in g.index[~g["found"].to_numpy()]:
+                r = t.loc[i]
+                cand = allrows[(allrows["sym"] == r["sym"]) & (allrows["meta_sig_ms"] == r["sig_ms"])]
+                res["missing"].append(dict(twin=tw, win=win, sym=r["sym"], sig_ms=int(r["sig_ms"]), level=int(r["level"]), entry_px_e8=int(r["entry_px_e8"]),
+                                           rows_same_sym_sig=int(len(cand)), rows_labeled=int(cand["y_has"].sum()), rows_other_entry=int((cand["y_entry_px_e8"] != r["entry_px_e8"]).sum()),
+                                           src_levels=[f"{int(a)}:{int(b)}" for a, b in zip(cand["meta_src"], cand["meta_level"])][:6]))
+        c = dict(twin_trades=tot, found=found, exact=exact, share_found=round(found / tot, 6) if tot else 1.0, share_exact_of_found=round(exact / found, 6) if found else 0.0)
+        c["pass"] = bool(found >= 200 and exact == found and found / max(tot, 1) >= 0.95)
         res["cells"][tw] = c
         ok &= c["pass"]
     res["pass"] = bool(ok)
