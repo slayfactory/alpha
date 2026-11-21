@@ -158,6 +158,15 @@ fn write_sigs(
     Ok(())
 }
 
+/// TK-671: `P42_SIDES=long|short` — считать только одну сторону (фаза 1 и фаза 2 пропускают вторую); без переменной — обе, как раньше.
+fn wanted_sides() -> Vec<Side> {
+    match std::env::var("P42_SIDES").as_deref() {
+        Ok("long") => vec![Side::Long],
+        Ok("short") => vec![Side::Short],
+        _ => vec![Side::Long, Side::Short],
+    }
+}
+
 /// `P42_SIGSX=<сутки от>:<сутки до>` (§13.17): по каждому сигналу задания — `<side>-sigsx.csv`: монета, уровень, время сигнала, расстояние,
 /// цена уровня на сигнале, рождение/конец уровня (минуты), бар первого пивота, NATR минуты `t−1` (×1e8), члены версии уровня на сигнале (`бар:цена|…`).
 pub(super) fn write_sigsx(
@@ -479,8 +488,9 @@ pub fn run(
     // задания фазы 1: различные (SigCfg, сторона)
     let mut job_idx: HashMap<(SigCfg, Side), usize> = HashMap::new();
     let mut jobs: Vec<(SigCfg, Side)> = Vec::new();
+    let sides = wanted_sides();
     for (_, p) in &vs {
-        for side in [Side::Long, Side::Short] {
+        for &side in &sides {
             let k = (p.sig.clone(), side);
             if !job_idx.contains_key(&k) {
                 job_idx.insert(k.clone(), jobs.len());
@@ -591,7 +601,7 @@ pub fn run(
     }
     // фаза 2: портфель и исходы — задания (вариант, сторона) параллельно
     let tasks: Vec<(usize, Side)> = (0..vs.len())
-        .flat_map(|i| [(i, Side::Long), (i, Side::Short)])
+        .flat_map(|i| sides.iter().map(move |&sd| (i, sd)))
         .collect();
     let done = std::sync::atomic::AtomicUsize::new(0);
     let total = tasks.len();
