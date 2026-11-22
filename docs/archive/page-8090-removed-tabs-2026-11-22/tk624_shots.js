@@ -148,7 +148,7 @@ const base = url.split('#')[0];
   fs.writeFileSync(`${out}/dom_bases.json`, JSON.stringify(bdom));
 
   // ── хеши
-  for (const h of ['#equity/both/bases', '#equity/long/bases', '#equity/short', '#equity/short/where', '#progress']) {
+  for (const h of ['#equity/both/bases', '#equity/long/bases', '#equity/short/curve', '#equity/short/where', '#progress']) {
     await page.goto(base + h, {waitUntil: 'load'});
     if (h.endsWith('bases')) await page.waitForSelector('.eq-card[data-bases]');
     if (h.endsWith('where')) await page.waitForSelector('#where .wh-box');

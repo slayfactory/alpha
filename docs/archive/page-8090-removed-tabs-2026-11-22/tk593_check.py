@@ -634,7 +634,7 @@ if os.path.exists(shp):
         eq("форма: возврат к кривой", rep["shape"]["back_to_curve"], "true")
         eq("форма: хеш #equity/long/shape", f'{rep["hash"]["#equity/long/shape"]["eq"]}|{rep["hash"]["#equity/long/shape"]["view"]}', "long|shape")
         eq("форма: хеш #equity/shape — подвид (сторона остаётся прежней при переходе по хешу)", rep["hash"]["#equity/shape"]["view"], "shape")
-        eq("форма: хеш #equity/long — кривая", rep["hash"]["#equity/long"]["view"], "curve")
+        eq("форма: хеш #equity/long/curve — кривая", rep["hash"]["#equity/long/curve"]["view"], "curve")
 else:
     bad.append(("нет dom_shape.json", None, None))
 
