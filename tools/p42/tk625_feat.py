@@ -197,10 +197,10 @@ class History:
 D17 = int(datetime.datetime(2026, 6, 17, tzinfo=datetime.timezone.utc).timestamp() * 1000) // DAY_MS
 
 
-def features(hist, sym, t_ms):
-    """{(m, D): (n_ok, n_fail, n_stall, valid)} на кандидатах."""
+def features(hist, sym, t_ms, ds=DS):
+    """{(m, D): (n_ok, n_fail, n_stall, valid)} на кандидатах; `ds` — окна D, суток (по умолчанию DS; TK-680: ещё 3 и 5, D ≥ 1 — условие `Counter.count`)."""
     out = {}
-    for d in DS:
+    for d in ds:
         v = hist.valid(sym, t_ms, d)
         for m in MS_NAMES:
             o, f, s = hist.counts(sym, t_ms, d, m)

@@ -15,11 +15,13 @@ python -c "import json,sys; json.load(open('ml_features.json', encoding='utf-8')
 tar -c ml_progress.schema.json ml_features.schema.json tk593_page.py tk593_template.html tk684_fan.js | ssh "${KEY[@]}" "$HOST" 'tar -x -C /data/pages/_src'
 tar -c tk684_equity.py tk684_metrics.py tk684_variants.json tk684_fan.py | ssh "${KEY[@]}" "$HOST" 'mkdir -p /data/p42-tk624/code && tar -x -C /data/p42-tk624/code'
 scp "${KEY[@]}" -q ml_progress.json "$HOST:/data/pages/ml/data/progress.json"
-# TK-684: не затирать опись признаков, выложенную из другой ветки и более новую (22.11: выкладка из ветки без TK-681 откатила вкладку «Признаки») — сравниваем наибольший № признака
-FT_N='import json,sys; print(max(x["n"] for s in json.load(open(sys.argv[1], encoding="utf-8"))["sets"] for g in s["groups"] for x in g["features"]))'
-LIVE_N=$(ssh "${KEY[@]}" "$HOST" "/opt/venv/bin/python -c '$FT_N' /data/pages/ml/data/features.json" 2>/dev/null || echo 0)
-LOCAL_N=$(python -c "$FT_N" ml_features.json)
-if [ "${LIVE_N:-0}" -gt "$LOCAL_N" ]; then echo "ml_features.json: на srv опись новее (№ до $LIVE_N, здесь до $LOCAL_N) — не заливаю, вкладка «Признаки» остаётся как есть"
+# TK-684 / TK-680: не затирать опись признаков, выложенную из другой ветки и более новую (22.11: выкладка из ветки без TK-681 откатила вкладку «Признаки»;
+# охрана по наибольшему № не ловила ветку с пропуском № 252–307) — заливаем, только если все имена живого файла есть в локальном
+FT_NAMES='import json,sys; print(" ".join(x["name"] for s in json.load(open(sys.argv[1], encoding="utf-8"))["sets"] for g in s["groups"] for x in g["features"]))'
+LIVE_NAMES=$(ssh "${KEY[@]}" "$HOST" "/opt/venv/bin/python -c '$FT_NAMES' /data/pages/ml/data/features.json" 2>/dev/null || echo "")
+LOCAL_NAMES=$(python -c "$FT_NAMES" ml_features.json)
+MISSING=$(python -c "import sys; print(' '.join(sorted(set(sys.argv[1].split()) - set(sys.argv[2].split()))))" "$LIVE_NAMES" "$LOCAL_NAMES")
+if [ -n "$MISSING" ]; then echo "ml_features.json: на srv есть признаки, которых нет здесь ($(echo $MISSING | wc -w): $(echo $MISSING | cut -c1-80)…) — не заливаю, вкладка «Признаки» остаётся как есть"
 else scp "${KEY[@]}" -q ml_features.json "$HOST:/data/pages/ml/data/features.json"; fi
 ssh "${KEY[@]}" "$HOST" "REBUILD_FAN=${REBUILD_FAN:-0} bash -s" <<'REMOTE'
 set -e

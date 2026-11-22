@@ -1,0 +1,160 @@
+{
+ "uni": "c539",
+ "step": "2 (t681, e1t, split-entry w2; binary alpha-tk688-plain.c06f6674)",
+ "entry": "L-342",
+ "anchors": "L-334",
+ "sets": {
+  "t681": {
+   "L": [],
+   "S": [
+    {
+     "axis": "sac10.le",
+     "kind": "col",
+     "winner_label": "q80",
+     "winner_cid": "s4+sac10.le_q80",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=sac10<=0.67",
+     "sharpe": 5.318,
+     "gain": 1.683,
+     "n": 151,
+     "usd": 166.7
+    },
+    {
+     "axis": "natr_p",
+     "kind": "key",
+     "winner_label": "5",
+     "winner_cid": "natr_p5+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 natr_p=5 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 4.893,
+     "gain": 1.258,
+     "n": 367,
+     "usd": 233.0
+    },
+    {
+     "axis": "accdv1_300.le",
+     "kind": "col",
+     "winner_label": "q80",
+     "winner_cid": "s4+accdv1_300.le_q80",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=accdv1_300<=6.2",
+     "sharpe": 4.789,
+     "gain": 1.155,
+     "n": 118,
+     "usd": 142.2
+    },
+    {
+     "axis": "sac60.le",
+     "kind": "col",
+     "winner_label": "q80",
+     "winner_cid": "s4+sac60.le_q80",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=sac60<=0.69",
+     "sharpe": 4.736,
+     "gain": 1.102,
+     "n": 145,
+     "usd": 147.2
+    },
+    {
+     "axis": "nf7",
+     "kind": "key",
+     "winner_label": "n0.4",
+     "winner_cid": "natr_min1.49+nf7+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 natr_min=1.49 nf=7 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 4.519,
+     "gain": 0.884,
+     "n": 204,
+     "usd": 182.3
+    },
+    {
+     "axis": "nf1",
+     "kind": "key",
+     "winner_label": "n0.6",
+     "winner_cid": "natr_min0.6+nf1+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 natr_min=0.6 nf=1 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 4.515,
+     "gain": 0.88,
+     "n": 133,
+     "usd": 138.0
+    },
+    {
+     "axis": "ev7",
+     "kind": "key",
+     "winner_label": "x0.5",
+     "winner_cid": "ea0.104+ev7+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ea=0.104 ev=7 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 4.42,
+     "gain": 0.786,
+     "n": 181,
+     "usd": 165.6
+    },
+    {
+     "axis": "ev8",
+     "kind": "key",
+     "winner_label": "x0.5",
+     "winner_cid": "ea0.07+ev8+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ea=0.07 ev=8 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 4.361,
+     "gain": 0.727,
+     "n": 174,
+     "usd": 163.4
+    },
+    {
+     "axis": "nf2",
+     "kind": "key",
+     "winner_label": "n0.4",
+     "winner_cid": "natr_min0.4+nf2+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 nf=2 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 3.923,
+     "gain": 0.289,
+     "n": 232,
+     "usd": 167.8
+    },
+    {
+     "axis": "ev4",
+     "kind": "key",
+     "winner_label": "x0.5",
+     "winner_cid": "ea0.391+ev4+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ea=0.391 ev=4 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 3.65,
+     "gain": 0.016,
+     "n": 178,
+     "usd": 136.0
+    }
+   ]
+  },
+  "new": {
+   "L": [],
+   "S": []
+  }
+ },
+ "counts": {
+  "t681-L": {
+   "active": 0,
+   "axes": 122
+  },
+  "t681-S": {
+   "active": 10,
+   "axes": 122
+  },
+  "new-L": {
+   "active": 0,
+   "axes": 2
+  },
+  "new-S": {
+   "active": 0,
+   "axes": 2
+  }
+ },
+ "distinct_active_axes": {
+  "L": [],
+  "S": [
+   "accdv1_300.le",
+   "ev4",
+   "ev7",
+   "ev8",
+   "natr_p",
+   "nf1",
+   "nf2",
+   "nf7",
+   "sac10.le",
+   "sac60.le"
+  ]
+ }
+}

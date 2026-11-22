@@ -35,8 +35,9 @@ SIDES = ax.SIDES
 ENGNAME = {"L": "long", "S": "short"}
 CMP_FILES = ("trades.csv", "daily.csv", "coinday.csv", "entryrej.csv")
 say = t.say
-LEVEL = int(os.environ.get("TK674_LEVEL", "2"))  # уровень карты: 2 — пары; 3, 4 — тройки, четвёрки (клетки уровня — `tk674_level.py select`)
-FSUF = str(LEVEL) if LEVEL > 2 else ""          # таблица составных фильтров уровня (ftab674<FSUF>)
+LEVEL = int(os.environ.get("TK674_LEVEL", "2"))  # уровень карты: 2 — пары; 3, 4 — тройки, четвёрки (клетки уровня — `tk674_level.py select`); 1 — единички TK-680 (`tk680_singles.py select`)
+AUTHOR = os.environ.get("TK674_AUTHOR", "TK-674")
+FSUF = str(LEVEL) if LEVEL != 2 else ""          # таблица составных фильтров уровня (ftab674<FSUF>)
 SUF = ax.SUF2 + FSUF         # файлы плана / партий / карты при базе стопа ≤ 4 % (поправка §13.73.2) и уровня — рядом с прежними
 
 
@@ -167,10 +168,16 @@ def cmd_gates(a):
 
 
 # ---- константы этапа 1 ------------------------------------------------------------------------------------------------------------
-UNI, WIN = "h775", "01.07–13.11"
+UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"      # TK674_UNI=c539 — вселенная без TradFi (§13.73.17), клетки в БД под своим именем вселенной
 SIDENAME = {"L": "long", "S": "short"}
 VMAX, SIGMAX = 400, 26                          # вариантов и разных проходов сигналов на вызов движка (память: 26 проходов ≈ 30 ГБ при двух сторонах)
 MIN_N, MIN_MONTH = 150, (15, 15, 15, 15, 8)     # охрана (а) §13.73
+GUARD_A_C539 = {"long": (105, (11, 11, 11, 11, 6)), "short": (81, (9, 9, 9, 9, 5))}      # охрана (а) на c539: формула PS-975 разд. 3 от якорей L-334 (298 / 172 против 428 / 319), числа записаны L-335
+
+
+def guard_a(side_name):
+    """Порог охраны (а) стороны: (n, по месяцам). На c539 — масштабированный по якорям (L-335), иначе §13.73 без изменений."""
+    return GUARD_A_C539[side_name] if UNI == "c539" else (MIN_N, MIN_MONTH)
 FEAT_COLS = ("tpm60", "cons60", "zv6h", "mv5", "n24", "m24")
 
 
@@ -195,9 +202,17 @@ def one_side_env(side):
 
 
 # ---- признаки и пороги (без P&L) --------------------------------------------------------------------------------------------------
-def _pass(feat, x, tab):
-    """Клетка оставляет кандидата: признак ≤ порога (≥ для n24), «определён и не проходит» — исключён, пусто проходит (как tk654 `_bad`)."""
+def _pass(feat, x, tab, op=None):
+    """Клетка оставляет кандидата: признак ≤ порога (≥ для n24), «определён и не проходит» — исключён, пусто проходит (как tk654 `_bad`).
+    Единички TK-680 (LEVEL = 1): любой столбец таблицы и оба знака — по знаку смысла фильтра (`op`), правило то же."""
     with np.errstate(invalid="ignore"):
+        if LEVEL == 1:
+            v = np.where(tab["m24"].astype(bool), np.nan, tab["n24"]) if feat == "n24" else tab[feat]
+            if op == "<=":
+                return ~(np.isfinite(v) & ~(v <= x))
+            if op == ">=":
+                return ~(np.isfinite(v) & ~(v >= x))
+            raise SystemExit("знак %s у признака %s" % (op, feat))
         if feat in ("tpm60", "cons60", "zv6h"):
             v = tab[feat]
             return ~(np.isfinite(v) & ~(v <= x))
@@ -244,6 +259,9 @@ def feat_tabs(side, st, u, eps):
     import tk654_run as r54
     hist = tf.episode_history(eps, tf.SIDE_NAME[side])
     tabs = {w.name: r54.load_window(w, side, hist) for w in st.TRADE_WINDOWS}
+    if u.name == "c539":                            # §13.73.17: таблицы признаков построены по базе h775; строки крипто-кандидатов — её подмножество (проверяет G-key: no_key = 0)
+        import tk625_run as r5
+        u = r5.Uni("h775")
     for w in st.TRADE_WINDOWS:
         t38 = t8.load_window(u, w, side)
         if list(t38["sym"]) != list(tabs[w.name]["sym"]) or not np.array_equal(t38["ms"], tabs[w.name]["ms"]):
@@ -251,6 +269,9 @@ def feat_tabs(side, st, u, eps):
         tabs[w.name]["n24"], tabs[w.name]["m24"] = t38["n24"], t38["m24"]
     if any(tabs[w]["gkey_mv5_bad"] for w in tabs):
         raise SystemExit("G-key %s: mv5 эпизодов ≠ таблице TK-634" % side)
+    if LEVEL == 1:                                  # единички TK-680: столбцы таблицы TK-671 к тем же строкам кандидатов
+        import tk680_singles as s80
+        s80.add_columns(side, st, tabs)
     return tabs
 
 
@@ -260,7 +281,7 @@ def write_ftab(side, st, tabs, cells):
     sem_list = {sem: parse_sem(sem) for sem in cols}
     for w in st.TRADE_WINDOWS:
         tab = tabs[w.name]
-        pm = {sem: np.logical_and.reduce([_pass(f_, x, tab) for f_, _, x in parts]) for sem, parts in sem_list.items()}
+        pm = {sem: np.logical_and.reduce([_pass(f_, x, tab, op_) for f_, op_, x in parts]) for sem, parts in sem_list.items()}
         path = t.q("ftab674" + FSUF, "%s-%s.csv" % (w.name, side))
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write("sym,sig_ms," + ",".join(cols[s_] for s_ in sem_list) + "\n")
@@ -273,8 +294,8 @@ def write_ftab(side, st, tabs, cells):
 def cmd_ftab(a):
     """Таблица составных фильтров клеток уровня (TK674_LEVEL > 2): пороги — готовые из res/thr674.json, без P&L."""
     import tk654_run as r54
-    if LEVEL <= 2:
-        raise SystemExit("ftab — только для уровня > 2 (у пар таблицу пишет counts)")
+    if LEVEL == 2:
+        raise SystemExit("ftab — только для уровней 1, 3, 4 (у пар таблицу пишет counts)")
     st, r5, _, _ = t._srv()
     u = r5.Uni(UNI)
     eps = r54.episodes_h775()
@@ -342,7 +363,7 @@ def level_path(side):
 
 
 def plan_side(side, store=None):
-    if LEVEL > 2:                                   # клетки уровня — из отбора `tk674_level.py select` (правило отсечения — поправка уровня)
+    if LEVEL != 2:                                  # клетки уровня — из отбора `tk674_level.py select` (правило отсечения — поправка уровня)
         inv = load_invalid(side)
         raw = json.load(open(level_path(side), encoding="utf-8"))["cells"]
         cells = {k: dict(ckey=k, cid=c["cid"], patch=c["patch"], filt=[tuple(x) for x in c["filt"]], sig=tuple(tuple(x) for x in c["sig"]), pairs=[])
@@ -470,8 +491,24 @@ def cmd_validate(a):
     say("validate готово")
 
 
+def engine_opts(r5):
+    """Параметры движка из среды (результат от них не зависит, TK-683): TK674_CAP_GB → `--cap-gb`, TK674_SIG_CACHE → `--sig-cache <каталог>` (проход сигналов из общего кэша),
+    TK674_THREADS → потоки движка."""
+    add = []
+    if os.environ.get("TK674_CAP_GB") and "--cap-gb" not in r5.TICK_STORE:
+        add += ["--cap-gb", os.environ["TK674_CAP_GB"]]
+    if os.environ.get("TK674_SIG_CACHE") and "--sig-cache" not in r5.TICK_STORE:
+        add += ["--sig-cache", os.environ["TK674_SIG_CACHE"]]
+    r5.TICK_STORE = list(r5.TICK_STORE) + add
+    if os.environ.get("TK674_THREADS"):
+        import tk604_run as r4
+        r4.THREADS = int(os.environ["TK674_THREADS"])
+    say("движок: TICK_STORE %s, потоков %d" % (" ".join(r5.TICK_STORE), __import__("tk604_run").THREADS))
+
+
 def cmd_cells(a):
     st, r5, _, _ = t._srv()
+    engine_opts(r5)
     sha = _bin()
     say("G-bin: %s sha256 %s" % (BIN, sha))
     g = json.load(open(GBASE, encoding="utf-8"))
@@ -479,6 +516,7 @@ def cmd_cells(a):
         raise SystemExit("G-base не пройден или бинарь подменён")
     u = r5.Uni(UNI)
     store = chron_store(ro=True)
+    calls, up = 0, int(os.environ.get("TK674_THREADS_UP", "0"))     # потоки движка: после TK674_THREADS_AFTER (3) вызовов — TK674_THREADS_UP (TK-683, замер на пакетах)
     for side in SIDES:
         cells, grids, skipped, bad, found = plan_side(side, store)
         todo = [c for k, c in cells.items() if k not in found]
@@ -505,6 +543,10 @@ def cmd_cells(a):
                 os.makedirs(os.path.dirname(done), exist_ok=True)
                 open(done, "w").write("%d\n" % len(cur))
                 say("cells %s-%s %s [%d вариантов, проходов %d] готово" % (w.name, side, nm, len(cur), len({c["sig"] for c in cur})))
+                calls += 1
+                if up and calls == int(os.environ.get("TK674_THREADS_AFTER", "3")):
+                    __import__("tk604_run").THREADS = up
+                    say("потоки движка: %d со следующего вызова" % up)
         json.dump(index, open(t.q("res", "batches674%s-%s.json" % (SUF, side)), "w", encoding="utf-8"))
     say("cells готово")
 
@@ -651,10 +693,10 @@ def cmd_tables(a):
                 rows.append(dict(side=SIDENAME[side], uni=UNI, win=WIN, ckey=res["ckey"], bin=binm, cell=m["cid"], trades=m["n"], usd=m["usd"], mean_usd=m["mean_usd"], sharpe=m["sharpe"],
                                  extra=m, src="tools/p42/tk674_run.py", src_ptr="srv:%s/cells/*-%s/%s" % (ROOT, side, m["cid"])))
                 if len(rows) >= 200:
-                    n_new += store.cells_put(a.entry, rows, author="TK-674")["new"]
+                    n_new += store.cells_put(a.entry, rows, author=AUTHOR)["new"]
                     rows = []
             if rows:
-                n_new += store.cells_put(a.entry, rows, author="TK-674")["new"]
+                n_new += store.cells_put(a.entry, rows, author=AUTHOR)["new"]
         say("   %s: строк записано %d; нарушений охран %d" % (side, n_new, len(bad)))
     if cmean:
         mc = float(np.mean(cmean))
@@ -674,7 +716,8 @@ def guards(row, base):
     b = base["extra"]
     k_base = sum(1 for m_ in b["months"] if m_[1] > 0)
     g = {}
-    g["a"] = ex["n"] >= MIN_N and all(m_[0] >= mn for m_, mn in zip(ex["months"], MIN_MONTH))
+    n_min, mon_min = guard_a(row["side"])
+    g["a"] = ex["n"] >= n_min and all(m_[0] >= mn for m_, mn in zip(ex["months"], mon_min))
     g["b"] = sum(1 for m_ in ex["months"] if m_[1] > 0) >= min(4, k_base)
     g["c"] = ex["maxdd"] <= 2 * b["maxdd"]
     g["d"] = ex["lmax"]["usd"] <= b["lmax"]["usd"] + 1e-9
