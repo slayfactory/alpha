@@ -16,7 +16,7 @@ import tk674_axes as ax  # noqa: E402
 
 ROOT = os.environ.get("TK674_ROOT", "/data/p42-tk674")
 SIDENAME = {"L": "long", "S": "short"}
-UNI, WIN = "h775", "01.07–13.11"
+UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"
 
 
 def axis_combos(side, n):

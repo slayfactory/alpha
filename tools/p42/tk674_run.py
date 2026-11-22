@@ -176,7 +176,7 @@ def cmd_gates(a):
 
 
 # ---- константы этапа 1 ------------------------------------------------------------------------------------------------------------
-UNI, WIN = "h775", "01.07–13.11"
+UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"      # TK674_UNI=c539 — вселенная без TradFi (В-175, §13.73.16): клетки в БД под своим именем, свой TK674_ROOT
 SIDENAME = {"L": "long", "S": "short"}
 VMAX, SIGMAX = 400, 26                          # вариантов и разных проходов сигналов на вызов движка (память: 26 проходов ≈ 30 ГБ при двух сторонах)
 MIN_N, MIN_MONTH = 150, (15, 15, 15, 15, 8)     # охрана (а) §13.73
@@ -268,6 +268,9 @@ def feat_tabs(side, st, u, eps):
     import tk654_run as r54
     hist = tf.episode_history(eps, tf.SIDE_NAME[side])
     tabs = {w.name: r54.load_window(w, side, hist) for w in st.TRADE_WINDOWS}
+    if u.name == "c539":                            # §13.73.16: таблицы признаков построены по базе h775; строки крипто-кандидатов — её подмножество
+        import tk625_run as r5
+        u = r5.Uni("h775")
     for w in st.TRADE_WINDOWS:
         t38 = t8.load_window(u, w, side)
         if list(t38["sym"]) != list(tabs[w.name]["sym"]) or not np.array_equal(t38["ms"], tabs[w.name]["ms"]):
@@ -568,6 +571,7 @@ def cmd_validate(a):
 
 def cmd_cells(a):
     st, r5, _, _ = t._srv()
+    engine_opts(r5)
     sha = _bin()
     say("G-bin: %s sha256 %s" % (BIN, sha))
     g = json.load(open(GBASE, encoding="utf-8"))
@@ -684,6 +688,98 @@ def _cc_job(job):
     lf = loss[full]
     return dict(cid=cid, s=s_pct, n_stop=int(hard.sum()), n_full=int(full.sum()), n_mid=int(mid.sum()), c_full=float((lf - base).mean()) if full.any() else None,
                 c_all=float((loss - base).mean()) if len(loss) else None, worst=float(lf.max()) if full.any() else None, n_above=int((lf > lm + 1e-6).sum()), ex_max=float((lf - lm).max()) if full.any() else None)
+
+
+def engine_opts(r5):
+    """Параметры движка из среды (результат от них не зависит, TK-683): TK674_CAP_GB → `--cap-gb`, TK674_SIG_CACHE → `--sig-cache <каталог>` (проход сигналов из общего кэша),
+    TK674_THREADS → потоки движка."""
+    add = []
+    if os.environ.get("TK674_CAP_GB") and "--cap-gb" not in r5.TICK_STORE:
+        add += ["--cap-gb", os.environ["TK674_CAP_GB"]]
+    if os.environ.get("TK674_SIG_CACHE") and "--sig-cache" not in r5.TICK_STORE:
+        add += ["--sig-cache", os.environ["TK674_SIG_CACHE"]]
+    r5.TICK_STORE = list(r5.TICK_STORE) + add
+    if os.environ.get("TK674_THREADS"):
+        import tk604_run as r4
+        r4.THREADS = int(os.environ["TK674_THREADS"])
+    say("движок: TICK_STORE %s, потоков %d" % (" ".join(r5.TICK_STORE), __import__("tk604_run").THREADS))
+
+
+def cmd_cgate(a):
+    """Якоря состава c539 двумя способами (PS-975 разд. 2): сторона × окно — база стороны движком со списком монет c539 (`--symbols`) и тем же движком на h775 с
+    фильтром «монета ∈ c539» (`--ftab`, столбец tr539); trades / daily / coinday байт в байт — иначе стоп и разбор. Строки якорей c539 — в БД (`--entry L-N`)."""
+    if UNI != "c539" or not a.entry:
+        raise SystemExit("cgate: TK674_UNI=c539 и --entry L-N")
+    st, r5, _, _ = t._srv()
+    engine_opts(r5)
+    sha = _bin()
+    say("G-bin: %s sha256 %s" % (BIN, sha))
+    g = json.load(open(GBASE, encoding="utf-8"))
+    if g["bad"] or g["bin_sha256"] != sha:
+        raise SystemExit("G-base не пройден или бинарь подменён")
+    uc, uh = r5.Uni("c539"), r5.Uni("h775")
+    keep = set(uc.coins())
+    bad, jobs, same = [], [], {}
+    for side in SIDES:
+        patch = ax.cell_assign(side, {})[0]
+        ck = ax.cell_ckey(side, patch, [], None)
+        if ck != ax.base_ckey(side):
+            raise SystemExit("ключ якоря %s: %s ≠ base_ckey" % (side, ck))
+        cid = ax.cell_id(patch, [])
+        line = t.variant_line(r5, uc, side, patch)
+        nm = batch_name("p", [dict(ckey=ck)])
+        for w in st.TRADE_WINDOWS:
+            outc = os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm)
+            done = os.path.join(ROOT, "done", "%s-%s-%s" % (w.name, side, nm))
+            if not os.path.exists(done):
+                r5.tick(uc, w, [(cid, line)], outc, one_side_env(side), t.q("log", "cgate-c539-%s-%s.log" % (w.name, side)))
+                os.makedirs(os.path.dirname(done), exist_ok=True)
+                open(done, "w").write("1\n")
+            outh = os.path.join(ROOT, "cgate", "%s-%s" % (w.name, side))
+            if not os.path.exists(outh + "/DONE"):
+                sym, rel, _ = r5.cand_stream(uh, side, w.name)
+                os.makedirs(outh, exist_ok=True)
+                ftab = os.path.join(ROOT, "cgate", "ftab-%s-%s.csv" % (w.name, side))
+                with open(ftab, "w", encoding="utf-8", newline="\n") as f:
+                    f.write("sym,sig_ms,tr539\n")
+                    seen = set()
+                    for i in sorted(range(len(sym)), key=lambda i: (sym[i], int(rel[i]))):
+                        if (sym[i], int(rel[i])) not in seen:
+                            seen.add((sym[i], int(rel[i])))
+                            f.write("%s,%d,%s\n" % (sym[i], int(rel[i]), "1.0" if sym[i] in keep else "0.0"))
+                r5.tick(uh, w, [("tf", line + " fa=tr539 fo=lo fv=%g" % ax.FV_PASS)], outh, one_side_env(side), t.q("log", "cgate-h775f-%s-%s.log" % (w.name, side)), ftab=ftab)
+                open(outh + "/DONE", "w").close()
+            for f in CMP_FILES:
+                p1, p2 = os.path.join(outc, cid, "%s-%s" % (ENGNAME[side], f)), os.path.join(outh, "tf", "%s-%s" % (ENGNAME[side], f))
+                eq = os.path.exists(p1) and os.path.exists(p2) and filecmp.cmp(p1, p2, shallow=False)
+                same["%s-%s/%s" % (w.name, side, f)] = bool(eq)
+                if not eq and f != "entryrej.csv":
+                    bad.append("%s-%s/%s" % (w.name, side, f))
+        jobs.append((side, ck, cid, nm, line, patch, [], eff_flags(side, patch)))
+    json.dump(dict(bin_sha256=sha, same=same, bad=bad), open(t.q("res", "cgate674.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    say("cgate: trades / daily / coinday c539-список = h775-фильтр: %s; entryrej: %s" % ("совпали" if not bad else "РАСХОЖДЕНИЕ " + ", ".join(bad),
+        "совпали" if all(v for k, v in same.items() if k.endswith("entryrej.csv")) else "различаются (справка)"))
+    if bad:
+        sys.exit(1)
+    store, binm, rows, errs = chron_store(), bin_md5(), [], []
+    _winit()
+    for job in jobs:
+        res = _row_job(job)
+        if "error" in res:
+            errs.append(res["error"])
+            continue
+        m = res["m"]
+        errs += ["%s %s: %s" % (job[0], m["cid"], e) for e in res["errs"]]
+        rows.append(dict(side=SIDENAME[job[0]], uni=UNI, win=WIN, ckey=res["ckey"], bin=binm, cell=m["cid"], trades=m["n"], usd=m["usd"], mean_usd=m["mean_usd"], sharpe=m["sharpe"],
+                         extra=m, src="tools/p42/tk674_run.py", src_ptr="srv:%s/cells/*-%s/%s" % (ROOT, job[0], m["cid"])))
+    for r_ in rows:
+        say("якорь c539 %s: сделок %d, Σ %+.2f $, %+.3f $/сд, Шарп %.2f" % (r_["side"], r_["trades"], r_["usd"], r_["mean_usd"], r_["sharpe"]))
+    if errs:
+        for e in errs[:20]:
+            say("СТОП: " + e)
+        sys.exit(1)
+    say("записано строк: %d" % store.cells_put(a.entry, rows, author=AUTHOR)["new"])
+    say("cgate готово")
 
 
 def batch_index(side, cells, found, st):
@@ -1075,7 +1171,7 @@ def cmd_stopaxis(a):
     say("stopaxis готово: res/stop-axis-table.md")
 
 
-COMMANDS = {"stopaxis": cmd_stopaxis, "spot": cmd_spot, "ftab": cmd_ftab, "probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "validate": cmd_validate, "cells": cmd_cells, "tables": cmd_tables, "ccheck": cmd_ccheck, "map": cmd_map}
+COMMANDS = {"stopaxis": cmd_stopaxis, "spot": cmd_spot, "ftab": cmd_ftab, "probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "validate": cmd_validate, "cells": cmd_cells, "tables": cmd_tables, "cgate": cmd_cgate, "ccheck": cmd_ccheck, "map": cmd_map}
 
 
 X680_CMDS = ("plan", "ftab", "validate", "cells", "tables", "ccheck", "map")
