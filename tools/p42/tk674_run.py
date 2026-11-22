@@ -34,6 +34,7 @@ SIDES = ax.SIDES
 ENGNAME = {"L": "long", "S": "short"}
 CMP_FILES = ("trades.csv", "daily.csv", "coinday.csv", "entryrej.csv")
 say = t.say
+SUF = "b" if ax.REBASE else ""                 # файлы плана / партий / карты при базе стопа ≤ 4 % (поправка §13.73.2) — рядом с прежними
 
 
 def _bin():
@@ -45,7 +46,7 @@ def _bin():
 
 
 def invalid_path(side):
-    return os.path.join(ROOT, "res", "invalid674-%s.json" % side)
+    return os.path.join(ROOT, "res", "invalid674%s-%s.json" % (SUF, side))
 
 
 def load_invalid(side):
@@ -370,7 +371,7 @@ def cmd_plan(a):
         for k, c in cells.items():
             for (aa, bb, pos) in c["pairs"]:
                 res["grids"]["%s|%s" % (aa, bb)]["m"][pos[0]][pos[1]] = k
-        json.dump(res, open(t.q("res", "plan674-%s.json" % side), "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump(res, open(t.q("res", "plan674%s-%s.json" % (SUF, side)), "w", encoding="utf-8"), ensure_ascii=False)
         tot_new += len(todo)
     say("plan готово: считаем %d клеток, ≈ %.1f ч движка (оба направления, 3 окна)" % (tot_new, tot_h))
 
@@ -461,7 +462,7 @@ def cmd_cells(a):
                 os.makedirs(os.path.dirname(done), exist_ok=True)
                 open(done, "w").write("%d\n" % len(cur))
                 say("cells %s-%s %s [%d вариантов, проходов %d] готово" % (w.name, side, nm, len(cur), len({c["sig"] for c in cur})))
-        json.dump(index, open(t.q("res", "batches674-%s.json" % side), "w", encoding="utf-8"))
+        json.dump(index, open(t.q("res", "batches674%s-%s.json" % (SUF, side)), "w", encoding="utf-8"))
     say("cells готово")
 
 
@@ -553,7 +554,7 @@ def cmd_ccheck(a):
     out = {}
     for side in SIDES:
         cells, grids, skipped, bad_pos, found = plan_side(side, store)
-        index = json.load(open(os.path.join(ROOT, "res", "batches674-%s.json" % side), encoding="utf-8"))
+        index = json.load(open(os.path.join(ROOT, "res", "batches674%s-%s.json" % (SUF, side)), encoding="utf-8"))
         where = {ck: nm for nm, cks in index.items() for ck in cks}
         jobs = [(side, c["cid"], where[k], float(c["patch"].get("s", 5))) for k, c in cells.items() if k in where]
         with mp.Pool(3, initializer=_winit) as pool:
@@ -588,7 +589,7 @@ def cmd_tables(a):
     bad, cmean = [], []
     for side in SIDES:
         cells, grids, skipped, bad_pos, found = plan_side(side, store)
-        index = json.load(open(os.path.join(ROOT, "res", "batches674-%s.json" % side), encoding="utf-8"))
+        index = json.load(open(os.path.join(ROOT, "res", "batches674%s-%s.json" % (SUF, side)), encoding="utf-8"))
         where = {ck: nm for nm, cks in index.items() for ck in cks}
         todo = [c for k, c in cells.items() if k not in found and k in where]
         say("== %s: в БД есть %d, записываем %d" % (side, len(found), len(todo)))
@@ -615,8 +616,7 @@ def cmd_tables(a):
     if cmean:
         mc = float(np.mean(cmean))
         say("c-проверка Lmax: средний (убыток − 500 $ × s) по стоп-выходам %.3f $ (ожидание %.3f $), клеток %d" % (mc, 0.415, len(cmean)))
-        if abs(mc - 0.415) > 0.1:
-            bad.append("c-проверка Lmax: расхождение > 0,1 $")
+        say("   (справка: по уточнению L-291 c-проверка идёт на полных стопах — стадия ccheck; здесь все stop-выходы, включая половинные)")
     if bad:
         for b in bad[:30]:
             say("СТОП: " + b)
@@ -638,13 +638,25 @@ def guards(row, base):
     return g
 
 
+def loss_fields(ex):
+    """Стоп клетки и убытки: убыток по цене стопа (500 $ × s + издержки; не максимум — пробой стопа выше), худшая сделка, число сделок хуже цены стопа, $ на сделку."""
+    lm = ex["lmax"]
+    return dict(s=lm["s"], lstop=lm["usd"], worst=-lm["worst"], n_over=lm["n_over"], n_stop=lm["n_stop"], mean_usd=ex["mean_usd"], under_share=ex["kpi"]["under_share"])
+
+
+def ref5_key(ckey):
+    """Ключ той же клетки при стопе 5 % (значение строки базы движка): справочная колонка карты с базой стопа ≤ 4 %."""
+    return " ".join(tok for tok in ckey.split(" ") if not tok.startswith("s="))
+
+
 def rep_cell(c, bsh):
     if c is None:
         return None
     k, r, gg, nbm = c[:4]
     ex = r["extra"]
     return dict(ckey=k, cid=r["cell"], sharpe=r["sharpe"], usd=r["usd"], n=r["trades"], maxdd=ex["maxdd"], maxdd_pct=ex["maxdd_pct"], gap_longest=ex["kpi"]["gap_longest"],
-                gap_mean=ex["kpi"]["gap_mean"], p90=ex["kpi"]["p90"], tail=ex["kpi"]["gap_tail"], rr=ex["rr"]["rr"], months=ex["months"], plateau=gg["g"], nb_mean=nbm, gain=r["sharpe"] - bsh)
+                gap_mean=ex["kpi"]["gap_mean"], p90=ex["kpi"]["p90"], tail=ex["kpi"]["gap_tail"], rr=ex["rr"]["rr"], months=ex["months"], plateau=gg["g"], nb_mean=nbm, gain=r["sharpe"] - bsh,
+                **loss_fields(ex))
 
 
 def pick(lst):
@@ -676,6 +688,11 @@ def synergy(rows, m, ia0, jb0, i, j, B=20000, block=5, seed=674):
                 sharpe_gain=(r[0]["sharpe"] - max(single)) if single else None, a_only=float(r[1]["sharpe"]), b_only=float(r[2]["sharpe"]))
 
 
+def is_ref5(row):
+    """Поправка §13.73.2: при базе стопа ≤ 4 % клетка со стопом 5 % — только справочная колонка (не кандидат, не якорь, не сосед плато)."""
+    return ax.REBASE and row["extra"]["lmax"]["s"] >= ax.LINE_STOP
+
+
 def base_idx(side, name, vals):
     b = ax.axis_map(side)[name]["base"]
     return vals.index(b) if b in vals else None
@@ -685,9 +702,9 @@ def cmd_map(a):
     store = chron_store(ro=True)
     bins = eq_bins()
     for side in SIDES:
-        plan = json.load(open(os.path.join(ROOT, "res", "plan674-%s.json" % side), encoding="utf-8"))
+        plan = json.load(open(os.path.join(ROOT, "res", "plan674%s-%s.json" % (SUF, side)), encoding="utf-8"))
         rows = store.cells_lookup(SIDENAME[side], UNI, WIN, list(plan["cells"]), bins=bins)
-        base_ck = ax.canon(ax.BASE_LINE(side))
+        base_ck = ax.base_ckey(side)
         brow = store.cells_lookup(SIDENAME[side], UNI, WIN, [base_ck], bins=bins).get(base_ck)
         if brow is None:
             raise SystemExit("нет базы стороны %s в БД (ключ %s)" % (side, base_ck))
@@ -712,9 +729,10 @@ def cmd_map(a):
                     if k is None:
                         continue
                     r = rows[k]
-                    if r["sharpe"] != r["sharpe"]:
+                    if r["sharpe"] != r["sharpe"] or is_ref5(r):
                         continue
                     nb = [m[i + di][j + dj] for di, dj in ((-1, 0), (1, 0), (0, -1), (0, 1)) if 0 <= i + di < ni and 0 <= j + dj < nj and m[i + di][j + dj] is not None]
+                    nb = [x for x in nb if not is_ref5(rows[x])]
                     nbs = [rows[x]["sharpe"] for x in nb if rows[x]["sharpe"] == rows[x]["sharpe"]]
                     nbm = float(np.mean(nbs)) if nbs else None
                     plateau = bool(nbs) and nbm >= 0.8 * r["sharpe"] and nbm >= bsh
@@ -729,8 +747,17 @@ def cmd_map(a):
             if br:
                 br["moved"] = 2
                 br["syn"] = synergy(rows, m, ia0, jb0, both[4], both[5])
+            for rp in (wr, br):
+                if rp and ax.REBASE:
+                    rp["ref5_key"] = ref5_key(rp["ckey"])
             pair_rows.append(dict(pair=gname, cells=len(cand), guarded3=len(ok3), guarded_all=len(full), winner=wr, both_moved=br, best_no_plateau=rep_cell(pick(ok3), bsh)))
         bx = brow["extra"]
+        if ax.REBASE:                                        # справочная колонка: та же клетка при s = 5 % (из БД, прежняя карта)
+            reps = [p[w] for p in pair_rows for w in ("winner", "both_moved") if p[w]]
+            r5rows = store.cells_lookup(SIDENAME[side], UNI, WIN, sorted({x["ref5_key"] for x in reps}), bins=bins)
+            for x in reps:
+                q5 = r5rows.get(x["ref5_key"])
+                x["ref5"] = dict(sharpe=q5["sharpe"], usd=q5["usd"], n=q5["trades"], maxdd=q5["extra"]["maxdd"], **loss_fields(q5["extra"])) if q5 else None
         # счётчик испытаний (§13.73.1 разд. 3): все клетки стороны в БД (карта + прежние), шум σ·√(2 ln m) — верхняя оценка для независимых клеток
         m_side = sum(r["n"] for r in store.cells_count() if r["side"] == SIDENAME[side] and r["uni"] == UNI and r["win"] == WIN)
         shs = np.array([r["sharpe"] for r in rows.values() if r["sharpe"] == r["sharpe"]])
@@ -741,9 +768,9 @@ def cmd_map(a):
         for k, r in rows.items():
             by_sig.setdefault(r["extra"].get("trades_sig"), []).append(k)
         dup = [v for k_, v in by_sig.items() if k_ and len(v) > 1]
-        out = dict(side=side, base=dict(ckey=base_ck, sharpe=bsh, usd=brow["usd"], n=brow["trades"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"]), pairs=pair_rows, n_cells=len(rows),
+        out = dict(side=side, rebase=ax.REBASE, base=dict(ckey=base_ck, sharpe=bsh, usd=brow["usd"], n=brow["trades"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"], rr=bx["rr"]["rr"], **loss_fields(bx)), pairs=pair_rows, n_cells=len(rows),
                    m=m_side, sharpe_sd=sig_sh, noise_max=noise, g_dup=dict(groups=len(dup), cells=sum(len(v) for v in dup), examples=dup[:5]))
-        json.dump(out, open(t.q("res", "map674-%s.json" % side), "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump(out, open(t.q("res", "map674%s-%s.json" % (SUF, side)), "w", encoding="utf-8"), ensure_ascii=False)
         top = sorted([p for p in pair_rows if p["winner"]], key=lambda p: -p["winner"]["gain"])[:15]
         say("== %s: база Шарп %.2f, Σ %+.0f $, просадка %.0f $ (%.0f %%), перехай %d сут.; пар %d, с победителем %d" % (
             side, bsh, brow["usd"], bx["maxdd"], bx["maxdd_pct"], bx["kpi"]["gap_longest"], len(pair_rows), sum(1 for p in pair_rows if p["winner"])))
@@ -765,7 +792,29 @@ def cmd_map(a):
 
 
 
-COMMANDS = {"probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "validate": cmd_validate, "cells": cmd_cells, "tables": cmd_tables, "ccheck": cmd_ccheck, "map": cmd_map}
+def cmd_stopaxis(a):
+    """Ось стопа s при остальном у строки базы движка — таблица md из БД (без счёта): R:R и убытки первыми."""
+    store = chron_store(ro=True)
+    bins = eq_bins()
+    c = lambda x, nd=2: ("%.*f" % (nd, x)).replace(".", ",")
+    out = ["| сторона | стоп, % | R:R | убыток по цене стопа $ (% маржи) | худшая сделка $ (% маржи) | сделок хуже цены стопа | stop-выходов | Σ $ | $ на сделку | сделок | Шарп | просадка $ (% маржи) | перехай, сут.: самый долгий / средний / хвост |",
+           "|" + "---|" * 13]
+    for side in SIDES:
+        ks = {v: ax.canon(ax.BASE_LINE(side) + (" s=%s" % v if v != ax.LINE_STOP else "")) for v in (1, 1.5, 2, 3, 4, 5)}
+        rows = store.cells_lookup(SIDENAME[side], UNI, WIN, list(ks.values()), bins=bins)
+        for v, k in ks.items():
+            r = rows[k]
+            e = r["extra"]
+            f = loss_fields(e)
+            mark = " (база В-171)" if v == ax.BASE_STOP[side] else (" (справка)" if v == ax.LINE_STOP else "")
+            out.append("| %s | %s%s | %s | %s (%s %%) | %s (%s %%) | %d | %d | %+.0f | %s | %d | %s | %.0f (%.0f %%) | %d / %s / %d |" % (
+                side, ("%g" % v).replace(".", ","), mark, c(e["rr"]["rr"]), c(f["lstop"]), c(f["lstop"] / 2.5, 1), c(f["worst"]), c(f["worst"] / 2.5, 1), f["n_over"], e["kinds"].get("stop", 0),
+                r["usd"], c(f["mean_usd"]), r["trades"], c(r["sharpe"]), e["maxdd"], e["maxdd_pct"], e["kpi"]["gap_longest"], c(e["kpi"]["gap_mean"], 1), e["kpi"]["gap_tail"]))
+    open(t.q("res", "stop-axis-table.md"), "w", encoding="utf-8", newline="\n").write("\n".join(out) + "\n")
+    say("stopaxis готово: res/stop-axis-table.md")
+
+
+COMMANDS = {"stopaxis": cmd_stopaxis, "probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "validate": cmd_validate, "cells": cmd_cells, "tables": cmd_tables, "ccheck": cmd_ccheck, "map": cmd_map}
 
 
 def main():

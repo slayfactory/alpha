@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import itertools
+import os
 import re
 
 SIDES = ("L", "S")
@@ -23,6 +24,11 @@ FILT_KEYS = ("fa", "fo", "fv")
 SIG_KEYS = ("k", "tf", "n_bounce", "d", "l_days", "lx", "natr_min", "t1h", "t24", "e")
 LEVEL_KEYS = ("k", "tf", "n_bounce", "d", "l_days", "lx")
 POOL_KEYS = ("natr_min", "t1h", "t24")
+# поправка §13.73.2 (В-171): база стопа ≤ 4 % — лонг 3 %, шорт 4 % (якоря фиксированного стопа §13.74, L-293); s = 5 % — справочная колонка.
+# TK674_REBASE=1 включает новую базу; без переменной — прежняя карта (s = 5 %, L-292) воспроизводится как была.
+REBASE = os.environ.get("TK674_REBASE") == "1"
+BASE_STOP = {"L": 3, "S": 4}
+LINE_STOP = 5                                  # стоп в строке базы движка
 NOTIONAL_U, MIN_LOT_USD = 500_000_000, 5.0     # `trade.rs` NOTIONAL_U; минимальная стоимость ордера Bybit (§13.50 п. 7 (з))
 
 
@@ -79,7 +85,7 @@ def _ax(name, cls, vals, base, key=None):
 def _common(side):
     S = side == "S"
     return [
-        _ax("s", "exit", [1, 1.5, 2, 3, 4, 5], 5),                      # стоп, % цены; не выше базовых 5 % (слова владельца 22.11)
+        _ax("s", "exit", [1, 1.5, 2, 3, 4, 5], BASE_STOP[side] if REBASE else LINE_STOP),                      # стоп, % цены; не выше базовых 5 % (слова владельца 22.11)
         _ax("rf", "exit", [0, 0.1, 0.2, 0.3], 0.2),
         _ax("rs", "exit", [0, 2, 5, 20], 2 if S else 20),
         _ax("tt", "exit", [0, 5, 10, 20, 40, 60], 20 if S else 0),
@@ -174,8 +180,14 @@ def cell_assign(side, assign):
             if v != "off":
                 filt.append((name, v))
             continue
+        if name == "s":
+            if v != LINE_STOP:
+                patch["s"] = v
+            continue
         if a["base"] is None or v != a["base"]:
             patch[a["key"]] = v
+    if REBASE and "s" not in assign:
+        patch["s"] = BASE_STOP[side]
     if "t_low" in patch or "t_high" in patch:
         if float(patch.get("t_low", 1)) >= float(patch.get("t_high", 5)):
             return patch, filt, False, "t_low ≥ t_high"
@@ -188,6 +200,12 @@ def cell_assign(side, assign):
             if k in patch and float(patch[k]) < DEFAULTS_BASE(side)[k]:
                 return patch, filt, False, "ослабленный пул (%s) не покрыт строками таблицы признаков" % k
     return patch, filt, True, ""
+
+
+def base_ckey(side):
+    """Канонический ключ базы стороны (при базе стопа ≤ 4 % — строка базы + s)."""
+    patch = cell_assign(side, {})[0]
+    return canon(BASE_LINE(side) + (" " + patch_str(patch) if patch else ""))
 
 
 def DEFAULTS_BASE(side):
