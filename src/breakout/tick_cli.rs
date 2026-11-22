@@ -500,7 +500,26 @@ pub fn run(
 ) -> Result<()> {
     let t0 = Instant::now();
     let only: Option<Vec<String>> = symbols.map(|s| s.split(',').map(str::to_string).collect());
-    let syms = data::load_all(cache, threads, only.as_deref())?;
+    // TK-683: склад сделок (обход каталога) и отпечаток кэша сигналов (метаданные всех суток) — пока грузятся минутки, а не после них
+    let files = data::cache_files(cache, only.as_deref())?;
+    let (syms, store, sigcache) = std::thread::scope(|sc| {
+        let h_store = sc.spawn(|| {
+            store
+                .as_ref()
+                .map(|o| TickStore::open(o).map(Arc::new))
+                .transpose()
+        });
+        let h_sig = sc.spawn(|| {
+            let names: Vec<&str> = files.iter().map(|f| f.0.as_str()).collect();
+            sig_cache
+                .as_ref()
+                .map(|o| SigCache::open(o, cache, trades, &names))
+                .transpose()
+        });
+        let syms = data::load_files(&files, threads);
+        (syms, h_store.join(), h_sig.join())
+    });
+    let syms = syms?;
     eprintln!("{}", mem_line("после загрузки минуток"));
     eprintln!(
         "загружено символов {} за {:.1} с",
@@ -565,8 +584,7 @@ pub fn run(
         }
     }
     let store = store
-        .map(|o| TickStore::open(&o).map(Arc::new))
-        .transpose()
+        .map_err(|_| anyhow::anyhow!("поток открытия склада сделок упал"))?
         .context("склад сделок")?;
     let t_store = t0.elapsed().as_secs_f64();
     let mut src = ZipSrc::new(trades.to_path_buf(), cap_gb << 30);
@@ -583,10 +601,8 @@ pub fn run(
         jobs.len()
     );
     // TK-607 (L2): задания с записью в кэше сигналов фазу 1 не проходят; остальные считаются как прежде
-    let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
-    let sigcache = sig_cache
-        .map(|o| SigCache::open(&o, cache, trades, &names))
-        .transpose()
+    let sigcache = sigcache
+        .map_err(|_| anyhow::anyhow!("поток открытия кэша сигналов упал"))?
         .context("кэш сигналов")?;
     let t_sc_open = t0.elapsed().as_secs_f64();
     let keys: Vec<Option<String>> = jobs
