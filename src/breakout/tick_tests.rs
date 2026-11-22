@@ -5027,3 +5027,228 @@ fn s2_common_stop_puts_lot2_hard_stop_at_lot1_stop_price() {
     let sp = entry_stop_px(px(99.7), Side::Long, NATR, &w.ex, None, 0);
     assert_eq!(sp, px(99.7) - px(99.7) / 20);
 }
+
+// ───────────────────────── TK-679: приоритет кандидатов (`pr`, `pw`) ─────────────────────────
+
+/// Три монеты с уровнем 100,0 и сигналом на минуте `t1`: BBB — выше NATR(30) и оборот за 15 минут, AAA — выше оборот за 60 минут, CCC — между ними.
+fn prio_world() -> E2World {
+    let mut w = natr_world(false);
+    w.ex.sn_m = 0;
+    w.ex.ent_w_ms = 5000;
+    let t1 = w.t1;
+    let coin = |name: &str, half: f64, q15: i64, q60: i64| {
+        let mut c = flat(t1 + 10, 100.0);
+        for m in t1 - 5..t1 + 2 {
+            set(&mut c, m, 99.5, 99.5 + half, 99.5 - half, 99.5);
+        }
+        for m in t1 - 60..t1 {
+            c.qv[m] = if m >= t1 - 15 { q15 } else { q60 };
+        }
+        Sym::from_cols(name, c, Vec::new())
+    };
+    w.syms = vec![
+        coin("AAA", 0.1, 100, 1000),
+        coin("BBB", 0.4, 300, 10),
+        coin("CCC", 0.2, 200, 500),
+    ];
+    w
+}
+
+/// Портфель по сигналам монет мира `prio_world`: `sigs` — (монета, время сигнала в мс от начала минуты, расстояние до уровня); `touch` — монета,
+/// у которой через 800 мс после сигнала сделка дошла до уровня. Лента монеты: сделка-сигнал, сделка стороны через 900 мс, ещё одна на 12-й с,
+/// общий выбив на 60-й с.
+fn prio_run(
+    w: &E2World,
+    port: &super::params::PortCfg,
+    sigs: &[(u16, i64, u32)],
+    touch: Option<u16>,
+) -> super::tick::TickResult {
+    let day = w.t1 / 1440;
+    let mut m = HashMap::new();
+    let mut v = Vec::new();
+    for &(si, off, dist) in sigs {
+        let mut ticks = vec![(0, 99.6, false), (off, 99.7, false)];
+        if touch == Some(si) {
+            ticks.push((off + 800, 100.0, false));
+        }
+        ticks.push((off + 900, 99.75, false));
+        ticks.push((12_000, 99.8, false));
+        ticks.push((60_000, 90.0, true));
+        let ticks: Vec<Tick> = ticks
+            .into_iter()
+            .map(|(o, price, bm)| Tick {
+                px: px(price),
+                off: (w.base + o) as u32,
+                bm,
+            })
+            .collect();
+        m.insert((w.syms[si as usize].name.clone(), day), Arc::new(ticks));
+        v.push(TSig {
+            ms: w.abs(off),
+            sym: si,
+            level: 0,
+            dist,
+            t: w.t1 as u32,
+            day: day as u16,
+            idx: 1,
+            lp: px(100.0),
+            far: px(99.9),
+            ws: false,
+        });
+    }
+    super::tick::sort_tsigs(&mut v);
+    run_tick(&w.syms, &v, Side::Long, &w.ex, port, &MemSrc(m))
+}
+
+#[test]
+fn prio_keys_parse_validate_default_off_and_minute_engine_rejects() {
+    let (_, base) = super::params::parse_variant("x").expect("разбор");
+    assert_eq!((base.port.pr, base.port.pw_ms), (0, 0));
+    assert_eq!(
+        super::params::parse_variant("x pr=0 pw=0")
+            .expect("разбор")
+            .1,
+        base
+    );
+    let dbg = format!("{base:?}");
+    assert!(
+        dbg.contains("reentry: 0, busy: true }") && !dbg.contains("pr:"),
+        "отпечаток параметров при выключенном приоритете прежний: {dbg}"
+    );
+    let (_, on) = super::params::parse_variant("x ew=5 pr=2 pw=1000").expect("разбор");
+    assert_eq!((on.port.pr, on.port.pw_ms), (2, 1000));
+    assert!(format!("{on:?}").contains("busy: true, pr: 2, pw_ms: 1000 }"));
+    for bad in [
+        "x pr=4",
+        "x ew=5 pw=-1",
+        "x ew=5 pw=60001",
+        "x pw=1000",
+        "x ew=5 mk=1 pw=1000",
+        "x ew=5 ek=10 pw=1000",
+        "x ew=5 xb=0.5 pw=1000",
+    ] {
+        assert!(super::params::parse_variant(bad).is_err(), "{bad}");
+    }
+    let (_, pr) = super::params::parse_variant("x pr=1").expect("разбор");
+    assert!(super::cli::reject_tick_only(&pr, "x pr=1").is_err());
+    assert!(super::cli::reject_tick_only(&on, "x pw").is_err());
+}
+
+#[test]
+fn prio_values_come_from_closed_minutes_before_the_signal_minute() {
+    use super::tick::prio_val;
+    let w = prio_world();
+    let (a, b) = (&w.syms[0], &w.syms[1]);
+    assert!(prio_val(b, w.t1, 1) > prio_val(a, w.t1, 1), "NATR(30): BBB");
+    assert_eq!(
+        (prio_val(a, w.t1, 2), prio_val(b, w.t1, 2)),
+        (1500, 4500),
+        "15 минут"
+    );
+    assert_eq!(
+        (prio_val(a, w.t1, 3), prio_val(b, w.t1, 3)),
+        (46_500, 4950),
+        "60 минут"
+    );
+    assert_eq!(prio_val(a, w.t1, 0), 0);
+    // минута сигнала в значение не входит
+    let mut c = flat(w.t1 + 10, 100.0);
+    c.qv[w.t1] = 777;
+    set(&mut c, w.t1, 99.5, 105.0, 95.0, 99.5);
+    let s = Sym::from_cols("X", c, Vec::new());
+    assert_eq!(
+        (
+            prio_val(&s, w.t1, 1),
+            prio_val(&s, w.t1, 2),
+            prio_val(&s, w.t1, 3)
+        ),
+        (0, 0, 0)
+    );
+}
+
+#[test]
+fn prio_window_ranks_two_candidates_for_the_last_slot_and_delays_the_entry() {
+    let w = prio_world();
+    // AAA — сигнал на 10,0 с (ближе к уровню), BBB — на 10,5 с; одно место, окно 1 с: решение на 11,0 с, вход на 11,004 с
+    let sigs = [(0u16, 10_000i64, 0u32), (1, 10_500, 5)];
+    for (pr, win, changed) in [(0, 0u16, 0u64), (1, 1, 1), (2, 1, 1), (3, 0, 0)] {
+        let port = port_with(&format!("ew=5 p=1 pw=1000 pr={pr}"));
+        let r = prio_run(&w, &port, &sigs, None);
+        assert_eq!(r.trades.len(), 1, "pr={pr}");
+        let t = &r.trades[0];
+        assert_eq!((t.sym, t.entry_ms), (win, w.abs(11_004)), "pr={pr}");
+        assert_eq!(t.sig_ms, w.abs(sigs[win as usize].1), "pr={pr}");
+        assert_eq!(
+            t.entry_px,
+            px(if win == 0 { 99.75 } else { 99.7 }),
+            "pr={pr}: последняя сделка стороны не позже входа"
+        );
+        assert_eq!(r.rej, [0, 0, 0, 0, 1, 0], "pr={pr}: проигравший — потолок");
+        assert_eq!(r.prio, [1, 1, changed, 1, 0, 0], "pr={pr}");
+    }
+    // без окна — как было: первый по времени берёт место сразу, второй — потолок
+    for line in ["ew=5 p=1", "ew=5 p=1 pr=1"] {
+        let r = prio_run(&w, &port_with(line), &sigs, None);
+        let t = &r.trades[0];
+        assert_eq!(
+            (r.trades.len(), t.sym, t.entry_ms),
+            (1, 0, w.abs(10_004)),
+            "{line}"
+        );
+        assert_eq!((r.rej[4], r.prio), (1, [0; 6]), "{line}");
+    }
+}
+
+#[test]
+fn prio_window_opens_only_for_the_last_free_slot() {
+    let w = prio_world();
+    let sigs = [(0u16, 10_000i64, 0u32), (1, 10_200, 0), (2, 10_400, 0)];
+    let r = prio_run(&w, &port_with("ew=5 p=3 pw=1000 pr=1"), &sigs, None);
+    let got: Vec<(u16, i64)> = r.trades.iter().map(|t| (t.sym, t.entry_ms)).collect();
+    assert_eq!(
+        got,
+        vec![(0, w.abs(10_004)), (1, w.abs(10_204)), (2, w.abs(11_404))],
+        "два свободных места — вход сразу; последнее — через окно"
+    );
+    assert_eq!((r.rej, r.prio), ([0; 6], [1, 0, 0, 1, 0, 0]));
+    // при выключенных ключах результат тот же, что у базы
+    let (r0, r1) = (
+        prio_run(&w, &port_with("ew=5 p=3"), &sigs, None),
+        prio_run(&w, &port_with("ew=5 p=3 pr=0 pw=0"), &sigs, None),
+    );
+    assert_eq!(format!("{:?}", r0.trades), format!("{:?}", r1.trades));
+    assert_eq!(r0.trades.len(), 3);
+}
+
+#[test]
+fn prio_window_drops_a_candidate_whose_level_was_reached_inside_the_window() {
+    let w = prio_world();
+    let sigs = [(0u16, 10_000i64, 0u32), (1, 10_500, 5)];
+    // окно 1 с: сделка BBB на уровне (11,3 с) — после конца окна (11,0 с), кандидату не мешает
+    let port = port_with("ew=5 p=1 pw=1000 pr=1");
+    let r = prio_run(&w, &port, &sigs, Some(1));
+    assert_eq!((r.trades.len(), r.trades[0].sym), (1, 1));
+    // окно 2 с: та же сделка внутри (сигнал, T = 12,0 с] → BBB снят, место берёт AAA
+    let port = port_with("ew=5 p=1 pw=2000 pr=1");
+    let r = prio_run(&w, &port, &sigs, Some(1));
+    assert_eq!(r.trades.len(), 1);
+    assert_eq!((r.trades[0].sym, r.trades[0].entry_ms), (0, w.abs(12_004)));
+    assert_eq!(r.entry_rej, vec![(1, 0, w.abs(10_500), EntryRej::Touched)]);
+    assert_eq!((r.rej, r.prio), ([0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 0]));
+}
+
+#[test]
+fn prio_reorders_same_ms_signals_without_a_window_and_without_delay() {
+    let w = prio_world();
+    let sigs = [(0u16, 10_000i64, 0u32), (1, 10_000, 5)];
+    for (pr, win, moved) in [(0u8, 0u16, 0u64), (1, 1, 2), (2, 1, 2), (3, 0, 0)] {
+        let r = prio_run(&w, &port_with(&format!("ew=5 p=1 pr={pr}")), &sigs, None);
+        assert_eq!(r.trades.len(), 1, "pr={pr}");
+        assert_eq!(
+            (r.trades[0].sym, r.trades[0].entry_ms),
+            (win, w.abs(10_004)),
+            "pr={pr}"
+        );
+        assert_eq!((r.rej[4], r.prio), (1, [0, 0, 0, 0, 0, moved]), "pr={pr}");
+    }
+}
