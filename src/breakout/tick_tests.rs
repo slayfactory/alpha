@@ -2863,6 +2863,47 @@ fn sig_mode_off_values_disable_every_portfolio_limit_and_each_one_alone_binds() 
 
 use super::tick::{mk_decision, run_tick_mk, tick_at};
 
+/// TK-683: ступени НОД дают тот же НОД, первую цену и число сделок, что прямой проход, для каждого начала суток.
+#[test]
+fn gcd_steps_prefix_equals_direct_gcd_of_every_prefix() {
+    use super::tick::{GcdSteps, PxGcd};
+    let mut x = 0x9e37_79b9_7f4a_7c15u64;
+    let mut rnd = move || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        x
+    };
+    for (n, grid) in [
+        (0usize, 1i64),
+        (1, 5),
+        (300, 1),
+        (300, 600),
+        (300, 7_000),
+        (40, 1 << 20),
+    ] {
+        // сетка дробится по ходу суток: первые сделки на крупном шаге, дальше — на всё более мелком
+        let ticks: Vec<Tick> = (0..n)
+            .map(|i| Tick {
+                px: 98_0000_0000
+                    + (rnd() % 50) as i64 * grid * (1 << (6 - (i * 7 / n.max(1)).min(6))),
+                off: i as u32 * 10,
+                bm: false,
+            })
+            .collect();
+        let st = GcdSteps::of(&ticks);
+        for k in 0..=n {
+            assert_eq!(
+                st.prefix(k),
+                PxGcd::of(&ticks[..k]),
+                "n {n} шаг {grid} k {k}"
+            );
+        }
+        assert_eq!(st.full(), PxGcd::of(&ticks));
+        assert_eq!(st.prefix(n + 5), PxGcd::of(&ticks));
+    }
+}
+
 /// 100 сделок суток `EDAY` в первые 100 мс на сетке 0,01 (цены 98,00 / 98,01): тик 0,01 и ≥ 100 сделок до сигнала.
 fn mk_fill() -> Vec<Tick> {
     (0..100u32)

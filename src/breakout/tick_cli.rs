@@ -466,6 +466,22 @@ fn write_detail(dir: &Path, syms: &[Sym], side: Side, p: &Params, r: &TickResult
     Ok(())
 }
 
+/// TK-683: память процесса из `/proc/self/status` (сейчас и пик) — строка журнала, на результат не влияет.
+fn mem_line(stage: &str) -> String {
+    let st = fs::read_to_string("/proc/self/status").unwrap_or_default();
+    let gb = |key: &str| {
+        st.lines()
+            .find_map(|l| l.strip_prefix(key))
+            .and_then(|v| v.trim().trim_end_matches("kB").trim().parse::<f64>().ok())
+            .map_or(0.0, |kb| kb / 1_048_576.0)
+    };
+    format!(
+        "память {stage}: сейчас {:.2} ГБ, пик {:.2} ГБ",
+        gb("VmRSS:"),
+        gb("VmHWM:")
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     cache: &Path,
@@ -482,6 +498,7 @@ pub fn run(
     let t0 = Instant::now();
     let only: Option<Vec<String>> = symbols.map(|s| s.split(',').map(str::to_string).collect());
     let syms = data::load_all(cache, threads, only.as_deref())?;
+    eprintln!("{}", mem_line("после загрузки минуток"));
     eprintln!(
         "загружено символов {} за {:.1} с",
         syms.len(),
@@ -629,6 +646,7 @@ pub fn run(
         ls.bad_rows,
         ls.errors
     );
+    eprintln!("{}", mem_line("после фазы 1"));
     if let Some(st) = &store {
         eprintln!("{}", st.summary());
     }
@@ -832,6 +850,7 @@ pub fn run(
     if let Some(st) = &store {
         eprintln!("{}", st.summary());
     }
+    eprintln!("{}", mem_line("в конце"));
     if ls.errors > 0 {
         bail!("ошибок загрузки: {}", ls.errors);
     }
