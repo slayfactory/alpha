@@ -328,7 +328,7 @@ impl FilterCfg {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct PortCfg {
     pub cool_min: usize,
     pub m_stops: usize,
@@ -345,6 +345,34 @@ pub struct PortCfg {
     /// другого уровня той же монеты входит при открытой позиции (режим сигналов: одна сделка на уровень, лимиты портфеля — `p`, `c`, `m`, `s_glob`,
     /// `ww` — выключаются своими значениями). Только `breakout tick`.
     pub busy: bool,
+    /// TK-679 (`pr`): кто из кандидатов берёт место, когда всех взять нельзя: 0 — как было (расстояние до уровня, монета по алфавиту);
+    /// 1 — выше NATR(30) закрытой минуты `t−1`; 2 — выше оборот за 15 закрытых минут; 3 — за 60. Равенство — прежний порядок. Только `breakout tick`.
+    pub pr: u8,
+    /// TK-679 (`pw`): окно сбора кандидатов, мс. 0 — правило `pr` действует только среди сигналов с одним и тем же временем (мс). `> 0` — кандидат,
+    /// который занял бы последнее свободное место, открывает окно `[t0, t0 + pw]`; прошедшие проверки кандидаты окна собираются, в `T = t0 + pw`
+    /// ранжируются по `pr` и входят по ленте на `T + lat` (кандидат, у которого сделка в `(сигнал, T]` дошла до уровня, снят). При двух и более
+    /// свободных местах вход сразу, как было. Требует `ew > 0`, несовместим с `mk`, `ek`, `xb`. Только `breakout tick`.
+    pub pw_ms: i64,
+}
+
+/// Ручной `Debug`: отпечаток в `meta.json` при `pr = 0`, `pw = 0` — прежний (поля печатаются только при включённом приоритете).
+impl std::fmt::Debug for PortCfg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("PortCfg");
+        d.field("cool_min", &self.cool_min)
+            .field("m_stops", &self.m_stops)
+            .field("mm_min", &self.mm_min)
+            .field("s_glob", &self.s_glob)
+            .field("w_min", &self.w_min)
+            .field("ww_min", &self.ww_min)
+            .field("p", &self.p)
+            .field("reentry", &self.reentry)
+            .field("busy", &self.busy);
+        if self.pr != 0 || self.pw_ms != 0 {
+            d.field("pr", &self.pr).field("pw_ms", &self.pw_ms);
+        }
+        d.finish()
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -578,6 +606,8 @@ impl Params {
                 p: 3,
                 reentry: 0,
                 busy: true,
+                pr: 0,
+                pw_ms: 0,
             },
             filt: FilterCfg::default(),
             mk: 0,
@@ -703,6 +733,8 @@ impl Params {
             "p" => self.port.p = u,
             "reentry" => self.port.reentry = u.min(255) as u8,
             "busy" => self.port.busy = b,
+            "pr" => self.port.pr = u.min(255) as u8,
+            "pw" => self.port.pw_ms = f.round() as i64,
             "mk" => self.mk = u.min(255) as u8,
             "ek" => self.ek = f.round() as i64,
             "xb" => self.xb = pm(f),
@@ -796,6 +828,17 @@ impl Params {
         }
         if self.port.reentry > 2 {
             bail!("reentry ∈ {{0, 1, 2}}");
+        }
+        if self.port.pr > 3 {
+            bail!("pr ∈ {{0, 1, 2, 3}}");
+        }
+        if !(0..=60_000).contains(&self.port.pw_ms) {
+            bail!("pw ∈ [0, 60000] мс (признаки кандидата берутся на минуте сигнала)");
+        }
+        if self.port.pw_ms > 0
+            && (!self.exit.tape_entry() || self.mk > 0 || self.ek > 0 || self.xb > 0)
+        {
+            bail!("pw требует ew > 0 (вход по ленте) и несовместим с mk, ek, xb");
         }
         self.validate_v21()?;
         self.validate_stops()?;

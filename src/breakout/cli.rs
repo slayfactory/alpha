@@ -345,6 +345,9 @@ pub(super) fn reject_tick_only(p: &Params, line: &str) -> Result<()> {
     if !p.port.busy {
         bail!("busy=0 (§13.21) считает только `breakout tick`: {line}");
     }
+    if p.port.pr != 0 || p.port.pw_ms != 0 {
+        bail!("pr/pw (TK-679, приоритет кандидатов) считает только `breakout tick`: {line}");
+    }
     if p.filt.on() {
         bail!("fa/fo/fv (§13.21, фильтр признаков) считает только `breakout tick`: {line}");
     }
