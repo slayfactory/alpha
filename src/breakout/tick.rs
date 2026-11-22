@@ -28,7 +28,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Счётчик опции `pk` (§13.11, диагностика): уровни, убитые минутным проколом > τ, которых запрет ложного пробоя к этой минуте не убил.
 pub static PK_MINUTE_KILLED: AtomicU64 = AtomicU64::new(0);
@@ -286,10 +286,13 @@ fn parse_rows(
     Ok(v)
 }
 
-type GcdMap = HashMap<(String, usize), Option<Arc<GcdSteps>>>;
+/// TK-683: ячейка суток — грузит один поток, остальные ждут его результат (потоки вариантов идут по одним и тем же сигналам
+/// и раньше разбирали одни и те же сутки каждый сам).
+type DaySlot = Arc<OnceLock<Option<Arc<Vec<Tick>>>>>;
+type GcdMap = HashMap<(String, usize), Arc<OnceLock<Option<Arc<GcdSteps>>>>>;
 
 struct Lru {
-    map: HashMap<(String, usize), Option<Arc<Vec<Tick>>>>,
+    map: HashMap<(String, usize), DaySlot>,
     order: VecDeque<(String, usize)>,
     bytes: usize,
 }
@@ -434,35 +437,50 @@ impl ZipSrc {
 impl TradeSrc for ZipSrc {
     fn day(&self, sym: &str, day: usize) -> Option<Arc<Vec<Tick>>> {
         let key = (sym.to_string(), day);
-        if let Ok(g) = self.lru.lock() {
-            if let Some(v) = g.map.get(&key) {
-                return v.clone();
-            }
-        }
-        let loaded = match self.load_day(sym, day, false) {
-            Ok(v) => v.map(|d| Arc::new(d.ticks)),
-            Err(e) => {
-                eprintln!("ОШИБКА загрузки {sym} день {day}: {e:#}");
-                if let Ok(mut g) = self.stat.lock() {
-                    g.errors += 1;
+        let slot: DaySlot = match self.lru.lock() {
+            Ok(mut g) => match g.map.get(&key) {
+                Some(slot) => slot.clone(),
+                None => {
+                    let slot = DaySlot::default();
+                    g.map.insert(key.clone(), slot.clone());
+                    g.order.push_back(key.clone());
+                    slot
                 }
-                None
-            }
+            },
+            Err(_) => DaySlot::default(),
+        };
+        let mut fresh = false;
+        let loaded = slot
+            .get_or_init(|| {
+                fresh = true;
+                match self.load_day(sym, day, false) {
+                    Ok(v) => v.map(|d| Arc::new(d.ticks)),
+                    Err(e) => {
+                        eprintln!("ОШИБКА загрузки {sym} день {day}: {e:#}");
+                        if let Ok(mut g) = self.stat.lock() {
+                            g.errors += 1;
+                        }
+                        None
+                    }
+                }
+            })
+            .clone();
+        if !fresh {
+            return loaded;
+        }
+        let size = |v: &Option<Arc<Vec<Tick>>>| {
+            v.as_ref()
+                .map_or(0, |a| a.len() * std::mem::size_of::<Tick>())
         };
         if let Ok(mut g) = self.lru.lock() {
-            let sz = loaded
-                .as_ref()
-                .map_or(0, |a| a.len() * std::mem::size_of::<Tick>());
-            if g.map.insert(key.clone(), loaded.clone()).is_none() {
-                g.order.push_back(key);
-                g.bytes += sz;
+            // ячейку могли вытеснить, пока сутки грузились: тогда её объём не в счёте
+            if g.map.get(&key).is_some_and(|s| Arc::ptr_eq(s, &slot)) {
+                g.bytes += size(&loaded);
             }
             while g.bytes > self.cap_bytes && g.order.len() > 1 {
                 if let Some(k) = g.order.pop_front() {
-                    if let Some(Some(a)) = g.map.remove(&k) {
-                        g.bytes = g
-                            .bytes
-                            .saturating_sub(a.len() * std::mem::size_of::<Tick>());
+                    if let Some(old) = g.map.remove(&k) {
+                        g.bytes = g.bytes.saturating_sub(old.get().map_or(0, size));
                     }
                 }
             }
@@ -471,17 +489,12 @@ impl TradeSrc for ZipSrc {
     }
 
     fn gcd_steps(&self, sym: &str, day: usize) -> Option<Arc<GcdSteps>> {
-        let key = (sym.to_string(), day);
-        if let Ok(g) = self.gcds.lock() {
-            if let Some(v) = g.get(&key) {
-                return v.clone();
-            }
-        }
-        let steps = self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v)));
-        if let Ok(mut g) = self.gcds.lock() {
-            g.insert(key, steps.clone());
-        }
-        steps
+        let slot = match self.gcds.lock() {
+            Ok(mut g) => g.entry((sym.to_string(), day)).or_default().clone(),
+            Err(_) => Default::default(),
+        };
+        slot.get_or_init(|| self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v))))
+            .clone()
     }
 }
 
