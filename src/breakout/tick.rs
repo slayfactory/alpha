@@ -286,6 +286,8 @@ fn parse_rows(
     Ok(v)
 }
 
+type GcdMap = HashMap<(String, usize), Option<Arc<GcdSteps>>>;
+
 struct Lru {
     map: HashMap<(String, usize), Option<Arc<Vec<Tick>>>>,
     order: VecDeque<(String, usize)>,
@@ -305,7 +307,7 @@ pub struct ZipSrc {
     cap_bytes: usize,
     lru: Mutex<Lru>,
     /// TK-683: ступени НОД суток — на весь запуск (десятки байт на сутки), вытеснение суток из `lru` их не трогает.
-    gcds: Mutex<HashMap<(String, usize), Option<Arc<GcdSteps>>>>,
+    gcds: Mutex<GcdMap>,
     pub stat: Mutex<LoadStat>,
     /// TK-607 (L1): склад разобранных суток; без него — прежний путь (`unzip` + CSV).
     store: Option<Arc<TickStore>>,
