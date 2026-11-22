@@ -154,23 +154,25 @@ section{scroll-margin-top:130px}
 .prog-foot{margin:22px 0 0;padding-bottom:6px;border-bottom:1px solid var(--border);color:var(--mfg);font-size:13px}
 /* TK-606: вкладка «Признаки» */
 .ft-bar .nav{flex-wrap:wrap}
-section.ft-set{margin-top:22px;scroll-margin-top:118px}
+section.ft-set{margin-top:22px}
 .ft-set .card-h{flex-wrap:wrap;align-items:center;padding-top:16px}
 .ft-set .card-h b{font-size:15px}
-.ft-meta{display:flex;align-items:center;gap:10px}
-.ft-about{margin:0 0 10px;color:var(--z700);font-size:13px;max-width:100ch}
-.ft-rep{margin:10px 0 0;color:var(--mfg);font-size:12px;max-width:120ch}
-.ft-rep code,.ft td.nm code{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--muted);padding:1px 6px;border-radius:4px;color:var(--z700)}
-.ft-rep code{overflow-wrap:anywhere}
-.ft-tw{overflow-x:auto;margin-top:12px}
+.ft td.nm code{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--muted);padding:1px 6px;border-radius:4px;color:var(--z700)}
+.ft-tw{overflow-x:auto}
 .ft th,.ft td{padding:8px 12px;vertical-align:top}
 .ft td:first-child{min-width:0}
 .ft{table-layout:fixed}
 .ft td.nm{overflow-wrap:anywhere}
 .ft td.nm code{font-size:12.5px;color:var(--fg);font-weight:600}
 .ft td.what{font-size:13px}
-.ft td.src{font-size:12px;color:var(--mfg)}
-.ft .mk{display:block;width:max-content;max-width:100%;margin-top:4px;font-weight:500;white-space:normal}
+.ft td.no{color:var(--mfg);font-variant-numeric:tabular-nums;cursor:pointer}
+.ft tr.hit td{background:#eff6ff}
+.ft tr.hit td.no{color:var(--accent);font-weight:650;box-shadow:inset 3px 0 0 var(--accent)}
+.ft td.base,.ft td.srch{font-size:13px;overflow-wrap:anywhere}
+.ft td.rel,.ft td.st{font-size:13px;overflow-wrap:anywhere}
+.ft td.rel a{color:var(--accent);text-decoration:none;cursor:pointer;font-variant-numeric:tabular-nums}
+.ft td.rel a:hover{text-decoration:underline}
+.ft td.st{color:var(--mfg)}
 .ft tr.grp td{background:var(--muted);border-bottom:0;padding:6px 12px;font-weight:600;font-size:12.5px}
 .ft tr.grp+tr td{border-top:0}
 @media(max-width:640px){
@@ -184,13 +186,16 @@ section.ft-set{margin-top:22px;scroll-margin-top:118px}
 .ft{table-layout:auto}
 .ft,.ft tbody{display:block}
 .ft thead{display:none}
-.ft tr{display:grid;grid-template-columns:1fr;gap:3px;padding:10px 0;border-bottom:1px solid var(--border)}
+.ft tr{display:grid;grid-template-columns:auto 1fr;gap:3px 8px;padding:10px 0;border-bottom:1px solid var(--border)}
+.ft td.what,.ft td.base,.ft td.srch,.ft td.rel,.ft td.st{grid-column:1/-1}
+.ft td.base:empty,.ft td.srch:empty,.ft td.rel:empty,.ft td.st:empty{display:none}
+.ft tr.hit td.no{box-shadow:none}
 .ft tr:last-child{border-bottom:0}
 .ft td,.ft td:first-child{padding:0;border:0;min-width:0;max-width:none;width:auto;white-space:normal}
-.ft td.what,.ft td.src{min-width:0;max-width:none}
-.ft td.src::before{content:"Данные: "}
-.ft td.src div{display:inline}
-.ft td.src div+div::before{content:"; "}
+.ft td.base::before{content:"База: ";color:var(--mfg)}
+.ft td.srch::before{content:"Перебор: ";color:var(--mfg)}
+.ft td.rel::before{content:"Связан с №: ";color:var(--mfg)}
+.ft td.st::before{content:"Статус: ";color:var(--mfg)}
 .ft tr.grp{display:block;padding:0;border:0;margin-top:6px}
 .ft tr.grp td{padding:6px 10px;border-radius:6px}
 }
@@ -1107,34 +1112,44 @@ function renderWhere(box) {
   if (P.feature) box.append(featureCard(P.feature));
 }
 
-// ── признаки (TK-606): данные — features.json (ml_features.json в репозитории, схема ml_features.schema.json), вшиты при сборке
+// ── признаки (TK-606, TK-678): данные — features.json (ml_features.json в репозитории, схема ml_features.schema.json), вшиты при сборке.
+// На вкладке только заголовки и таблицы: № (сквозной, хранится в данных) · признак · что значит · база · перебор; хеш #features/<набор>[/<№>]
 const FEAT = JSON.parse(document.getElementById('features-data').textContent);
 const ftTotal = FEAT.sets.reduce((s, x) => s + x.groups.reduce((a, g) => a + g.features.length, 0), 0);
-function ftGo() { const e = ST.ft && document.getElementById('ft-' + ST.ft); if (e) e.scrollIntoView({behavior: 'smooth', block: 'start'}); }
-function ftRow(f) {
-  const nm = h('td', {class: 'nm', 'data-f': 'name'}, [h('code', {}, f.name.replace(/_bp$/, ''))]);
-  if (f.mark) nm.append(h('span', {class: 'badge mk', 'data-f': 'mark'}, f.mark));
-  return h('tr', {'data-feature': f.name}, [nm, h('td', {class: 'what', 'data-f': 'what'}, f.what), h('td', {class: 'src', 'data-f': 'src'}, f.src.map(k => h('div', {}, FEAT.sources[k])))]);
+const FT_BY_N = new Map(FEAT.sets.flatMap(s => s.groups.flatMap(g => g.features.map(f => [f.n, s.id]))));
+const ftVal = (v, none) => v === none ? '' : v;      // «—» у базы и «нет» у перебора — пустая ячейка
+function ftMark() { document.querySelectorAll('#features tr.hit').forEach(r => r.classList.remove('hit')); const r = ST.fn && document.getElementById('ft-n-' + ST.fn); if (r) r.classList.add('hit'); return r; }
+function ftGo() {
+  const row = ftMark(), e = row || (ST.ft && document.getElementById('ft-' + ST.ft)), bar = document.querySelector('.ft-bar');
+  if (!e) return;
+  // кнопок наборов больше одной строки — отступ считаем по высоте липкой панели
+  const off = bar ? parseFloat(getComputedStyle(bar).top) + bar.offsetHeight + 10 : 118;
+  window.scrollTo({top: Math.max(0, e.getBoundingClientRect().top + scrollY - off), behavior: 'smooth'});
 }
-function ftCard(s, i) {
-  const n = s.groups.reduce((a, g) => a + g.features.length, 0);
-  const sec = h('section', {class: 'ft-set', id: 'ft-' + s.id, 'data-set': s.id, 'data-status': s.status});
+function ftRow(f, sid, cols) {
+  const no = h('td', {class: 'no', 'data-f': 'n', title: `#features/${sid}/${f.n}`}, String(f.n));
+  no.onclick = () => { ST.ft = sid; ST.fn = f.n; setHash(); ftMark(); };
+  const tds = [no, h('td', {class: 'nm', 'data-f': 'name'}, [h('code', {}, f.name.replace(/_bp$/, ''))]), h('td', {class: 'what', 'data-f': 'what'}, f.what)];
+  if (cols.base) tds.push(h('td', {class: 'base', 'data-f': 'base'}, ftVal(f.base, '—')));
+  if (cols.search) tds.push(h('td', {class: 'srch', 'data-f': 'search'}, ftVal(f.search, 'нет')));
+  // TK-682: «Связан с №» — номера-ссылки на строки (в том числе в других наборах); статус — только у набора, где он есть
+  if (cols.rel) tds.push(h('td', {class: 'rel', 'data-f': 'rel'}, (f.rel || []).flatMap((k, i) => { const a = h('a', {'data-rel': k, href: `#features/${FT_BY_N.get(k)}/${k}`}, String(k)); a.onclick = ev => { ev.preventDefault(); ST.ft = FT_BY_N.get(k); ST.fn = k; setHash(); ftGo(); }; return i ? [', ', a] : [a]; })));
+  if (cols.st) tds.push(h('td', {class: 'st', 'data-f': 'st'}, f.st || ''));
+  return h('tr', {'data-feature': f.name, 'data-n': f.n, id: 'ft-n-' + f.n}, tds);
+}
+function ftCard(s) {
+  const feats = s.groups.flatMap(g => g.features);
+  // колонка без единого значения в наборе не рисуется
+  const cols = {base: feats.some(f => f.base !== '—'), search: feats.some(f => f.search !== 'нет'), rel: feats.some(f => f.rel), st: feats.some(f => f.st)};
+  const sec = h('section', {class: 'ft-set', id: 'ft-' + s.id, 'data-set': s.id});
   const card = h('div', {class: 'card'});
-  card.append(h('div', {class: 'card-h'}, [h('b', {}, `${i + 1} · ${s.title}`), h('div', {class: 'ft-meta'}, [h('span', {}, `${s.task} · ${n} признаков`), h('span', {class: 'badge ' + (s.status === 'done' ? 'ok' : 'run'), 'data-f': 'status'}, s.status_text)])]));
+  card.append(h('div', {class: 'card-h'}, [h('b', {}, s.title)]));
   const b = h('div', {class: 'card-b'});
-  b.append(h('p', {class: 'ft-about'}, s.about));
-  b.append(h('div', {class: 'lbl'}, 'Результат'));
-  b.append(s.numbers.length ? h('ul', {class: 'nums'}, s.numbers.map(t => h('li', {}, t))) : h('div', {class: 'muted small'}, 'Цифр пока нет.'));
-  const rep = h('p', {class: 'ft-rep'});
-  rep.append(s.reports.length ? 'Отчёты: ' : 'Отчёта пока нет. ');
-  s.reports.forEach((r, j) => { if (j) rep.append(' · '); rep.append(h('code', {}, r)); });
-  rep.append(s.reports.length ? '. Протокол: ' : 'Протокол: ', h('code', {}, s.protocol));
-  b.append(rep);
   const tb = h('table', {class: 'ft'});
-  tb.append(h('colgroup', {}, [h('col', {style: 'width:200px'}), h('col'), h('col', {style: 'width:260px'})]));
-  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, 'Название в коде'), h('th', {}, 'Что измеряет'), h('th', {}, 'Данные')])));
+  tb.append(h('colgroup', {}, [h('col', {style: 'width:56px'}), h('col', {style: 'width:130px'}), h('col'), ...(cols.base ? [h('col', {style: 'width:130px'})] : []), ...(cols.search ? [h('col', {style: 'width:200px'})] : []), ...(cols.rel ? [h('col', {style: 'width:140px'})] : []), ...(cols.st ? [h('col', {style: 'width:130px'})] : [])]));
+  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, '№'), h('th', {}, 'Признак'), h('th', {}, 'Что значит'), ...(cols.base ? [h('th', {}, 'База')] : []), ...(cols.search ? [h('th', {}, 'Перебор')] : []), ...(cols.rel ? [h('th', {}, 'Связан с №')] : []), ...(cols.st ? [h('th', {}, 'Статус')] : [])])));
   const body = h('tbody');
-  s.groups.forEach(g => { if (g.title) body.append(h('tr', {class: 'grp'}, h('td', {colspan: 3}, g.title))); g.features.forEach(f => body.append(ftRow(f))); });
+  s.groups.forEach(g => { if (g.title) body.append(h('tr', {class: 'grp'}, h('td', {colspan: 3 + cols.base + cols.search + cols.rel + cols.st}, g.title))); g.features.forEach(f => body.append(ftRow(f, s.id, cols))); });
   tb.append(body);
   b.append(h('div', {class: 'ft-tw'}, tb));
   card.append(b); sec.append(card);
@@ -1143,12 +1158,10 @@ function ftCard(s, i) {
 function renderFeatures() {
   const root = document.getElementById('features');
   if (root.childElementCount) return;
-  root.append(h('div', {class: 'prog-h'}, [h('h2', {}, 'Признаки'), h('span', {class: 'muted small'}, `${ftTotal} признаков в ${FEAT.sets.length} наборах · обновлено ${FEAT.updated}`)]));
-  root.append(h('p', {class: 'prog-head'}, FEAT.intro));
-  const nav = h('div', {class: 'nav'}, FEAT.sets.map((s, i) => { const b = h('button', {'data-go': s.id}, `${i + 1} ${s.short}`); b.onclick = () => { ST.ft = s.id; setHash(); ftGo(); }; return b; }));
+  root.append(h('div', {class: 'prog-h'}, [h('h2', {}, 'Признаки'), h('span', {class: 'muted small'}, `${ftTotal} признаков · ${FEAT.sets.length} наборов · ${FEAT.updated}`)]));
+  const nav = h('div', {class: 'nav'}, FEAT.sets.map(s => { const b = h('button', {'data-go': s.id}, s.short); b.onclick = () => { ST.ft = s.id; ST.fn = null; setHash(); ftGo(); }; return b; }));
   root.append(h('div', {class: 'bar ft-bar'}, nav));
-  FEAT.sets.forEach((s, i) => root.append(ftCard(s, i)));
-  root.append(h('p', {class: 'prog-foot', 'data-f': 'foot'}, FEAT.foot));
+  FEAT.sets.forEach(s => root.append(ftCard(s)));
 }
 
 // ── вкладка «Прогресс» (TK-613, TK-631): что идёт сейчас. data/tasks.json пишет tk613_collect.py (таймер tk613-progress, раз в 60 с; треды — из now.json от ПК), страница перечитывает его раз в 60 с
@@ -1240,14 +1253,15 @@ function liveStart() {
 function liveStop() { clearInterval(LV.timer); LV.timer = null; }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && ST.tab === 'live' && Date.now() - LV.tryAt > 50000) loadLive(); });
 
-// ── вкладки верхнего уровня: хеш #live | #progress | #targets | #equity[/short|long|both][/shape | /comp][/dep=N] | #features[/<набор>] | #model[/long|short]
+// ── вкладки верхнего уровня: хеш #live | #progress | #targets | #equity[/short|long|both][/shape | /comp][/dep=N] | #features[/<набор>[/<№>]] | #model[/long|short]
 const TABS = [['live', 'Прогресс'], ['progress', 'Ход работ'], ['targets', 'Цели TK-598'], ['equity', 'Эквити'], ['features', 'Признаки'], ['model', 'Модель TK-592']];
-const ST = {tab: 'live', ft: null, eq: 'short', view: 'curve', model: 'long', cmp: false, dep: EQ_DEP0};
+const ST = {tab: 'live', ft: null, fn: null, eq: 'short', view: 'curve', model: 'long', cmp: false, dep: EQ_DEP0};
 function parseHash() {
   const [a, b, c, d] = location.hash.replace(/^#/, '').split('/');
   if (a === 'long' || a === 'short') { ST.tab = 'model'; ST.model = a; return; }
   if (TABS.some(t => t[0] === a)) ST.tab = a;
   ST.ft = a === 'features' && FEAT.sets.some(s => s.id === b) ? b : null;
+  ST.fn = ST.ft && FT_BY_N.get(+c) === ST.ft ? +c : null;      // TK-678: #features/<набор>/<№> — строка признака
   if (a === 'equity') {
     if (EQ_SIDES.some(s => s[0] === b)) ST.eq = b;
     const rest = [b, c, d];
@@ -1258,7 +1272,7 @@ function parseHash() {
   }
   if (a === 'model' && (b === 'long' || b === 'short')) ST.model = b;
 }
-function setHash() { history.replaceState(null, '', '#' + ST.tab + (ST.tab === 'equity' ? '/' + ST.eq + (ST.view === 'shape' ? '/shape' : ST.view === 'bases' ? '/bases' : ST.view === 'where' ? '/where' : (ST.cmp ? '/comp' : '') + (ST.dep !== EQ_DEP0 ? '/dep=' + ST.dep : '')) : ST.tab === 'model' ? '/' + ST.model : ST.tab === 'features' && ST.ft ? '/' + ST.ft : '')); }
+function setHash() { history.replaceState(null, '', '#' + ST.tab + (ST.tab === 'equity' ? '/' + ST.eq + (ST.view === 'shape' ? '/shape' : ST.view === 'bases' ? '/bases' : ST.view === 'where' ? '/where' : (ST.cmp ? '/comp' : '') + (ST.dep !== EQ_DEP0 ? '/dep=' + ST.dep : '')) : ST.tab === 'model' ? '/' + ST.model : ST.tab === 'features' && ST.ft ? '/' + ST.ft + (ST.fn ? '/' + ST.fn : '') : '')); }
 function route() {
   TABS.forEach(([k]) => { document.getElementById('pane-' + k).hidden = k !== ST.tab; });
   document.querySelectorAll('#toptabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === ST.tab));

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Вкладка «Признаки» страницы CatBoost П-42 (srv:8090)",
-  "description": "Файл /data/pages/ml/data/features.json; копия-источник в репозитории — tools/p42/ml_features.json. Тексты — по-русски, простыми словами. В numbers попадают только принятые цифры из отчётов (путь к отчёту — в reports); у набора, который ещё считается, numbers пустой. Ссылки src должны быть ключами sources, имена признаков не повторяются (проверяет tk593_page.py).",
+  "description": "Файл /data/pages/ml/data/features.json; копия-источник в репозитории — tools/p42/ml_features.json. Тексты — по-русски, простыми словами. TK-678: на вкладке рисуются только навигация, заголовки наборов и групп и таблица (№ · признак · что значит · база · перебор); intro, foot, about, numbers, reports, protocol, status, src, mark остаются в данных, но не показываются. В numbers попадают только принятые цифры из отчётов (путь к отчёту — в reports); у набора, который ещё считается, numbers пустой. Ссылки src должны быть ключами sources, имена признаков не повторяются (проверяет tk593_page.py).",
   "type": "object",
   "additionalProperties": false,
   "required": ["updated", "intro", "sources", "sets", "foot"],
@@ -21,12 +21,17 @@
     "feature": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "what", "src"],
+      "required": ["n", "name", "what", "src", "base", "search"],
       "properties": {
+        "n": {"type": "integer", "minimum": 1, "description": "TK-678: сквозной номер признака на вкладке, постоянный: новый признак получает следующий номер, старые не сдвигаются; повторы и пропуски отвергает tk593_page.py"},
         "name": {"type": "string", "minLength": 1, "description": "имя в коде"},
-        "what": {"type": "string", "minLength": 1, "description": "что измеряет, простыми словами"},
+        "what": {"type": "string", "minLength": 1, "description": "что значит: не больше 12 простых слов, без номеров задач и путей"},
         "src": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "ключи из sources"},
-        "mark": {"type": "string", "minLength": 1, "description": "необязательно: короткая пометка из отчёта, например «топ-5 шорта · z 3,79»"}
+        "base": {"type": "string", "minLength": 1, "description": "TK-678: значение в замороженных линиях (Л — лонг, Ш — шорт); «—» — у столбца таблицы признаков базы нет"},
+        "search": {"type": "string", "minLength": 1, "description": "TK-678: значения в совместном переборе TK-674; «нет» — в перебор не входит"},
+        "mark": {"type": "string", "minLength": 1, "description": "необязательно: короткая пометка из отчёта, например «топ-5 шорта · z 3,79»"},
+        "rel": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "integer", "minimum": 1}, "description": "TK-682: колонка «Связан с №» — номера связанных признаков (дубли, входы сводных, зависимые ключи); пишет tk682_audit.py, существование номеров проверяет tk593_page.py"},
+        "st": {"type": "string", "minLength": 1, "description": "TK-682: необязательно: короткий статус строки — «дубль № …», «всегда 0», «заменён № …»; номер строки при этом не меняется"}
       }
     },
     "group": {
@@ -50,7 +55,7 @@
         "status": {"enum": ["done", "running"], "description": "готово / идёт"},
         "status_text": {"type": "string", "minLength": 1},
         "about": {"type": "string", "minLength": 1, "description": "что это за набор и зачем проверяется"},
-        "numbers": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "принятые цифры из отчётов; пусто — «Цифр пока нет»"},
+        "numbers": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "принятые цифры из отчётов; пусто у набора «идёт» — «Цифр пока нет», у готового (параметры движка) — блока «Результат» нет"},
         "reports": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "пути к отчётам; пусто — «Отчёта пока нет»"},
         "protocol": {"type": "string", "minLength": 1, "description": "путь и раздел протокола"},
         "groups": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/group"}}
