@@ -527,7 +527,8 @@ def eff_flags(side, patch):
 
 
 def _cc_job(job):
-    """c-проверка Lmax по клетке: сделки с выходом `stop` и убытком ≥ 90 % от 500 $ × s (полный стоп; остаток после частичного закрытия — не полный)."""
+    """c-проверка Lmax по клетке: сделки с выходом `stop` и убытком ≥ 90 % от 500 $ × s (полный размер; в файле сделок размера на выходе нет — `fees` вдвое меньше у половинной позиции, вход в две части e/e2).
+    Рядом: число stop-выходов с убытком в зоне 60–90 % (разделение двух мод), худший убыток полного стопа, превышение над Lmax(s) = 500 $ × s / 100 + 0,415 $."""
     side, cid, bname, s_pct = job
     st, p8 = _W["st"], _W["p8"]
     dirs = {w.name: (os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), bname, cid), side) for w in st.TRADE_WINDOWS}
@@ -535,11 +536,14 @@ def _cc_job(job):
     kinds, pnl = p8.kinds_pnl(tables)
     kinds, pnl = np.array(kinds), np.asarray(pnl, dtype=float)
     base = 500.0 * s_pct / 100.0
+    lm = base + 0.415
     hard = kinds == "stop"
     loss = -pnl[hard]
     full = loss >= 0.9 * base
-    return dict(cid=cid, n_stop=int(hard.sum()), n_full=int(full.sum()), c_full=float((loss[full] - base).mean()) if full.any() else None,
-                c_all=float((loss - base).mean()) if len(loss) else None, n_over=int((loss > base + 0.415 + 1e-6).sum()))
+    mid = (loss >= 0.6 * base) & (loss < 0.9 * base)
+    lf = loss[full]
+    return dict(cid=cid, s=s_pct, n_stop=int(hard.sum()), n_full=int(full.sum()), n_mid=int(mid.sum()), c_full=float((lf - base).mean()) if full.any() else None,
+                c_all=float((loss - base).mean()) if len(loss) else None, worst=float(lf.max()) if full.any() else None, n_above=int((lf > lm + 1e-6).sum()), ex_max=float((lf - lm).max()) if full.any() else None)
 
 
 def cmd_ccheck(a):
@@ -557,9 +561,15 @@ def cmd_ccheck(a):
         out[side] = res
         cf = [r["c_full"] for r in res if r["c_full"] is not None and r["n_full"] >= 20]
         ca = [r["c_all"] for r in res if r["c_all"] is not None and r["n_stop"] >= 20]
-        say("== %s: клеток %d; с ≥ 20 полными стопами %d: средний c = %.3f $ (мин %.3f, макс %.3f); все stop-выходы (как в tables): %.3f $ (%d клеток); сделок с убытком > Lmax: %d" % (
+        wf = [r for r in res if r["worst"] is not None]
+        w5 = [r["worst"] for r in wf if r["s"] == 5]
+        n_full, n_above, n_mid = sum(r["n_full"] for r in res), sum(r["n_above"] for r in res), sum(r["n_mid"] for r in res)
+        say("== %s: клеток %d; с ≥ 20 полными стопами %d: средний c = %.3f $ (мин %.3f, макс %.3f) | все stop-выходы (как в tables): %.3f $ (%d клеток)" % (
             side, len(res), len(cf), float(np.mean(cf)) if cf else float("nan"), min(cf) if cf else float("nan"), max(cf) if cf else float("nan"),
-            float(np.mean(ca)) if ca else float("nan"), len(ca), sum(r["n_over"] for r in res)))
+            float(np.mean(ca)) if ca else float("nan"), len(ca)))
+        say("   полных стопов %d, из них убыток > Lmax(s) %d (%.1f %%), стоп-выходов в зоне 60–90 %% от полного %d (%.2f %% от stop-выходов); максимум превышения над Lmax(s) %.2f $; худший убыток полного стопа: при s=5 %.2f $ (Lmax(5 %%) = 25.42 $), по всем клеткам %.2f $" % (
+            n_full, n_above, 100.0 * n_above / max(n_full, 1), n_mid, 100.0 * n_mid / max(1, sum(r["n_stop"] for r in res)), max([r["ex_max"] for r in wf] or [float("nan")]),
+            max(w5 or [float("nan")]), max([r["worst"] for r in wf] or [float("nan")])))
     json.dump(out, open(t.q("res", "ccheck674.json"), "w", encoding="utf-8"))
     say("ccheck готово")
 
