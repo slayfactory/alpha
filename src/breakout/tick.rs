@@ -615,8 +615,8 @@ pub fn candidates_fg(
     candidates_group(sym, levels, &[cfg], side, &mut outs, &mut fg);
     let [o] = outs;
     *out = o;
-    for k in 0..4 {
-        fgc[k] += fg[0][k];
+    for (a, b) in fgc.iter_mut().zip(fg[0]) {
+        *a += b;
     }
 }
 
@@ -751,7 +751,7 @@ pub fn candidates_group(
                 (-sym.l[t], -sym.h[t])
             };
             // минута ниже самой широкой зоны группы кандидата не даёт ни одному заданию
-            if t >= START_MIN && t > 0 && !forbidden && lo < lp && hi >= zone_min {
+            if t >= START_MIN && !forbidden && lo < lp && hi >= zone_min {
                 for e in &em {
                     // зона входа минуты: постоянная или от волатильности закрытой минутки `t−1` (`ev`); нет значения — кандидата нет
                     let zone_lo = match e.evol {
@@ -836,8 +836,8 @@ pub fn candidates_group(
         }
     }
     for e in &em {
-        for k in 0..4 {
-            fgc[e.k][k] += fg[k];
+        for (a, b) in fgc[e.k].iter_mut().zip(fg) {
+            *a += b;
         }
     }
 }
@@ -929,8 +929,8 @@ pub fn signals_for_coin(
         candidates_group(sym, levels, &cfgs, *side, &mut outs_g, &mut fg);
         for ((&j, cs), f) in g.iter().zip(outs_g).zip(fg) {
             cands[j] = cs;
-            for k in 0..4 {
-                ctrs[j].fg[k] += f[k];
+            for (a, b) in ctrs[j].fg.iter_mut().zip(f) {
+                *a += b;
             }
         }
     }
