@@ -5310,7 +5310,7 @@ fn e1t_run_is_one_maker_lot_without_slippage_and_counts_orders() {
 }
 
 #[test]
-fn e1t_key_parses_both_signs_validates_and_keeps_the_params_string_at_zero() {
+fn e1t_key_parses_before_the_level_only_validates_and_keeps_the_params_string_at_zero() {
     use super::params::parse_variant;
     let (_, p0) = parse_variant("x ew=100").expect("разбор");
     assert_eq!(p0.exit.e1t, 0);
@@ -5320,21 +5320,21 @@ fn e1t_key_parses_both_signs_validates_and_keeps_the_params_string_at_zero() {
     );
     for (line, t) in [
         ("x ew=100 e1t=1", 1),
+        ("x ew=100 e1t=2", 2),
         ("x ew=100 e1t=3", 3),
-        ("x ew=100 e1t=-1", -1),
-        ("x ew=100 e1t=-3", -3),
     ] {
         let (_, p) = parse_variant(line).expect(line);
         assert_eq!(p.exit.e1t, t, "{line}");
         assert!(format!("{:?}", p.exit).ends_with(&format!("e1t: {t} }}")));
     }
-    let (_, p) = parse_variant("x ew=100 e1t=-2").expect("разбор");
+    let (_, p) = parse_variant("x ew=100 e1t=2").expect("разбор");
     assert!(super::cli::reject_tick_only(&p, "x").is_err());
     for bad in [
         "e1t=2",                // без входа по ленте
         "ew=100 e1t=1 mk=1",    // два правила лимитного входа
         "ew=100 e1t=1 ek=5",    // и подтверждения
-        "ew=100 e1t=-1 xb=1",   // и пробоя
+        "ew=100 e1t=1 xb=1",    // и пробоя
+        "ew=100 e1t=-1",        // за уровнем не регистрируется (В-178)
         "ew=100 e1t=1 e2=0.05", // вся ставка одной заявкой
         "ew=100 e1t=1 e2t=1",
         "ew=100 e1t=2 w2=25",
@@ -5346,18 +5346,25 @@ fn e1t_key_parses_both_signs_validates_and_keeps_the_params_string_at_zero() {
 }
 
 #[test]
-fn w2_67_is_accepted_by_both_second_entry_keys_and_splits_one_third_two_thirds() {
+fn w2_67_and_70_are_accepted_by_both_second_entry_keys_and_split_the_stake() {
     use super::params::parse_variant;
-    for line in ["x ew=100 e2t=1 w2=67", "x ew=100 e2=0.05 w2=67"] {
-        let (_, p) = parse_variant(line).expect(line);
-        let (l1, l2) = p.exit.lots(NOTIONAL_U);
-        assert_eq!(p.exit.w2_pct, 67);
-        assert_eq!(
-            (l1, l2),
-            (NOTIONAL_U / 100 * 33, NOTIONAL_U / 100 * 67),
-            "{line}"
-        );
-        assert_eq!(l1 + l2, NOTIONAL_U);
+    for w2 in [67, 70] {
+        for line in [
+            format!("x ew=100 e2t=1 w2={w2}"),
+            format!("x ew=100 e2t=2 w2={w2}"),
+            format!("x ew=100 e2t=3 w2={w2}"),
+            format!("x ew=100 e2=0.05 w2={w2}"),
+        ] {
+            let (_, p) = parse_variant(&line).expect(&line);
+            let (l1, l2) = p.exit.lots(NOTIONAL_U);
+            assert_eq!(p.exit.w2_pct, w2);
+            assert_eq!(
+                (l1, l2),
+                (NOTIONAL_U / 100 * (100 - w2), NOTIONAL_U / 100 * w2),
+                "{line}"
+            );
+            assert_eq!(l1 + l2, NOTIONAL_U);
+        }
     }
 }
 
