@@ -2407,7 +2407,7 @@ impl GcdSteps {
 
     /// Ступени посчитаны по этим суткам? Сверка файла ступеней с загруженными сделками: число сделок и первая цена.
     pub fn fits(&self, ticks: &[Tick]) -> bool {
-        self.n == ticks.len() && !ticks.first().is_some_and(|t| t.px != self.p0)
+        self.n == ticks.len() && ticks.first().is_none_or(|t| t.px == self.p0)
     }
 
     /// Запись в файл ступеней (`ZipSrc::gcd_file`): метка, первая цена, число сделок, ступени; числа — little-endian.
