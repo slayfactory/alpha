@@ -21,6 +21,7 @@ CHECK = (("sac10", "q20"), ("accdv1_300", "q80"))                     # клет
 def main():
     st, r5, _, _ = run.t._srv()
     tabs = run.feat_tabs("S", st, r5.Uni(run.UNI), r54.episodes_h775())
+    tot, tot_all = {}, 0
     thr = x6.thresholds("S")                                           # пороги осей столбцов — как в плане шага 3
     for w in st.TRADE_WINDOWS:
         tab = tabs[w.name]
@@ -39,7 +40,13 @@ def main():
             th = thr["%s.le@t" % c][q][2]
             v = np.asarray(tab[c], dtype=np.float64)
             out.append("%s.le@t_%s порог %g: отброшено %d из %d (пустых %d)" % (c, q, th, int((v > th).sum()), len(v), int(np.isnan(v).sum())))
+        sc = r54.in_scored_range(w, tab["ms"])                          # покрытие — как в `tk680_singles.cmd_select`: по строкам зачётного диапазона
+        out.append("зачётный диапазон: %d строк; пустых " % int(sc.sum()) + ", ".join("%s %d" % (c, int(np.isnan(np.asarray(tab[c], dtype=np.float64)[sc]).sum())) for c in COLS))
+        cov_n = {c: int(np.isfinite(np.asarray(tab[c], dtype=np.float64)[sc]).sum()) for c in COLS}
+        tot = {c: tot.get(c, 0) + cov_n[c] for c in COLS}
+        tot_all += int(sc.sum())
         print(" | ".join(out))
+    print("покрытие в зачётном диапазоне (3 окна): " + ", ".join("%s %d / %d = %.1f %%" % (c, tot[c], tot_all, 100.0 * tot[c] / tot_all) for c in COLS) + "  (TK-680, thr680t.json h775: sac10 382 / 494 = 77,3 %, sac60 490 / 494, accdv1_300 491 / 494)")
 
 
 if __name__ == "__main__":
