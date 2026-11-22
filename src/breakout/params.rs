@@ -235,6 +235,9 @@ pub struct ExitCfg {
     pub e2t: i64,
     /// TK-677 (`s2`): 1 — общий стоп позиции: жёсткий стоп лота 2 стоит на цене стопа лота 1; 0 — у каждого лота свой стоп от своей цены входа.
     pub s2: bool,
+    /// TK-688 (`e1t`): вся ставка одной лимитной заявкой в |N| тиках от уровня; со знаком: > 0 — со стороны подхода (лимит `L − N·тик`), < 0 — за уровнем
+    /// (лимит `L + |N|·тик`); 0 — выкл. Мейкер, как `mk`; требует `ew > 0`, несовместим с `mk`, `ek`, `xb`, `e2`, `e2t`, `pw`.
+    pub e1t: i64,
 }
 
 /// Ручной `Debug`: при выключенных ключах §13.31 строка `params` в meta.json — та же, что у производного `Debug` до §13.31.
@@ -305,6 +308,9 @@ impl std::fmt::Debug for ExitCfg {
         }
         if self.sm_pm != 0 {
             d.field("sm_pm", &self.sm_pm);
+        }
+        if self.e1t != 0 {
+            d.field("e1t", &self.e1t);
         }
         d.finish()
     }
@@ -595,6 +601,7 @@ impl Params {
                 w2_pct: 50,
                 e2t: 0,
                 s2: false,
+                e1t: 0,
             },
             port: PortCfg {
                 cool_min: 5,
@@ -717,6 +724,7 @@ impl Params {
             "w2" => self.exit.w2_pct = f.round() as i64,
             "e2t" => self.exit.e2t = f.round() as i64,
             "s2" => self.exit.s2 = b,
+            "e1t" => self.exit.e1t = f.round() as i64,
             "fg" => self.sig.fg_m = pm(f),
             "nf" => self.sig.nf = u.min(255) as u8,
             "ev" => self.sig.ev = u.min(255) as u8,
@@ -823,6 +831,7 @@ impl Params {
             bail!("xb несовместим с e2 / e2t (вся ставка одним входом на срабатывании)");
         }
         self.validate_split()?;
+        self.validate_e1t()?;
         if self.exit.tpp && self.exit.tj_m > 0 {
             bail!("tpp (тейки в процентах) несовместим с tj (шаг лестницы в NATR)");
         }
@@ -836,9 +845,13 @@ impl Params {
             bail!("pw ∈ [0, 60000] мс (признаки кандидата берутся на минуте сигнала)");
         }
         if self.port.pw_ms > 0
-            && (!self.exit.tape_entry() || self.mk > 0 || self.ek > 0 || self.xb > 0)
+            && (!self.exit.tape_entry()
+                || self.mk > 0
+                || self.ek > 0
+                || self.xb > 0
+                || self.exit.e1t != 0)
         {
-            bail!("pw требует ew > 0 (вход по ленте) и несовместим с mk, ek, xb");
+            bail!("pw требует ew > 0 (вход по ленте) и несовместим с mk, ek, xb, e1t");
         }
         self.validate_v21()?;
         self.validate_stops()?;
@@ -896,6 +909,21 @@ impl Params {
         }
         if e.s2 && e.sn_m != 0 {
             bail!("s2 (общий стоп позиции) несовместим с sn (NATR-стоп лота)");
+        }
+        Ok(())
+    }
+
+    /// TK-688: `e1t` — вход одной лимиткой у уровня; знак — сторона: `e1t > 0` со стороны подхода, `e1t < 0` за уровнем; |e1t| ≤ 1000 тиков.
+    fn validate_e1t(&self) -> Result<()> {
+        let e = &self.exit;
+        if e.e1t.abs() > 1000 {
+            bail!("|e1t| ≤ 1000 (тики от уровня)");
+        }
+        if e.e1t != 0 && !e.tape_entry() {
+            bail!("e1t требует ew > 0 (вход по ленте)");
+        }
+        if e.e1t != 0 && (self.mk > 0 || self.ek > 0 || self.xb > 0 || e.split()) {
+            bail!("e1t несовместим с mk, ek, xb, e2, e2t (вся ставка одной лимитной заявкой)");
         }
         Ok(())
     }
