@@ -118,3 +118,21 @@ def test_reroot_level_adds_base_and_keeps_cells():
         print(json.dumps(dict(full=sorted(full["cells"]), first=next(iter(full["cells"])), axes=len(full["axes"]), anc=sorted(anc["cells"]), anc_axes=len(anc["axes"]), src=sorted(src["cells"]))))
     """, TK680_SET="t681")
     assert r["full"] == ["k5", "kb"] and r["first"] == "kb" and r["axes"] == 1 and r["anc"] == ["kb"] and r["anc_axes"] == 0 and r["src"] == ["k5"]
+
+
+def test_new_set_e1t_and_split_w2_cells():
+    """§13.73.18 (PS-979): набор new — e1t = 1 / 2 / 3 (только до уровня, у шорта e2 снимается) и вход двумя частями w2 = 67 / 70 / 80 при e2t = 1 / 2 / 3 + e2w67: 13 клеток на сторону."""
+    r = run("""
+        import tk680_axes as a
+        out = {}
+        for side in "LS":
+            ax_ = a.engine_axes(side)
+            out[side] = {n: [(l, p) for l, p in vals if l != b] for n, vals, b in ax_}
+        print(json.dumps(out))
+    """, TK680_SET="new", TK674_UNI="c539")
+    for side in "LS":
+        e1, sp = r[side]["e1t"], r[side]["w2"]
+        assert [l for l, _ in e1] == ["1", "2", "3"] and all(p["e1t"] == int(l) and "e2t" not in p and "w2" not in p for l, p in e1)
+        assert all((p.get("e2") == 0) == (side == "S") for _, p in e1)                   # у шорта база e2 = 0,05 несовместима с e1t
+        assert len(sp) == 10 and [l for l, _ in sp][0] == "e2w67"
+        assert {p["w2"] for _, p in sp} == {67, 70, 80} and {p.get("e2t") for _, p in sp[1:]} == {1, 2, 3}

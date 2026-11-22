@@ -20,7 +20,7 @@ import tk680_axes as a80  # noqa: E402
 COLS_FILE = os.path.join(HERE, "tk680_cols.json")     # имена столбцов покрытия (docs/findings/p42-titration-coverage-2026-11-22/cols.json)
 ENGNAME = {"L": "long", "S": "short"}
 OPS = {"le": "<=", "ge": ">="}
-THR_NAME = {"hist": "thr680h.json", "grid": "thr680g.json", "ctx": "thr680c.json", "t681": "thr680t.json"}.get(a80.SET, "thr680.json")     # пороги набора «история пробоев» (§13.73.8) — свой файл, заморозка thr680.json не трогается
+THR_NAME = {"hist": "thr680h.json", "grid": "thr680g.json", "ctx": "thr680c.json", "t681": "thr680t.json", "new": "thr680n.json"}.get(a80.SET, "thr680.json")     # пороги набора «история пробоев» (§13.73.8) — свой файл, заморозка thr680.json не трогается
 
 
 def cosig15(sym, ms):

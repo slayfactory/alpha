@@ -58,6 +58,8 @@ def engine_axes(side):
         return []
     if SET == "t681":
         return t681_axes(side)
+    if SET == "new":
+        return new_axes(side)
     S = side == "S"
     out = [
         _grid("natr_p", [15, 30, 60], 30),
@@ -173,6 +175,20 @@ def t681_ea(vq, side, code, mult):
     return round(T681_E_BASE[side] / vq["quantiles_pct"][str(code)]["q50"] * mult, 3)
 
 
+# поправка §13.73.18 (PS-979; В-176, В-177, В-178): набор TK680_SET=new — единички `e1t` (вся ставка одной лимиткой за 1 / 2 / 3 тика ДО уровня) и вход двумя частями
+# (доля части B w2 = 67 / 70 / 80 % при e2t = 1 / 2 / 3, плюс размещение e2 = 0,05 при w2 = 67); бинарь — единый TK-688; остальные ключи — база стороны (у шорта e2 = 0,05 снимается)
+NEW_E1T = (1, 2, 3)
+NEW_W2 = (67, 70, 80)
+
+
+def new_axes(side):
+    sl = ax.SPLIT_LINE[side]
+    rel = lambda **kw: {k: v for k, v in kw.items() if sl[k] != v}       # значения split-ключей относительно строки базы стороны
+    e1 = [("off", {})] + [(str(t), dict(e1t=t, **({} if not sl["e2"] else dict(e2=0)))) for t in NEW_E1T]
+    sp = [("off", {}), ("e2w67", rel(e2=0.05, e2t=0, w2=67))] + [("t%dw%d" % (k, w), rel(e2=0, e2t=k, w2=w)) for k in (1, 2, 3) for w in NEW_W2]
+    return [("e1t", e1, "off"), ("w2", sp, "off")]
+
+
 def t681_axes(side):
     """Оси ключей TK-681 (§13.73.14): `natr_p` 5; `nf` 7 источников × 3 порога; `ev` 8 источников × 3 множителя; `el` / `eh` при ev = 3; `sm` при трёх родителях стопа."""
     vq = t681_volq()
@@ -206,7 +222,7 @@ def column_list(coverage_cols):
     """[(имя покрытия, источник parquet | (числитель, знаменатель), направления)] — все столбцы покрытия, кроме COL_SKIP."""
     if SET == "hist":
         return [(c, c, ("le", "ge")) for c in HIST_COLS]
-    if SET == "grid":
+    if SET in ("grid", "new"):
         return []
     if SET == "ctx":
         return [(c, c, ("le",)) for c in CTX_COLS]
