@@ -242,7 +242,7 @@ def cmd_map(n):
             for x in reps:
                 q5 = r5rows.get(x["ref5_key"])
                 x["ref5"] = dict(sharpe=q5["sharpe"], usd=q5["usd"], n=q5["trades"], maxdd=q5["extra"]["maxdd"], **run.loss_fields(q5["extra"])) if q5 else None
-        m_side = sum(r["n"] for r in store.cells_count() if r["side"] == SIDENAME[side] and r["uni"] == UNI and r["win"] == WIN)
+        m_side, m_own = run.m_trials(store, SIDENAME[side])
         shs = np.array([r["sharpe"] for r in rows.values() if r["sharpe"] == r["sharpe"]])
         sig_sh = float(shs.std()) if len(shs) > 1 else float("nan")
         by_sig = {}
@@ -250,7 +250,7 @@ def cmd_map(n):
             by_sig.setdefault(r["extra"].get("trades_sig"), []).append(k)
         dup = [v for k_, v in by_sig.items() if k_ and len(v) > 1]
         out = dict(side=side, level=n, rebase=ax.REBASE, base=dict(ckey=base_ck, sharpe=bsh, usd=brow["usd"], n=brow["trades"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"],
-                   rr=bx["rr"]["rr"], **run.loss_fields(bx)), pairs=out_rows, n_cells=len(rows), m=m_side, sharpe_sd=sig_sh, noise_max=sig_sh * float(np.sqrt(2 * np.log(max(m_side, 2)))),
+                   rr=bx["rr"]["rr"], **run.loss_fields(bx)), pairs=out_rows, n_cells=len(rows), m=m_side, m_own=m_own, sharpe_sd=sig_sh, noise_max=sig_sh * float(np.sqrt(2 * np.log(max(m_side, 2)))),
                    g_dup=dict(groups=len(dup), cells=sum(len(v) for v in dup), examples=dup[:5]),
                    select=dict(cap=lv["cap"], eligible=lv["eligible"], taken=len(lv["taken"]), left_out=lv["left_out"], active_subs=lv["active_subs"], subs=lv["subs"]))
         json.dump(out, open(map_path(n, side), "w", encoding="utf-8"), ensure_ascii=False)

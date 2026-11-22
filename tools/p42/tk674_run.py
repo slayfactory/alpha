@@ -180,6 +180,20 @@ UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"      # TK674_UNI
 SIDENAME = {"L": "long", "S": "short"}
 VMAX, SIGMAX = 400, 26                          # вариантов и разных проходов сигналов на вызов движка (память: 26 проходов ≈ 30 ГБ при двух сторонах)
 MIN_N, MIN_MONTH = 150, (15, 15, 15, 15, 8)     # охрана (а) §13.73
+GUARD_A_C539 = {"long": (105, (11, 11, 11, 11, 6)), "short": (81, (9, 9, 9, 9, 5))}      # охрана (а) на c539: формула PS-975 разд. 3 от якорей L-334 (298 / 172 против 428 / 319), числа записаны L-335
+
+
+def guard_a(side_name):
+    """Порог охраны (а) стороны: (n, по месяцам). На c539 — масштабированный по якорям (L-335), иначе §13.73 без изменений."""
+    return GUARD_A_C539[side_name] if UNI == "c539" else (MIN_N, MIN_MONTH)
+
+
+def m_trials(store, side_name):
+    """Основное m стороны: клетки состава UNI в БД; на c539 — плюс клетки h775 той же стороны (PS-975 разд. 6, FIX b критика: состав выбран по результату h775, одна цепочка отбора). Второе число — m только по UNI."""
+    cnt = store.cells_count()
+    own = sum(r["n"] for r in cnt if r["side"] == side_name and r["uni"] == UNI and r["win"] == WIN)
+    extra = sum(r["n"] for r in cnt if r["side"] == side_name and r["uni"] == "h775" and r["win"] == WIN) if UNI == "c539" else 0
+    return own + extra, own
 FEAT_COLS = ("tpm60", "cons60", "zv6h", "mv5", "n24", "m24")
 
 
@@ -879,7 +893,8 @@ def guards(row, base):
     b = base["extra"]
     k_base = sum(1 for m_ in b["months"] if m_[1] > 0)
     g = {}
-    g["a"] = ex["n"] >= MIN_N and all(m_[0] >= mn for m_, mn in zip(ex["months"], MIN_MONTH))
+    n_min, mon_min = guard_a(row["side"])
+    g["a"] = ex["n"] >= n_min and all(m_[0] >= mn for m_, mn in zip(ex["months"], mon_min))
     g["b"] = sum(1 for m_ in ex["months"] if m_[1] > 0) >= min(4, k_base)
     g["c"] = ex["maxdd"] <= 2 * b["maxdd"]
     g["d"] = ex["lmax"]["usd"] <= b["lmax"]["usd"] + 1e-9
@@ -1074,7 +1089,7 @@ def cmd_map(a):
                 q5 = r5rows.get(x["ref5_key"])
                 x["ref5"] = dict(sharpe=q5["sharpe"], usd=q5["usd"], n=q5["trades"], maxdd=q5["extra"]["maxdd"], **loss_fields(q5["extra"])) if q5 else None
         # счётчик испытаний (§13.73.1 разд. 3): все клетки стороны в БД (карта + прежние), шум σ·√(2 ln m) — верхняя оценка для независимых клеток
-        m_side = sum(r["n"] for r in store.cells_count() if r["side"] == SIDENAME[side] and r["uni"] == UNI and r["win"] == WIN)
+        m_side, m_own = m_trials(store, SIDENAME[side])
         shs = np.array([r["sharpe"] for r in rows.values() if r["sharpe"] == r["sharpe"]])
         sig_sh = float(shs.std()) if len(shs) > 1 else float("nan")
         noise = sig_sh * float(np.sqrt(2 * np.log(max(m_side, 2))))
@@ -1084,7 +1099,7 @@ def cmd_map(a):
             by_sig.setdefault(r["extra"].get("trades_sig"), []).append(k)
         dup = [v for k_, v in by_sig.items() if k_ and len(v) > 1]
         out = dict(side=side, rebase=ax.REBASE, base=dict(ckey=base_ck, sharpe=bsh, usd=brow["usd"], n=brow["trades"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"], rr=bx["rr"]["rr"], **loss_fields(bx)), pairs=pair_rows, best1=best1, n_cells=len(rows),
-                   m=m_side, sharpe_sd=sig_sh, noise_max=noise, g_dup=dict(groups=len(dup), cells=sum(len(v) for v in dup), examples=dup[:5]))
+                   m=m_side, m_own=m_own, sharpe_sd=sig_sh, noise_max=noise, g_dup=dict(groups=len(dup), cells=sum(len(v) for v in dup), examples=dup[:5]))
         if plan.get("x680"):                                 # пары с осями единичек: какие оси и сколько пар отобрано (для отчёта mapmd)
             x6s = plan["x680"]
             out["x680"] = dict(cap=x6s["cap"], n_new_axes=x6s["n_new_axes"], by_set=x6s["by_set"], ext={n: e["add"] for n, e in x6s["ext"].items()}, n_rule=x6s["n_rule"], taken=len(x6s["taken"]),
