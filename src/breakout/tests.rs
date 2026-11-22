@@ -571,3 +571,47 @@ fn grid_start_default_is_sep_01() {
     assert_eq!(super::data::day_string(0), "2026-09-01");
     assert_eq!(super::data::day_string(14), "2026-09-15");
 }
+
+/// TK-683: `par_map_wide` — считают одновременно не больше `threads` рабочих, результат в порядке входа; ожидающий (`pause`) разрешение
+/// отдаёт, работа внутри ожидания (`Paused::work`) снова под разрешением.
+#[test]
+fn par_map_wide_limits_running_workers() {
+    use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+    let (run, peak, waiting, peak_wait) = (
+        AtomicUsize::new(0),
+        AtomicUsize::new(0),
+        AtomicUsize::new(0),
+        AtomicUsize::new(0),
+    );
+    let busy = |ms: u64| {
+        peak.fetch_max(run.fetch_add(1, SeqCst) + 1, SeqCst);
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+        run.fetch_sub(1, SeqCst);
+    };
+    let items: Vec<usize> = (0..24).collect();
+    let out = super::par_map_wide(&items, 8, 2, |&i| {
+        busy(2);
+        {
+            let paused = super::pause();
+            peak_wait.fetch_max(waiting.fetch_add(1, SeqCst) + 1, SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            waiting.fetch_sub(1, SeqCst);
+            paused.work(|| busy(1));
+        }
+        i * 2
+    });
+    assert_eq!(out, items.iter().map(|i| i * 2).collect::<Vec<_>>());
+    assert!(
+        peak.load(SeqCst) <= 2,
+        "считали одновременно {}",
+        peak.load(SeqCst)
+    );
+    assert!(
+        peak_wait.load(SeqCst) > 2,
+        "ждали одновременно {}",
+        peak_wait.load(SeqCst)
+    );
+    // без `wide` и вне рабочих потоков `pause` — пустышка
+    super::pause().work(|| ());
+    assert_eq!(super::par_map_wide(&items, 2, 2, |&i| i + 1)[23], 24);
+}

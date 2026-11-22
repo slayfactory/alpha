@@ -510,21 +510,29 @@ impl TradeSrc for ZipSrc {
             Err(_) => DaySlot::default(),
         };
         let mut fresh = false;
-        let loaded = slot
-            .get_or_init(|| {
-                fresh = true;
-                match self.load_day(sym, day, false) {
-                    Ok(v) => v.map(|d| Arc::new(d.ticks)),
-                    Err(e) => {
-                        eprintln!("ОШИБКА загрузки {sym} день {day}: {e:#}");
-                        if let Ok(mut g) = self.stat.lock() {
-                            g.errors += 1;
+        let loaded = match slot.get() {
+            Some(v) => v.clone(),
+            None => {
+                // ожидающий чужой загрузки разрешение на счёт не держит (`P42_WIDE`); загрузчик берёт его на время разбора
+                let paused = super::pause();
+                slot.get_or_init(|| {
+                    paused.work(|| {
+                        fresh = true;
+                        match self.load_day(sym, day, false) {
+                            Ok(v) => v.map(|d| Arc::new(d.ticks)),
+                            Err(e) => {
+                                eprintln!("ОШИБКА загрузки {sym} день {day}: {e:#}");
+                                if let Ok(mut g) = self.stat.lock() {
+                                    g.errors += 1;
+                                }
+                                None
+                            }
                         }
-                        None
-                    }
-                }
-            })
-            .clone();
+                    })
+                })
+                .clone()
+            }
+        };
         if !fresh {
             return loaded;
         }
@@ -573,24 +581,30 @@ impl TradeSrc for ZipSrc {
             Ok(mut g) => g.entry((sym.to_string(), day)).or_default().clone(),
             Err(_) => Default::default(),
         };
+        if let Some(v) = slot.get() {
+            return v.clone();
+        }
+        let paused = super::pause();
         slot.get_or_init(|| {
-            let file = self.gcd_file(sym, day);
-            let saved = file
-                .as_ref()
-                .and_then(|p| fs::read(p).ok())
-                .and_then(|b| GcdSteps::from_bytes(&b));
-            if let Some(s) = saved {
-                // сутки уже в памяти — файл сверяется с ними; сутки, загруженные позже, сверяет `day`
-                match self.loaded(sym, day) {
-                    Some(v) if !s.fits(&v) => self.gcd_foreign(sym, day),
-                    _ => return Some(Arc::new(s)),
+            paused.work(|| {
+                let file = self.gcd_file(sym, day);
+                let saved = file
+                    .as_ref()
+                    .and_then(|p| fs::read(p).ok())
+                    .and_then(|b| GcdSteps::from_bytes(&b));
+                if let Some(s) = saved {
+                    // сутки уже в памяти — файл сверяется с ними; сутки, загруженные позже, сверяет `day`
+                    match self.loaded(sym, day) {
+                        Some(v) if !s.fits(&v) => self.gcd_foreign(sym, day),
+                        _ => return Some(Arc::new(s)),
+                    }
                 }
-            }
-            let steps = self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v)));
-            if let (Some(p), Some(s)) = (&file, &steps) {
-                self.gcd_write(p, s);
-            }
-            steps
+                let steps = self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v)));
+                if let (Some(p), Some(s)) = (&file, &steps) {
+                    self.gcd_write(p, s);
+                }
+                steps
+            })
         })
         .clone()
     }

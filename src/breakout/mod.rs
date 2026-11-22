@@ -97,3 +97,87 @@ pub fn par_map<T: Sync, R: Send>(
         .filter_map(|m| m.into_inner().ok().flatten())
         .collect()
 }
+
+/// TK-683: разрешения на счёт. Рабочих фазы 2 больше, чем потоков счёта (`P42_WIDE`): одни сутки сделок разбираются один раз на всех, кто
+/// их ждёт, а считают одновременно не больше `threads` рабочих. Ожидающий суток разрешение отдаёт (`pause`).
+pub struct Permits {
+    free: Mutex<usize>,
+    cv: std::sync::Condvar,
+}
+
+thread_local! {
+    /// Разрешения рабочего потока `par_map_wide`; у прочих потоков — `None`.
+    static PERMITS: std::cell::RefCell<Option<std::sync::Arc<Permits>>> = const { std::cell::RefCell::new(None) };
+}
+
+impl Permits {
+    fn take(&self) {
+        let mut g = self.free.lock().unwrap_or_else(|e| e.into_inner());
+        while *g == 0 {
+            g = self.cv.wait(g).unwrap_or_else(|e| e.into_inner());
+        }
+        *g -= 1;
+    }
+
+    fn give(&self) {
+        *self.free.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+        self.cv.notify_one();
+    }
+}
+
+/// Разрешение потока отдано на время ожидания; возвращается при уничтожении. У потока без разрешений — пустышка.
+pub struct Paused(Option<std::sync::Arc<Permits>>);
+
+/// Отдать разрешение потока перед ожиданием чужого результата (сутки грузит другой поток).
+pub fn pause() -> Paused {
+    let p = PERMITS.with(|c| c.borrow().clone());
+    if let Some(p) = &p {
+        p.give();
+    }
+    Paused(p)
+}
+
+impl Paused {
+    /// Счёт внутри ожидания (поток сам оказался загрузчиком): на его время разрешение берётся снова.
+    pub fn work<R>(&self, f: impl FnOnce() -> R) -> R {
+        if let Some(p) = &self.0 {
+            p.take();
+        }
+        let r = f();
+        if let Some(p) = &self.0 {
+            p.give();
+        }
+        r
+    }
+}
+
+impl Drop for Paused {
+    fn drop(&mut self) {
+        if let Some(p) = &self.0 {
+            p.take();
+        }
+    }
+}
+
+/// `par_map` с `wide` рабочими, из которых одновременно считают не больше `threads`; `wide <= threads` — обычный `par_map`.
+pub fn par_map_wide<T: Sync, R: Send>(
+    items: &[T],
+    wide: usize,
+    threads: usize,
+    f: impl Fn(&T) -> R + Sync,
+) -> Vec<R> {
+    if wide <= threads {
+        return par_map(items, threads, f);
+    }
+    let permits = std::sync::Arc::new(Permits {
+        free: Mutex::new(threads.max(1)),
+        cv: std::sync::Condvar::new(),
+    });
+    par_map(items, wide, |it| {
+        PERMITS.with(|c| *c.borrow_mut() = Some(permits.clone()));
+        permits.take();
+        let r = f(it);
+        permits.give();
+        r
+    })
+}

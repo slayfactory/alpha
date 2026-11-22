@@ -13,7 +13,7 @@ use super::tick::{
     cons_range, exit_natr, old_entry, run_tick_xb, signals_for_coin, sort_tsigs, tape_last_side,
     Cursor, EntryRej, TSig, TickCtr, TickResult, TradeSrc, ZipSrc, DAY_MS,
 };
-use super::{par_map, Side};
+use super::{par_map, par_map_wide, Side};
 use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -721,8 +721,21 @@ pub fn run(
     }
     let done = std::sync::atomic::AtomicUsize::new(0);
     let total = tasks.len();
-    let parts = par_map(
+    // TK-683: `P42_WIDE=<рабочих фазы 2>` (не меньше `threads`): сутки, не помещающиеся в `--cap-gb`, каждая волна вариантов разбирает
+    // заново — чем шире волна, тем меньше разборов; считают одновременно по-прежнему `threads` рабочих. На результат не влияет.
+    let wide = match std::env::var("P42_WIDE") {
+        Ok(v) => v
+            .parse::<usize>()
+            .with_context(|| format!("P42_WIDE={v}"))?
+            .max(threads),
+        Err(_) => threads,
+    };
+    if wide > threads {
+        eprintln!("фаза 2: рабочих {wide}, считают одновременно {threads} (P42_WIDE)");
+    }
+    let parts = par_map_wide(
         &tasks,
+        wide,
         threads,
         |&(vi, side)| -> Result<(usize, Side, String, serde_json::Value)> {
             let (id, p) = &vs[vi];
