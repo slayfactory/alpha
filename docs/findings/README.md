@@ -182,6 +182,8 @@
 - [speed-audit-2026-11-19.md](speed-audit-2026-11-19.md) — TK-612 — аудит скорости и счёта на srv (19.11.2026, критик) · 2026-11-19
 - [srv-offload-2026-11-18.manifest.jsonl](srv-offload-2026-11-18.manifest.jsonl) — данные · 2026-11-18
 - [srv-offload-2026-11-18.md](srv-offload-2026-11-18.md) — TK-608 — диск srv 18.11: свободно 9,1 → 127,6 ГБ, всё сверено на Storage Box · 2026-11-18
+- [srv-offload-2026-11-22.manifest.jsonl](srv-offload-2026-11-22.manifest.jsonl) — данные · 2026-11-22
+- [srv-offload-2026-11-22.md](srv-offload-2026-11-22.md) — TK-675 — диск srv 22.11: свободно 37,1 → 99 ГиБ, 45 путей сверены на Storage Box · 2026-11-22
 - [steamdeck-throughput-2026-09-26.md](steamdeck-throughput-2026-09-26.md) — Что ограничивает скорость счёта на Steam Deck — замер, 2026-09-26 · 2026-09-26
 - [t21-metrics-canon-2026-09-27.md](t21-metrics-canon-2026-09-27.md) — T-21 (У4/У5/У6): опись счёта и канонические определения — до пересчёта (2026-09-27) · 2026-09-27
 - [team-cycle-2026-10-05.md](team-cycle-2026-10-05.md) — Цикл работы команды — 05.10 00:10–05.10 03:47 GMT+4 (окно 217.7 мин) · 2026-10-05
