@@ -29,14 +29,15 @@ import tk674_axes as ax  # noqa: E402
 
 ROOT = os.environ.get("TK674_ROOT", "/data/p42-tk674")
 t.ROOT = ROOT                                   # run_variants / q / cell_dir пишут в каталог этой задачи
-BIN = ROOT + "/bin/alpha-tk674"                 # бинарь HEAD ветки (md5 a26ce03f…); sha256 — res/bin674.json
+BIN = os.environ.get("TK674_BIN", ROOT + "/bin/alpha-tk674")   # бинарь HEAD ветки (md5 a26ce03f…); клетки оси split — бинарь TK-677 (TK674_BIN, G-base — TK674_GBASE)
+GBASE = os.environ.get("TK674_GBASE", ROOT + "/res/gbase674.json")
 SIDES = ax.SIDES
 ENGNAME = {"L": "long", "S": "short"}
 CMP_FILES = ("trades.csv", "daily.csv", "coinday.csv", "entryrej.csv")
 say = t.say
 LEVEL = int(os.environ.get("TK674_LEVEL", "2"))  # уровень карты: 2 — пары; 3, 4 — тройки, четвёрки (клетки уровня — `tk674_level.py select`)
 FSUF = str(LEVEL) if LEVEL > 2 else ""          # таблица составных фильтров уровня (ftab674<FSUF>)
-SUF = ("b" if ax.REBASE else "") + FSUF         # файлы плана / партий / карты при базе стопа ≤ 4 % (поправка §13.73.2) и уровня — рядом с прежними
+SUF = ax.SUF2 + FSUF         # файлы плана / партий / карты при базе стопа ≤ 4 % (поправка §13.73.2) и уровня — рядом с прежними
 
 
 def _bin():
@@ -473,7 +474,7 @@ def cmd_cells(a):
     st, r5, _, _ = t._srv()
     sha = _bin()
     say("G-bin: %s sha256 %s" % (BIN, sha))
-    g = json.load(open(os.path.join(ROOT, "res", "gbase674.json"), encoding="utf-8"))
+    g = json.load(open(GBASE, encoding="utf-8"))
     if g["bad"] or g["bin_sha256"] != sha:
         raise SystemExit("G-base не пройден или бинарь подменён")
     u = r5.Uni(UNI)
@@ -622,7 +623,7 @@ def cmd_tables(a):
         raise SystemExit("--entry L-N")
     st, r5, _, _ = t._srv()
     mdd = _bin()
-    g = json.load(open(os.path.join(ROOT, "res", "gbase674.json"), encoding="utf-8"))
+    g = json.load(open(GBASE, encoding="utf-8"))
     if g["bad"] or g["bin_sha256"] != mdd:
         raise SystemExit("G-base не пройден или бинарь подменён после G-base")
     store = chron_store()
@@ -677,6 +678,9 @@ def guards(row, base):
     g["b"] = sum(1 for m_ in ex["months"] if m_[1] > 0) >= min(4, k_base)
     g["c"] = ex["maxdd"] <= 2 * b["maxdd"]
     g["d"] = ex["lmax"]["usd"] <= b["lmax"]["usd"] + 1e-9
+    if is_tick_split(row):                                   # §13.73.4: у клеток с частью B «за тик до уровня» охрана (д) — по реальному среднему убытку stop-выхода
+        lm = ex["lmax"]
+        g["d"] = lm["c_stop"] is None or lm["c_stop"] + ms_stake() * lm["s"] / 100.0 <= b["lmax"]["usd"] + 1e-9
     return g
 
 
@@ -730,9 +734,18 @@ def synergy(rows, m, ia0, jb0, i, j, B=20000, block=5, seed=674):
                 sharpe_gain=(r[0]["sharpe"] - max(single)) if single else None, a_only=float(r[1]["sharpe"]), b_only=float(r[2]["sharpe"]))
 
 
+def is_tick_split(row):
+    return float((row["extra"].get("patch") or {}).get("e2t", 0)) > 0
+
+
+def ms_stake():
+    return 500.0
+
+
 def is_ref5(row):
-    """Поправка §13.73.2: при базе стопа ≤ 4 % клетка со стопом 5 % — только справочная колонка (не кандидат, не якорь, не сосед плато)."""
-    return ax.REBASE and row["extra"]["lmax"]["s"] >= ax.LINE_STOP
+    """Поправка §13.73.2: при базе стопа ≤ 4 % клетка со стопом 5 % — только справочная колонка (не кандидат, не якорь, не сосед плато);
+    §13.73.4: кроме клеток с частью B «за тик до уровня» (e2t > 0) — там стоп 5 % в переборе (В-171)."""
+    return ax.REBASE and row["extra"]["lmax"]["s"] >= ax.LINE_STOP and not is_tick_split(row)
 
 
 def base_idx(side, name, vals):
@@ -847,6 +860,44 @@ def cmd_map(a):
 
 
 
+def cmd_spot(a):
+    """Выборочная проверка нового бинаря (TK674_BIN) на ≤ 3 готовых клетках карты (окно wa, лонг): выход / сигналы / фильтр — файлы сделок байт в байт
+    с клетками прежнего бинаря; при успехе md5 нового бинаря дописывается в res/eqbins674.json (его клетки и прежние засчитываются вместе)."""
+    st, r5, _, _ = t._srv()
+    _bin()
+    u = r5.Uni(UNI)
+    w, side = st.TRADE_WINDOWS[0], "L"
+    index = json.load(open(os.path.join(ROOT, "res", "batches674b-%s.json" % side), encoding="utf-8"))
+    cells = plan_side(side)[0]
+    picks = {}
+    for nm, cks in index.items():
+        for ck in cks:
+            c = cells.get(ck)
+            if c is None:
+                continue
+            kind = "фильтр" if c["filt"] else ("сигналы" if [k for k, _ in c["sig"] if k != "e"] else "выход")
+            picks.setdefault(kind, (nm, c))
+    cols = json.load(open(os.path.join(ROOT, "res", "ftabcols674-%s.json" % side), encoding="utf-8"))
+    bad = []
+    for kind, (nm, c) in sorted(picks.items()):
+        line = t.variant_line(r5, u, side, c["patch"])
+        if c["filt"]:
+            line += " fa=%s fo=lo fv=%g" % (cols[c["ckey"].split("F=", 1)[1]], ax.FV_PASS)
+        out = os.path.join(ROOT, "spot677", kind)
+        os.makedirs(out, exist_ok=True)
+        r5.tick(u, w, [(c["cid"], line)], out, one_side_env(side), t.q("log", "spot677-%s.log" % kind), ftab=t.q("ftab674", "%s-%s.csv" % (w.name, side)) if c["filt"] else None)
+        old = os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm, c["cid"])
+        diff = [f for f in CMP_FILES if not filecmp.cmp(os.path.join(old, f), os.path.join(out, c["cid"], f), shallow=False)]
+        say("spot %s %s: %s" % (kind, c["cid"], "байт в байт" if not diff else "РАЗЛИЧИЯ " + ", ".join(diff)))
+        bad += diff
+    if bad or len(picks) < 3:
+        raise SystemExit("spot: не пройдено (классов %d)" % len(picks))
+    eq = eq_bins()
+    if bin_md5() not in eq:
+        json.dump(eq + [bin_md5()], open(os.path.join(ROOT, "res", "eqbins674.json"), "w", encoding="utf-8"))
+    say("spot готово: eqbins %s" % ", ".join(x[:8] for x in eq_bins()))
+
+
 def cmd_stopaxis(a):
     """Ось стопа s при остальном у строки базы движка — таблица md из БД (без счёта): R:R и убытки первыми."""
     store = chron_store(ro=True)
@@ -869,7 +920,7 @@ def cmd_stopaxis(a):
     say("stopaxis готово: res/stop-axis-table.md")
 
 
-COMMANDS = {"stopaxis": cmd_stopaxis, "ftab": cmd_ftab, "probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "validate": cmd_validate, "cells": cmd_cells, "tables": cmd_tables, "ccheck": cmd_ccheck, "map": cmd_map}
+COMMANDS = {"stopaxis": cmd_stopaxis, "spot": cmd_spot, "ftab": cmd_ftab, "probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "validate": cmd_validate, "cells": cmd_cells, "tables": cmd_tables, "ccheck": cmd_ccheck, "map": cmd_map}
 
 
 def main():

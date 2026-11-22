@@ -18,7 +18,8 @@ DEFAULTS = {"tf": 60, "k": 2, "d": 0.5, "n_bounce": 2, "tau": 0.2, "l_days": 7, 
             "natr_exit_p": 30, "n_tp": 8, "t_low": 1, "t_high": 5, "q": 50, "be": 1, "a": 2, "rr": 2, "s": 5, "slip": 1, "best": 0, "lat": 0, "latx": 0,
             "tpg": 1, "tpk": 0, "ns": 0, "ew": 0, "ex": 0, "ls": 0, "tt": 0, "tb": 0, "rf": 0, "rs": 0, "bm": 0, "e2": 0, "sn": 0, "sg": 0, "sb": 0,
             "sr": 0, "sd": 0, "tj": 0, "tl": 0, "nx": 0, "sl": 0, "cw": 0, "cl": 0, "ch": 0, "cm": 0, "tu": 0, "tpp": 0, "trp": 0, "c": 5, "m": 3,
-            "mm": 60, "s_glob": 4, "w": 10, "ww": 60, "p": 3, "reentry": 0, "busy": 1, "mk": 0, "ek": 0}
+            "mm": 60, "s_glob": 4, "w": 10, "ww": 60, "p": 3, "reentry": 0, "busy": 1, "mk": 0, "ek": 0,
+            "w2": 50, "e2t": 0, "s2": 0}               # разделённый вход TK-677 (бинарь 93cb51a9): доля части B, триггер B за N тиков до уровня, общая цена стопа
 FILT_KEYS = ("fa", "fo", "fv")
 # ключи, меняющие проход сигналов (SigCfg); остальные — только выход / портфель, клетка идёт на готовом проходе
 SIG_KEYS = ("k", "tf", "n_bounce", "d", "l_days", "lx", "natr_min", "t1h", "t24", "e")
@@ -29,6 +30,19 @@ POOL_KEYS = ("natr_min", "t1h", "t24")
 REBASE = os.environ.get("TK674_REBASE") == "1"
 BASE_STOP = {"L": 3, "S": 4}
 LINE_STOP = 5                                  # стоп в строке базы движка
+# поправка §13.73.4 (В-171, TK-677): составная ось `split` — вход двумя частями; TK674_SPLIT=1 добавляет ось (файлы с суффиксом «s»)
+SPLIT = os.environ.get("TK674_SPLIT") == "1"
+SUF2 = ("b" if REBASE else "") + ("s" if SPLIT else "")
+SPLIT_KEYS = ("e2", "e2t", "w2", "s2")
+SPLIT_LINE = {"L": dict(e2=0, e2t=0, w2=50, s2=0), "S": dict(e2=0.05, e2t=0, w2=50, s2=0)}      # значения ключей в строке базы стороны
+SPLIT_VALS = {                                  # метка → полный набор ключей; порядок — порядок соседей плато
+    "off": dict(e2=0, e2t=0, w2=50, s2=0),
+    "e2w25": dict(e2=0.05, e2t=0, w2=25, s2=0), "e2w50": dict(e2=0.05, e2t=0, w2=50, s2=0), "e2w75": dict(e2=0.05, e2t=0, w2=75, s2=0),
+    "t1w25": dict(e2=0, e2t=1, w2=25, s2=0), "t1w50": dict(e2=0, e2t=1, w2=50, s2=0), "t1w75": dict(e2=0, e2t=1, w2=75, s2=0),
+    "t2w50": dict(e2=0, e2t=2, w2=50, s2=0), "t3w50": dict(e2=0, e2t=3, w2=50, s2=0),
+    "t1w50s2": dict(e2=0, e2t=1, w2=50, s2=1),
+}
+SPLIT_BASE = {"L": "off", "S": "e2w50"}
 NOTIONAL_U, MIN_LOT_USD = 500_000_000, 5.0     # `trade.rs` NOTIONAL_U; минимальная стоимость ордера Bybit (§13.50 п. 7 (з))
 
 
@@ -128,6 +142,8 @@ FILTERS = {
 
 def axes(side):
     out = _common(side)
+    if SPLIT:
+        out.append(dict(name="split", cls="entry", key="split", vals=list(SPLIT_VALS), base=SPLIT_BASE[side]))
     for name, feat, op, labels in FILTERS[side]:
         out.append(dict(name=name, cls="filter", key=feat, op=op, vals=list(labels) + ["off"], base="off"))
     return out
@@ -142,6 +158,8 @@ def compat(side, a, b):
     ca, cb = a["cls"], b["cls"]
     if {a["name"], b["name"]} == {"ek", "mk"}:
         return False, "ek несовместим с mk (params.rs)"
+    if {a["name"], b["name"]} == {"split", "e2"}:
+        return False, "ось split сама задаёт e2"
     if "filter" in (ca, cb):
         o = b if ca == "filter" else a
         if o["cls"] == "level":
@@ -167,7 +185,8 @@ def min_lot_usd(patch):
         w = [1000 * (n - 1) + km * i for i in range(n)]
         sw = sum(w)
         lots = [total * x // sw for x in w]
-    return min(lots) / 1e6
+    w2 = float(patch.get("w2", 50))
+    return min(lots) / 1e6 * (min(w2, 100 - w2) / 100 if w2 != 50 else 1.0)    # меньшая часть входа при w2 ≠ 50 (TK-677); при 50 — как было, проверяет движок (validate)
 
 
 def cell_assign(side, assign):
@@ -183,6 +202,11 @@ def cell_assign(side, assign):
         if name == "s":
             if v != LINE_STOP:
                 patch["s"] = v
+            continue
+        if name == "split":
+            for k in SPLIT_KEYS:
+                if SPLIT_VALS[v][k] != SPLIT_LINE[side][k]:
+                    patch[k] = SPLIT_VALS[v][k]
             continue
         if a["base"] is None or v != a["base"]:
             patch[a["key"]] = v

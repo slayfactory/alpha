@@ -29,9 +29,9 @@ def axis_combos(side, n):
     return out
 
 
-def level_vals(side, a):
+def level_vals(side, a, split=False):
     """Значения оси в сетках уровней: при базе стопа ≤ 4 % стоп выше базы стороны не считается (охрану (д) не проходит по построению, §13.73.3)."""
-    if ax.REBASE and a["name"] == "s":
+    if ax.REBASE and a["name"] == "s" and not split:
         return [v for v in a["vals"] if v <= ax.BASE_STOP[side]]
     return a["vals"]
 
@@ -42,7 +42,7 @@ def combo_cells(side, names, thr, cells=None, only_all_moved=False):
     amap = ax.axis_map(side)
     cells = {} if cells is None else cells
     base_line = ax.BASE_LINE(side)
-    vals = [level_vals(side, amap[n]) for n in names]
+    vals = [level_vals(side, amap[n], "split" in names) for n in names]
     for vs in itertools.product(*vals):
         if only_all_moved and any(v == amap[n]["base"] for n, v in zip(names, vs)):
             continue
@@ -96,7 +96,7 @@ SUB_MIN = 2                                     # комбинация уров�
 
 
 def map_path(n, side):
-    return os.path.join(ROOT, "res", "map674%s%s-%s.json" % ("b" if ax.REBASE else "", n if n > 2 else "", side))
+    return os.path.join(ROOT, "res", "map674%s%s-%s.json" % (ax.SUF2, n if n > 2 else "", side))
 
 
 def active_subs(n, side):
@@ -144,7 +144,7 @@ def cmd_select(n, cap):
         out = dict(side=side, n=n, cap=cap, sub_min=SUB_MIN, active_subs=len(act), subs=n_sub, eligible=len(cand), taken=taken, left_out=len(cand) - len(taken),
                    n_cells=len(cells), n_have=n_have, n_new=n_new,
                    cells={k: dict(cid=c["cid"], patch=c["patch"], filt=c["filt"], sig=c["sig"]) for k, c in cells.items()})
-        json.dump(out, open(os.path.join(ROOT, "res", "level674%s%d-%s.json" % ("b" if ax.REBASE else "", n, side)), "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump(out, open(os.path.join(ROOT, "res", "level674%s%d-%s.json" % (ax.SUF2, n, side)), "w", encoding="utf-8"), ensure_ascii=False)
         print("== %s n=%d: активных комбинаций уровня %d: %d из %d; комбинаций уровня %d по правилу %d, взято %d, за потолком %d%s; клеток %d, в БД есть %d, считаем %d (потолок %d); проходов сигналов ≤ %d; фильтровых клеток %d" % (
             side, n, n - 1, len(act), n_sub, n, len(cand), len(taken), len(cand) - len(taken), (" (первая: %s)" % "×".join(stop_at)) if stop_at else "",
             len(cells), n_have, n_new, cap, len(sigs), sum(1 for c in cells.values() if c["filt"])))
@@ -154,7 +154,7 @@ def combo_grid(side, names, thr):
     """{позиция (i, j, …): канонический ключ | None} комбинации осей и индексы базы по осям (None — у оси нет значения базы)."""
     amap = ax.axis_map(side)
     base_line = ax.BASE_LINE(side)
-    vals = [level_vals(side, amap[n]) for n in names]
+    vals = [level_vals(side, amap[n], "split" in names) for n in names]
     grid = {}
     for pos in itertools.product(*[range(len(v)) for v in vals]):
         patch, filt, ok, why = ax.cell_assign(side, {n: vals[d][i] for d, (n, i) in enumerate(zip(names, pos))})
