@@ -4,12 +4,15 @@
 spec.json — список {"src": "/data/p42-past", "dest": "offload-srv-2026-11-22/p42-past", "exclude": ["klines/BTCUSDT"]} (exclude — пути от src, остаются на srv).
 По каждому пути, строго по очереди: отказ, если путь назван в файле юнита или занят процессом (cwd / открытый файл / exe / cmdline) → сводка до (файлы, ссылки, байты)
 → rsync -aH → сводка после = до (путь не менялся) → `ls -lAR` бокса (без исключённых поддеревьев) = локальной → повторный `rsync -aHn --itemize-changes` без отличий
-→ sha256 выборки (локально заново = `sha256sum` на боксе) → при --delete удаляются только перенесённые файлы, исключённые остаются. Строка JSON на путь — в --manifest.
---preflight: один обход /data /opt /root, ищет ссылки снаружи, ведущие внутрь переносимых путей (после переноса они повисли бы); код 1, если нашлись.
+→ sha256 выборки (локально заново = `sha256sum` на боксе) → при --delete: сводка ещё раз = до (иначе отказ), удаляются только перенесённые файлы и ссылки, исключённые остаются.
+Строка JSON на путь — в --manifest.
+--preflight: один обход /data /opt /root, ищет ссылки из остающегося на srv (снаружи и из исключённых поддеревьев), ведущие в переносимую часть (после переноса они повисли бы);
+код 1, если нашлись. --delete сам запускает этот обход один раз до первого пути и при найденных ссылках ничего не копирует и не удаляет.
 Запуск (долгий — только через systemd-run, Nice=19, IOSchedulingClass=idle): srv-offload-paths.py spec.json --manifest M.jsonl [--delete]"""
 import argparse, glob, hashlib, json, os, posixpath, random, re, shlex, shutil, stat, subprocess, sys, time
 
 SSH = "ssh -o BatchMode=yes"
+ROOTS = ("/data", "/opt", "/root")
 
 
 def log(*x):
@@ -126,7 +129,12 @@ def delete_moved(src, excl):
         for f in fs:
             if not under(posixpath.join(rel, f), excl):
                 os.unlink(os.path.join(r, f))
-        dirs += [os.path.join(r, d) for d in ds]
+        for d in ds:
+            p = os.path.join(r, d)
+            if os.path.islink(p):  # ссылка на каталог: os.walk кладёт её в ds, rmdir её не снимает
+                os.unlink(p)
+            else:
+                dirs.append(p)
     for d in sorted(dirs, key=len, reverse=True):
         try:
             os.rmdir(d)
@@ -134,26 +142,41 @@ def delete_moved(src, excl):
             pass
 
 
-def preflight(spec):
-    srcs = [(s["src"], s.get("exclude", [])) for s in spec]
+def moved(p, srcs):
+    """p лежит в переносимой части одного из путей (сам src или под ним, вне исключений)."""
+    for s, ex in srcs:
+        if p == s or p.startswith(s + os.sep):
+            if not under(relof(p, s), ex):
+                return True
+    return False
+
+
+def keeps(p, srcs):
+    """Под переносимым каталогом p есть исключённое поддерево, остающееся на srv."""
+    for s, ex in srcs:
+        if p == s or p.startswith(s + os.sep):
+            rel = relof(p, s)
+            if any(not rel or e.startswith(rel + "/") for e in ex):
+                return True
+    return False
+
+
+def preflight(spec, roots=None):
+    srcs = [(s["src"].rstrip("/"), [e.strip("/") for e in s.get("exclude", [])]) for s in spec]
     bad = []
-    for root in ("/data", "/opt", "/root"):
+    for root in roots or ROOTS:
         for r, ds, fs in os.walk(root):
-            inside = any(r == s or r.startswith(s + os.sep) for s, _ in srcs)
-            if inside:
-                ds[:] = []
-                continue
             for n in ds + fs:
                 p = os.path.join(r, n)
-                if not os.path.islink(p):
+                if not os.path.islink(p) or moved(p, srcs):
                     continue
                 t = os.path.normpath(os.path.join(r, os.readlink(p)))
-                for s, ex in srcs:
-                    if t == s or t.startswith(s + os.sep):
-                        if t == s or not under(relof(t, s), ex):
-                            bad.append((p, t))
+                if moved(t, srcs):
+                    bad.append((p, t))
+            # переносимый каталог обходим, только если под ним остаётся исключённое
+            ds[:] = [d for d in ds if not moved(os.path.join(r, d), srcs) or keeps(os.path.join(r, d), srcs)]
     for p, t in bad:
-        log(f"ССЫЛКА снаружи в переносимое: {p} -> {t}")
+        log(f"ССЫЛКА из остающегося в переносимое: {p} -> {t}")
     log(f"preflight: {len(bad)} ссылок")
     return 1 if bad else 0
 
@@ -209,20 +232,26 @@ def move_one(u, a, manifest):
         rec["sample"] = {"n": len(pick), "bad": len(bad)}
         if bad or len(rem) != len(pick):
             why = f"sha256 выборки: {len(bad)} из {len(pick)} не сошлись {bad[:2]}"
+    if not why and a.delete:
+        last, _ = scan(src, excl)
+        rec["local_before_delete"] = last
+        if last != before:
+            why = "путь менялся после сверки, не удалён"
     rec["verified"] = why is None
     rec["why_not"] = why
     if why is None and a.delete:
         delete_moved(src, excl)
         left, _ = scan(src, excl)
-        rec["deleted"] = left["files"] == 0
+        rec["deleted"] = left["files"] == 0 and left["symlinks"] == 0
         rec["left_after_delete"] = left["files"]
+        rec["left_symlinks_after_delete"] = left["symlinks"]
     rec["free_gb"] = round(shutil.disk_usage("/").free / 2 ** 30, 1)
     log(f"{'OK  ' if why is None else 'FAIL'} {src}: box={rec.get('box')} sample={rec.get('sample')} {'удалён' if rec['deleted'] else ''} {why or ''} свободно {rec['free_gb']} ГиБ")
     open(manifest, "a").write(json.dumps(rec, ensure_ascii=False) + "\n")
     return why is None
 
 
-if __name__ == "__main__":
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("spec")
     ap.add_argument("--manifest", required=True)
@@ -231,14 +260,22 @@ if __name__ == "__main__":
     ap.add_argument("--delete", action="store_true")
     ap.add_argument("--preflight", action="store_true")
     ap.add_argument("--only", help="имена src через запятую (подстрока пути)")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     spec = json.load(open(a.spec))
     if a.preflight:
-        sys.exit(preflight(spec))
+        return preflight(spec)
     if a.only:
         keys = a.only.split(",")
         spec = [s for s in spec if any(k in s["src"] for k in keys)]
+    if a.delete and preflight(spec):
+        log("отказ: --delete при ссылках из остающегося в переносимое; ничего не скопировано и не удалено")
+        return 1
     ok = 0
     for u in spec:
         ok += bool(move_one(u, a, a.manifest))
     log(f"итого: {ok} из {len(spec)} проверены{' и удалены' if a.delete else ''}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

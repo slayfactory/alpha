@@ -61,3 +61,20 @@
 ## 3. Как сделано
 
 `tools/srv-offload-paths.py` (тесты — `tools/tests/test_srv_offload_paths.py`): по очереди на путь — отказ при занятости, сводка до, `rsync -aH`, сводка после, `ls -lAR` бокса, `rsync -aHn`, sha256 выборки, удаление только перенесённых файлов. Четыре юнита `tk675-mv1..4` шли параллельно (`Nice=19`, `IOSchedulingClass=idle`, один поток к боксу ≈ 5 МБ/с), затем `tk675-mv5` для `bybit`; пробный запуск `tk675-trial` на `evaa-wave`. Порядок и урок про симлинки — [[srv-offload]].
+
+## 4. Как вернуть
+
+На srv (`box` — запись в `/root/.ssh/config`; долгий возврат — через `systemd-run`, `Nice=19`, `IOSchedulingClass=idle`), `<src>` и `<dest>` — из таблицы §2 или манифеста:
+
+```bash
+rsync -aH box:<dest>/ <src>/
+rsync -aH box:offload-srv-2026-11-22/p42-retitr/ /data/p42-retitr/   # набор 22.11: корень offload-srv-2026-11-22/
+rsync -aH box:alpha/aggtrades/bybit/ /data/aggtrades/bybit/           # два пути bybit лежат в старой копии alpha/
+rsync -aH box:alpha/klines/bybit/ /data/klines/bybit/
+```
+
+Путь с оставленной частью (`p42-tk596`, `p42v2`) возвращается той же командой: на боксе исключённых поддеревьев нет, `rsync` без `--delete` оставленное на srv не трогает.
+
+## 5. Правки инструмента после проверки (22.11, перенос не повторялся)
+
+`--delete` сам делает обход `--preflight` до первого пути и отказывает при ссылках; обход заходит в исключённые поддеревья (ссылка из оставленного в переносимое видна); при `exclude` удаляются и ссылки на каталоги, `deleted` = файлов 0 и ссылок 0 (в манифесте новые поля `local_before_delete`, `left_symlinks_after_delete`); перед удалением сводка снимается ещё раз и при отличии от сводки до копии путь не удаляется. Манифест 22.11 записан прежней версией (`95f73ccaa`).
