@@ -25,6 +25,7 @@ say = t.say
 ENG = m.ENGNAME
 STOP = {"L": 3, "S": 4}                         # база' PS-955: стоп лонга 3 %, шорта 4 %
 PS = (3, 2, 1)
+PINF = 100000
 PRS = (0, 1, 2, 3)
 PWS = (0, 1000, 5000, 60000)
 KEY = ("sym", "level", "sig_ms", "entry_ms")
@@ -46,6 +47,8 @@ def rows(side):
                 if pw:
                     patch["pw"] = pw
                 out.append(("p%dr%dw%d" % (p, pr, pw), p, pr, pw, patch))
+    # В-173: строка без потолка позиций — для разбора кластеров сигналов (своя предрегистрация); здесь по ней только счётчики
+    out.append(("p%dr0w0" % PINF, PINF, 0, 0, {"s": STOP[side], "p": PINF}))
     return out
 
 
