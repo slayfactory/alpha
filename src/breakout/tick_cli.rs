@@ -914,6 +914,12 @@ pub fn run(
         ls.files,
         ls.errors
     );
+    if src.evicted() {
+        eprintln!(
+            "сутки сверх памяти: возвращено без разбора {}",
+            src.revived()
+        );
+    }
     if let Some(st) = &store {
         eprintln!("{}", st.summary());
     }

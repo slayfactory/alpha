@@ -1249,3 +1249,39 @@ fn gcd_file_is_reused_and_foreign_file_is_recomputed() {
     assert_eq!(errors(&d), 1);
     assert_eq!(std::fs::read(&saved[0]).expect("чтение"), want.to_bytes());
 }
+
+/// TK-683: вытесненные сутки, которые ещё держит вариант, возвращаются без разбора; освобождённые — разбираются заново.
+#[test]
+fn zipsrc_revives_evicted_day_while_it_is_alive() {
+    if Command::new("unzip").arg("-v").output().is_err() {
+        return;
+    }
+    let tmp = tempfile::tempdir().expect("tmp");
+    let dir = tmp.path().join("trades").join("TESTUSDT");
+    std::fs::create_dir_all(&dir).expect("dir");
+    let (d0, d1) = (START_DAY, START_DAY + 1);
+    for day in [d0, d1] {
+        let date = super::data::day_string(day);
+        let text = csv(day, &[(10.5, 100, "false"), (10.6, 500, "true")]);
+        write_zip(
+            &dir.join(format!("TESTUSDT-aggTrades-{date}.zip")),
+            "TESTUSDT.csv",
+            text.as_bytes(),
+        );
+    }
+    // память под одни сутки: вторые вытесняют первые
+    let src = ZipSrc::new(tmp.path().join("trades"), 1);
+    let files = || src.stat.lock().expect("stat").files;
+    let a = src.day("TESTUSDT", d0).expect("d0");
+    let b = src.day("TESTUSDT", d1).expect("d1");
+    assert!(src.evicted());
+    assert_eq!((files(), src.revived()), (2, 0));
+    let a2 = src.day("TESTUSDT", d0).expect("d0 снова");
+    assert!(Arc::ptr_eq(&a, &a2));
+    assert_eq!((files(), src.revived()), (2, 1));
+    // d1 вытеснены возвратом d0 и никем не удерживаются — разбор заново
+    drop(b);
+    let b2 = src.day("TESTUSDT", d1).expect("d1 снова");
+    assert_eq!(b2.len(), 2);
+    assert_eq!((files(), src.revived()), (3, 1));
+}

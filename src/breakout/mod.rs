@@ -100,10 +100,25 @@ pub fn par_map<T: Sync, R: Send>(
 
 /// TK-683: разрешения на счёт. Рабочих фазы 2 больше, чем потоков счёта (`P42_WIDE`): одни сутки сделок разбираются один раз на всех, кто
 /// их ждёт, а считают одновременно не больше `threads` рабочих. Ожидающий суток разрешение отдаёт (`pause`).
+///
+/// Очередь за разрешением — по номеру суток, которых ждёт рабочий (меньший — первым, при равных — кто раньше встал): отставшие варианты
+/// догоняют ушедших вперёд, рабочие идут по суткам плотной группой, и сутки, не помещающиеся в `--cap-gb`, не разбираются заново
+/// для отставших. Разрешение передаётся ждущему из рук в руки (`give`), без общего пробуждения.
 pub struct Permits {
-    free: Mutex<usize>,
-    cv: std::sync::Condvar,
+    st: Mutex<PermitState>,
 }
+
+struct PermitState {
+    free: usize,
+    seq: u64,
+    /// (сутки, номер в очереди) → ждущий поток и его флаг «разрешение выдано».
+    waiting: std::collections::BTreeMap<(usize, u64), PermitWaiter>,
+}
+
+type PermitWaiter = (
+    std::thread::Thread,
+    std::sync::Arc<std::sync::atomic::AtomicBool>,
+);
 
 thread_local! {
     /// Разрешения рабочего потока `par_map_wide`; у прочих потоков — `None`.
@@ -111,37 +126,64 @@ thread_local! {
 }
 
 impl Permits {
-    fn take(&self) {
-        let mut g = self.free.lock().unwrap_or_else(|e| e.into_inner());
-        while *g == 0 {
-            g = self.cv.wait(g).unwrap_or_else(|e| e.into_inner());
+    fn new(n: usize) -> Permits {
+        Permits {
+            st: Mutex::new(PermitState {
+                free: n,
+                seq: 0,
+                waiting: std::collections::BTreeMap::new(),
+            }),
         }
-        *g -= 1;
+    }
+
+    fn take(&self, day: usize) {
+        use std::sync::atomic::Ordering::Acquire;
+        let got = {
+            let mut g = self.st.lock().unwrap_or_else(|e| e.into_inner());
+            if g.free > 0 {
+                g.free -= 1;
+                return;
+            }
+            let got = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            g.seq += 1;
+            let key = (day, g.seq);
+            g.waiting.insert(key, (std::thread::current(), got.clone()));
+            got
+        };
+        while !got.load(Acquire) {
+            std::thread::park();
+        }
     }
 
     fn give(&self) {
-        *self.free.lock().unwrap_or_else(|e| e.into_inner()) += 1;
-        self.cv.notify_one();
+        let mut g = self.st.lock().unwrap_or_else(|e| e.into_inner());
+        match g.waiting.pop_first() {
+            Some((_, (th, got))) => {
+                got.store(true, std::sync::atomic::Ordering::Release);
+                th.unpark();
+            }
+            None => g.free += 1,
+        }
     }
 }
 
 /// Разрешение потока отдано на время ожидания; возвращается при уничтожении. У потока без разрешений — пустышка.
-pub struct Paused(Option<std::sync::Arc<Permits>>);
+pub struct Paused(Option<std::sync::Arc<Permits>>, usize);
 
-/// Отдать разрешение потока перед ожиданием чужого результата (сутки грузит другой поток).
-pub fn pause() -> Paused {
+/// Отдать разрешение потока перед ожиданием чужого результата (сутки `day` грузит другой поток).
+pub fn pause(day: usize) -> Paused {
     let p = PERMITS.with(|c| c.borrow().clone());
     if let Some(p) = &p {
         p.give();
     }
-    Paused(p)
+    Paused(p, day)
 }
 
 impl Paused {
     /// Счёт внутри ожидания (поток сам оказался загрузчиком): на его время разрешение берётся снова.
     pub fn work<R>(&self, f: impl FnOnce() -> R) -> R {
         if let Some(p) = &self.0 {
-            p.take();
+            p.take(self.1);
         }
         let r = f();
         if let Some(p) = &self.0 {
@@ -154,7 +196,7 @@ impl Paused {
 impl Drop for Paused {
     fn drop(&mut self) {
         if let Some(p) = &self.0 {
-            p.take();
+            p.take(self.1);
         }
     }
 }
@@ -169,13 +211,11 @@ pub fn par_map_wide<T: Sync, R: Send>(
     if wide <= threads {
         return par_map(items, threads, f);
     }
-    let permits = std::sync::Arc::new(Permits {
-        free: Mutex::new(threads.max(1)),
-        cv: std::sync::Condvar::new(),
-    });
+    let permits = std::sync::Arc::new(Permits::new(threads.max(1)));
     par_map(items, wide, |it| {
         PERMITS.with(|c| *c.borrow_mut() = Some(permits.clone()));
-        permits.take();
+        // новый вариант начинает с первых суток — в очереди он первый
+        permits.take(0);
         let r = f(it);
         permits.give();
         r

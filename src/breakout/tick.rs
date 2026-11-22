@@ -28,7 +28,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 /// Счётчик опции `pk` (§13.11, диагностика): уровни, убитые минутным проколом > τ, которых запрет ложного пробоя к этой минуте не убил.
 pub static PK_MINUTE_KILLED: AtomicU64 = AtomicU64::new(0);
@@ -297,6 +297,36 @@ struct Lru {
     map: HashMap<(String, usize), DaySlot>,
     order: VecDeque<(String, usize)>,
     bytes: usize,
+    /// Вытесненные сутки, которые ещё держит какой-то вариант: пока они живы, их возвращают в `map` без разбора (память уже занята).
+    ghosts: HashMap<(String, usize), Weak<Vec<Tick>>>,
+    /// Сколько раз вытесненные сутки возвращены без разбора.
+    revived: usize,
+}
+
+impl Lru {
+    /// Вытеснение сверх `cap`: самые старые сутки уходят из `map`, слабая ссылка остаётся в `ghosts`.
+    fn shrink(&mut self, cap: usize) {
+        while self.bytes > cap && self.order.len() > 1 {
+            let Some(k) = self.order.pop_front() else {
+                break;
+            };
+            self.evicted = true;
+            if let Some(old) = self.map.remove(&k) {
+                if let Some(Some(v)) = old.get() {
+                    self.bytes = self.bytes.saturating_sub(day_bytes(v));
+                    self.ghosts.insert(k, Arc::downgrade(v));
+                }
+            }
+        }
+        // слабые ссылки на уже освобождённые сутки не копятся
+        if self.ghosts.len() > 2 * self.map.len() + 1024 {
+            self.ghosts.retain(|_, w| w.strong_count() > 0);
+        }
+    }
+}
+
+fn day_bytes(v: &Arc<Vec<Tick>>) -> usize {
+    v.len() * std::mem::size_of::<Tick>()
 }
 
 /// Итог `ZipSrc::fold_day`: нет файла zip / склад не дал сутки (промах, отступления, повреждение) / сутки свёрнуты.
@@ -331,6 +361,8 @@ impl ZipSrc {
                 map: HashMap::new(),
                 order: VecDeque::new(),
                 bytes: 0,
+                ghosts: HashMap::new(),
+                revived: 0,
             }),
             gcds: Mutex::new(HashMap::new()),
             stat: Mutex::new(LoadStat::default()),
@@ -367,6 +399,11 @@ impl ZipSrc {
     /// TK-683: память под сутки (`cap_bytes`) уже исчерпана — загрузка впрок (разогрев) бесполезна.
     pub fn evicted(&self) -> bool {
         self.lru.lock().is_ok_and(|g| g.evicted)
+    }
+
+    /// TK-683: сколько раз вытесненные сутки возвращены без разбора (их ещё держал другой вариант).
+    pub fn revived(&self) -> usize {
+        self.lru.lock().map_or(0, |g| g.revived)
     }
 
     /// Сутки, уже лежащие в памяти (без загрузки).
@@ -501,9 +538,20 @@ impl TradeSrc for ZipSrc {
             Ok(mut g) => match g.map.get(&key) {
                 Some(slot) => slot.clone(),
                 None => {
-                    let slot = DaySlot::default();
+                    // вытесненные сутки ещё живы у другого варианта — берутся у него, без разбора
+                    let alive = g.ghosts.remove(&key).and_then(|w| w.upgrade());
+                    let slot = match &alive {
+                        Some(v) => Arc::new(OnceLock::from(Some(v.clone()))),
+                        None => DaySlot::default(),
+                    };
                     g.map.insert(key.clone(), slot.clone());
                     g.order.push_back(key.clone());
+                    if let Some(v) = alive {
+                        g.revived += 1;
+                        g.bytes += day_bytes(&v);
+                        g.shrink(self.cap_bytes);
+                        return Some(v);
+                    }
                     slot
                 }
             },
@@ -514,7 +562,7 @@ impl TradeSrc for ZipSrc {
             Some(v) => v.clone(),
             None => {
                 // ожидающий чужой загрузки разрешение на счёт не держит (`P42_WIDE`); загрузчик берёт его на время разбора
-                let paused = super::pause();
+                let paused = super::pause(day);
                 slot.get_or_init(|| {
                     paused.work(|| {
                         fresh = true;
@@ -555,23 +603,12 @@ impl TradeSrc for ZipSrc {
                 }
             }
         }
-        let size = |v: &Option<Arc<Vec<Tick>>>| {
-            v.as_ref()
-                .map_or(0, |a| a.len() * std::mem::size_of::<Tick>())
-        };
         if let Ok(mut g) = self.lru.lock() {
             // ячейку могли вытеснить, пока сутки грузились: тогда её объём не в счёте
             if g.map.get(&key).is_some_and(|s| Arc::ptr_eq(s, &slot)) {
-                g.bytes += size(&loaded);
+                g.bytes += loaded.as_ref().map_or(0, day_bytes);
             }
-            while g.bytes > self.cap_bytes && g.order.len() > 1 {
-                if let Some(k) = g.order.pop_front() {
-                    g.evicted = true;
-                    if let Some(old) = g.map.remove(&k) {
-                        g.bytes = g.bytes.saturating_sub(old.get().map_or(0, size));
-                    }
-                }
-            }
+            g.shrink(self.cap_bytes);
         }
         loaded
     }
@@ -584,7 +621,7 @@ impl TradeSrc for ZipSrc {
         if let Some(v) = slot.get() {
             return v.clone();
         }
-        let paused = super::pause();
+        let paused = super::pause(day);
         slot.get_or_init(|| {
             paused.work(|| {
                 let file = self.gcd_file(sym, day);
