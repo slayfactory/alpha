@@ -37,6 +37,12 @@ write_json = r4.write_json
 sha256 = r4.sha256
 GuardError = st.GuardError
 TICK_STORE = ["--tick-store", "/data/p42-tk599/tick-store", "--tick-store-cap-gb", "3", "--tick-store-min-free-gb", "5"]
+# TK-683: ключи движка, не меняющие результат, — из окружения: P42_CAP_GB — память под сутки сделок (`--cap-gb`; у движка по умолчанию 24 ГБ,
+# отсюда 26–33 ГБ на процесс), P42_SIG_CACHE — каталог кэша проходов сигналов (`--sig-cache`, TK-607)
+if os.environ.get("P42_CAP_GB"):
+    TICK_STORE += ["--cap-gb", str(int(os.environ["P42_CAP_GB"]))]
+if os.environ.get("P42_SIG_CACHE"):
+    TICK_STORE += ["--sig-cache", os.environ["P42_SIG_CACHE"]]
 M_TRIAL = "10"                                  # главное m = 1 NATR (первый тейк T_low); 05 и 20 — соседи для плато
 CELL_Q = (0.15, 0.30)                           # доли исключённых среди сделок со значением, из которых берётся порог c (п. 4 протокола)
 _C = {}
