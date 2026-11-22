@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import json
 import os
@@ -25,7 +26,9 @@ SETS = tuple(T.SETS)
 SIGN = {"L": 1, "S": -1}
 ALPHA_SET = 0.05 / 8
 B = 4000
-GATE_TAPE, GATE_ENTRY, GATE_JOIN = 0.99, 0.95, 0.95
+GATE_TAPE, GATE_ENTRY, GATE_JOIN = 0.97, 0.95, 0.95        # G-tape 0,99 → 0,97 и допуск входа — поправка PS-972 (13.76б)
+ENTRY_TOL_BP = 1.5
+SLIP = 1e-4                                                  # проскальзывание движка на ногу (1 бп): вход = цена ленты, сдвинутая против позиции
 MIN_GROUP = 30
 CONTRASTS = ("C1", "C2")
 
@@ -117,9 +120,12 @@ def stage_path(win):
             t, px, full = tk.span(a, b)
             res = lib.path_one(t, px, a, int(r.exit_ms), int(r.entry_px_e8), sign, float(r.fees))
             te, pe, _ = tk.span(a - 1000, a + 1000)
-            miss = sum(1 for d_ in range(max(a // st.DAY_MS, 0), min(b // st.DAY_MS, 73) + 1) if tk.day(d_) is None)
+            miss_d = [d_ for d_ in range(max(a // st.DAY_MS, 0), min(b // st.DAY_MS, 73) + 1) if tk.day(d_) is None]
+            miss = len(miss_d)
             row = {"row": int(r.row), "ticks": res["ticks"], "days_missing": miss, "tape_ok": bool(full and res["ticks"] > 0 and int(r.exit_ms) <= last),
-                   "entry_ok": lib.entry_in_range(te, pe, a, int(r.entry_px_e8)), "entry_dist_bp": lib.entry_dist_bp(te, pe, a, int(r.entry_px_e8))}
+                   "entry_ok": lib.entry_in_range(te, pe, a, int(r.entry_px_e8)), "entry_dist_bp": lib.entry_dist_bp(te, pe, a, int(r.entry_px_e8)),
+                   "entry_dist_adj_bp": lib.entry_dist_bp(te, pe, a, int(r.entry_px_e8) / (1.0 + sign * SLIP)),
+                   "miss_dates": ";".join((w.t0d + datetime.timedelta(days=d_)).isoformat() for d_ in miss_d)}
             for k in ("mfe", "mae", "t_mfe", "t_mae", "green", "green_first", "exit_move", "giveback", "giveback_share", "hold_min", "mae_to_exit_min"):
                 row[k] = res[k]
             for m, v in zip(lib.CHECK_MIN, res["mfe_k"]):
@@ -134,6 +140,7 @@ def stage_path(win):
 
 
 def stage_pathgate():
+    """Ворота пути с поправкой 13.76б: G-tape ≥ 97 %, G-tape-entry — вход в [min − 1,5 бп, max + 1,5 бп] ленты за ±1 с у ≥ 95 % сделок с лентой."""
     res, bad = {}, []
     for name in SETS:
         df = load_trades(name)
@@ -143,9 +150,22 @@ def stage_pathgate():
         pa = pa.merge(df[["row", "group", "half", "net", "fees", "kind", "sym", "win", "day_in"]], on="row")
         pa.to_csv(p("path", name + ".csv"), index=False)
         n = len(pa)
-        g_tape, g_entry = pa["tape_ok"].mean(), pa["entry_ok"].mean()
-        res[name] = {"n": n, "tape_ok": int(pa["tape_ok"].sum()), "g_tape": float(g_tape), "entry_ok": int(pa["entry_ok"].sum()), "g_entry": float(g_entry)}
-        print("%s: G-tape %d/%d = %.2f %% (≥ 99 %%), G-tape-entry %d/%d = %.2f %% (≥ 95 %%)" % (name, res[name]["tape_ok"], n, g_tape * 100, res[name]["entry_ok"], n, g_entry * 100))
+        with_tape = pa["entry_dist_bp"].notna()
+        g_tape = pa["tape_ok"].mean()
+        g_exact = float((pa.loc[with_tape, "entry_dist_adj_bp"] == 0).mean())
+        g_tol = float((pa.loc[with_tape, "entry_dist_bp"] <= ENTRY_TOL_BP).mean())
+        used = "точная (без проскальзывания)" if g_exact >= GATE_ENTRY else "запасной допуск 1,5 бп"
+        g_entry = g_exact if g_exact >= GATE_ENTRY else g_tol
+        ex = pa[~pa["tape_ok"]]
+        cd = ex.assign(dates=ex["miss_dates"].fillna("")).assign(date=lambda x: x["dates"].str.split(";")).explode("date")
+        cd = cd[cd["date"] != ""].groupby(["sym", "date"]).size().reset_index(name="trades")
+        res[name] = {"n": n, "tape_ok": int(pa["tape_ok"].sum()), "g_tape": float(g_tape), "n_with_tape_1s": int(with_tape.sum()), "g_entry": g_entry, "g_entry_exact": g_exact, "g_entry_tol": g_tol, "entry_check": used,
+                     "entry_strict_share": float((pa.loc[with_tape, "entry_dist_bp"] == 0).mean()), "entry_max_bp": float(pa["entry_dist_bp"].max()),
+                     "excluded": int(len(ex)), "excluded_coins": {k: int(v) for k, v in ex["sym"].value_counts().items()},
+                     "excluded_by_group": {"h1": [int(((ex["half"] == 1) & (ex["group"] == g)).sum()) for g in (0, 1, 2)], "all": [int((ex["group"] == g).sum()) for g in (0, 1, 2)]},
+                     "excluded_days_missing_gt0": int((ex["days_missing"] > 0).sum()), "coin_days": cd.to_dict("records")}
+        print("%s: G-tape %d/%d = %.2f %% (≥ 97 %%), исключено %d (монет %d, монета-суток %d; по группам половины 1: убыток / около нуля / прибыль = %s); G-tape-entry: точная %.2f %%, допуск 1,5 бп %.2f %%, строго внутри %.1f %%, макс. %.2f бп (использована: %s)" % (
+            name, res[name]["tape_ok"], n, g_tape * 100, len(ex), ex["sym"].nunique(), len(cd), res[name]["excluded_by_group"]["h1"], g_exact * 100, g_tol * 100, res[name]["entry_strict_share"] * 100, res[name]["entry_max_bp"], used))
         if g_tape < GATE_TAPE or g_entry < GATE_ENTRY:
             bad.append(name)
     jdump(res, p("path", "gate.json"))
