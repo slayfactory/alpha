@@ -2,6 +2,7 @@
 """П-42 TK-680: столбцы владельца для сводок единичек (критик thr_m27kv64m9h, 22.11): R:R, убыток на полный стоп и на стоп после тейка, худшая сделка.
   srv:    TK674_ROOT=<каталог набора> python3 tk680_owner.py owner <map674b1-L.json> <map674b1-S.json> <owner.json> [--only <приставки осей через запятую>]
           — из файлов сделок клеток активных осей и базы, без нового счёта
+  srv:    TK674_ROOT=<каталог> TK674_UNI=c539 python3 tk680_owner.py anchors — якоря (клетка базы) стороны одной строкой из БД
   ПК:     python3 tk680_owner.py table <каталог с картами и owner.json> [--out файл] [--only <приставки>] [--sd <σ лонг;σ шорт>]
           — таблицы «активные оси» (обе стороны); --sd — σ Sharpe клеток другого набора: шум = больший σ × √(2 ln m)
 Полный стоп — выход `stop` без тейков; стоп после тейка — выход `stop` при takes ≥ 1 (убыток = gross − fees)."""
@@ -204,6 +205,21 @@ def cmd_table(d, out=None, only=None, sd_ref=None):
         sys.stdout.write(txt)
 
 
+def cmd_anchors():
+    """srv: якоря стороны (клетка базы) из БД — сделки, Σ $, $ на сделку, Sharpe, просадка, перехай, R:R, убыток на полный стоп, худшая сделка; по одной строке на сторону."""
+    import tk674_axes as ax
+    import tk674_run as run
+    store = run.chron_store(ro=True)
+    for side in ax.SIDES:
+        ck = ax.base_ckey(side)
+        row = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, [ck], bins=run.eq_bins())[ck]
+        bx, own, k = row["extra"], _stats(row, side, ck), row["extra"]["kpi"]
+        lf = run.loss_fields(bx)
+        print("%s %s стоп %g %%: %d сд., Σ %s $, %s $ на сд., Sharpe %s, просадка %s $ (%s %% маржи), перехай %d / %s / p90 %s / хвост %s сут, R:R %s, убыток на полный стоп %s $ (%d), худшая %s $, ставка 500 $" % (
+            run.UNI, "лонг" if side == "L" else "шорт", lf["s"], row["trades"], _f(row["usd"], 0), _f(row["mean_usd"]), _f(row["sharpe"], 2, False), _f(bx["maxdd"], 0, False), _f(bx["maxdd_pct"], 1, False),
+            k["gap_longest"], _f(k["gap_mean"], 1, False), _f(k["p90"], 1, False), _f(k["gap_tail"], 1, False), _f(bx["rr"]["rr"], 2, False), _f(own["full_mean"], 1), own["full_n"], _f(-lf["worst"], 1)))
+
+
 def _opt(name):
     return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else None
 
@@ -213,6 +229,8 @@ if __name__ == "__main__":
     only = _opt("--only").split(",") if _opt("--only") else None
     if cmd == "owner" and len(sys.argv) >= 5:
         cmd_owner(*sys.argv[2:5], only=only)
+    elif cmd == "anchors":
+        cmd_anchors()
     elif cmd == "table" and len(sys.argv) >= 3:
         sd = _opt("--sd")
         cmd_table(sys.argv[2], _opt("--out"), only, dict(zip("LS", map(float, sd.replace(",", ".").split(";")))) if sd else None)

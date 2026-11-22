@@ -149,7 +149,7 @@ def _thresholds(v, cname=None):
 
 
 def reroot_level(src, base_ck, base_cell, anchors):
-    """§13.73.16: набор PS-974 на новой вселенной — те же клетки (ключи, пороги, фильтры, оси без изменений), плюс клетка базы (на h775 она была в БД); anchors — только база."""
+    """§13.73.17: набор PS-974 на новой вселенной — те же клетки (ключи, пороги, фильтры, оси без изменений), плюс клетка базы (на h775 она была в БД); anchors — только база."""
     out = dict(src)
     if anchors:
         out.update(axes=[], skipped=[], cells={base_ck: base_cell}, eligible=0)
@@ -408,7 +408,7 @@ def cmd_map():
             raise SystemExit("%s: в БД нет %d клеток единичек" % (side, missing))
         cnt = store.cells_count()
         m_c = sum(r["n"] for r in cnt if r["side"] == ENGNAME[side] and r["uni"] == run.UNI and r["win"] == run.WIN)
-        m_h = sum(r["n"] for r in cnt if r["side"] == ENGNAME[side] and r["uni"] == "h775" and r["win"] == run.WIN) if run.UNI != "h775" else 0      # §13.73.16: состав c539 выбран по результату h775 — клетки h775 в счётчике испытаний
+        m_h = sum(r["n"] for r in cnt if r["side"] == ENGNAME[side] and r["uni"] == "h775" and r["win"] == run.WIN) if run.UNI != "h775" else 0      # §13.73.17: состав c539 выбран по результату h775 — клетки h775 в счётчике испытаний
         m_side = m_c + m_h
         shs = np.array([rows[k]["sharpe"] for k in lv["cells"] if k in rows and rows[k]["sharpe"] is not None])
         sd = float(shs.std()) if len(shs) > 1 else float("nan")
@@ -455,7 +455,7 @@ def cmd_md(d, out=None):
         L.append("## %s\n" % sname)
         L.append("База (якорь): стоп %g %%, ставка 500 $. Клеток единичек %d, испытаний стороны m = %d, шум отбора (σ Sharpe клеток × √(2 ln m)) ≈ %s. Активных осей %d из %d. Найдено на этих данных.\n" % (
             b["s"], m["n_cells"], m["m"], ("%.2f" % m["noise_max"]).replace(".", ","), len(act), len(m["axes"])))
-        if m.get("m_h"):                                # §13.73.16: вселенная c539 — состав выбран по результату h775, пороги — по кандидатам h775 с TradFi
+        if m.get("m_h"):                                # §13.73.17: вселенная c539 — состав выбран по результату h775, пороги — по кандидатам h775 с TradFi
             L.append("Вселенная без TradFi (c539): состав выбран на этих данных (по результату h775); пороги столбцов подобраны на этих данных (кандидаты h775, с TradFi). m = %d — клетки c539 %d + клетки h775 %d; только c539: m = %d, шум ≈ %s.\n" % (
                 m["m"], m["m_c"], m["m_h"], m["m_c"], ("%.2f" % m["noise_max_c"]).replace(".", ",")))
         L.append("### Активные оси (%s)\n" % sname.lower())
