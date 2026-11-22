@@ -54,6 +54,15 @@ def flags(x):
     return seen
 
 
+def page_numbers():
+    """{имя признака: № страницы «Признаки»} — сквозной номер из tools/p42/ml_features.json (TK-678)."""
+    d = json.load(open(os.path.join(HERE, "ml_features.json"), encoding="utf-8"))
+    return {f["name"]: f["n"] for s in d["sets"] for g in s["groups"] for f in g["features"]}
+
+
+PAGE_N = page_numbers()
+
+
 def rows():
     out = []
     singles = {}
@@ -72,8 +81,8 @@ def rows():
                 where = "только признак модели"
             if name in singles:
                 st, where, verdict = "current", singles[name]["where"] + "; раньше: " + where, singles[name]["verdict"]
-            out.append(dict(kind=kind, name=name, status=st, where=where, verdict=verdict, flags=flags(x)))
-    return out
+            out.append(dict(kind=kind, name=name, status=st, where=where, verdict=verdict, flags=flags(x), n=PAGE_N[name]))
+    return sorted(out, key=lambda r: r["n"])
 
 
 def counts(rs):
@@ -93,10 +102,10 @@ def main():
         return
     with open(OUT, "w", encoding="utf-8", newline="\n") as f:
         f.write("# П-42: что титровалось (22.11.2026, TK-680)\n\n")
-        f.write("Текущая база — h775, стоп Л 3 % / Ш 4 %. " + line[0].upper() + line[1:] + ". № — порядок описи `p42-features-2026-11-22.md`.\n\n")
+        f.write("Текущая база — h775, стоп Л 3 % / Ш 4 %. " + line[0].upper() + line[1:] + ". № — номер на странице «Признаки» (`tools/p42/ml_features.json`).\n\n")
         f.write("| № | Признак | Вид | Статус | Где титровалось | Вердикт | Пометки |\n|---|---|---|---|---|---|---|\n")
-        for i, r in enumerate(rs, 1):
-            f.write("| %d | `%s` | %s | %s | %s | %s | %s |\n" % (i, r["name"], "ключ" if r["kind"] == "engine" else "столбец", RU[r["status"]],
+        for r in rs:
+            f.write("| %d | `%s` | %s | %s | %s | %s | %s |\n" % (r["n"], r["name"], "ключ" if r["kind"] == "engine" else "столбец", RU[r["status"]],
                                                            r["where"].replace("|", "/"), r["verdict"].replace("|", "/"), ", ".join(r["flags"]) or "—"))
     print(line)
 
