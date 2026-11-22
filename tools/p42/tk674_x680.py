@@ -26,9 +26,9 @@ import tk674_axes as ax  # noqa: E402
 import tk680_axes as a80  # noqa: E402
 
 ROOTS_DEFAULT = "/data/p42-tk680,/data/p42-tk680h,/data/p42-tk680g,/data/p42-tk680c"
-THR_FILES = {"thr680.json": "", "thr680h.json": "hist", "thr680g.json": "grid", "thr680c.json": "ctx"}     # файл порогов → набор
-TAG = {"": "", "hist": "@h", "grid": "@g", "ctx": "@c"}                                                    # метка набора в имени оси столбца
-SET_RU = {"": "основной", "hist": "история пробоев", "grid": "сетки шире", "ctx": "контекст"}
+THR_FILES = {"thr680.json": "", "thr680h.json": "hist", "thr680g.json": "grid", "thr680c.json": "ctx", "thr680t.json": "t681", "thr680n.json": "new"}     # файл порогов → набор
+TAG = {"": "", "hist": "@h", "grid": "@g", "ctx": "@c", "t681": "@t", "new": "@n"}                                                    # метка набора в имени оси столбца
+SET_RU = {"": "основной", "hist": "история пробоев", "grid": "сетки шире", "ctx": "контекст", "t681": "единички TK-681", "new": "новые ключи"}
 SHAPE = ("ls", "sl", "sn", "nx", "sg", "cw")                                    # оси формы стопа (§13.73.7 п. 2)
 XB_BAN = ("e2", "mk", "ek", "split")
 COL_BAN_KEYS = ("e", "natr_p", "tau", "pk", "pb", "fh", "fk", "fm", "fb", "fg", "f", "r", "ban", "track", "color", "ap")    # ключи, меняющие кандидатов / момент сигнала
@@ -184,6 +184,9 @@ def _load(side):
         eng = {n: (v, b) for n, v, b in a80.engine_axes(side, sset)}
         if sset in ("hist", "ctx"):                          # карта набора несёт и оси ключей основного набора (перечитаны): те же оси, объединяются ниже
             eng = {n: (v, b) for n, v, b in a80.engine_axes(side, "")}
+        if sset in ("t681", "new"):                          # карта набора несёт и оси ключей основного набора (natr_p): значения набора поверх
+            eng = {n: (v, b) for n, v, b in a80.engine_axes(side, "")}
+            eng.update({n: (v, b) for n, v, b in a80.engine_axes(side, sset)})
         found_roots.append((root, sset, sum(1 for a in m["axes"] if a.get("active"))))
         for mi, a in enumerate(m["axes"]):
             if not a.get("active"):

@@ -155,7 +155,7 @@ def build_roots(tmp):
         thr, maps = {}, {}
         for side in "LS":
             if sset == "":
-                thr[side] = {"mv15": dict(n=9, n_all=9, le=[["q20", 1.5], ["q40", 3.0]], ge=[]), "n_ok_d7": dict(n=9, n_all=9, le=[], ge=[["q20", 1.0], ["q60", 4.0]]),
+                thr[side] = {"mv15": dict(n=9, n_all=9, le=[["q20", 1.5], ["q40", 3.0]], ge=[]), "ok10_d7": dict(n=9, n_all=9, le=[], ge=[["q20", 1.0], ["q60", 4.0]]),
                              "btc_mv5": dict(n=9, n_all=9, le=[["q20", 5.0], ["q40", 10.0]], ge=[])}
                 axes = [_key_axis(side, "", "ls", ["0", "0.5", "1"], "0.5", 0.5), _key_axis(side, "", "sn", ["0", "1", "1.5", "2", "3"], "1", 0.1, invalid=("3",)),
                         _key_axis(side, "", "sg", ["off", "sb0.5", "sb1", "sb2", "sr1.25", "sr1.5", "sr2", "sd0.25", "sd0.5", "sd1"], "sb1", 0.2),
@@ -163,7 +163,7 @@ def build_roots(tmp):
                         _key_axis(side, "", "tpp", ["off", "0.5-2.5", "1-5", "2-8"], "1-5", 0.35), _key_axis(side, "", "trp", ["off", "rr0.5", "rr1", "rr2"], "rr1", 0.15),
                         _key_axis(side, "", "xb", ["0", "0.2", "0.4", "0.8"], "0.4", 0.9), _key_axis(side, "", "fh", ["0.5", "1", "2", "4", "8"], "2", 0.4),
                         _key_axis(side, "", "nx", ["0", "1", "2", "3.5", "5"], "1", 0.05, active=False),
-                        _col_axis(side, "mv15", "le", thr[side]["mv15"]["le"], 0.7), _col_axis(side, "n_ok_d7", "ge", thr[side]["n_ok_d7"]["ge"], 0.3),
+                        _col_axis(side, "mv15", "le", thr[side]["mv15"]["le"], 0.7), _col_axis(side, "ok10_d7", "ge", thr[side]["ok10_d7"]["ge"], 0.3),
                         _col_axis(side, "btc_mv5", "le", thr[side]["btc_mv5"]["le"], 0.25)]
             elif sset == "grid":
                 thr[side] = {}
@@ -231,7 +231,7 @@ class Loading(X680Case):
             n = self.names(side)
             self.assertNotIn("nx", n)                                   # ось не активна
             self.assertNotIn("e", n)                                    # то же, в наборе «сетки шире»
-            self.assertEqual(sorted(n), sorted(["ls", "sn", "sg", "cw", "tpp", "trp", "xb", "fh", "ew", "mv15.le", "n_ok_d7.ge", "btc_mv5.le",
+            self.assertEqual(sorted(n), sorted(["ls", "sn", "sg", "cw", "tpp", "trp", "xb", "fh", "ew", "mv15.le", "ok10_d7.ge", "btc_mv5.le",
                                                 "ok10_d3.le@h", "ok10_d7.ge@h", "cosig15.le@c", "btc_mv5.le@c"]))
 
     def test_old_axes_untouched_and_first(self):
@@ -289,13 +289,13 @@ class Loading(X680Case):
         a = self.axis("L", "mv15.le")
         self.assertEqual((a["cls"], a["op"], a["key"], a["base"], a["vals"]), ("filter", "<=", "mv15", "off", ["q20", "q40", "off"]))
         self.assertEqual(a["thr"], {"q20": ("mv15", "<=", 1.5), "q40": ("mv15", "<=", 3.0)})
-        self.assertEqual(self.axis("L", "n_ok_d7.ge")["vals"], ["off", "q20", "q60"])
+        self.assertEqual(self.axis("L", "ok10_d7.ge")["vals"], ["off", "q20", "q60"])
         self.assertEqual(self.axis("L", "ok10_d3.le@h")["thr"]["le1"], ("ok10_d3", "<=", 1.0))
         self.assertEqual(x6.thresholds("L")["cosig15.le@c"]["lt2"], ("cosig15", "<=", 1.0))
 
     def test_column_specs(self):
         sp = x6.column_specs("L")
-        self.assertEqual({c[0]: c[1] for c in sp["cl"]}, {"mv15": "mv15", "n_ok_d7": "ok10_d7", "btc_mv5": "btc_mv5", "ok10_d3": "ok10_d3", "ok10_d7": "ok10_d7", "cosig15": "cosig15"})
+        self.assertEqual({c[0]: c[1] for c in sp["cl"]}, {"mv15": "mv15", "ok10_d7": "ok10_d7", "btc_mv5": "btc_mv5", "ok10_d3": "ok10_d3", "ok10_d7": "ok10_d7", "cosig15": "cosig15"})
         self.assertTrue(sp["ctx"] and sp["hist"])
 
     def test_key_check_against_map(self):
@@ -344,7 +344,7 @@ class Bans(X680Case):
     def test_registered_bans(self):
         for side in "LS":
             self.assertFalse(self.ok("mv15.le", "k", side)[0])                   # столбец × ось уровня
-            self.assertFalse(self.ok("n_ok_d7.ge", "tf", side)[0])
+            self.assertFalse(self.ok("ok10_d7.ge", "tf", side)[0])
             self.assertFalse(self.ok("mv15.le", "e", side)[0])                   # столбец × e
             self.assertFalse(self.ok("TPM60", "e", side)[0])
             for o in ("e2", "mk", "ek"):
@@ -383,8 +383,8 @@ class Bans(X680Case):
 
     def test_same_column_same_sign(self):
         self.assertFalse(self.ok("btc_mv5.le", "btc_mv5.le@c")[0])               # один столбец и знак в двух наборах
-        self.assertFalse(self.ok("n_ok_d7.ge", "ok10_d7.ge@h")[0])               # n_ok_d7 в основном = ok10_d7 истории пробоев
-        self.assertTrue(self.ok("mv15.le", "n_ok_d7.ge")[0])
+        self.assertFalse(self.ok("ok10_d7.ge", "ok10_d7.ge@h")[0])               # ok10_d7 в основном = ok10_d7 истории пробоев (TK-680: столбец переименован в таблицах, COL_MAP его больше не сводит)
+        self.assertTrue(self.ok("mv15.le", "ok10_d7.ge")[0])
         self.assertTrue(self.ok("ok10_d3.le@h", "ok10_d7.ge@h")[0])
 
     def test_compound_common_key(self):
@@ -496,14 +496,14 @@ class Selection(X680Case):
 
     def test_new_x_new_column_pair_two_filters(self):
         for side in "LS":
-            g = ax.pair_grid(side, self.axis(side, "mv15.le"), self.axis(side, "n_ok_d7.ge"))
-            a, b = self.axis(side, "mv15.le"), self.axis(side, "n_ok_d7.ge")
+            g = ax.pair_grid(side, self.axis(side, "mv15.le"), self.axis(side, "ok10_d7.ge"))
+            a, b = self.axis(side, "mv15.le"), self.axis(side, "ok10_d7.ge")
             i, j = a["vals"].index("q40"), b["vals"].index("q60")
             patch, filt, ok, why = g["cells"][(i, j)]
-            self.assertEqual((patch, ok, sorted(filt)), ({"s": ax.BASE_STOP[side]}, True, [("mv15.le", "q40"), ("n_ok_d7.ge", "q60")]))
+            self.assertEqual((patch, ok, sorted(filt)), ({"s": ax.BASE_STOP[side]}, True, [("mv15.le", "q40"), ("ok10_d7.ge", "q60")]))
             ck = ax.cell_ckey(side, patch, filt, self.thr[side])
-            self.assertEqual(ck, ax.canon(ax.BASE_LINE(side) + " s=%d" % ax.BASE_STOP[side], [("mv15", "<=", 3.0), ("n_ok_d7", ">=", 4.0)]))
-            self.assertTrue(ck.endswith("F=mv15<=3&n_ok_d7>=4"))
+            self.assertEqual(ck, ax.canon(ax.BASE_LINE(side) + " s=%d" % ax.BASE_STOP[side], [("mv15", "<=", 3.0), ("ok10_d7", ">=", 4.0)]))
+            self.assertTrue(ck.endswith("F=mv15<=3&ok10_d7>=4"))
             self.assertEqual(len([t for t in ck.split("F=")[1].split("&")]), 2)
 
     def test_conflicting_keys_cell_invalid(self):
@@ -598,7 +598,7 @@ class MapSupport(X680Case):
             self.skipTest("нет tk674_run: %s" % e)
         a = self.axis("L", "mv15.le")
         self.assertEqual(run.base_idx("L", "mv15.le", a["vals"]), a["vals"].index("off"))
-        self.assertEqual(run.base_idx("L", "n_ok_d7.ge", self.axis("L", "n_ok_d7.ge")["vals"]), 0)
+        self.assertEqual(run.base_idx("L", "ok10_d7.ge", self.axis("L", "ok10_d7.ge")["vals"]), 0)
         self.assertEqual(run.base_idx("L", "sg", self.axis("L", "sg")["vals"]), 0)
         self.assertEqual(run.base_idx("L", "ls", self.axis("L", "ls")["vals"]), 0)
         self.assertEqual(run.base_idx("L", "natr_min", self.axis("L", "natr_min")["vals"]), 1)

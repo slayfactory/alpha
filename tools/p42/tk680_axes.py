@@ -52,12 +52,16 @@ GRID_OLD = {"natr_min": _o(0.2, 0.4, 0.6, 0.8), "t1h": _o(0.25, 0.5, 1, 2), "t24
 
 
 def engine_axes(side, sset=None):
-    """Оси ключей набора `sset` (по умолчанию — набор процесса TK680_SET; режим TK674_X680 читает карты всех наборов в одном процессе)."""
+    """Оси ключей набора `sset` (по умолчанию — набор процесса TK680_SET; режим TK674_X680 читает карты всех наборов)."""
     sset = SET if sset is None else sset
     if sset == "grid":
         return grid_axes(side)
     if sset in ("hist", "ctx"):
         return []
+    if sset == "t681":
+        return t681_axes(side)
+    if sset == "new":
+        return new_axes(side)
     S = side == "S"
     out = [
         _grid("natr_p", [15, 30, 60], 30),
@@ -94,16 +98,15 @@ ENGINE_SKIP = {
 }
 
 # столбец покрытия → столбец parquet TK-671 (или выражение); None — нет в таблице
-COL_MAP = {"n_ok_d7": "ok10_d7", "n_ok_d14": "ok10_d14", "n_ok_d30": "ok10_d30", "AGE": "age_d",
+COL_MAP = {"AGE": "age_d",
            "size60": ("v60", "n60"), "size360": ("v360", "n360"), "size1440": ("v1440", "n1440")}
 COL_SKIP = {
     "emp2h": "одно значение (всегда 0)", "emp6h": "одно значение", "zv6h": "все пороги равны 0 (ось ZV6 TK-674)", "n_tr": "в фильтр не входит (результат прошлых сделок базы)",
     "m_tr": "в фильтр не входит (результат прошлых сделок базы)", "bk30": "в таблице нет (только описательный разрез)", "CLS": "класс контракта — не порог",
-    "ok10_d14": "дубль n_ok_d14", "cb_24h": "дубль c5_btc_24h", "ce_24h": "дубль c5_eth_24h", "gap_prev_sig_min": "в таблице нет (75 % пусто, снят в TK-595)",
-    "hL": "в таблице нет (то же — n_ok / xok по сторонам)", "hS": "в таблице нет (то же — n_ok / xok по сторонам)",
+    "cb_24h": "дубль c5_btc_24h", "ce_24h": "дубль c5_eth_24h", "gap_prev_sig_min": "в таблице нет (75 % пусто, снят в TK-595)",
     "FLOW": "сводный ранг: части титруются отдельно", "IMP": "сводный ранг: части титруются отдельно", "PEER": "сводный ранг: части титруются отдельно",
     "COUP_15m": "сводный ранг: части титруются отдельно", "COUP_1h": "сводный ранг: части титруются отдельно", "COUP_4h": "сводный ранг: части титруются отдельно",
-    "COUP_24h": "сводный ранг: части титруются отдельно", "hist_own": "производный от n_ok_d14", "hist_cross": "производный от xok10_d14",
+    "COUP_24h": "сводный ранг: части титруются отдельно", "hist_own": "производный от ok10_d14", "hist_cross": "производный от xok10_d14",
     "emp_coin": "в таблице TK-671 нет", "cosig15": "в таблице TK-671 нет", "peers7": "в таблице TK-671 нет", "peer_sig30": "в таблице TK-671 нет",
     "acc_px": "в таблице нет (часть IMP)", "vsurge": "в таблице нет (часть IMP)", "SHARP": "ось TK-674",
     "natr_bp": "порог — ключ natr_min (ось TK-674)", "VOL": "дубль natr_bp", "turn1h": "порог — ключ t1h (ось TK-674)", "turn24h": "порог — ключ t24 (ось TK-674)",
@@ -120,7 +123,8 @@ HORIZON = {
     "n24": 1440, "n360": 360, "n720": 720, "size360": 360, "size1440": 1440, "vpin": 1440, "vpin6h": 360, "kyle240": 240, "amih240": 240, "cons120": 120, "zv2h": 120,
     "c5_btc_7d": 10080, "c5_btc_24h": 1440, "c15_btc_7d": 10080, "c15_btc_24h": 1440, "c1_btc_6h": 360, "c5_eth_7d": 10080, "c5_eth_24h": 1440, "c15_eth_7d": 10080,
     "c15_eth_24h": 1440, "c1_eth_6h": 360, "cb_4h": 240, "ce_4h": 240, "bt_4h": 240, "cc_4h": 240, "bt_24h": 1440, "cc_24h": 1440, "oi_c4": 240, "oi_c24": 1440,
-    "loi_turn": 1440, "fund_chg24": 1440, "n_ok_d7": 10080, "n_ok_d14": 20160, "n_ok_d30": 43200, "xok10_d14": 20160, "bk20": 43200, "bk40": 43200, "bk60": 43200,
+    "loi_turn": 1440, "fund_chg24": 1440, "ok10_d3": 4320, "ok10_d5": 7200, "ok10_d7": 10080, "ok10_d14": 20160, "ok10_d30": 43200, "ok05_d14": 20160,
+    "xok10_d3": 4320, "xok10_d5": 7200, "xok10_d7": 10080, "xok10_d14": 20160, "xok10_d30": 43200, "bk20": 43200, "bk40": 43200, "bk60": 43200,
 }
 HORIZON_NONE = {   # без окна
     "n_piv": "свойство уровня", "spread_bp": "свойство уровня", "spread_tau": "свойство уровня", "ext_gap_bp": "свойство уровня", "age_h": "свойство уровня",
@@ -141,6 +145,70 @@ CTX_COLS = {"btc_mv5": [("le0.1", 10.0), ("le0.2", 20.0), ("le0.3", 30.0)], "cos
 HIST_EXTRA = "/data/p42-tk680h/hist35/%s.parquet"      # ok10_d3 / d5 (и xok10_d3 / d5) построчно к таблице TK-671 — tk680_hist.py
 
 
+# поправка §13.73.14 (TK-680, единички ключей и столбцов TK-681; бинарь 4e1fb286): набор TK680_SET=t681 (свой каталог TK674_ROOT = /data/p42-tk680t)
+T681_VOLQ = os.environ.get("TK681_VOLQ", "/data/p42-tk681/res/volq681.json")       # пороги источников волатильности (по долям отсечённых минут) и медианы
+T681_FASTDIR = "/data/p42-tk681/fast/%s-%s"                                         # fast.csv + eps-key.csv по окну и стороне (long / short)
+T681_WINS = ("wa", "wb", "wc")
+T681_NF = (1, 2, 4, 5, 6, 7, 8)                  # источники фильтра живости; код 3 = NATR 30 = база (контрольная клетка nf3)
+T681_NATR_MIN = (0.2, 0.4, 0.6)                  # пороги natr_min базового источника, по доле отсечённых минут которых берутся пороги остальных источников (volq681.json, grid[].match)
+T681_EA_MULT = (0.5, 1, 2)                       # коэффициент ea = (e базы стороны / медиана источника) × множитель; ea хранится с точностью 0,001
+T681_E_BASE = {"L": 0.3, "S": 0.15}              # зона входа базы стороны, % цены
+T681_EL = (0.02, 0.1)                            # зажим снизу при ev = 3, ea = 1 × медиана (умолчание 0,05)
+T681_EH = (0.5, 2)                               # зажим сверху (умолчание 1)
+T681_SM = (0.1, 0.2, 0.3, 0.5)                   # минимальное расстояние стопа от входа, % цены
+T681_SM_PARENT = (("sl", dict(sl=3.5)), ("cw", dict(cw=30, cl=0, ch=1000, cm=0.5)), ("nx", dict(nx=3.5)))
+FAST_NAMES = (["tfv30", "tfn30", "vpin300", "bigimb10", "bigimb30", "bigimb60", "sac10", "sac30", "sac60", "mk1_10", "mk1_30", "mk5_30", "mk5_60", "mk10_60", "kyle1m", "amih1m",
+               "kyle5m", "amih5m"] + ["acc%s%d_%d" % (k, s_, P) for s_ in (1, 5, 10, 30) for P in (60, 300) for k in ("n", "v", "dn", "dv")])
+COVER_MIN = 0.7 if SET == "t681" else 0.0       # столбец, определённый менее чем у такой доли кандидатов базы (зачётный диапазон), активным не бывает — только описание (критик PS-974: пустая половина стоит в тихих минутах)
+
+
+def nan_cols():
+    """Столбцы, у которых пустое значение пропускает фильтр и поэтому считается отдельно (сделки с пустым значением, их Σ $)."""
+    return list(HIST_COLS) if SET == "hist" else (list(FAST_NAMES) if SET == "t681" else [])
+
+
+def t681_volq():
+    import json
+    return json.load(open(T681_VOLQ, encoding="utf-8"))
+
+
+def t681_ea(vq, side, code, mult):
+    """Коэффициент зоны входа: ea · V[t−1] = e базы стороны на медиане источника, умноженный на `mult` (V — доля цены в %)."""
+    return round(T681_E_BASE[side] / vq["quantiles_pct"][str(code)]["q50"] * mult, 3)
+
+
+# поправка §13.73.18 (PS-979; В-176, В-177, В-178): набор TK680_SET=new — единички `e1t` (вся ставка одной лимиткой за 1 / 2 / 3 тика ДО уровня) и вход двумя частями
+# (доля части B w2 = 67 / 70 / 80 % при e2t = 1 / 2 / 3, плюс размещение e2 = 0,05 при w2 = 67); бинарь — единый TK-688; остальные ключи — база стороны (у шорта e2 = 0,05 снимается)
+NEW_E1T = (1, 2, 3)
+NEW_W2 = (67, 70, 80)
+
+
+def new_axes(side):
+    sl = ax.SPLIT_LINE[side]
+    rel = lambda **kw: {k: v for k, v in kw.items() if sl[k] != v}       # значения split-ключей относительно строки базы стороны
+    e1 = [("off", {})] + [(str(t), dict(e1t=t, **({} if not sl["e2"] else dict(e2=0)))) for t in NEW_E1T]
+    sp = [("off", {}), ("e2w67", rel(e2=0.05, e2t=0, w2=67))] + [("t%dw%d" % (k, w), rel(e2=0, e2t=k, w2=w)) for k in (1, 2, 3) for w in NEW_W2]
+    return [("e1t", e1, "off"), ("w2", sp, "off")]
+
+
+def t681_axes(side):
+    """Оси ключей TK-681 (§13.73.14): `natr_p` 5; `nf` 7 источников × 3 порога; `ev` 8 источников × 3 множителя; `el` / `eh` при ev = 3; `sm` при трёх родителях стопа."""
+    vq = t681_volq()
+    m = {g["natr_min"]: g["match"] for g in vq["grid"]}
+    out = [_grid("natr_p", [5, 15, 30, 60], 30)]
+    for k in T681_NF:
+        out.append(("nf%d" % k, [("off", {})] + [("n" + ax.num(v), dict(nf=k, natr_min=m[v][str(k)])) for v in T681_NATR_MIN], "off"))
+    out.append(("nf3", [("off", {}), ("n0.4", dict(nf=3))], "off"))                      # контроль: код 3 при пороге базы обязан дать сделки базы (same_as_base)
+    for k in range(1, 9):
+        out.append(("ev%d" % k, [("off", {})] + [("x" + ax.num(x), dict(ev=k, ea=t681_ea(vq, side, k, x))) for x in T681_EA_MULT], "off"))
+    e3 = dict(ev=3, ea=t681_ea(vq, side, 3, 1))
+    out.append(("el", [("off", {}), ("0.02", dict(e3, el=0.02)), ("0.05", dict(e3)), ("0.1", dict(e3, el=0.1))], "off"))
+    out.append(("eh", [("off", {}), ("0.5", dict(e3, eh=0.5)), ("1", dict(e3)), ("2", dict(e3, eh=2))], "off"))
+    for name, par in T681_SM_PARENT:
+        out.append(("sm_" + name, [("off", {}), ("sm0", dict(par))] + [("sm" + ax.num(v), dict(par, sm=v)) for v in T681_SM], "off"))
+    return out
+
+
 def horizon_skip(c):
     h = HORIZON.get(c)
     if h is None and c not in HORIZON_NONE:
@@ -156,10 +224,12 @@ def column_list(coverage_cols):
     """[(имя покрытия, источник parquet | (числитель, знаменатель), направления)] — все столбцы покрытия, кроме COL_SKIP."""
     if SET == "hist":
         return [(c, c, ("le", "ge")) for c in HIST_COLS]
-    if SET == "grid":
+    if SET in ("grid", "new"):
         return []
     if SET == "ctx":
         return [(c, c, ("le",)) for c in CTX_COLS]
+    if SET == "t681":
+        return [(c, c, ("le", "ge")) for c in FAST_NAMES]
     out = []
     for c in coverage_cols:
         if c in COL_SKIP or horizon_skip(c):
