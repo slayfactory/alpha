@@ -61,6 +61,7 @@ def _stats(row, side, ck):
                 after_loss_mean=m([x for x in after if x < 0]), worst=min(nets) if nets else None)
 
 
+NONCAND = {"ew": "0"}                            # критик 22.11: `ew` = 0 — модель входа по минуте (упрощение, В-172), не кандидат: вне активных осей и пар
 COMPANION = {"ew": ("e2", "0")}                  # §13.73.9: у шорта `ew` = 0 идёт с `e2` = 0 (правило движка) — рядом печатается клетка `e2` = 0 при базовом `ew`
 
 
@@ -139,10 +140,13 @@ def cmd_table(d, out=None, only=None, sd_ref=None):
             if "." in a["axis"]:
                 cols.setdefault(a["axis"].split(".")[0], []).append(a["axis"])
         both = {x for v in cols.values() if len(v) > 1 for x in v}
+        win_lab = lambda a: next(c for c in a["cells"] if c.get("ckey") == a["winner"]["ckey"])["label"]
+        nc = [a for a in act if a["axis"] in NONCAND and win_lab(a) == NONCAND[a["axis"]]]
+        act = [a for a in act if a not in nc]
         sd = max(m["sharpe_sd"], sd_ref[side]) if sd_ref else m["sharpe_sd"]
         noise = sd * math.sqrt(2 * math.log(max(m["m"], 2)))
         sel = [a for a in m["axes"] if not only or a["axis"].startswith(tuple(only))]
-        gains = [a["gain"] for a in sel if a["gain"] is not None]
+        gains = [a["gain"] for a in sel if a["gain"] is not None and a not in nc]
         n_key, n_col = sum(a["kind"] == "key" for a in act), sum(a["kind"] == "col" for a in act)
         L.append("%s: осей набора %d, активных %d (ключи %d, столбцы %d); m = %d, σ Sharpe клеток %s → шум ≈ %s Sharpe; наибольший прирост среди осей набора %s — %s шума. "
                  "Якорь — база %s. Худшая сделка и убытки на стоп — $ при ставке 500 $; в скобках — число сделок; «стоп после тейка» — только убыточные; "
@@ -167,11 +171,21 @@ def cmd_table(d, out=None, only=None, sd_ref=None):
             nm = "`%s`%s" % (a["axis"], " ⚑" if a["axis"] in both else "")
             old = (" %s |" % ("активная (%s)" % a["old_winner"] if a.get("old_active") else "не активная")) if grid else ""
             L.append(_row(nm, c["label"], w, o, b["sharpe"]) + old)
-            comp = _companion(m, a, side)
-            if comp:
-                co = ow[side][a["axis"] + "+"][comp["ckey"]]
-                L.append(_row("`e2` при `ew` = 5 — рядом с `%s` = 0" % a["axis"], comp["label"], comp, co, b["sharpe"]) + (" |" if grid else ""))
         L.append("")
+        if nc:
+            L.append("Не кандидаты — `%s` = %s: модель входа по минуте (упрощение настоящего входа по ленте, В-172), не параметр торговли; вне активных осей и пар; в число осей набора не входят. По прежней сетке (5 / 20 / 100 мс) ось `ew`: %s." % (
+                nc[0]["axis"], NONCAND[nc[0]["axis"]], "активная (%s) — как в основном наборе" % nc[0].get("old_winner") if nc[0].get("old_active") else "не активная"))
+            L.append("")
+            L.append(HEAD + (" По прежней сетке |" if grid else ""))
+            L.append(SEP + ("---|" if grid else ""))
+            for a in nc:
+                w = a["winner"]
+                c = next(c for c in a["cells"] if c.get("ckey") == w["ckey"])
+                L.append(_row("`%s` ⛔ упрощение, не кандидат" % a["axis"], c["label"], w, ow[side][a["axis"]][w["ckey"]], b["sharpe"]) + (" |" if grid else ""))
+                comp = _companion(m, a, side)
+                if comp:
+                    L.append(_row("`e2` при `ew` = 5 — для сравнения с `ew` = 0 (`ew` = 0 идёт с `e2` = 0)", comp["label"], comp, ow[side][a["axis"] + "+"][comp["ckey"]], b["sharpe"]) + (" |" if grid else ""))
+            L.append("")
         if both:
             L.append("⚑ — активны обе стороны порога одного столбца (%s): признак шума, а не направления; по правилу идут в пары, но как одна находка, не две." % "; ".join(
                 "`%s`" % k + " (" + ", ".join(v) + ")" for k, v in sorted(cols.items()) if len(v) > 1))
