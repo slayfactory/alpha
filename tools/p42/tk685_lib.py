@@ -107,6 +107,17 @@ def entry_in_range(t, p, t_in, p0, win_ms=1000):
     return bool(seg.min() <= p0 <= seg.max())
 
 
+def entry_dist_bp(t, p, t_in, p0, win_ms=1000):
+    """Расстояние (бп от цены входа) от цены входа движка до отрезка [min, max] цен ленты за ±win_ms от входа: 0 — внутри, NaN — ленты нет."""
+    t = np.asarray(t, np.int64)
+    i0, i1 = np.searchsorted(t, t_in - win_ms, "left"), np.searchsorted(t, t_in + win_ms, "right")
+    if i1 <= i0:
+        return float("nan")
+    seg = np.asarray(p)[i0:i1]
+    lo, hi = float(seg.min()), float(seg.max())
+    return 0.0 if lo <= p0 <= hi else (lo - p0 if p0 < lo else p0 - hi) / float(p0) * 1e4
+
+
 # ───────────────────────────── метрики набора ─────────────────────────────
 
 def uw(x):

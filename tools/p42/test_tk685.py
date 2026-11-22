@@ -102,6 +102,14 @@ class Path(unittest.TestCase):
         self.assertFalse(lib.entry_in_range(t, p, self.t_in, int(101e8)))
         self.assertFalse(lib.entry_in_range(t, p, self.t_in + 100_000, self.p0))
 
+    def test_entry_dist_bp(self):
+        t = np.array([self.t_in - 500, self.t_in + 100], np.int64)
+        p = np.array([int(99.9e8), int(100.2e8)], np.int64)
+        self.assertEqual(lib.entry_dist_bp(t, p, self.t_in, self.p0), 0.0)
+        self.assertAlmostEqual(lib.entry_dist_bp(t, p, self.t_in, int(100.3e8)), (100.3 - 100.2) / 100.3 * 1e4, places=6)   # выше диапазона
+        self.assertAlmostEqual(lib.entry_dist_bp(t, p, self.t_in, int(99.8e8)), (99.9 - 99.8) / 99.8 * 1e4, places=6)       # ниже диапазона
+        self.assertTrue(np.isnan(lib.entry_dist_bp(t, p, self.t_in + 100_000, self.p0)))
+
 
 def CHK(m):
     return lib.CHECK_MIN.index(m)
