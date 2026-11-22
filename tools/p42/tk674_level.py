@@ -66,8 +66,9 @@ def level_cells(side, n, thr, combos=None, only_all_moved=False):
 
 
 def load_thr(side):
-    raw = json.load(open(os.path.join(ROOT, "res", "thr674.json"), encoding="utf-8"))["thr"][side]
-    return {n: {lab: tuple(v) for lab, v in d.items()} for n, d in raw.items()}
+    """Пороги осей — как у пар (`tk674_run.load_thr`): на c539 заморожены в `thr674-c539.json`, в режиме X680 + пороги новых осей столбцов."""
+    import tk674_run as run
+    return run.load_thr(side)
 
 
 def cmd_count(n):
@@ -99,17 +100,36 @@ def map_path(n, side):
     return os.path.join(ROOT, "res", "map674%s%s-%s.json" % (ax.SUF2, n if n > 2 else "", side))
 
 
+def pair_maps(side):
+    """Карты пар для уровня 3: карта пар TK-674 (`map674<SUF2>`) и в режиме X680 — карта пар с осями единичек шага 3 (`map674<SUF2>x`, пары только с новой осью — не пересекается
+    с первой, кроме осей с расширенными значениями: запись x главнее). → (пары {имя: запись}, лучшая одноосевая клетка по оси, база Σ $)."""
+    paths = [map_path(2, side)] + ([os.path.join(ROOT, "res", "map674%sx-%s.json" % (ax.SUF2, side))] if ax.X680 else [])
+    pairs, best1, busd = {}, {}, None
+    for f in paths:
+        pm = json.load(open(f, encoding="utf-8"))
+        busd = pm["base"]["usd"] if busd is None else busd
+        for p in pm["pairs"]:
+            pairs[p["pair"]] = p
+        for a_, v in pm.get("best1", {}).items():
+            best1[a_] = max(best1.get(a_, v), v)
+    return pairs, best1, busd
+
+
 def active_subs(n, side):
     """{frozenset(оси): прирост} активных комбинаций уровня n − 1 из его карты: лучшая охранённая клетка с плато со всеми сдвинутыми осями
     лучше планки нижних уровней (gain_sub > 0) и Σ не ниже Σ базы стороны."""
-    pm = json.load(open(map_path(n - 1, side), encoding="utf-8"))
-    busd = pm["base"]["usd"]
+    if n == 3:
+        prs, _, busd = pair_maps(side)
+        plist = list(prs.values())
+    else:
+        pm = json.load(open(map_path(n - 1, side), encoding="utf-8"))
+        busd, plist = pm["base"]["usd"], pm["pairs"]
     act = {}
-    for p in pm["pairs"]:
+    for p in plist:
         bm = p["both_moved"]
         if bm and bm.get("gain_sub") is not None and bm["gain_sub"] > 0 and bm["usd"] >= busd:
             act[frozenset(p["pair"].split("|"))] = bm["gain_sub"]
-    return act, len(pm["pairs"])
+    return act, len(plist)
 
 
 def cmd_select(n, cap):
@@ -188,13 +208,16 @@ def cmd_map(n):
         gd = {k: run.guards(r, brow) for k, r in rows.items()}
         bar = {}                                             # планка нижних уровней: лучшая охранённая (а)–(д) клетка каждой подкомбинации
         for lvl in range(2, n):
-            pm = json.load(open(map_path(lvl, side), encoding="utf-8"))
-            for p in pm["pairs"]:
+            if lvl == 2:                                     # пары: карта TK-674 + (X680) карта пар с осями единичек
+                prs, b1, _ = pair_maps(side)
+                plist = list(prs.values())
+                for a_, v in b1.items():
+                    bar[frozenset([a_])] = v
+            else:
+                plist = json.load(open(map_path(lvl, side), encoding="utf-8"))["pairs"]
+            for p in plist:
                 if p["best_no_plateau"]:
                     bar[frozenset(p["pair"].split("|"))] = p["best_no_plateau"]["sharpe"]
-            if lvl == 2:
-                for a_, v in pm.get("best1", {}).items():
-                    bar[frozenset([a_])] = v
         out_rows, missing = [], 0
         for tk in lv["taken"]:
             names = tuple(tk["names"])

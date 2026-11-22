@@ -43,8 +43,8 @@ say = t.say
 LEVEL = int(os.environ.get("TK674_LEVEL", "2"))  # уровень карты: 2 — пары; 3, 4 — тройки, четвёрки (клетки уровня — `tk674_level.py select`); 1 — единички TK-680 (`tk680_singles.py select`)
 AUTHOR = os.environ.get("TK674_AUTHOR", "TK-674")
 PARTIAL = bool(os.environ.get("TK674_PARTIAL"))  # tables: только партии, посчитанные на диске во всех трёх окнах (счёт остановлен до конца: В-175); индекс партий — из плана + маркеров done
-if ax.X680 and LEVEL != 2:
-    raise SystemExit("TK674_X680=1 — только пары (TK674_LEVEL=2)")
+if ax.X680 and LEVEL == 1:
+    raise SystemExit("TK674_X680=1 — пары (TK674_LEVEL=2), тройки и четвёрки (3, 4; отбор `tk674_level.py select` по картам пар обоих шагов)")
 FSUF = str(LEVEL) if LEVEL != 2 else ("x" if ax.X680 else "")          # таблица составных фильтров уровня (ftab674<FSUF>); режим X680 — своя таблица и суффикс bx
 SUF = ax.SUF2 + FSUF         # файлы плана / партий / карты при базе стопа ≤ 4 % (поправка §13.73.2) и уровня — рядом с прежними
 

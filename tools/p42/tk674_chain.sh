@@ -12,9 +12,9 @@ stage() { echo "== $(date -u +%FT%TZ) $*" >> "$LOG"; "$PY" tk674_run.py "$@" >> 
 # новый бинарь (ось split): выборочная проверка до счёта — только если md5 бинаря ещё не в eqbins674.json (c539: бинарь прошёл cgate, L-334)
 if [ -n "${TK674_BIN:-}" ] && ! grep -q "$(md5sum "$TK674_BIN" | cut -c1-32)" "${TK674_ROOT:-/data/p42-tk674}/res/eqbins674.json" 2>/dev/null; then stage spot; fi
 if [ "${TK674_LEVEL:-2}" -gt 2 ]; then stage ftab; fi
-if [ -n "${TK674_X680:-}" ]; then stage plan; stage ftab; fi                    # пары с осями единичек: отбор пар (без движка) и таблица фильтров
+if [ -n "${TK674_X680:-}" ] && [ "${TK674_LEVEL:-2}" -le 2 ]; then stage plan; stage ftab; fi     # пары с осями единичек: отбор пар (без движка) и таблица фильтров (тройки / четвёрки — `ftab` выше)
 stage validate
-if [ -n "${TK674_X680:-}" ]; then stage plan; fi                                # заново: клетки, отвергнутые движком, уходят из плана (отбор пар заморожен)
+if [ -n "${TK674_X680:-}" ] && [ "${TK674_LEVEL:-2}" -le 2 ]; then stage plan; fi                                # заново: клетки, отвергнутые движком, уходят из плана (отбор пар заморожен)
 if [ "${TK674_LEVEL:-2}" -gt 2 ]; then                  # уровни: стороны двумя процессами (движок по 2 потока)
   echo "== $(date -u +%FT%TZ) cells L | S" >> "$LOG"
   if [ -n "${TK674_SEQ:-}" ]; then                      # стороны по очереди: один движок за раз (22.11: L | S вместе — 40 ГБ, OOM; 26 проходов сигналов ≈ 30 ГБ)
