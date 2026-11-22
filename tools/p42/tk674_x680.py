@@ -121,8 +121,8 @@ def _key_entry(side, a, sset, eng):
             continue
         labels.append(lab)
     wl = _winner_label(a)
-    if wl is not None and wl in DROP_VALUES.get(name, ()):
-        dropped.append((name, "победитель оси в карте единичек — значение %s, вне набора кандидатов; ось сохранена по указанию координатора" % wl))
+    if wl is not None and wl in DROP_VALUES.get(name, ()):     # ось активна в наборе только значением вне кандидатов — в этом наборе не активна
+        return dict(name=name, skip=True, dropped=[(name, "набор «%s»: победитель оси — значение %s, вне набора кандидатов (%s); в этом наборе ось не активна" % (SET_RU[sset], wl, DROP_WHY[name]))])
     return dict(kind="key", name=name, set=sset, labels=labels, patches={lab: pm[lab] for lab in labels}, base=base, gain=a["gain"], winner=wl, dropped=dropped)
 
 
@@ -181,12 +181,17 @@ def _load(side):
         tf, sset = _find_thr(root, m.get("thr_sha256"))
         thr = json.load(open(os.path.join(root, "res", tf), encoding="utf-8"))
         eng = {n: (v, b) for n, v, b in a80.engine_axes(side, sset)}
+        if sset in ("hist", "ctx"):                          # карта набора несёт и оси ключей основного набора (перечитаны): те же оси, объединяются ниже
+            eng = {n: (v, b) for n, v, b in a80.engine_axes(side, "")}
         found_roots.append((root, sset, sum(1 for a in m["axes"] if a.get("active"))))
         for mi, a in enumerate(m["axes"]):
             if not a.get("active"):
                 continue
             if a["kind"] == "key":
                 e = _key_entry(side, a, sset, eng)
+                if e.get("skip"):
+                    dropped += e["dropped"]
+                    continue
                 e.update(order=(ri, mi), map_cells=a["cells"])
                 dropped += e.pop("dropped")
                 entries.setdefault(e["name"], []).append(e)
