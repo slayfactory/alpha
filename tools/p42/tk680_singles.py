@@ -236,8 +236,9 @@ def cmd_map():
         rows = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(lv["cells"]) + [base_ck], bins=bins)
         brow = rows[base_ck]
         bsh, busd = brow["sharpe"], brow["usd"]
-        out_axes, missing = [], 0
-        for a in lv["axes"]:
+        missing = [0]
+
+        def eval_axis(a):
             labs = [v[0] for v in a["vals"]]
             cks = [v[1] for v in a["vals"]]
             cand, cells = [], []
@@ -245,7 +246,7 @@ def cmd_map():
                 r = rows.get(ck)
                 if r is None:
                     why = inv.get(lv["cells"][ck]["cid"]) if ck in lv["cells"] else None
-                    missing += int(why is None)
+                    missing[0] += int(why is None)
                     cells.append(dict(label=lab, ckey=ck, invalid=why or "нет в БД"))
                     continue
                 sh = r["sharpe"] if r["sharpe"] is not None else float("nan")
@@ -272,7 +273,17 @@ def cmd_map():
             win = run.pick(full)
             wr = run.rep_cell(win, bsh)
             active = bool(wr and wr["sharpe"] > bsh and wr["usd"] >= busd)
-            out_axes.append(dict(axis=a["axis"], kind=a["kind"], base=a["base"], cells=cells, guarded=len(full), winner=wr, active=active, gain=(wr["sharpe"] - bsh) if wr else None))
+            return dict(axis=a["axis"], kind=a["kind"], base=a["base"], cells=cells, guarded=len(full), winner=wr, active=active, gain=(wr["sharpe"] - bsh) if wr else None)
+
+        out_axes = []
+        for a in lv["axes"]:
+            oa = eval_axis(a)
+            old = a80.GRID_OLD.get(a["axis"]) if a80.SET == "grid" else None
+            if old is not None:                        # §13.73.9: вердикт оси и по прежней сетке (соседи плато — прежние)
+                po = eval_axis(dict(a, vals=[v for v in a["vals"] if v[0] in old[side == "S"]]))
+                oa.update(old_active=po["active"], old_winner=po["winner"] and next(c["label"] for c in po["cells"] if c.get("ckey") == po["winner"]["ckey"]))
+            out_axes.append(oa)
+        missing = missing[0]
         if missing:
             raise SystemExit("%s: в БД нет %d клеток единичек" % (side, missing))
         m_side = sum(r["n"] for r in store.cells_count() if r["side"] == ENGNAME[side] and r["uni"] == run.UNI and r["win"] == run.WIN)
@@ -330,7 +341,11 @@ def cmd_md(d, out=None):
             L.append("| `%s` " % a["axis"] + _line(lab, dict(w, guards=dict(a=1, b=1, c=1, d=1, g=1)), b["sharpe"]))
         L.append("\n### Все оси (%s)\n" % sname.lower())
         for a in m["axes"]:
-            L.append("**`%s`**%s\n" % (a["axis"], " — активная" if a["active"] else ""))
+            note = " — активная" if a["active"] else ""
+            if "old_active" in a:                      # §13.73.9: вердикт по прежней сетке рядом
+                note += "; по прежней сетке — %s%s" % ("активная (%s)" % a["old_winner"] if a["old_active"] else "не активная",
+                                                       ", смена — от новых соседей плато" if a["old_active"] != a["active"] else "")
+            L.append("**`%s`**%s\n" % (a["axis"], note))
             L.append("| Значение | Сделок | Σ $ | $ на сделку | Sharpe | Δ Sharpe | Просадка $ | Просадка, % маржи | Перехай: самый длинный, сут | средний | p90 | хвост | Охраны |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|")
             L.append(_line("якорь (база)", anchor, b["sharpe"]))
             for c in a["cells"]:
