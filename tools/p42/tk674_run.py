@@ -34,7 +34,9 @@ SIDES = ax.SIDES
 ENGNAME = {"L": "long", "S": "short"}
 CMP_FILES = ("trades.csv", "daily.csv", "coinday.csv", "entryrej.csv")
 say = t.say
-SUF = "b" if ax.REBASE else ""                 # файлы плана / партий / карты при базе стопа ≤ 4 % (поправка §13.73.2) — рядом с прежними
+LEVEL = int(os.environ.get("TK674_LEVEL", "2"))  # уровень карты: 2 — пары; 3, 4 — тройки, четвёрки (клетки уровня — `tk674_level.py select`)
+FSUF = str(LEVEL) if LEVEL > 2 else ""          # таблица составных фильтров уровня (ftab674<FSUF>)
+SUF = ("b" if ax.REBASE else "") + FSUF         # файлы плана / партий / карты при базе стопа ≤ 4 % (поправка §13.73.2) и уровня — рядом с прежними
 
 
 def _bin():
@@ -234,9 +236,56 @@ def load_thr(side):
     return {n: {lab: tuple(v) for lab, v in d.items()} for n, d in raw.items()}
 
 
-def cmd_counts(a):
+def feat_tabs(side, st, u, eps):
+    """Таблицы признаков кандидатов стороны по окнам (TK-654 + n24 / m24 из TK-638), с охраной G-key."""
     import tk604_feat as tf
     import tk638_run as t8
+    import tk654_run as r54
+    hist = tf.episode_history(eps, tf.SIDE_NAME[side])
+    tabs = {w.name: r54.load_window(w, side, hist) for w in st.TRADE_WINDOWS}
+    for w in st.TRADE_WINDOWS:
+        t38 = t8.load_window(u, w, side)
+        if list(t38["sym"]) != list(tabs[w.name]["sym"]) or not np.array_equal(t38["ms"], tabs[w.name]["ms"]):
+            raise SystemExit("G-key %s %s: строки таблиц TK-638 и TK-654 различаются" % (side, w.name))
+        tabs[w.name]["n24"], tabs[w.name]["m24"] = t38["n24"], t38["m24"]
+    if any(tabs[w]["gkey_mv5_bad"] for w in tabs):
+        raise SystemExit("G-key %s: mv5 эпизодов ≠ таблице TK-634" % side)
+    return tabs
+
+
+def write_ftab(side, st, tabs, cells):
+    """Таблица составных фильтров `--ftab` клеток (столбец на смысл фильтра) по окнам → ftab674<FSUF>/<окно>-<сторона>.csv; возвращает {смысл: столбец}."""
+    cols = ftab_cols(cells)
+    sem_list = {sem: parse_sem(sem) for sem in cols}
+    for w in st.TRADE_WINDOWS:
+        tab = tabs[w.name]
+        pm = {sem: np.logical_and.reduce([_pass(f_, x, tab) for f_, _, x in parts]) for sem, parts in sem_list.items()}
+        path = t.q("ftab674" + FSUF, "%s-%s.csv" % (w.name, side))
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write("sym,sig_ms," + ",".join(cols[s_] for s_ in sem_list) + "\n")
+            for i in range(len(tab["sym"])):
+                f.write("%s,%d,%s\n" % (tab["sym"][i], int(tab["ms"][i]), ",".join("1.0" if pm[s_][i] else "0.0" for s_ in sem_list)))
+        say("ftab674%s %s-%s: %d строк, столбцов %d" % (FSUF, w.name, side, len(tab["sym"]), len(cols)))
+    return cols
+
+
+def cmd_ftab(a):
+    """Таблица составных фильтров клеток уровня (TK674_LEVEL > 2): пороги — готовые из res/thr674.json, без P&L."""
+    import tk654_run as r54
+    if LEVEL <= 2:
+        raise SystemExit("ftab — только для уровня > 2 (у пар таблицу пишет counts)")
+    st, r5, _, _ = t._srv()
+    u = r5.Uni(UNI)
+    eps = r54.episodes_h775()
+    for side in SIDES:
+        cells = plan_side(side)[0]
+        cols = write_ftab(side, st, feat_tabs(side, st, u, eps), cells)
+        json.dump(cols, open(t.q("res", "ftabcols674%s-%s.json" % (FSUF, side)), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        say("== %s: клеток уровня %d, с фильтром %d, составных столбцов %d" % (side, len(cells), sum(1 for c in cells.values() if c["filt"]), len(cols)))
+    say("ftab готово")
+
+
+def cmd_counts(a):
     import tk654_run as r54
     import tk634_run as r34
     st, r5, _, _ = t._srv()
@@ -245,15 +294,7 @@ def cmd_counts(a):
     thr38 = json.load(open("/data/p42-tk638/res/thr38.json", encoding="utf-8"))
     out, report = {}, {}
     for side in SIDES:
-        hist = tf.episode_history(eps, tf.SIDE_NAME[side])
-        tabs = {w.name: r54.load_window(w, side, hist) for w in st.TRADE_WINDOWS}
-        for w in st.TRADE_WINDOWS:
-            t38 = t8.load_window(u, w, side)
-            if list(t38["sym"]) != list(tabs[w.name]["sym"]) or not np.array_equal(t38["ms"], tabs[w.name]["ms"]):
-                raise SystemExit("G-key %s %s: строки таблиц TK-638 и TK-654 различаются" % (side, w.name))
-            tabs[w.name]["n24"], tabs[w.name]["m24"] = t38["n24"], t38["m24"]
-        if any(tabs[w]["gkey_mv5_bad"] for w in tabs):
-            raise SystemExit("G-key %s: mv5 эпизодов ≠ таблице TK-634" % side)
+        tabs = feat_tabs(side, st, u, eps)
 
         def qthr(col, p):
             v = np.concatenate([tabs[w.name][col][r54.in_scored_range(w, tabs[w.name]["ms"]) & np.isfinite(tabs[w.name][col])] for w in st.TRADE_WINDOWS])
@@ -273,17 +314,7 @@ def cmd_counts(a):
             axs[name] = d
         out[side] = axs
         cells, _, _, _ = build_cells(side, axs)
-        cols = ftab_cols(cells)
-        sem_list = {sem: parse_sem(sem) for sem in cols}
-        for w in st.TRADE_WINDOWS:
-            tab = tabs[w.name]
-            pm = {sem: np.logical_and.reduce([_pass(f_, x, tab) for f_, _, x in parts]) for sem, parts in sem_list.items()}
-            path = t.q("ftab674", "%s-%s.csv" % (w.name, side))
-            with open(path, "w", encoding="utf-8", newline="\n") as f:
-                f.write("sym,sig_ms," + ",".join(cols[s_] for s_ in sem_list) + "\n")
-                for i in range(len(tab["sym"])):
-                    f.write("%s,%d,%s\n" % (tab["sym"][i], int(tab["ms"][i]), ",".join("1.0" if pm[s_][i] else "0.0" for s_ in sem_list)))
-            say("ftab674 %s-%s: %d строк, столбцов %d" % (w.name, side, len(tab["sym"]), len(cols)))
+        cols = write_ftab(side, st, tabs, cells)
         W, S_, R = r34.trade_rows(u, side)
         idx = {w.name: {(x, int(r)): i for i, (x, r) in enumerate(zip(tabs[w.name]["sym"], tabs[w.name]["ms"]))} for w in st.TRADE_WINDOWS}
         tr = {c: np.full(len(W), np.nan) for c in FEAT_COLS}
@@ -295,7 +326,7 @@ def cmd_counts(a):
             for c in FEAT_COLS:
                 tr[c][sel] = tabs[w.name][c][pos].astype(float)
         np.savez(t.q("res", "trcols674-%s.npz" % side), W=W.astype(str), S=S_.astype(str), R=R, **tr)
-        json.dump(cols, open(t.q("res", "ftabcols674-%s.json" % side), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        json.dump(cols, open(t.q("res", "ftabcols674%s-%s.json" % (FSUF, side)), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         report[side] = dict(n_trades=int(len(W)), cols=len(cols), cells_filter=sum(1 for c in cells.values() if c["filt"]))
         say("== %s: сделок базы %d, составных столбцов %d, клеток с фильтром %d" % (side, len(W), len(cols), report[side]["cells_filter"]))
         for name, d in axs.items():
@@ -305,7 +336,18 @@ def cmd_counts(a):
 
 
 # ---- план: клетки, ключи, поиск в БД -----------------------------------------------------------------------------------------------
+def level_path(side):
+    return os.path.join(ROOT, "res", "level674%s-%s.json" % (SUF, side))
+
+
 def plan_side(side, store=None):
+    if LEVEL > 2:                                   # клетки уровня — из отбора `tk674_level.py select` (правило отсечения — поправка уровня)
+        inv = load_invalid(side)
+        raw = json.load(open(level_path(side), encoding="utf-8"))["cells"]
+        cells = {k: dict(ckey=k, cid=c["cid"], patch=c["patch"], filt=[tuple(x) for x in c["filt"]], sig=tuple(tuple(x) for x in c["sig"]), pairs=[])
+                 for k, c in raw.items() if c["cid"] not in inv}
+        found = store.cells_lookup(SIDENAME[side], UNI, WIN, list(cells), bins=eq_bins()) if store else {}
+        return cells, {}, [], {}, found
     thr = load_thr(side) if os.path.exists(thr_path()) else None
     cells, grids, skipped, bad = build_cells(side, thr)
     found = store.cells_lookup(SIDENAME[side], UNI, WIN, list(cells), bins=eq_bins()) if store else {}
@@ -390,7 +432,7 @@ def cmd_validate(a):
     for side in SIDES:
         cells, _, _, _, found = plan_side(side, store)
         todo = [c for k, c in cells.items() if k not in found]
-        cols = json.load(open(os.path.join(ROOT, "res", "ftabcols674-%s.json" % side), encoding="utf-8"))
+        cols = json.load(open(os.path.join(ROOT, "res", "ftabcols674%s-%s.json" % (FSUF, side)), encoding="utf-8"))
         lines = {}
         for c in todo:
             line = t.variant_line(r5, u, side, c["patch"])
@@ -406,7 +448,7 @@ def cmd_validate(a):
             with open(vf, "w", encoding="utf-8") as f:
                 f.write("".join("%s %s\n" % (k, v) for k, v in lines.items() if k not in inv))
             cmd = [r4.BIN, "breakout", "tick", "--cache", d + "/cache", "--trades", d + "/aggtrades", "--variants", vf, "--symbols", coin, "--out", out, "--threads", "2",
-                   "--ftab", t.q("ftab674", "%s-%s.csv" % (w.name, side))] + r5.TICK_STORE
+                   "--ftab", t.q("ftab674" + FSUF, "%s-%s.csv" % (w.name, side))] + r5.TICK_STORE
             env = dict(os.environ, P42_T0=w.t0, **one_side_env(side))
             r = subprocess.run(cmd, env=env, capture_output=True, text=True)
             if r.returncode == 0:
@@ -441,7 +483,7 @@ def cmd_cells(a):
         todo = [c for k, c in cells.items() if k not in found]
         bl = batches(todo)
         index = {}
-        cols = json.load(open(os.path.join(ROOT, "res", "ftabcols674-%s.json" % side), encoding="utf-8")) if any(k == "f" for k, _ in bl) else {}
+        cols = json.load(open(os.path.join(ROOT, "res", "ftabcols674%s-%s.json" % (FSUF, side)), encoding="utf-8")) if any(k == "f" for k, _ in bl) else {}
         for kind, cur in bl:
             nm = batch_name(kind, cur)
             index[nm] = [c["ckey"] for c in cur]
@@ -450,7 +492,7 @@ def cmd_cells(a):
                 done = os.path.join(ROOT, "done", "%s-%s-%s" % (w.name, side, nm))
                 if os.path.exists(done):
                     continue
-                ftab = t.q("ftab674", "%s-%s.csv" % (w.name, side)) if kind == "f" else None
+                ftab = t.q("ftab674" + FSUF, "%s-%s.csv" % (w.name, side)) if kind == "f" else None
                 variants = []
                 for c in cur:
                     line = t.variant_line(r5, u, side, c["patch"])
@@ -656,7 +698,7 @@ def rep_cell(c, bsh):
     ex = r["extra"]
     return dict(ckey=k, cid=r["cell"], sharpe=r["sharpe"], usd=r["usd"], n=r["trades"], maxdd=ex["maxdd"], maxdd_pct=ex["maxdd_pct"], gap_longest=ex["kpi"]["gap_longest"],
                 gap_mean=ex["kpi"]["gap_mean"], p90=ex["kpi"]["p90"], tail=ex["kpi"]["gap_tail"], rr=ex["rr"]["rr"], months=ex["months"], plateau=gg["g"], nb_mean=nbm, gain=r["sharpe"] - bsh,
-                **loss_fields(ex))
+                tsig=ex.get("trades_sig"), **loss_fields(ex))
 
 
 def pick(lst):
@@ -716,6 +758,17 @@ def cmd_map(a):
             raise SystemExit("%s: в БД нет %d клеток плана (первая: %s)" % (side, len(miss), plan["cells"][miss[0]]["cid"]))
         bsh = brow["sharpe"]
         gd = {k: guards(r, brow) for k, r in rows.items()}
+        ok4 = lambda k: (rows[k]["sharpe"] == rows[k]["sharpe"] and not is_ref5(rows[k]) and all(gd[k][x] for x in "abcd"))
+        best1 = {}                                           # лучший охранённый (а)–(д) Шарп клетки с одной сдвинутой осью — планка «пара лучше своих осей» (отсечение троек, §13.73.3)
+        for gname, g in plan["grids"].items():
+            m = g["m"]
+            an, bn = gname.split("|")
+            ia0, jb0 = base_idx(side, an, g["vals"][0]), base_idx(side, bn, g["vals"][1])
+            for name, line in ((an, [m[i][jb0] for i in range(len(m)) if i != ia0] if jb0 is not None else []),
+                               (bn, [m[ia0][j] for j in range(len(m[0])) if j != jb0] if ia0 is not None else [])):
+                for k in line:
+                    if k is not None and ok4(k):
+                        best1[name] = max(best1.get(name, float("-inf")), rows[k]["sharpe"])
         pair_rows = []
         for gname, g in plan["grids"].items():
             m = g["m"]
@@ -750,6 +803,8 @@ def cmd_map(a):
             for rp in (wr, br):
                 if rp and ax.REBASE:
                     rp["ref5_key"] = ref5_key(rp["ckey"])
+            if br:
+                br["gain_sub"] = br["sharpe"] - max(bsh, best1.get(an, float("-inf")), best1.get(bn, float("-inf")))
             pair_rows.append(dict(pair=gname, cells=len(cand), guarded3=len(ok3), guarded_all=len(full), winner=wr, both_moved=br, best_no_plateau=rep_cell(pick(ok3), bsh)))
         bx = brow["extra"]
         if ax.REBASE:                                        # справочная колонка: та же клетка при s = 5 % (из БД, прежняя карта)
@@ -768,7 +823,7 @@ def cmd_map(a):
         for k, r in rows.items():
             by_sig.setdefault(r["extra"].get("trades_sig"), []).append(k)
         dup = [v for k_, v in by_sig.items() if k_ and len(v) > 1]
-        out = dict(side=side, rebase=ax.REBASE, base=dict(ckey=base_ck, sharpe=bsh, usd=brow["usd"], n=brow["trades"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"], rr=bx["rr"]["rr"], **loss_fields(bx)), pairs=pair_rows, n_cells=len(rows),
+        out = dict(side=side, rebase=ax.REBASE, base=dict(ckey=base_ck, sharpe=bsh, usd=brow["usd"], n=brow["trades"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"], rr=bx["rr"]["rr"], **loss_fields(bx)), pairs=pair_rows, best1=best1, n_cells=len(rows),
                    m=m_side, sharpe_sd=sig_sh, noise_max=noise, g_dup=dict(groups=len(dup), cells=sum(len(v) for v in dup), examples=dup[:5]))
         json.dump(out, open(t.q("res", "map674%s-%s.json" % (SUF, side)), "w", encoding="utf-8"), ensure_ascii=False)
         top = sorted([p for p in pair_rows if p["winner"]], key=lambda p: -p["winner"]["gain"])[:15]
@@ -814,7 +869,7 @@ def cmd_stopaxis(a):
     say("stopaxis готово: res/stop-axis-table.md")
 
 
-COMMANDS = {"stopaxis": cmd_stopaxis, "probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "validate": cmd_validate, "cells": cmd_cells, "tables": cmd_tables, "ccheck": cmd_ccheck, "map": cmd_map}
+COMMANDS = {"stopaxis": cmd_stopaxis, "ftab": cmd_ftab, "probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "validate": cmd_validate, "cells": cmd_cells, "tables": cmd_tables, "ccheck": cmd_ccheck, "map": cmd_map}
 
 
 def main():

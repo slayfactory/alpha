@@ -1,0 +1,16 @@
+#!/bin/bash
+# П-42 TK-674: один пакет уровня карты на srv — [ftab] → validate → cells → tables → ccheck → map. Запуск юнитом:
+#   systemd-run --unit=tk674b-chain --collect -p Nice=19 -p WorkingDirectory=/data/p42-tk674/code -E TK674_REBASE=1 [-E TK674_LEVEL=3] bash tk674_chain.sh L-<запись результата>
+# Каждая стадия — отдельный процесс; клетки, найденные в БД летописи, не пересчитываются. Журнал — log/chain<суффикс>.log.
+set -euo pipefail
+ENTRY=$1
+PY=/opt/venv/bin/python
+LOG=/data/p42-tk674/log/chain${TK674_REBASE:+b}${TK674_LEVEL:-}.log
+stage() { echo "== $(date -u +%FT%TZ) $*" >> "$LOG"; "$PY" tk674_run.py "$@" >> "$LOG" 2>&1; }
+if [ "${TK674_LEVEL:-2}" -gt 2 ]; then stage ftab; fi
+stage validate
+stage cells
+stage tables --entry "$ENTRY"
+stage ccheck
+if [ "${TK674_LEVEL:-2}" -gt 2 ]; then "$PY" tk674_level.py map "${TK674_LEVEL}" >> "$LOG" 2>&1; else stage map; fi
+echo "== $(date -u +%FT%TZ) chain готово" >> "$LOG"

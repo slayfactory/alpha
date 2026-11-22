@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """П-42 §13.73.1 (TK-674): отчёт карты пар `pair-map.md` из `map674-<сторона>.json` (стадия `tk674_run.py map`). Без БД и без счёта.
   python3 tk674_mapmd.py <каталог с map674[b]-L.json, map674[b]-S.json> [--suf b] [--out <файл.md>]
-Таблицы — одна строка на клетку (пары с той же клеткой — колонкой); первыми R:R и убыток на стоп; рядом худшая сделка, Σ $, $ на сделку, число сделок,
+Таблицы — одна строка на набор сделок (пары и клетки с теми же сделками — колонкой); первыми R:R и убыток на стоп; рядом худшая сделка, Σ $, $ на сделку, число сделок,
 Шарп, просадка, перехай; при базе стопа ≤ 4 % (`--suf b`) — справочная колонка «та же клетка при стопе 5 %». Без бп и без медиан."""
 from __future__ import annotations
 
@@ -41,8 +41,9 @@ def loss_cols(c):
 
 def money_cols(c, gain=True):
     tail = " (хвост %d)" % c["tail"] if c.get("tail") else ""
+    sub = "; над нижним уровнем %s" % sg(c["gain_sub"]) if c.get("gain_sub") is not None else ""
     return "%s | %s | %d | %s%s | %.0f (%.0f %%) | %d / %s%s" % (
-        f0(c["usd"]), sg(c["mean_usd"]), c["n"], f2(c["sharpe"]), (" (%s)" % sg(c["gain"])) if gain else "", c["maxdd"], c["maxdd_pct"], c["gap_longest"], f1(c["gap_mean"]), tail)
+        f0(c["usd"]), sg(c["mean_usd"]), c["n"], f2(c["sharpe"]), (" (%s%s)" % (sg(c["gain"]), sub)) if gain else "", c["maxdd"], c["maxdd_pct"], c["gap_longest"], f1(c["gap_mean"]), tail)
 
 
 def syn_s(c):
@@ -60,14 +61,16 @@ def ref5_s(c):
 
 
 def dedupe(pairs, which):
-    """Строки таблицы: одна на клетку (ckey), по убыванию прироста Шарпа; пары с этой клеткой — списком."""
+    """Строки таблицы: одна на набор сделок (клетки с побайтно одинаковыми сделками — одна строка, их ключи — в колонке пар), по убыванию прироста Шарпа."""
     by = {}
     for p in pairs:
         c = p[which]
         if not c:
             continue
-        row = by.setdefault(c["ckey"], dict(c=c, pairs=[]))
+        row = by.setdefault(c.get("tsig") or c["ckey"], dict(c=c, pairs=[], cids=[]))
         row["pairs"].append(p["pair"].replace("|", " × "))
+        if c["cid"] not in row["cids"]:
+            row["cids"].append(c["cid"])
         if c.get("syn") and not row["c"].get("syn"):
             row["c"] = c
     return sorted(by.values(), key=lambda r: -r["c"]["gain"])
@@ -83,7 +86,7 @@ def holm(ps, alpha=ALPHA):
     return k
 
 
-HEAD = "| клетка | R:R | стоп, % | убыток по цене стопа $ (% маржи) | худшая сделка $ (% маржи) | сделок хуже цены стопа | Σ $ | $ на сделку | сделок | Шарп (прирост) | просадка $ (% маржи) | перехай, сут.: самый долгий / средний | синергия Σ $ [95 %] | пар с этой клеткой |"
+HEAD = "| клетка | R:R | стоп, % | убыток по цене стопа $ (% маржи) | худшая сделка $ (% маржи) | сделок хуже цены стопа | Σ $ | $ на сделку | сделок | Шарп (прирост) | просадка $ (% маржи) | перехай, сут.: самый долгий / средний | синергия Σ $ [95 %] | пар с этой клеткой; клетки с теми же сделками |"
 
 
 def table(rows, rebase, n=TOP):
@@ -91,12 +94,16 @@ def table(rows, rebase, n=TOP):
     for r in rows[:n]:
         c = r["c"]
         prs = "%d: %s" % (len(r["pairs"]), ", ".join(r["pairs"][:4]) + (" …" if len(r["pairs"]) > 4 else ""))
+        same = [x for x in r["cids"] if x != c["cid"]]
+        if same:
+            prs += "; те же сделки: " + ", ".join("`%s`" % x for x in same[:6]) + (" …" if len(same) > 6 else "")
         out.append("| `%s` | %s | %s | %s | %s |%s" % (c["cid"], loss_cols(c), money_cols(c), syn_s(c), prs, (" %s |" % ref5_s(c)) if rebase else ""))
     return out
 
 
 def side_md(d):
-    side, b, rebase = d["side"], d["base"], d.get("rebase", False)
+    side, b, rebase, level = d["side"], d["base"], d.get("rebase", False), d.get("level", 2)
+    unit = {2: "пар", 3: "троек", 4: "четвёрок"}[level]
     pairs = d["pairs"]
     wins = [p["winner"] for p in pairs if p["winner"]]
     lt5 = sum(1 for w in wins if w["s"] < 5)
@@ -112,10 +119,18 @@ def side_md(d):
             lt5, len(wins), len(topA), sum(1 for r in topA if r["c"]["s"] < 5)))
     out += ["", "База: Σ %s $, $ на сделку %s, сделок %d, Шарп %s, просадка %.0f $ (%.0f %% маржи), перехай %d сут. (средний %s, хвост %d)." % (
         f0(b["usd"]), sg(b["mean_usd"]), b["n"], f2(b["sharpe"]), b["maxdd"], b["maxdd_pct"], b["kpi"]["gap_longest"], f1(b["kpi"]["gap_mean"]), b["kpi"]["gap_tail"]),
-        "Клеток карты %d; пар %d, с победителем %d, разных клеток-победителей %d. Счётчик испытаний m = %d (все клетки стороны в БД), σ Шарпа клеток %s, ожидаемый максимум шума ≈ %s Шарпа (верхняя оценка: клетки зависимы). Одинаковые сделки у разных заплаток: %d групп / %d клеток." % (
+        "Клеток карты %d; комбинаций осей %d, с победителем %d, разных наборов сделок среди победителей %d. Счётчик испытаний m = %d (все клетки стороны в БД), σ Шарпа клеток %s, ожидаемый максимум шума ≈ %s Шарпа (верхняя оценка: клетки зависимы). Одинаковые сделки у разных заплаток: %d групп / %d клеток." % (
             d["n_cells"], len(pairs), len(wins), len(A), d["m"], f2(d["sharpe_sd"]), f2(d["noise_max"]), d["g_dup"]["groups"], d["g_dup"]["cells"]), ""]
-    out += ["### А. Победители пар (правило предрегистрации): %d разных клеток с наибольшим приростом Шарпа" % min(TOP, len(A)), ""] + table(A, rebase) + [""]
-    out += ["### Б. Лучшая охранённая клетка пары с обеими осями сдвинутыми (справка, те же клетки): %d разных клеток" % min(TOP, len(B)), ""] + table(B, rebase) + [""]
+    if d.get("select"):
+        q = d["select"]
+        out += ["Отбор %s (правило поправки уровня, до счёта): активных комбинаций уровня ниже %d из %d; по правилу проходит %d, взято %d, за потолком %d новых клеток на сторону осталось %d." % (
+            unit, q["active_subs"], q["subs"], q["eligible"], q["taken"], q["cap"], q["left_out"]), ""]
+    out += ["### А. Победители %s (правило предрегистрации): %d разных наборов сделок с наибольшим приростом Шарпа" % (unit, min(TOP, len(A))), ""] + table(A, rebase) + [""]
+    out += ["### Б. Лучшая охранённая клетка со всеми сдвинутыми осями (справка, те же клетки): %d разных наборов сделок" % min(TOP, len(B)), ""] + table(B, rebase) + [""]
+    if level > 2:
+        up = [r for r in B if r["c"].get("gain_sub", 0) > 0]
+        out += ["Клеток со всеми сдвинутыми осями, которые лучше планки нижних уровней (лучшая охранённая клетка любой подкомбинации): **%d** наборов сделок из %d. Найдено на этих данных." % (len(up), len(B)), ""]
+        return out
     syn = [p["both_moved"] for p in pairs if p["both_moved"] and p["both_moved"].get("syn")]
     pos = [c for c in syn if c["syn"]["lo"] > 0]
     M = len(syn)
@@ -133,12 +148,14 @@ def side_md(d):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("dir")
-    ap.add_argument("--suf", default="")
+    ap.add_argument("--suf", default="", help="b — база стопа ≤ 4 %; b3, b4 — тройки, четвёрки")
     ap.add_argument("--out")
     a = ap.parse_args()
     ds = [json.load(open(os.path.join(a.dir, "map674%s-%s.json" % (a.suf, s)), encoding="utf-8")) for s in "LS"]
     rebase = ds[0].get("rebase", False)
-    out = ["# П-42 §13.73.%s — карта всех совместимых пар осей линии%s (TK-674)" % ("2" if rebase else "1", ", база стопа ≤ 4 %" if rebase else ""), ""]
+    level = ds[0].get("level", 2)
+    name = {2: "всех совместимых пар", 3: "отобранных троек", 4: "отобранных четвёрок"}[level]
+    out = ["# П-42 §13.73.%s — карта %s осей линии%s (TK-674)" % ({2: "2" if rebase else "1", 3: "3", 4: "4"}[level], name, ", база стопа ≤ 4 %" if rebase else ""), ""]
     out.append("Окно 01.07–13.11 (136 суток), h775, ставка 500 $, маржа 250 $. Шарп — годовой по суточному ряду Σ $; перехай — сутки между новыми максимумами P&L. "
                "«Убыток по цене стопа» = 500 $ × стоп + 0,415 $ издержек — это не предел убытка: при пробое стопа сделка закрывается хуже, худшая сделка клетки напечатана рядом. "
                "**Найдено на этих данных; ждёт января–июня 2026.** Охраны (а)–(д) и плато (г) — §13.73 (PS-950, PS-951)%s. Торгуется одна линия — строки не складываются. "
