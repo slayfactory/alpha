@@ -14,6 +14,7 @@ import sys
 import time
 
 AP = argparse.ArgumentParser()
+AP.add_argument("--sig-cache", default="", help="каталог кэша сигналов движка (`--sig-cache`; в нём же файлы ступеней НОД)")
 AP.add_argument("--code", default=os.path.dirname(os.path.abspath(__file__)))
 AP.add_argument("--root", required=True, help="каталог карты с посчитанными клетками")
 AP.add_argument("--ws", required=True, help="окно-сторона, например wc-L")
@@ -34,6 +35,8 @@ def main():
     import tk604_run as r4
     r4.THREADS = A.threads
     r5.TICK_STORE = list(r5.TICK_STORE) + ["--cap-gb", str(A.cap_gb)]
+    if A.sig_cache:
+        r5.TICK_STORE += ["--sig-cache", A.sig_cache]
     wname, side = A.ws.split("-")
     w = next(x for x in st.TRADE_WINDOWS if x.name == wname)
     u = r5.Uni(m.UNI)

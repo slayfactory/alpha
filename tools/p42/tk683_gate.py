@@ -24,6 +24,7 @@ AP.add_argument("--threads", type=int, default=2)
 AP.add_argument("--cells-root", nargs="*", default=["/data/p42-tk674"])
 AP.add_argument("--full-root", nargs="*", default=[], help="каталоги карты, чьи партии сверяются целиком (все партии, все клетки)")
 AP.add_argument("--cap-gb", type=int, default=2, help="память движка под сутки сделок (`--cap-gb`; у движка по умолчанию 24 ГБ); на результат не влияет")
+AP.add_argument("--sig-cache", default="", help="каталог кэша сигналов движка (`--sig-cache`; в нём же файлы ступеней НОД)")
 AP.add_argument("--code", default=os.path.dirname(os.path.abspath(__file__)), help="каталог с tk674_run.py")
 AP.add_argument("--no-gbase", action="store_true", help="без сверки баз h775 (их файлов больше нет)")
 AP.add_argument("--tag", default="", help="имя прогона: каталог gate/<tag>/…, итог res/gate683<tag>.json")
@@ -114,6 +115,8 @@ def main():
     r4.THREADS = a.threads
     r4.BIN = m.BIN                              # без G-base (`cmd_gates`) бинарь раннеру задаётся здесь
     r5.TICK_STORE = list(r5.TICK_STORE) + ["--cap-gb", str(a.cap_gb)]
+    if a.sig_cache:
+        r5.TICK_STORE += ["--sig-cache", a.sig_cache]
     if not a.no_gbase:
         m.cmd_gates(a)                          # G-base: при различии — выход с кодом 1
     u = r5.Uni(m.UNI)
