@@ -3,8 +3,8 @@
 убыток на полный стоп, доля исполнения лимитной заявки; против якоря стороны. Без нового счёта: сделки и счётчики движка из каталогов клеток.
   srv: TK674_ROOT=<каталог набора> TK674_UNI=c539 python3 tk680_rows.py run <map674b1-L.json> <map674b1-S.json> <rows.json> [--axes e1t,w2]
   ПК:  python3 tk680_rows.py md <rows.json> [--out файл.md]
-Доля исполнения: `e1t` — заявок исполнено / поставлено (`<сторона>-maker.json`, сумма окон); `w2` — лот 2 исполнен (сразу + позже) / все решения по лоту 2
-(`lot2_[now,later,cancelled,rejected]` в `meta.json`, сумма окон); лот 1 — по сигналу, всегда исполняется."""
+Доля исполнения — по зачётным суткам (как сделки): `e1t` — заявок исполнено / поставлено (`<сторона>-trades.csv` + `<сторона>-entryrej.csv`: не исполнено, снято уровнем);
+`w2` — лот 2 исполнен / лот 1 исполнен (`<сторона>-lots.csv`, `lot2` = 1); лот 1 — по сигналу, всегда исполняется."""
 import json
 import os
 import sys
@@ -15,20 +15,37 @@ MARGIN = 250.0
 
 
 def _fills(dirs, side):
-    mk, lot2 = [0, 0, 0, 0], [0, 0, 0, 0]
+    """Заявки и исполнения — только в зачётных сутках окон (как сделки): счётчики движка (`maker.json`, `meta.json`) идут по всем суткам окна, включая
+    разогрев первых 14 суток каждого окна, поэтому больше числа зачётных сделок. `mk` = [заявок, исполнено, не исполнено, снято уровнем]; `lot2` = [лот 2 исполнен, лот 1 исполнен]."""
+    import csv
+    import tk604_stats as st
+    mk, lot2 = [0, 0, 0, 0], [0, 0]
+    raw_mk = [0, 0, 0, 0]
     have_mk = have_l2 = False
-    for d in dirs.values():
+    for w in st.TRADE_WINDOWS:
+        d = dirs[w.name]
+        lo_i, hi_i = (w.lod - st.D0).days, (w.hid - st.D0).days
+        inr = lambda ms: [lo_i <= int(x) <= hi_i for x in st.abs_day(w, ms)]
+        tr = list(csv.DictReader(open(os.path.join(d, "%s-trades.csv" % ENGNAME[side]), encoding="utf-8", newline="")))
+        ok = inr([int(r["entry_ms"]) for r in tr])
         p = os.path.join(d, "%s-maker.json" % ENGNAME[side])
         if os.path.exists(p):
             have_mk = True
             j = json.load(open(p, encoding="utf-8"))
-            mk = [mk[0] + j["orders"], mk[1] + j["filled"], mk[2] + j["unfilled"], mk[3] + j["touched"]]
-        meta = json.load(open(os.path.join(d, "meta.json"), encoding="utf-8")).get(ENGNAME[side], {})
-        l2 = meta.get("lot2_[now,later,cancelled,rejected]")
-        if l2 and sum(l2):
+            raw_mk = [raw_mk[0] + j["orders"], raw_mk[1] + j["filled"], raw_mk[2] + j["unfilled"], raw_mk[3] + j["touched"]]
+            rej = list(csv.DictReader(open(os.path.join(d, "%s-entryrej.csv" % ENGNAME[side]), encoding="utf-8", newline="")))
+            rin = inr([int(r["sig_ms"]) for r in rej]) if rej else []
+            un = sum(1 for r, k in zip(rej, rin) if k and r["why"] == "unfilled")
+            to = sum(1 for r, k in zip(rej, rin) if k and r["why"] == "touched")
+            fl = sum(ok)
+            mk = [mk[0] + fl + un + to, mk[1] + fl, mk[2] + un, mk[3] + to]
+        lp = os.path.join(d, "%s-lots.csv" % ENGNAME[side])
+        if os.path.exists(lp):
             have_l2 = True
-            lot2 = [a + b for a, b in zip(lot2, l2)]
-    return dict(mk=mk if have_mk else None, lot2=lot2 if have_l2 else None)
+            lots = list(csv.DictReader(open(lp, encoding="utf-8", newline="")))
+            lk = inr([int(r["sig_ms"]) for r in lots]) if lots else []
+            lot2 = [lot2[0] + sum(1 for r, k in zip(lots, lk) if k and int(r["lot2"]) == 1), lot2[1] + sum(lk)]
+    return dict(mk=mk if have_mk else None, lot2=lot2 if have_l2 else None, raw_mk=raw_mk if have_mk else None)
 
 
 def cmd_run(map_l, map_s, out, axes):
@@ -56,6 +73,10 @@ def cmd_run(map_l, map_s, out, axes):
             rec = dict(axis=axis, label=lab, ckey=ck, n=r["trades"], usd=r["usd"], mean_usd=r["usd"] / r["trades"] if r["trades"] else None, sharpe=r["sharpe"],
                        maxdd=c["maxdd"], maxdd_pct=c["maxdd_pct"], gap_longest=kpi["gap_longest"], gap_mean=kpi["gap_mean"], p90=kpi["p90"], tail=kpi.get("gap_tail", kpi.get("tail")),
                        rr=c.get("rr"), lstop=c.get("lstop", b.get("lstop")), own=own, **_fills(r["extra"]["dirs"], side))
+            if rec["mk"] and rec["mk"][1] != r["trades"]:
+                raise SystemExit("клетка %s: исполнено %d ≠ сделок %d" % (r["cell"], rec["mk"][1], r["trades"]))
+            if rec["lot2"] and rec["lot2"][1] != r["trades"]:
+                raise SystemExit("клетка %s: лотов 1 %d ≠ сделок %d" % (r["cell"], rec["lot2"][1], r["trades"]))
             res[side].append(rec)
         print(side, "строк", len(res[side]), flush=True)
     json.dump(res, open(out, "w", encoding="utf-8"), ensure_ascii=False)
@@ -70,9 +91,8 @@ def _fill(rec):
         o, f = rec["mk"][0], rec["mk"][1]
         return "%s %% (%d из %d)" % (_f(100.0 * f / o, 0, False), f, o) if o else "—"
     if rec.get("lot2"):
-        n, l, c, j = rec["lot2"]
-        t = n + l + c + j
-        return "лот 2: %s %% (%d из %d)" % (_f(100.0 * (n + l) / t, 0, False), n + l, t) if t else "—"
+        f, t = rec["lot2"]
+        return "лот 2: %s %% (%d из %d)" % (_f(100.0 * f / t, 0, False), f, t) if t else "—"
     return "—"
 
 

@@ -33,7 +33,7 @@ def _stats(row, side, ck):
     import tk604_stats as st
     import tk674_stats as ms
     tk = _tokens(ck)
-    split = float(tk.get("e2", 0)) > 0
+    split = float(tk.get("e2", 0)) > 0 or float(tk.get("e2t", 0)) > 0          # вход двумя частями: `e2` (размещение) или `e2t` (тики до уровня)
     dyn = any(k in tk for k in DYN_STOP)
     cut = 0.75 * (500.0 * float(row["extra"]["lmax"]["s"]) / 100.0 + ms.COST_USD)
     full, after, nets, only_a, a_b = [], [], [], [], []
