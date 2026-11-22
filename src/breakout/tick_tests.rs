@@ -5601,3 +5601,56 @@ fn prio_reorders_same_ms_signals_without_a_window_and_without_delay() {
         assert_eq!((r.rej[4], r.prio), (1, [0, 0, 0, 0, 0, moved]), "pr={pr}");
     }
 }
+
+// ───────────────────────────── TK-683: группа заданий с одним состоянием уровня ─────────────────────────────
+
+#[test]
+fn candidates_group_equals_separate_passes() {
+    use super::tick::{candidates_group, level_state_key};
+    let mut c = level_world();
+    // подходы к уровню 100 на разной глубине, оборот появляется с минуты BORN+61, затем ложный пробой с запретом
+    set(&mut c, BORN + 60, 99.85, 99.95, 99.84, 99.90);
+    set(&mut c, BORN + 61, 99.75, 99.80, 99.70, 99.75);
+    c.qv[BORN + 61] = 1_000_000_000_000;
+    set(&mut c, BORN + 62, 99.55, 99.60, 99.50, 99.55);
+    set(&mut c, BORN + 63, 99.85, 99.96, 99.84, 99.90);
+    set(&mut c, BORN + 70, 100.00, 100.20, 99.80, 99.85);
+    set(&mut c, BORN + 71, 99.85, 99.95, 99.84, 99.90);
+    let s = sym(c);
+    for fg_m in [0, 500] {
+        let mut base = lv_params().sig;
+        base.track_pm = 1000;
+        base.fg_m = fg_m;
+        let mut cfgs = vec![base.clone(); 9];
+        cfgs[1].e_pm = 100;
+        cfgs[2].e_pm = 500;
+        cfgs[3].t1h_u = 1;
+        cfgs[4].t24_u = 1;
+        cfgs[5].natr_min_pm = 1_000_000;
+        (cfgs[6].fr_h_min, cfgs[6].fr_k, cfgs[6].fr_share) = (30, 20, 50);
+        cfgs[7].nf = 1;
+        (cfgs[8].ev, cfgs[8].ea_m, cfgs[8].el_pm, cfgs[8].eh_pm) = (1, 1000, 50, 400);
+        let key = level_state_key(&base);
+        assert!(cfgs.iter().all(|x| level_state_key(x) == key));
+        let lv = build_levels(&s, &base.lv, Side::Long);
+        let refs: Vec<&super::params::SigCfg> = cfgs.iter().collect();
+        let mut outs = vec![Vec::new(); cfgs.len()];
+        let mut fgs = vec![[0u64; 4]; cfgs.len()];
+        candidates_group(&s, &lv, &refs, Side::Long, &mut outs, &mut fgs);
+        let row = |v: &[super::tick::Cand]| -> Vec<(u32, u32, i64, i64)> {
+            v.iter().map(|x| (x.t, x.level, x.lp, x.far)).collect()
+        };
+        for (k, cfg) in cfgs.iter().enumerate() {
+            let mut one = Vec::new();
+            let mut fg = [0u64; 4];
+            candidates_fg(&s, &lv, cfg, Side::Long, &mut one, &mut fg);
+            assert_eq!(row(&outs[k]), row(&one), "задание {k}, fg {fg_m}");
+            assert_eq!(fgs[k], fg, "счётчики fg, задание {k}, fg {fg_m}");
+        }
+        assert!(!outs[0].is_empty(), "база даёт кандидатов");
+        assert!(
+            outs.iter().any(|o| row(o) != row(&outs[0])),
+            "условия выдачи различают задания"
+        );
+    }
+}

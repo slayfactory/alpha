@@ -602,7 +602,6 @@ pub fn candidates(sym: &Sym, levels: &[Level], cfg: &SigCfg, side: Side, out: &m
 /// со следующей минуты уровень снова даёт кандидатов, память касания (`pend`) и метка `pk` сброшены. Минута, снявшая приостановку, сама проверяется
 /// убийцами заново (широкая минута с откатом и новым проколом — новая приостановка). Повторное срабатывание убийцы на приостановленном уровне
 /// ни время приостановки, ни счётчик не меняет.
-#[allow(clippy::needless_range_loop)] // t индексирует сразу несколько рядов монеты
 pub fn candidates_fg(
     sym: &Sym,
     levels: &[Level],
@@ -611,34 +610,115 @@ pub fn candidates_fg(
     out: &mut Vec<Cand>,
     fgc: &mut [u64; 4],
 ) {
+    let mut outs = [std::mem::take(out)];
+    let mut fg = [[0u64; 4]];
+    candidates_group(sym, levels, &[cfg], side, &mut outs, &mut fg);
+    let [o] = outs;
+    *out = o;
+    for k in 0..4 {
+        fgc[k] += fg[0][k];
+    }
+}
+
+/// TK-683: ключ состояния уровня в `candidates_group` — `SigCfg` без полей, от которых зависит только выдача кандидата
+/// (живость, обороты, зона входа, «свежий уровень», цвет, `ap`). Задания с равным ключом и стороной делят один проход по минутам.
+pub fn level_state_key(cfg: &SigCfg) -> SigCfg {
+    SigCfg {
+        natr_min_pm: 0,
+        t1h_u: 0,
+        t24_u: 0,
+        track_pm: 0,
+        e_pm: 0,
+        color: false,
+        ap: 0,
+        fr_h_min: 0,
+        fr_k: 0,
+        fr_share: 0,
+        fr_b_pm: 0,
+        nf: 0,
+        ev: 0,
+        ea_m: 0,
+        el_pm: 0,
+        eh_pm: 0,
+        ..cfg.clone()
+    }
+}
+
+/// Условие выдачи кандидата одного задания группы (`candidates_group`).
+struct Emit<'a> {
+    cfg: &'a SigCfg,
+    /// Номер задания в группе.
+    k: usize,
+    /// TK-681 (`nf`): ряд фильтра живости — NATR `natr_p` или источник волатильности.
+    live: &'a [i32],
+    /// TK-681 (`ev`): ряд зоны входа.
+    evol: Option<&'a [i32]>,
+    natr_min: i64,
+    /// Зона входа ×1e8: постоянная, при `ev ≠ 0` — её верхняя граница (зажим `eh`, `track`); `None` — границы нет.
+    dmax0: Option<i64>,
+    /// Нижняя граница зоны входа при `dmax0` для текущей версии цены уровня.
+    zone_lo0: i64,
+}
+
+/// `candidates_fg` для группы заданий `cfgs` с одним состоянием уровня (`level_state_key` и сторона равны): состояние (запрет, ложный пробой,
+/// приостановка) ведётся один раз, кандидаты выдаются каждому заданию по его условию — в `outs[k]`, счётчики `fg` — в `fgc[k]`.
+/// Результат каждого задания тот же, что у отдельного прохода; счётчики `pk` / `pb` растут на число заданий группы.
+#[allow(clippy::needless_range_loop)] // t индексирует сразу несколько рядов монеты
+pub fn candidates_group(
+    sym: &Sym,
+    levels: &[Level],
+    cfgs: &[&SigCfg],
+    side: Side,
+    outs: &mut [Vec<Cand>],
+    fgc: &mut [[u64; 4]],
+) {
     let s = side.s();
+    let Some(&cfg) = cfgs.first() else {
+        return;
+    };
     let Some(natr) = sym.natr_for(cfg.natr_p) else {
         return;
     };
-    // TK-681 (`nf`): ряд фильтра живости — NATR `natr_p` или источник волатильности; (`ev`): ряд зоны входа
-    let live = if cfg.nf == 0 {
-        natr
-    } else {
-        let Some(v) = sym.vol_for(cfg.nf) else {
-            return;
-        };
-        v
-    };
-    let evol = if cfg.ev == 0 {
-        None
-    } else {
-        let Some(v) = sym.vol_for(cfg.ev) else {
-            return;
-        };
-        Some(v)
-    };
-    let dmax0 = (cfg.e_pm * 1000).min(cfg.track_pm * 1000);
-    let natr_min = cfg.natr_min_pm * 1000;
-    // TK-683: пороги, зависящие только от цены версии уровня, считаются при смене версии, а не на каждой минуте:
-    // (нижняя граница постоянной зоны входа, порог возврата `ban`, порог прокола `pk`)
-    let marks = |lp: i64| {
+    // задание без ряда источника (`nf`, `ev`) кандидатов и счётчиков не даёт
+    let mut em: Vec<Emit> = cfgs
+        .iter()
+        .enumerate()
+        .filter_map(|(k, &c)| {
+            let live = if c.nf == 0 { natr } else { sym.vol_for(c.nf)? };
+            let track = c.track_pm * 1000;
+            let (evol, dmax0) = if c.ev == 0 {
+                (None, Some((c.e_pm * 1000).min(track)))
+            } else {
+                let ub = (c.eh_pm >= 0 && track >= 0).then(|| (c.eh_pm * 1000).min(track));
+                (Some(sym.vol_for(c.ev)?), ub)
+            };
+            Some(Emit {
+                cfg: c,
+                k,
+                live,
+                evol,
+                natr_min: c.natr_min_pm * 1000,
+                dmax0,
+                zone_lo0: i64::MIN,
+            })
+        })
+        .collect();
+    if em.is_empty() {
+        return;
+    }
+    let n_jobs = em.len() as u64;
+    let mut fg = [0u64; 4];
+    let zone_lo_of = |lp: i64, dmax: i64| lp - mul_div(lp.abs(), dmax + 1, SCALE) as i64 - 1;
+    // пороги, зависящие только от цены версии уровня, считаются при смене версии, а не на каждой минуте:
+    // нижние границы зон входа заданий (возвращается наименьшая), порог возврата `ban`, порог прокола `pk`
+    let marks = |lp: i64, em: &mut [Emit]| {
+        let mut zone_min = i64::MAX;
+        for e in em.iter_mut() {
+            e.zone_lo0 = e.dmax0.map_or(i64::MIN, |d| zone_lo_of(lp, d));
+            zone_min = zone_min.min(e.zone_lo0);
+        }
         (
-            lp - mul_div(lp.abs(), dmax0 + 1, SCALE) as i64 - 1,
+            zone_min,
             lp - mul_div(lp.abs(), cfg.f_pm, 100_000) as i64,
             lp + mul_div(lp.abs(), cfg.lv.tau_pm, 100_000) as i64,
         )
@@ -648,7 +728,7 @@ pub fn candidates_fg(
         let mut seg = 0;
         let mut price = lv.segs[0].1;
         let mut far = lv.far_edge(0, s);
-        let (mut zone_lo0, mut back, mut pk_thr) = marks(s * price);
+        let (mut zone_min, mut back, mut pk_thr) = marks(s * price, &mut em);
         let mut pend: Option<usize> = None;
         let mut forbidden = false;
         let mut pk_dead = false;
@@ -659,7 +739,7 @@ pub fn candidates_fg(
                 seg += 1;
                 price = lv.segs[seg].1;
                 far = lv.far_edge(seg, s);
-                (zone_lo0, back, pk_thr) = marks(s * price);
+                (zone_min, back, pk_thr) = marks(s * price, &mut em);
             }
             if sym.o[t] == 0 {
                 continue;
@@ -670,31 +750,34 @@ pub fn candidates_fg(
             } else {
                 (-sym.l[t], -sym.h[t])
             };
-            // зона входа минуты: постоянная или от волатильности закрытой минутки `t−1` (`ev`); нет значения — кандидата нет
-            let zone_lo = match evol {
-                None => Some(zone_lo0),
-                Some(v) if t > 0 => cfg
-                    .zone_e8(i64::from(v[t - 1]))
-                    .map(|dmax| lp - mul_div(lp.abs(), dmax + 1, SCALE) as i64 - 1),
-                Some(_) => None,
-            };
-            if let (true, Some(zone_lo)) = (t >= START_MIN && !forbidden && lo < lp, zone_lo) {
-                let nv = i64::from(live[t - 1]);
-                if hi >= zone_lo
-                    && nv >= 0
-                    && nv >= natr_min
-                    && sym.pq[t] - sym.pq[t - 60] >= cfg.t1h_u
-                    && (cfg.t24_u == 0 || sym.pq[t] - sym.pq[t - 1440] >= cfg.t24_u)
-                {
-                    if fresh_ok(sym, cfg, lv, s, lp, t) {
-                        out.push(Cand {
-                            t: t as u32,
-                            level: li as u32,
-                            lp,
-                            far: far.unwrap_or(lp),
-                        });
-                    } else {
-                        FR_REJECTED.fetch_add(1, Ordering::Relaxed);
+            // минута ниже самой широкой зоны группы кандидата не даёт ни одному заданию
+            if t >= START_MIN && t > 0 && !forbidden && lo < lp && hi >= zone_min {
+                for e in &em {
+                    // зона входа минуты: постоянная или от волатильности закрытой минутки `t−1` (`ev`); нет значения — кандидата нет
+                    let zone_lo = match e.evol {
+                        None => e.zone_lo0,
+                        Some(v) => match e.cfg.zone_e8(i64::from(v[t - 1])) {
+                            Some(dmax) => zone_lo_of(lp, dmax),
+                            None => continue,
+                        },
+                    };
+                    let nv = i64::from(e.live[t - 1]);
+                    if hi >= zone_lo
+                        && nv >= 0
+                        && nv >= e.natr_min
+                        && sym.pq[t] - sym.pq[t - 60] >= e.cfg.t1h_u
+                        && (e.cfg.t24_u == 0 || sym.pq[t] - sym.pq[t - 1440] >= e.cfg.t24_u)
+                    {
+                        if fresh_ok(sym, e.cfg, lv, s, lp, t) {
+                            outs[e.k].push(Cand {
+                                t: t as u32,
+                                level: li as u32,
+                                lp,
+                                far: far.unwrap_or(lp),
+                            });
+                        } else {
+                            FR_REJECTED.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
             }
@@ -709,7 +792,7 @@ pub fn candidates_fg(
                     forbidden = false;
                     pk_dead = false;
                     pend = None;
-                    fgc[3] += 1;
+                    fg[3] += 1;
                 }
             }
             if let Some(tc) = pend {
@@ -723,7 +806,7 @@ pub fn candidates_fg(
             if cfg.ban && pend.is_some() && s * sym.c[t] < back {
                 if cfg.fg_m > 0 && susp.is_none() {
                     susp = Some(t);
-                    fgc[2] += 1;
+                    fg[2] += 1;
                 }
                 forbidden = true;
             }
@@ -731,25 +814,30 @@ pub fn candidates_fg(
             if cfg.lv.pk && !pk_dead && hi > pk_thr {
                 pk_dead = true;
                 if !forbidden {
-                    PK_MINUTE_KILLED.fetch_add(1, Ordering::Relaxed);
+                    PK_MINUTE_KILLED.fetch_add(n_jobs, Ordering::Relaxed);
                 }
                 if cfg.fg_m > 0 && susp.is_none() {
                     susp = Some(t);
-                    fgc[0] += 1;
+                    fg[0] += 1;
                 }
                 forbidden = true;
             }
             // §13.13 (`pb`): сделка минуты на уровне или за ним (high ≥ цены версии) убивает уровень со следующей минуты
             if cfg.pb && hi >= lp {
                 if !forbidden {
-                    PB_KILLED.fetch_add(1, Ordering::Relaxed);
+                    PB_KILLED.fetch_add(n_jobs, Ordering::Relaxed);
                 }
                 if cfg.fg_m > 0 && susp.is_none() {
                     susp = Some(t);
-                    fgc[1] += 1;
+                    fg[1] += 1;
                 }
                 forbidden = true;
             }
+        }
+    }
+    for e in &em {
+        for k in 0..4 {
+            fgc[e.k][k] += fg[k];
         }
     }
 }
@@ -817,12 +905,37 @@ pub fn signals_for_coin(
 ) {
     let mut lev: HashMap<(LevelCfg, Side), Vec<Level>> = HashMap::new();
     let mut by_day: BTreeMap<usize, Vec<(usize, Cand)>> = BTreeMap::new();
+    // TK-683: задания с одним состоянием уровня (`level_state_key`, сторона) идут по минутам одним проходом
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut group_of: HashMap<(SigCfg, Side), usize> = HashMap::new();
     for (j, (cfg, side)) in jobs.iter().enumerate() {
+        let g = *group_of
+            .entry((level_state_key(cfg), *side))
+            .or_insert_with(|| {
+                groups.push(Vec::new());
+                groups.len() - 1
+            });
+        groups[g].push(j);
+    }
+    let mut cands: Vec<Vec<Cand>> = jobs.iter().map(|_| Vec::new()).collect();
+    for g in &groups {
+        let (cfg, side) = &jobs[g[0]];
         let levels = lev
             .entry((cfg.lv.clone(), *side))
             .or_insert_with(|| build_levels_far(sym, &cfg.lv, *side));
-        let mut cs = Vec::new();
-        candidates_fg(sym, levels, cfg, *side, &mut cs, &mut ctrs[j].fg);
+        let cfgs: Vec<&SigCfg> = g.iter().map(|&j| &jobs[j].0).collect();
+        let mut outs_g: Vec<Vec<Cand>> = g.iter().map(|_| Vec::new()).collect();
+        let mut fg = vec![[0u64; 4]; g.len()];
+        candidates_group(sym, levels, &cfgs, *side, &mut outs_g, &mut fg);
+        for ((&j, cs), f) in g.iter().zip(outs_g).zip(fg) {
+            cands[j] = cs;
+            for k in 0..4 {
+                ctrs[j].fg[k] += f[k];
+            }
+        }
+    }
+    // порядок кандидатов суток — по номеру задания, как при отдельных проходах
+    for (j, cs) in cands.into_iter().enumerate() {
         ctrs[j].cands += cs.len() as u64;
         for c in cs {
             by_day.entry(c.t as usize / 1440).or_default().push((j, c));
