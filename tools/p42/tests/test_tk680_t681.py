@@ -8,7 +8,7 @@ import textwrap
 import pytest
 
 P42 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-VOLQ = os.path.join(P42, "..", "..", "docs", "findings", "p42-titration-coverage-2026-11-22", "t681", "volq681.json")
+VOLQ = os.environ.get("TK681_VOLQ") or os.path.join(P42, "..", "..", "docs", "findings", "p42-titration-coverage-2026-11-22", "t681", "volq681.json")
 
 
 def run(code, **env):
