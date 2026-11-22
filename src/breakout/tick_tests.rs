@@ -5031,7 +5031,7 @@ fn s2_common_stop_puts_lot2_hard_stop_at_lot1_stop_price() {
 // ───────────── TK-681: окно NATR 5 (`natr_p=5`), источник фильтра живости (`nf`), зона входа от волатильности (`ev/ea/el/eh`) ─────────────
 
 /// Мир TK-681: ход цены +1 % на минуте `a` и возврат на `a + 1` (остальное — 90,0), минута `t1` — у уровня 100,025 (`o, h, l, c` = `q`).
-/// Реализованная волатильность окна с обеими минутами — 1,407 % (1_407_230 e8), с одной минутой возврата — 0,990 %.
+/// Реализованная волатильность окна с обеими минутами — 1,407 % (1_407_229 e8), с одной минутой возврата — 0,990 %.
 fn z_world(t1: usize, a: usize, q: (f64, f64, f64, f64)) -> Cols {
     let mut c = level_world();
     set(&mut c, a, 90.0, 90.9, 90.0, 90.9);
@@ -5168,7 +5168,7 @@ fn zone_from_volatility_drives_candidates_and_tick_signals() {
     let (sg, ctr) = ap_signals(c.clone(), &wide, Side::Long, vec![(day, ticks.clone())]);
     assert_eq!(sig_minutes(&sg), vec![t1]);
     assert_eq!(sg[0].idx, 2);
-    assert!(i64::from(sg[0].dist) <= 703_615 && sg[0].dist > 570_000);
+    assert!(i64::from(sg[0].dist) <= 703_614 && sg[0].dist > 570_000);
     assert_eq!(ctr.cands, 1);
     let (s0, c0) = ap_signals(c, &z_params("natr_min=0"), Side::Long, vec![(day, ticks)]);
     assert!(
