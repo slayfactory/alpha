@@ -21,6 +21,7 @@ ap.add_argument("--ref681", default="/data/p42-tk681/bin/alpha-tk681.4e1fb286")
 ap.add_argument("--ref683", default="/data/p42-tk683/bin/alpha-tk683-plain.9387e0a9")
 ap.add_argument("--windows", default="wa", help="окна выборки Б (якоря А — все три)")
 ap.add_argument("--no-ref", action="store_true", help="только якоря А")
+ap.add_argument("--smoke", action="store_true", help="e1t = 1 / 2 / 3 на окне wa обеих сторон: счётчики заявок (<сторона>-maker.json) и число сделок, без P&L")
 A = ap.parse_args()
 sys.path.insert(0, A.code)
 import tk674_run as m  # noqa: E402
@@ -47,12 +48,33 @@ def compare(old, new):
     return files, diff, sorted(set(os.listdir(new)) - set(files))
 
 
+def smoke(st, r5, r4, uc):
+    """Ключ e1t на настоящем бинаре: заявки / заполнено / не заполнено / сорвано уровнем и число сделок (строк trades.csv − 1)."""
+    w = {x.name: x for x in st.TRADE_WINDOWS}["wa"]
+    rows = []
+    for side in m.SIDES:
+        base = anchor_lines(side)["wa-" + side][1][0][1]
+        vs = [("e1t%d" % n, base + " e2=0 e1t=%d" % n) for n in (1, 2, 3)]
+        out = os.path.join(m.ROOT, "gate", "smoke-wa-" + side)
+        r4.BIN = m.BIN
+        r5.tick(uc, w, vs, out, m.one_side_env(side), t.q("log", "gate688-smoke-%s.log" % side))
+        for cid, _ in vs:
+            d = os.path.join(out, cid)
+            mk = json.load(open(os.path.join(d, "%s-maker.json" % m.ENGNAME[side]), encoding="utf-8"))
+            n = sum(1 for _ in open(os.path.join(d, "%s-trades.csv" % m.ENGNAME[side]), encoding="utf-8")) - 1
+            rows.append(dict(side=side, cid=cid, orders=mk["orders"], filled=mk["filled"], unfilled=mk["unfilled"], touched=mk["touched"], notick=mk["notick"], trades=n))
+            say("smoke %s %s: заявок %d, заполнено %d, не заполнено %d, снято уровнем %d, без тика %d, сделок %d" % (side, cid, mk["orders"], mk["filled"], mk["unfilled"], mk["touched"], mk["notick"], n))
+    json.dump(rows, open(t.q("res", "smoke688.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+
+
 def main():
     st, r5, _, _ = t._srv()
     m.engine_opts(r5)
     import tk604_run as r4
     new_bin = m.BIN
     uc = r5.Uni("c539")
+    if A.smoke:
+        return smoke(st, r5, r4, uc)
     res, bad = [], []
 
     def run(bin_, w, side, vs, out, tag):
