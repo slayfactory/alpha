@@ -1,0 +1,651 @@
+{
+ "uni": "c539",
+ "step": "1 (old sets main/hist/grid/ctx; t681 / e1t / split-entry follow in step 2)",
+ "entry": "L-338",
+ "anchors": "L-334",
+ "sets": {
+  "main": {
+   "L": [
+    {
+     "axis": "vpin1h.ge",
+     "kind": "col",
+     "winner_cid": "s3+vpin1h.ge_q20",
+     "winner_ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 F=vpin1h>=0.2",
+     "sharpe": 6.087,
+     "gain": 0.869,
+     "n": 259,
+     "usd": 341.7
+    },
+    {
+     "axis": "big1800.le",
+     "kind": "col",
+     "winner_cid": "s3+big1800.le_q80",
+     "winner_ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 F=big1800<=0.29",
+     "sharpe": 5.747,
+     "gain": 0.53,
+     "n": 260,
+     "usd": 340.6
+    },
+    {
+     "axis": "p",
+     "kind": "key",
+     "winner_cid": "p1+s3",
+     "winner_ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 p=1 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.575,
+     "gain": 0.358,
+     "n": 290,
+     "usd": 341.4
+    },
+    {
+     "axis": "c",
+     "kind": "key",
+     "winner_cid": "c60+s3",
+     "winner_ckey": "c=60 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.433,
+     "gain": 0.216,
+     "n": 292,
+     "usd": 339.1
+    },
+    {
+     "axis": "pb",
+     "kind": "key",
+     "winner_cid": "pb0+s3",
+     "winner_ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.4,
+     "gain": 0.183,
+     "n": 315,
+     "usd": 338.2
+    },
+    {
+     "axis": "cw",
+     "kind": "key",
+     "winner_cid": "ch1000+cl0+cm0.25+cw60+s3",
+     "winner_ckey": "ch=1000 cm=0.25 cw=60 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.29,
+     "gain": 0.072,
+     "n": 298,
+     "usd": 329.4
+    },
+    {
+     "axis": "color",
+     "kind": "key",
+     "winner_cid": "color0+s3",
+     "winner_ckey": "color=0 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.277,
+     "gain": 0.059,
+     "n": 280,
+     "usd": 329.6
+    },
+    {
+     "axis": "busy",
+     "kind": "key",
+     "winner_cid": "busy0+s3",
+     "winner_ckey": "busy=0 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.275,
+     "gain": 0.058,
+     "n": 299,
+     "usd": 331.7
+    }
+   ],
+   "S": [
+    {
+     "axis": "ce_1h.ge",
+     "kind": "col",
+     "winner_cid": "s4+ce_1h.ge_q20",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=ce_1h>=0.037",
+     "sharpe": 5.016,
+     "gain": 1.381,
+     "n": 121,
+     "usd": 156.1
+    },
+    {
+     "axis": "approach_dur_min.ge",
+     "kind": "col",
+     "winner_cid": "s4+approach_dur_min.ge_q40",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=approach_dur_min>=0",
+     "sharpe": 5.002,
+     "gain": 1.367,
+     "n": 106,
+     "usd": 140.1
+    },
+    {
+     "axis": "gap60_s.le",
+     "kind": "col",
+     "winner_cid": "s4+gap60_s.le_q60",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=gap60_s<=15",
+     "sharpe": 4.792,
+     "gain": 1.157,
+     "n": 128,
+     "usd": 147.4
+    },
+    {
+     "axis": "since_born_h.le",
+     "kind": "col",
+     "winner_cid": "s4+since_born_h.le_q60",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=since_born_h<=18",
+     "sharpe": 4.767,
+     "gain": 1.132,
+     "n": 126,
+     "usd": 153.6
+    },
+    {
+     "axis": "pb",
+     "kind": "key",
+     "winner_cid": "pb0+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 4.427,
+     "gain": 0.793,
+     "n": 180,
+     "usd": 162.2
+    },
+    {
+     "axis": "btc_mv5.ge",
+     "kind": "col",
+     "winner_cid": "s4+btc_mv5.ge_q20",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=btc_mv5>=-4.1",
+     "sharpe": 4.423,
+     "gain": 0.788,
+     "n": 136,
+     "usd": 134.8
+    },
+    {
+     "axis": "cb_1h.ge",
+     "kind": "col",
+     "winner_cid": "s4+cb_1h.ge_q20",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=cb_1h>=0.023",
+     "sharpe": 4.308,
+     "gain": 0.674,
+     "n": 126,
+     "usd": 147.1
+    },
+    {
+     "axis": "tpm60.ge",
+     "kind": "col",
+     "winner_cid": "s4+tpm60.ge_q20",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=tpm60>=120",
+     "sharpe": 4.278,
+     "gain": 0.643,
+     "n": 123,
+     "usd": 143.0
+    },
+    {
+     "axis": "n60.ge",
+     "kind": "col",
+     "winner_cid": "s4+n60.ge_q20",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=n60>=7300",
+     "sharpe": 4.17,
+     "gain": 0.536,
+     "n": 123,
+     "usd": 137.0
+    },
+    {
+     "axis": "bt_1h.ge",
+     "kind": "col",
+     "winner_cid": "s4+bt_1h.ge_q20",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=bt_1h>=0.14",
+     "sharpe": 4.136,
+     "gain": 0.502,
+     "n": 127,
+     "usd": 141.1
+    },
+    {
+     "axis": "natr_exit_p",
+     "kind": "key",
+     "winner_cid": "natr_exit_p60+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 natr_exit_p=60 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 4.085,
+     "gain": 0.451,
+     "n": 172,
+     "usd": 161.2
+    },
+    {
+     "axis": "cc_1h.le",
+     "kind": "col",
+     "winner_cid": "s4+cc_1h.le_q40",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=cc_1h<=0.7",
+     "sharpe": 4.049,
+     "gain": 0.415,
+     "n": 157,
+     "usd": 148.3
+    },
+    {
+     "axis": "bd_thin30.ge",
+     "kind": "col",
+     "winner_cid": "s4+bd_thin30.ge_q20",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=bd_thin30>=-0.18",
+     "sharpe": 4.024,
+     "gain": 0.389,
+     "n": 159,
+     "usd": 135.3
+    },
+    {
+     "axis": "a",
+     "kind": "key",
+     "winner_cid": "a1+s4",
+     "winner_ckey": "a=1 bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 3.991,
+     "gain": 0.356,
+     "n": 172,
+     "usd": 142.2
+    },
+    {
+     "axis": "p",
+     "kind": "key",
+     "winner_cid": "p1+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 p=1 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 3.978,
+     "gain": 0.343,
+     "n": 166,
+     "usd": 142.2
+    },
+    {
+     "axis": "cc_15m.le",
+     "kind": "col",
+     "winner_cid": "s4+cc_15m.le_q60",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=cc_15m<=0.82",
+     "sharpe": 3.971,
+     "gain": 0.336,
+     "n": 159,
+     "usd": 146.2
+    },
+    {
+     "axis": "natr_p",
+     "kind": "key",
+     "winner_cid": "natr_p15+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 natr_p=15 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 3.923,
+     "gain": 0.289,
+     "n": 232,
+     "usd": 167.8
+    },
+    {
+     "axis": "touch_ep.le",
+     "kind": "col",
+     "winner_cid": "s4+touch_ep.le_q80",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=touch_ep<=3",
+     "sharpe": 3.769,
+     "gain": 0.134,
+     "n": 164,
+     "usd": 139.0
+    },
+    {
+     "axis": "pierce_max_bp.le",
+     "kind": "col",
+     "winner_cid": "s4+pierce_max_bp.le_q20",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=pierce_max_bp<=0",
+     "sharpe": 3.765,
+     "gain": 0.131,
+     "n": 162,
+     "usd": 138.6
+    },
+    {
+     "axis": "cw",
+     "kind": "key",
+     "winner_cid": "ch1000+cl5.6+cm0.5+cw60+s4",
+     "winner_ckey": "bm=1 ch=1000 cl=5.6 cm=0.5 cw=60 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 3.743,
+     "gain": 0.108,
+     "n": 172,
+     "usd": 137.2
+    },
+    {
+     "axis": "bd_imb02.ge",
+     "kind": "col",
+     "winner_cid": "s4+bd_imb02.ge_q20",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=bd_imb02>=-0.18",
+     "sharpe": 3.723,
+     "gain": 0.089,
+     "n": 161,
+     "usd": 135.7
+    },
+    {
+     "axis": "bd_thin5.le",
+     "kind": "col",
+     "winner_cid": "s4+bd_thin5.le_q80",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=bd_thin5<=0.35",
+     "sharpe": 3.699,
+     "gain": 0.064,
+     "n": 162,
+     "usd": 135.9
+    },
+    {
+     "axis": "tfv10.ge",
+     "kind": "col",
+     "winner_cid": "s4+tfv10.ge_q20",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=tfv10>=0.1",
+     "sharpe": 3.662,
+     "gain": 0.027,
+     "n": 160,
+     "usd": 136.2
+    },
+    {
+     "axis": "flat60.le",
+     "kind": "col",
+     "winner_cid": "s4+flat60.le_q20",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=flat60<=0",
+     "sharpe": 3.654,
+     "gain": 0.019,
+     "n": 171,
+     "usd": 134.6
+    },
+    {
+     "axis": "fk",
+     "kind": "key",
+     "winner_cid": "fk15+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fk=15 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 3.642,
+     "gain": 0.007,
+     "n": 173,
+     "usd": 134.3
+    }
+   ]
+  },
+  "hist": {
+   "L": [
+    {
+     "axis": "p",
+     "kind": "key",
+     "winner_cid": "p1+s3",
+     "winner_ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 p=1 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.575,
+     "gain": 0.358,
+     "n": 290,
+     "usd": 341.4
+    },
+    {
+     "axis": "c",
+     "kind": "key",
+     "winner_cid": "c60+s3",
+     "winner_ckey": "c=60 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.433,
+     "gain": 0.216,
+     "n": 292,
+     "usd": 339.1
+    },
+    {
+     "axis": "ok10_d7.le",
+     "kind": "col",
+     "winner_cid": "s3+ok10_d7.le_le2",
+     "winner_ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 F=ok10_d7<=2",
+     "sharpe": 5.409,
+     "gain": 0.192,
+     "n": 291,
+     "usd": 330.4
+    },
+    {
+     "axis": "pb",
+     "kind": "key",
+     "winner_cid": "pb0+s3",
+     "winner_ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.4,
+     "gain": 0.183,
+     "n": 315,
+     "usd": 338.2
+    },
+    {
+     "axis": "cw",
+     "kind": "key",
+     "winner_cid": "ch1000+cl0+cm0.25+cw60+s3",
+     "winner_ckey": "ch=1000 cm=0.25 cw=60 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.29,
+     "gain": 0.072,
+     "n": 298,
+     "usd": 329.4
+    },
+    {
+     "axis": "ok10_d5.le",
+     "kind": "col",
+     "winner_cid": "s3+ok10_d5.le_le2",
+     "winner_ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 F=ok10_d5<=2",
+     "sharpe": 5.284,
+     "gain": 0.066,
+     "n": 297,
+     "usd": 329.3
+    },
+    {
+     "axis": "color",
+     "kind": "key",
+     "winner_cid": "color0+s3",
+     "winner_ckey": "color=0 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.277,
+     "gain": 0.059,
+     "n": 280,
+     "usd": 329.6
+    },
+    {
+     "axis": "busy",
+     "kind": "key",
+     "winner_cid": "busy0+s3",
+     "winner_ckey": "busy=0 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.275,
+     "gain": 0.058,
+     "n": 299,
+     "usd": 331.7
+    }
+   ],
+   "S": [
+    {
+     "axis": "pb",
+     "kind": "key",
+     "winner_cid": "pb0+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 4.427,
+     "gain": 0.793,
+     "n": 180,
+     "usd": 162.2
+    },
+    {
+     "axis": "ok10_d3.le",
+     "kind": "col",
+     "winner_cid": "s4+ok10_d3.le_le0",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=ok10_d3<=0",
+     "sharpe": 4.141,
+     "gain": 0.507,
+     "n": 143,
+     "usd": 137.3
+    },
+    {
+     "axis": "natr_exit_p",
+     "kind": "key",
+     "winner_cid": "natr_exit_p60+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 natr_exit_p=60 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 4.085,
+     "gain": 0.451,
+     "n": 172,
+     "usd": 161.2
+    },
+    {
+     "axis": "a",
+     "kind": "key",
+     "winner_cid": "a1+s4",
+     "winner_ckey": "a=1 bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 3.991,
+     "gain": 0.356,
+     "n": 172,
+     "usd": 142.2
+    },
+    {
+     "axis": "p",
+     "kind": "key",
+     "winner_cid": "p1+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 p=1 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 3.978,
+     "gain": 0.343,
+     "n": 166,
+     "usd": 142.2
+    },
+    {
+     "axis": "natr_p",
+     "kind": "key",
+     "winner_cid": "natr_p15+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 natr_p=15 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 3.923,
+     "gain": 0.289,
+     "n": 232,
+     "usd": 167.8
+    },
+    {
+     "axis": "ok10_d30.ge",
+     "kind": "col",
+     "winner_cid": "s4+ok10_d30.ge_ge1",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20 F=ok10_d30>=1",
+     "sharpe": 3.765,
+     "gain": 0.131,
+     "n": 164,
+     "usd": 138.4
+    },
+    {
+     "axis": "cw",
+     "kind": "key",
+     "winner_cid": "ch1000+cl5.6+cm0.5+cw60+s4",
+     "winner_ckey": "bm=1 ch=1000 cl=5.6 cm=0.5 cw=60 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 3.743,
+     "gain": 0.108,
+     "n": 172,
+     "usd": 137.2
+    },
+    {
+     "axis": "fk",
+     "kind": "key",
+     "winner_cid": "fk15+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fk=15 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 3.642,
+     "gain": 0.007,
+     "n": 173,
+     "usd": 134.3
+    }
+   ]
+  },
+  "grid": {
+   "L": [
+    {
+     "axis": "p",
+     "kind": "key",
+     "winner_cid": "p1+s3",
+     "winner_ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 p=1 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.575,
+     "gain": 0.358,
+     "n": 290,
+     "usd": 341.4
+    },
+    {
+     "axis": "ew",
+     "kind": "key",
+     "winner_cid": "ew0+s3",
+     "winner_ckey": "fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.396,
+     "gain": 0.179,
+     "n": 311,
+     "usd": 343.1
+    },
+    {
+     "axis": "color",
+     "kind": "key",
+     "winner_cid": "color0+s3",
+     "winner_ckey": "color=0 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+     "sharpe": 5.277,
+     "gain": 0.059,
+     "n": 280,
+     "usd": 329.6
+    }
+   ],
+   "S": [
+    {
+     "axis": "e",
+     "kind": "key",
+     "winner_cid": "e0.3+s4",
+     "winner_ckey": "bm=1 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 4.773,
+     "gain": 1.139,
+     "n": 205,
+     "usd": 190.9
+    },
+    {
+     "axis": "ew",
+     "kind": "key",
+     "winner_cid": "e20+ew0+s4",
+     "winner_ckey": "bm=1 e=0.15 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 4.126,
+     "gain": 0.491,
+     "n": 206,
+     "usd": 225.6
+    },
+    {
+     "axis": "p",
+     "kind": "key",
+     "winner_cid": "p1+s4",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 p=1 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "sharpe": 3.978,
+     "gain": 0.343,
+     "n": 166,
+     "usd": 142.2
+    },
+    {
+     "axis": "t24",
+     "kind": "key",
+     "winner_cid": "s4+t246",
+     "winner_ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=6 tb=0.1 tt=20",
+     "sharpe": 3.822,
+     "gain": 0.187,
+     "n": 209,
+     "usd": 156.0
+    }
+   ]
+  },
+  "ctx": {
+   "L": [],
+   "S": []
+  }
+ },
+ "distinct_active_axes": {
+  "L": [
+   "big1800.le",
+   "busy",
+   "c",
+   "color",
+   "cw",
+   "ew",
+   "ok10_d5.le",
+   "ok10_d7.le",
+   "p",
+   "pb",
+   "vpin1h.ge"
+  ],
+  "S": [
+   "a",
+   "approach_dur_min.ge",
+   "bd_imb02.ge",
+   "bd_thin30.ge",
+   "bd_thin5.le",
+   "bt_1h.ge",
+   "btc_mv5.ge",
+   "cb_1h.ge",
+   "cc_15m.le",
+   "cc_1h.le",
+   "ce_1h.ge",
+   "cw",
+   "e",
+   "ew",
+   "fk",
+   "flat60.le",
+   "gap60_s.le",
+   "n60.ge",
+   "natr_exit_p",
+   "natr_p",
+   "ok10_d3.le",
+   "ok10_d30.ge",
+   "p",
+   "pb",
+   "pierce_max_bp.le",
+   "since_born_h.le",
+   "t24",
+   "tfv10.ge",
+   "touch_ep.le",
+   "tpm60.ge"
+  ]
+ },
+ "counts": {
+  "L": 11,
+  "S": 30
+ }
+}
