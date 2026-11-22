@@ -112,6 +112,7 @@ def main():
     st, r5, _, _ = t._srv()
     import tk604_run as r4
     r4.THREADS = a.threads
+    r4.BIN = m.BIN                              # без G-base (`cmd_gates`) бинарь раннеру задаётся здесь
     r5.TICK_STORE = list(r5.TICK_STORE) + ["--cap-gb", str(a.cap_gb)]
     if not a.no_gbase:
         m.cmd_gates(a)                          # G-base: при различии — выход с кодом 1
