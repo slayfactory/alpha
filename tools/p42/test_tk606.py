@@ -1,5 +1,5 @@
 """TK-606: данные вкладки «Признаки» (ml_features.json) — схема, ссылки на источники, повторы имён, цифры только у готовых наборов.
-TK-678: наборы параметров движка по темам (99 ключей), «База» / «Перебор» и сквозной номер n у каждого признака, «что значит» — не больше 12 слов."""
+TK-678: наборы параметров движка по темам (100 ключей), «База» / «Перебор» и сквозной номер n у каждого признака, «что значит» — не больше 12 слов."""
 import json
 import os
 import sys
@@ -33,19 +33,19 @@ def test_schema_and_semantics():
 def test_counts_and_known_names():
     f = load("ml_features.json")
     n = {s["id"]: sum(len(g["features"]) for g in s["groups"]) for s in f["sets"]}
-    assert n == {"pcoins": 5, "plevel": 8, "pfresh": 11, "pentry": 12, "psplit": 4, "pstop": 13, "pvol": 9, "pexit": 21, "pport": 9, "pexec": 7,
+    assert n == {"pcoins": 5, "plevel": 8, "pfresh": 11, "pentry": 12, "psplit": 4, "pstop": 14, "pvol": 9, "pexit": 21, "pport": 9, "pexec": 7,
                  "f12": 12, "flow": 30, "setup": 47, "toxic": 13, "breakability": 6, "history": 4, "impulse": 6, "coin": 10, "tcount": 9, "windows": 20, "fast": 50}, n
     names = {x["name"] for s in f["sets"] for g in s["groups"] for x in g["features"]}
     assert {"lturn24", "bd_thin30", "mk60_1800", "bk60", "SHARP"} <= names
 
 
 def test_engine_keys_base_and_search():
-    """TK-678: 99 ключей движка в наборах p*, ключи master-версии params.rs — все на странице; оси перебора среди столбцов таблицы — ровно пять."""
+    """TK-678: 100 ключей движка в наборах p*, ключи master-версии params.rs — все на странице; оси перебора среди столбцов таблицы — ровно пять."""
     import re
     f = load("ml_features.json")
     feats = [(s, x) for s in f["sets"] for g in s["groups"] for x in g["features"]]
     eng = {x["name"] for s, x in feats if x["src"] == ["engine"]}
-    assert len(eng) == 99 and all(s["id"].startswith("p") and s["numbers"] == [] for s, x in feats if x["src"] == ["engine"])
+    assert len(eng) == 100 and all(s["id"].startswith("p") and s["numbers"] == [] for s, x in feats if x["src"] == ["engine"])
     rs = open(os.path.join(HERE, "..", "..", "src", "breakout", "params.rs"), encoding="utf-8").read()
     keys = set(re.findall(r'^\s+"([a-z0-9_]+)" =>', rs, re.M)) - {"lo", "hi"}    # значения ключа fo
     assert len(keys) >= 82 and keys <= eng, sorted(keys - eng)
@@ -54,7 +54,7 @@ def test_engine_keys_base_and_search():
     hist = next(s for s in f["sets"] if s["id"] == "history")
     assert {"ok10_d7", "ok10_d14"} <= {x["name"] for g in hist["groups"] for x in g["features"]}
     assert all(x["search"] == "нет" for g in hist["groups"] for x in g["features"])
-    assert sorted(x["n"] for s, x in feats) == list(range(1, 307))
+    assert sorted(x["n"] for s, x in feats) == list(range(1, 308))
     bad = [x["name"] for s, x in feats if len(x["what"].split()) > 12 or re.search(r"TK-|docs/|бп|ключ пула|столбец таблицы", x["what"] + x["base"] + x["search"])]
     assert not bad, bad
 
@@ -68,6 +68,8 @@ def test_semantic_checks_catch_bad_data():
         (lambda d: d["sets"][-1]["groups"][-1]["features"][-1].update(n=999), "номера признаков"),
         (lambda d: d["sets"][10]["groups"][0]["features"][0].update(name="mk"), "повторяется"),
         (lambda d: d["sets"][0]["groups"][0]["features"][0].update(src=["нет-такого"]), "не из sources"),
+        (lambda d: d["sets"][0]["groups"][0]["features"][0].update(rel=[999]), "rel ведёт"),
+        (lambda d: d["sets"][0]["groups"][0]["features"][0].update(rel=[1]), "rel ведёт"),
         (lambda d: d["sets"][13].update(status="running", numbers=["+0,5"]), "цифр быть не должно"),
     ]:
         d = json.loads(json.dumps(f))
@@ -78,3 +80,14 @@ def test_semantic_checks_catch_bad_data():
             assert msg in str(e), (msg, str(e))
         else:
             raise AssertionError("проверка не поймала: " + msg)
+
+
+def test_tk682_links_and_statuses():
+    """TK-682: «Связан с №» и статус — из описи tk682_audit.py; номера строк не сдвинуты."""
+    import subprocess, sys
+    assert subprocess.run([sys.executable, os.path.join(HERE, "tk682_audit.py"), "--check"], capture_output=True).returncode == 0
+    f = load("ml_features.json")
+    feats = {x["n"]: x for s in f["sets"] for g in s["groups"] for x in g["features"]}
+    assert len(feats) >= 251 and feats[251]["name"] == "turn24h" and feats[23]["name"] == "ban"
+    assert 251 in feats[103]["rel"] and feats[103]["st"] == "дубль № 251" and feats[150]["st"] == "всегда 0"
+    assert all(n in feats[k].get("rel", []) for n, x in feats.items() if x.get("st", "").startswith("дубль №") for k in [int(x["st"].split("№")[1])])
