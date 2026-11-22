@@ -361,6 +361,34 @@ impl ZipSrc {
         )))
     }
 
+    /// Сутки, уже лежащие в памяти (без загрузки).
+    fn loaded(&self, sym: &str, day: usize) -> Option<Arc<Vec<Tick>>> {
+        let g = self.lru.lock().ok()?;
+        g.map.get(&(sym.to_string(), day))?.get()?.clone()
+    }
+
+    /// Файл ступеней НОД не от этих суток (другой zip с тем же размером и временем): запуск помечается ошибкой загрузки и завершится отказом,
+    /// файл переписывается по сделкам.
+    fn gcd_foreign(&self, sym: &str, day: usize) {
+        eprintln!(
+            "ОШИБКА: файл ступеней НОД {sym} день {day} не от этих суток — пересчитан по сделкам"
+        );
+        if let Ok(mut g) = self.stat.lock() {
+            g.errors += 1;
+        }
+    }
+
+    /// Запись — через временный файл и переименование: соседний процесс видит файл целиком или не видит вовсе.
+    fn gcd_write(&self, p: &std::path::Path, s: &GcdSteps) {
+        let tmp = p.with_extension(format!("{}.tmp", std::process::id()));
+        let ok = p.parent().is_some_and(|d| fs::create_dir_all(d).is_ok())
+            && fs::write(&tmp, s.to_bytes()).is_ok()
+            && fs::rename(&tmp, p).is_ok();
+        if !ok {
+            let _ = fs::remove_file(&tmp);
+        }
+    }
+
     /// Сутки монеты со склада или из zip. `full` — вместе с количеством (TK-609, `read_day`); без него — путь движка: со склада
     /// читается только блок сделок, а количество при первой загрузке разбирается лишь ради записи в склад и отбрасывается.
     fn load_day(&self, name: &str, day: usize, full: bool) -> Result<Option<DayTrades>> {
@@ -492,6 +520,25 @@ impl TradeSrc for ZipSrc {
         if !fresh {
             return loaded;
         }
+        // TK-683: ступени НОД этих суток, взятые из файла до загрузки сделок, сверяются с ними (число сделок, первая цена)
+        if let Some(v) = &loaded {
+            let known = self
+                .gcds
+                .lock()
+                .ok()
+                .and_then(|g| g.get(&key).cloned())
+                .and_then(|s| s.get().cloned().flatten());
+            if known.is_some_and(|s| !s.fits(v)) {
+                self.gcd_foreign(sym, day);
+                let fixed = Arc::new(GcdSteps::of(v));
+                if let Some(p) = self.gcd_file(sym, day) {
+                    self.gcd_write(&p, &fixed);
+                }
+                if let Ok(mut g) = self.gcds.lock() {
+                    g.insert(key.clone(), Arc::new(OnceLock::from(Some(fixed))));
+                }
+            }
+        }
         let size = |v: &Option<Arc<Vec<Tick>>>| {
             v.as_ref()
                 .map_or(0, |a| a.len() * std::mem::size_of::<Tick>())
@@ -524,18 +571,15 @@ impl TradeSrc for ZipSrc {
                 .and_then(|p| fs::read(p).ok())
                 .and_then(|b| GcdSteps::from_bytes(&b));
             if let Some(s) = saved {
-                return Some(Arc::new(s));
+                // сутки уже в памяти — файл сверяется с ними; сутки, загруженные позже, сверяет `day`
+                match self.loaded(sym, day) {
+                    Some(v) if !s.fits(&v) => self.gcd_foreign(sym, day),
+                    _ => return Some(Arc::new(s)),
+                }
             }
             let steps = self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v)));
-            // запись — через временный файл и переименование: соседний процесс видит файл целиком или не видит вовсе
             if let (Some(p), Some(s)) = (&file, &steps) {
-                let tmp = p.with_extension(format!("{}.tmp", std::process::id()));
-                let ok = p.parent().is_some_and(|d| fs::create_dir_all(d).is_ok())
-                    && fs::write(&tmp, s.to_bytes()).is_ok()
-                    && fs::rename(&tmp, p).is_ok();
-                if !ok {
-                    let _ = fs::remove_file(&tmp);
-                }
+                self.gcd_write(p, s);
             }
             steps
         })
@@ -2359,6 +2403,11 @@ impl GcdSteps {
             n: ticks.len(),
             steps,
         }
+    }
+
+    /// Ступени посчитаны по этим суткам? Сверка файла ступеней с загруженными сделками: число сделок и первая цена.
+    pub fn fits(&self, ticks: &[Tick]) -> bool {
+        self.n == ticks.len() && !ticks.first().is_some_and(|t| t.px != self.p0)
     }
 
     /// Запись в файл ступеней (`ZipSrc::gcd_file`): метка, первая цена, число сделок, ступени; числа — little-endian.

@@ -1181,3 +1181,71 @@ fn store_fill_writes_skips_rewrites_truncated_and_reports_bad_crc() {
         assert!(r.contains(want), "{want}: {r}");
     }
 }
+
+#[test]
+fn gcd_file_is_reused_and_foreign_file_is_recomputed() {
+    // TK-683: ступени НОД суток берутся из файла без разбора сделок; файл не от этих суток — ошибка запуска и пересчёт
+    use super::tick::GcdSteps;
+    if Command::new("unzip").arg("-v").output().is_err() {
+        return;
+    }
+    let tmp = tempfile::tempdir().expect("tmp");
+    let day = START_DAY;
+    let date = super::data::day_string(day);
+    let dir = tmp.path().join("trades").join("TESTUSDT");
+    std::fs::create_dir_all(&dir).expect("dir");
+    let zip = dir.join(format!("TESTUSDT-aggTrades-{date}.zip"));
+    let text = csv(
+        day,
+        &[
+            (10.5, 100, "false"),
+            (10.6, 200, "true"),
+            (10.4, 900, "true"),
+        ],
+    );
+    write_zip(&zip, "TESTUSDT.csv", text.as_bytes());
+    let root = tmp.path().join("trades");
+    let gdir = tmp.path().join("gcd");
+    let src = || ZipSrc::new(root.clone(), 1 << 20).with_gcd_dir(gdir.clone());
+    let errors = |s: &ZipSrc| s.stat.lock().expect("stat").errors;
+    let files = |s: &ZipSrc| s.stat.lock().expect("stat").files;
+    let a = src();
+    let want = a.gcd_steps("TESTUSDT", day).expect("ступени");
+    let saved: Vec<_> = std::fs::read_dir(gdir.join("TESTUSDT"))
+        .expect("каталог")
+        .map(|e| e.expect("файл").path())
+        .collect();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(std::fs::read(&saved[0]).expect("чтение"), want.to_bytes());
+    // второй запуск: файл есть — сутки не разбираются
+    let b = src();
+    assert_eq!(b.gcd_steps("TESTUSDT", day).as_deref(), Some(&*want));
+    assert_eq!((files(&b), errors(&b)), (0, 0));
+    let foreign = GcdSteps::of(&[
+        Tick {
+            px: 7,
+            off: 1,
+            bm: false,
+        },
+        Tick {
+            px: 9,
+            off: 2,
+            bm: false,
+        },
+    ]);
+    // чужой файл, сутки уже в памяти: сверка при чтении файла
+    std::fs::write(&saved[0], foreign.to_bytes()).expect("запись");
+    let c = src();
+    c.day("TESTUSDT", day).expect("сутки");
+    assert_eq!(c.gcd_steps("TESTUSDT", day).as_deref(), Some(&*want));
+    assert_eq!(errors(&c), 1);
+    assert_eq!(std::fs::read(&saved[0]).expect("чтение"), want.to_bytes());
+    // чужой файл прочитан до загрузки суток: сверка при загрузке
+    std::fs::write(&saved[0], foreign.to_bytes()).expect("запись");
+    let d = src();
+    assert_eq!(d.gcd_steps("TESTUSDT", day).as_deref(), Some(&foreign));
+    d.day("TESTUSDT", day).expect("сутки");
+    assert_eq!(d.gcd_steps("TESTUSDT", day).as_deref(), Some(&*want));
+    assert_eq!(errors(&d), 1);
+    assert_eq!(std::fs::read(&saved[0]).expect("чтение"), want.to_bytes());
+}
