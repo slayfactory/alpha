@@ -22,6 +22,9 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
+/// TK-683: сколько вариантов вызова проходится по монетам для разогрева суток сделок перед фазой 2.
+const WARM_VARIANTS: usize = 16;
+
 fn mean(v: &[f64]) -> f64 {
     if v.is_empty() {
         0.0
@@ -665,33 +668,43 @@ pub fn run(
     let tasks: Vec<(usize, Side)> = (0..vs.len())
         .flat_map(|i| sides.iter().map(move |&sd| (i, sd)))
         .collect();
-    // TK-683: разогрев суток сделок. Потоки вариантов идут по сигналам в одном порядке и ждут разбора одних и тех же суток по цепочке;
-    // до фазы 2 сигналы самого частого задания проходятся по монетам параллельно (исходы отбрасываются), сутки разбирают все потоки сразу.
-    // На результат вариантов разогрев не влияет; мало заданий на поток — лишний проход не окупается.
+    // TK-683: разогрев суток сделок. Потоки вариантов идут по сигналам в одном порядке и ждут разбора одних и тех же суток по цепочке
+    // (на партии из 400 вариантов — две трети времени фазы 2). До фазы 2 несколько вариантов, взятых равномерно по списку, проходятся
+    // по монетам параллельно (исходы отбрасываются): разные потоки разбирают разные сутки. На результат вариантов разогрев не влияет;
+    // мало заданий на поток — лишние проходы не окупаются.
     if threads > 1 && tasks.len() >= 4 * threads && std::env::var_os("P42_SIGSX_ONLY").is_none() {
         let t1 = std::time::Instant::now();
-        let mut uses: HashMap<usize, (usize, (usize, Side))> = HashMap::new();
-        for &(vi, side) in &tasks {
+        let n_scout = WARM_VARIANTS.min(tasks.len());
+        let mut split: HashMap<usize, Vec<Vec<TSig>>> = HashMap::new();
+        let mut scouts: Vec<(usize, Side, usize)> = Vec::new();
+        for k in 0..n_scout {
+            let (vi, side) = tasks[k * tasks.len() / n_scout];
             if let Some(&j) = job_idx.get(&(vs[vi].1.sig.clone(), side)) {
-                uses.entry(j).or_insert((0, (vi, side))).0 += 1;
+                split.entry(j).or_insert_with(|| {
+                    let mut by_sym: Vec<Vec<TSig>> = vec![Vec::new(); syms.len()];
+                    for s in &sigs[j] {
+                        by_sym[s.sym as usize].push(*s);
+                    }
+                    by_sym.retain(|v| !v.is_empty());
+                    by_sym
+                });
+                scouts.push((vi, side, j));
             }
         }
-        if let Some((&j, &(_, (vi, side)))) = uses.iter().max_by_key(|(&j, &(n, _))| (n, j)) {
+        let items: Vec<(usize, Side, &Vec<TSig>)> = scouts
+            .iter()
+            .flat_map(|&(vi, side, j)| split[&j].iter().map(move |v| (vi, side, v)))
+            .collect();
+        par_map(&items, threads, |&(vi, side, v)| {
             let p = &vs[vi].1;
-            let mut by_sym: Vec<Vec<TSig>> = vec![Vec::new(); syms.len()];
-            for s in &sigs[j] {
-                by_sym[s.sym as usize].push(*s);
-            }
-            by_sym.retain(|v| !v.is_empty());
-            par_map(&by_sym, threads, |v| {
-                run_tick_xb(&syms, v, side, &p.exit, &p.port, &src, p.mk, p.ek, p.xb);
-            });
-            eprintln!(
-                "разогрев суток сделок: {:.1} с, монет {}",
-                t1.elapsed().as_secs_f64(),
-                by_sym.len()
-            );
-        }
+            run_tick_xb(&syms, v, side, &p.exit, &p.port, &src, p.mk, p.ek, p.xb);
+        });
+        eprintln!(
+            "разогрев суток сделок: {:.1} с, вариантов {}, проходов по монетам {}",
+            t1.elapsed().as_secs_f64(),
+            scouts.len(),
+            items.len()
+        );
     }
     let done = std::sync::atomic::AtomicUsize::new(0);
     let total = tasks.len();
