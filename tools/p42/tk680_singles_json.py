@@ -13,10 +13,21 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.normpath(os.path.join(HERE, "..", "..", "docs", "findings", "p42-titration-coverage-2026-11-22"))
-SETS = [("main", "", "L-321", "PS-960"), ("hist", "hist/", "L-324", "PS-961"), ("grid", "grid/", "L-325", "PS-962"), ("ctx", "ctx/", "L-326", "PS-968")]
+SETS = [("main", "", "L-321", "PS-960"), ("hist", "hist/", "L-324", "PS-961"), ("grid", "grid/", "L-325", "PS-962"), ("ctx", "ctx/", "L-326", "PS-968"), ("t681", "t681/", "L-331", "PS-974")]
 SIDE_RU = {"L": "Л", "S": "Ш"}
 UNIT = {"btc_mv5": " %", "cosig15": " монет"}              # единицы порогов столбцов контекста
 NOTE = {"ew": "значение 0 — модель входа по минуте, упрощение, не кандидат (вне активных осей и пар)"}
+
+
+def t681_names(axis):
+    """Оси набора t681 → имена строк страницы: nf1…nf8 и контроль nf3 → nf; ev1…ev8 → ev и ea (источник и множитель — одни клетки); sm_sl / sm_cw / sm_nx → sm; прочие — как есть."""
+    if re.match(r"^nf\d$", axis):
+        return ["nf"]
+    if re.match(r"^ev\d$", axis):
+        return ["ev", "ea"]
+    if axis.startswith("sm_"):
+        return ["sm"]
+    return [axis]
 
 
 def num(x, nd=2, sign=False):
@@ -79,7 +90,8 @@ def side_text(m, a):
 def values(axes, kind, sk=""):
     """«Перебор»: значения оси; у столбцов — по направлениям (порог кандидата базы: ≥ — оставить не ниже, ≤ — не выше)."""
     if kind == "key":
-        return " / ".join(lab(c["label"]) + ("*" if c.get("is_base") else "") for c in axes[0]["cells"] if "invalid" not in c)
+        one = lambda a: " / ".join(lab(c["label"]) + ("*" if c.get("is_base") else "") for c in a["cells"] if "invalid" not in c)
+        return one(axes[0]) if len(axes) == 1 else "; ".join("%s: %s" % (a["axis"], one(a)) for a in sorted(axes, key=lambda x: x["axis"]))
     parts = []
     for a in sorted(axes, key=lambda x: x["axis"]):          # ≥ раньше ≤ (ge < le)
         n, d = a["axis"].split(".")
@@ -97,8 +109,8 @@ def build():
             for a in m["axes"]:
                 if not titrated(sk, a):
                     continue
-                n = a["axis"].split(".")[0] if a["kind"] == "col" else a["axis"]
-                names.setdefault(n, {}).setdefault(sk, {}).setdefault(side, []).append(a)
+                for n in ([a["axis"].split(".")[0]] if a["kind"] == "col" else (t681_names(a["axis"]) if sk == "t681" else [a["axis"]])):
+                    names.setdefault(n, {}).setdefault(sk, {}).setdefault(side, []).append(a)
     res = {}
     for n, per in sorted(names.items()):
         where, verdict = [], []
@@ -117,7 +129,7 @@ def build():
                 w = "значения %s (* — база %s)" % (w, str(base).replace(".", ","))
             else:
                 w = "срез кандидатов базы по порогу, значения: %s" % w
-            tag = {"main": "единички", "hist": "семейство ok10_*, пороги — числа пробоев", "grid": "сетка шире прежней", "ctx": "ось контекста"}[sk]
+            tag = {"main": "единички", "hist": "семейство ok10_*, пороги — числа пробоев", "grid": "сетка шире прежней", "ctx": "ось контекста", "t681": "ключи и столбцы TK-681"}[sk]
             where.append("TK-680 %s (%s), h775, стоп Л 3 %% / Ш 4 %%, %s: %s" % (entry, ps, tag, w))
             sv, gains = [], []
             for side in "LS":
@@ -128,7 +140,7 @@ def build():
                 act = [r for r in res_ax if not r[1].startswith("не активна")]
                 texts = []
                 for a, t, g in (act or res_ax[:1]):                # неактивные оси стороны — одним «не активна»; активные — каждая
-                    texts.append(t)
+                    texts.append(("%s %s" % (a["axis"], t)) if len(axes) > 1 and act else t)
                     if g is not None:
                         gains.append((g, maps[sk][side]["noise_max"]))
                 sv.append("%s: %s" % (SIDE_RU[side], "; ".join(texts)))
