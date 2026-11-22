@@ -261,8 +261,14 @@ def parse_sem(sem):
     return out
 
 
+def thr_frozen():
+    """c539: пороги заморожены в `res/thr674-c539.json` (FIX 2 критика к §13.73.21: никогда не переписывается; sha256 — в записи до счёта)."""
+    return os.path.join(ROOT, "res", "thr674-c539.json") if UNI == "c539" else None
+
+
 def thr_path():
-    return os.path.join(ROOT, "res", "thr674.json")
+    fz = thr_frozen()
+    return fz if fz and os.path.exists(fz) else os.path.join(ROOT, "res", "thr674.json")
 
 
 def load_thr(side):
@@ -349,6 +355,8 @@ def cmd_ftab(a):
 
 
 def cmd_counts(a):
+    if thr_frozen() and os.path.exists(thr_frozen()):
+        raise SystemExit("counts: %s заморожен (пороги c539 не переписываются); пересчёт — только новой записью до счёта" % thr_frozen())
     if ax.X680:
         raise SystemExit("counts — не в режиме X680: пороги осей карты — готовый res/thr674.json, таблицу пишет ftab")
     import tk654_run as r54
@@ -407,7 +415,7 @@ def cmd_counts(a):
         say("== %s: сделок базы %d, составных столбцов %d, клеток с фильтром %d" % (side, len(W), len(cols), report[side]["cells_filter"]))
         for name, d in axs.items():
             say("   %-6s %s" % (name, ", ".join("%s → %g" % (lab, v[2]) for lab, v in d.items())))
-    json.dump(dict(thr=out, report=report), open(thr_path(), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    json.dump(dict(thr=out, report=report), open(os.path.join(ROOT, "res", "thr674.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     say("counts готово")
 
 
@@ -1118,8 +1126,9 @@ def cmd_map(a):
         for k, r in rows.items():
             by_sig.setdefault(r["extra"].get("trades_sig"), []).append(k)
         dup = [v for k_, v in by_sig.items() if k_ and len(v) > 1]
+        m_coll = m_side - sum(len(v) - 1 for v in dup)       # FIX 3 критика: m с повторами наборов сделок, свёрнутыми (рядом с m по ключам)
         out = dict(side=side, rebase=ax.REBASE, base=dict(ckey=base_ck, sharpe=bsh, usd=brow["usd"], n=brow["trades"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"], rr=bx["rr"]["rr"], **loss_fields(bx)), pairs=pair_rows, best1=best1, n_cells=len(rows),
-                   m=m_side, m_own=m_own, sharpe_sd=sig_sh, noise_max=noise, g_dup=dict(groups=len(dup), cells=sum(len(v) for v in dup), examples=dup[:5]))
+                   m=m_side, m_collapsed=m_coll, m_own=m_own, sharpe_sd=sig_sh, noise_max=noise, g_dup=dict(groups=len(dup), cells=sum(len(v) for v in dup), examples=dup[:5]))
         if plan.get("x680"):                                 # пары с осями единичек: какие оси и сколько пар отобрано (для отчёта mapmd)
             x6s = plan["x680"]
             out["x680"] = dict(cap=x6s["cap"], n_new_axes=x6s["n_new_axes"], by_set=x6s["by_set"], ext={n: e["add"] for n, e in x6s["ext"].items()}, n_rule=x6s["n_rule"], taken=len(x6s["taken"]),
@@ -1128,8 +1137,8 @@ def cmd_map(a):
         top = sorted([p for p in pair_rows if p["winner"]], key=lambda p: -p["winner"]["gain"])[:15]
         say("== %s: база Шарп %.2f, Σ %+.0f $, просадка %.0f $ (%.0f %%), перехай %d сут.; пар %d, с победителем %d" % (
             side, bsh, brow["usd"], bx["maxdd"], bx["maxdd_pct"], bx["kpi"]["gap_longest"], len(pair_rows), sum(1 for p in pair_rows if p["winner"])))
-        say("   m (все клетки стороны в БД) %d, σ Шарпа клеток %.2f, ожидаемый максимум шума ≈ %.2f (верхняя оценка: клетки зависимы); G-dup: %d групп / %d клеток с одинаковыми сделками" % (
-            m_side, sig_sh, noise, len(dup), sum(len(v) for v in dup)))
+        say("   m (все клетки стороны в БД; по наборам сделок %d) %d, σ Шарпа клеток %.2f, ожидаемый максимум шума ≈ %.2f (верхняя оценка: клетки зависимы); G-dup: %d групп / %d клеток с одинаковыми сделками" % (
+            m_coll, m_side, sig_sh, noise, len(dup), sum(len(v) for v in dup)))
         def line(p, w):
             sy = w.get("syn")
             return "   %-18s %-34s Шарп %5.2f (%+.2f)  Σ %+6.0f $  просадка %4.0f $ (%2.0f %%)  перехай %3d  сделок %4d  плато %s  осей сдвинуто %d  синергия %s" % (
