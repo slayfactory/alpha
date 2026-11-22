@@ -2,6 +2,7 @@
 """TK-686: проверка докачки истории 01.01–30.06.2026 для П-42 — только листинг S3 data.binance.vision и HEAD; ничего не качает.
   python3 tk686_probe.py list   <out_dir> [--d0 2025-12-01] [--d1 2026-11-13] [--threads 6]   # out/files.tsv, out/dirs.txt, out/exchange.json
   python3 tk686_probe.py head   <out_dir> [--days 15]                                         # out/head.tsv: HEAD (статус, длина) на 15-е число каждого месяца янв–июн
+  python3 tk686_probe.py plan   <out_dir> --d0 D --d1 D --score0 D --plan <dir> [--tree /data/p42-tk621/wa]   # план докачки окна: missing.tsv для tk621_dl.py
   python3 tk686_probe.py report <out_dir> --base <symbols-all.txt> --tk621-files <files.tsv> --store <tick-store> [--tk621-universe <contracts.csv>]
 Листинг — как `tk621_list.py` (тот же S3-эндпоинт, `start-after`, ≤ 1000 ключей за страницу). Виды: aggTrades, klines 1m, premiumIndexKlines 1m,
 metrics, bookDepth (суточные), fundingRate (месячные), месячные aggTrades / klines 1m (запасной источник). Вселенная H1 — по правилу TK-621:
@@ -280,10 +281,57 @@ def cmd_report(a):
     print("store", R["store"])
 
 
+def cmd_plan(a):
+    """План докачки окна: вселенная по правилу TK-621 (aggTrades хотя бы в одни сутки [score0, d1]), файлы [d0, d1], уже лежащее — по дереву --tree."""
+    files = defaultdict(dict)
+    for line in open(f"{a.out}/files.tsv", encoding="utf-8"):
+        kind, s, per, size, etag = line.rstrip("\n").split("\t")
+        if kind in ("aggTrades", "klines1m"):
+            files[(kind, s)][per] = (int(size), etag)
+    uni = sorted(s for (k, s), v in files.items() if k == "aggTrades" and any(a.score0 <= d <= a.d1 for d in v))
+    os.makedirs(a.plan, exist_ok=True)
+    rows, tot = [], defaultdict(lambda: [0, 0, 0, 0])  # kind -> [нужно файлов, байт, лежит файлов, байт лежит]
+    for s in uni:
+        for kind, nm, tdir, tname in (("aggTrades", "aggTrades", "aggtrades", "{s}-aggTrades-{d}.zip"), ("klines1m", "klines", "klines", "{d}.csv")):
+            for d, (size, etag) in sorted(files.get((kind, s), {}).items()):
+                if not a.d0 <= d <= a.d1:
+                    continue
+                t = tot[kind]
+                t[0] += 1
+                t[1] += size
+                if os.path.exists(os.path.join(a.tree, tdir, s, tname.format(s=s, d=d))):
+                    t[2] += 1
+                    t[3] += size
+                else:
+                    rows.append((nm, s, d, size, etag))
+    with open(f"{a.plan}/missing.tsv", "w", encoding="utf-8") as f:
+        for r in rows:
+            f.write("\t".join(map(str, r)) + "\n")
+    nd = (D.date.fromisoformat(a.d1) - D.date.fromisoformat(a.d0)).days + 1
+    new = defaultdict(lambda: [0, 0])
+    for r in rows:
+        new[r[0]][0] += 1
+        new[r[0]][1] += r[3]
+    agg_b, kl_b = new["aggTrades"][1], new["klines"][1]
+    store_b = agg_b * a.store_ratio
+    csv_b = kl_b * a.csv_ratio
+    cache_b = 2.6e9 * nd / 74 * len(uni) / 566
+    R = {"window": [a.d0, a.d1], "score0": a.score0, "days": nd, "contracts": len(uni),
+         "listing": {k: {"files": v[0], "gb": round(v[1] / 1e9, 3)} for k, v in tot.items()},
+         "on_disk": {k: {"files": v[2], "gb": round(v[3] / 1e9, 3)} for k, v in tot.items()},
+         "to_download": {k: {"files": v[0], "gb": round(v[1] / 1e9, 3)} for k, v in new.items()},
+         "model_gb": {"store_new": round(store_b / 1e9, 2), "csv_new": round(csv_b / 1e9, 2), "cache": round(cache_b / 1e9, 2)},
+         "growth_gib_zips_only": round((agg_b + kl_b) / 2**30, 1),
+         "growth_gib_total": round((agg_b + kl_b + store_b + csv_b + cache_b) / 2**30, 1)}
+    json.dump(R, open(f"{a.plan}/plan.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    json.dump(uni, open(f"{a.plan}/universe.json", "w"))
+    print(json.dumps(R, ensure_ascii=False))
+
+
 def main():
     p = argparse.ArgumentParser()
     sp = p.add_subparsers(dest="cmd", required=True)
-    for name in ("list", "head", "report"):
+    for name in ("list", "head", "report", "plan"):
         q = sp.add_parser(name)
         q.add_argument("out")
         if name == "list":
@@ -292,13 +340,21 @@ def main():
             q.add_argument("--threads", type=int, default=6)
         if name == "head":
             q.add_argument("--days", type=int, default=15)
+        if name == "plan":
+            q.add_argument("--d0", required=True)
+            q.add_argument("--d1", required=True)
+            q.add_argument("--score0", required=True)
+            q.add_argument("--tree", default="/data/p42-tk621/wa")
+            q.add_argument("--plan", required=True)
+            q.add_argument("--store-ratio", type=float, default=0.2141)
+            q.add_argument("--csv-ratio", type=float, default=3.318)
         if name == "report":
             q.add_argument("--base", required=True)
             q.add_argument("--tk621-files", required=True)
             q.add_argument("--tk621-universe")
             q.add_argument("--store", required=True)
     a = p.parse_args()
-    {"list": cmd_list, "head": cmd_head, "report": cmd_report}[a.cmd](a)
+    {"list": cmd_list, "head": cmd_head, "report": cmd_report, "plan": cmd_plan}[a.cmd](a)
 
 
 if __name__ == "__main__":
