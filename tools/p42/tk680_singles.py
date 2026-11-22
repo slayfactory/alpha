@@ -188,6 +188,37 @@ def _concurrency(row):
     return best
 
 
+def _nan_keys(side):
+    """{столбец: {окно: множество (монета, sig_ms) кандидатов с пустым значением}} — набор «история пробоев» (§13.73.8: пустое проходит фильтр)."""
+    import numpy as np
+    import tk643_run as t
+    import tk654_run as r54
+    import tk674_run as run
+    st, r5, _, _ = t._srv()
+    tabs = run.feat_tabs(side, st, r5.Uni(run.UNI), r54.episodes_h775())
+    out = {}
+    for c in a80.HIST_COLS:
+        out[c] = {}
+        for w in st.TRADE_WINDOWS:
+            tab = tabs[w.name]
+            bad = ~np.isfinite(tab[c])
+            out[c][w.name] = {(str(s), int(m)) for s, m, b in zip(tab["sym"], tab["ms"], bad) if b}
+    return out
+
+
+def _nan_trades(row, keys):
+    """(число, Σ $ gross − fees) сделок клетки, чей кандидат прошёл с пустым значением столбца."""
+    import tk604_stats as st
+    n, usd = 0, 0.0
+    for wn, d in row["extra"]["dirs"].items():
+        tb = st.read_trades_csv(os.path.join(d, "%s-trades.csv" % row["side_name"]))
+        for i in range(len(tb.sym)):
+            if (str(tb.sym[i]), int(tb.sig_ms[i])) in keys[wn]:
+                n += 1
+                usd += float(tb.gross[i] - tb.fees[i])
+    return n, usd
+
+
 def _prefix(label):
     return re.sub(r"[-\d.]+$", "", label)
 
@@ -201,6 +232,7 @@ def cmd_map():
         lv = json.load(open(run.level_path(side), encoding="utf-8"))
         inv = run.load_invalid(side)
         base_ck = ax.base_ckey(side)
+        nank = _nan_keys(side) if a80.SET == "hist" else None
         rows = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(lv["cells"]) + [base_ck], bins=bins)
         brow = rows[base_ck]
         bsh, busd = brow["sharpe"], brow["usd"]
@@ -227,6 +259,9 @@ def cmd_map():
                 rep.update(label=lab, is_base=ck == base_ck, guards={k: bool(v) for k, v in g.items()})
                 if len(a["vals"][i]) > 2:
                     rep.update(thr=a["vals"][i][2], cut=a["vals"][i][3])
+                if nank is not None and ck != base_ck:
+                    nn, nu = _nan_trades(dict(r, side_name=ENGNAME[side]), nank[a["axis"].split(".")[0]])
+                    rep.update(nan_n=nn, nan_usd=nu)
                 if a["axis"] == "p":                   # число позиций меняет капитал под риском: маржа в работе и просадка — в долях счёта
                     nc = _concurrency(dict(r, side_name=ENGNAME[side]))
                     rep.update(conc=nc, conc_margin=nc * MARGIN_POS, conc_margin_pct=nc * MARGIN_POS / ACCOUNT * 100.0, maxdd_acct_pct=r["extra"]["maxdd"] / ACCOUNT * 100.0)
@@ -303,6 +338,8 @@ def cmd_md(d, out=None):
                     L.append("| %s | — | движок отверг: %s |" % (c["label"], c["invalid"]))
                 elif not c.get("is_base"):
                     lab = c["label"] + ((" (порог %s, убрано %d)" % (ax.num(c["thr"]).replace(".", ","), c["cut"])) if "thr" in c else "")
+                    if "nan_n" in c:
+                        lab += "; с пустым значением: %d сд., %s $" % (c["nan_n"], _f(c["nan_usd"], 0))
                     L.append(_line(lab, c, b["sharpe"]))
             if a["axis"] == "p":
                 L.append("\nМаржа в работе (позиция 250 $, счёт 2 500 $): " + "; ".join("p = %s — одновременно до %d позиций, %d $ (%d %% счёта), просадка %s %% счёта" % (
