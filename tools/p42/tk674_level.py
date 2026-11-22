@@ -235,6 +235,7 @@ def cmd_map(n):
         if missing:
             raise SystemExit("%s: в БД нет %d клеток уровня" % (side, missing))
         bx = brow["extra"]
+        run.add_split_reports(side, [p[w] for p in out_rows for w in ("winner", "both_moved")], rows)
         if ax.REBASE:
             reps = [p[w] for p in out_rows for w in ("winner", "both_moved") if p[w]]
             r5rows = store.cells_lookup(SIDENAME[side], UNI, WIN, sorted({x["ref5_key"] for x in reps}), bins=bins)

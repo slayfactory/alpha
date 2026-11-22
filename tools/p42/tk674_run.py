@@ -751,6 +751,36 @@ def split_losses(ex):
     return dict(a_only=full * (100.0 - w2) / 100.0 + ms.COST_USD, a_b=full + ms.COST_USD)
 
 
+def split_report(side, row):
+    """Строка отчёта клетки с частью B «за тик до уровня» (§13.73.4): убыток по цене стопа «только A» / «A + B», стопы каждого вида (число, средний $ сделки),
+    доля сделок с исполненной частью B — из `<сторона>-lots.csv` клетки по трём окнам (строки в порядке сделок; lot2 = 1 — часть B исполнена)."""
+    import csv
+    ex = row["extra"]
+    out = dict(split_losses(ex), n=0, n_b=0, stop_a=[0, 0.0], stop_ab=[0, 0.0])
+    for d in (ex.get("dirs") or {}).values():
+        f = os.path.join(d, "%s-lots.csv" % SIDENAME[side])
+        if not os.path.exists(f):
+            return dict(out, missing=True)
+        for r in csv.DictReader(open(f, encoding="utf-8")):
+            out["n"] += 1
+            b = int(r["lot2"]) == 1
+            out["n_b"] += b
+            if r["kind1"] == "stop":
+                acc = out["stop_ab"] if b else out["stop_a"]
+                acc[0] += 1
+                acc[1] -= float(r["net1"]) + float(r["net2"])
+    for k in ("stop_a", "stop_ab"):
+        n_, s_ = out[k]
+        out[k] = dict(n=n_, mean=s_ / n_ if n_ else None)
+    return out
+
+
+def add_split_reports(side, reps, rows):
+    for x in reps:
+        if x and x["ckey"] in rows and is_tick_split(rows[x["ckey"]]):
+            x["split"] = split_report(side, rows[x["ckey"]])
+
+
 def is_ref5(row):
     """Поправка §13.73.2: при базе стопа ≤ 4 % клетка со стопом 5 % — только справочная колонка (не кандидат, не якорь, не сосед плато);
     §13.73.4: кроме клеток с частью B «за тик до уровня» (e2t > 0) — там стоп 5 % в переборе (В-171)."""
@@ -830,6 +860,7 @@ def cmd_map(a):
                 br["gain_sub"] = br["sharpe"] - max(bsh, best1.get(an, float("-inf")), best1.get(bn, float("-inf")))
             pair_rows.append(dict(pair=gname, cells=len(cand), guarded3=len(ok3), guarded_all=len(full), winner=wr, both_moved=br, best_no_plateau=rep_cell(pick(ok3), bsh)))
         bx = brow["extra"]
+        add_split_reports(side, [p[w] for p in pair_rows for w in ("winner", "both_moved")], rows)
         if ax.REBASE:                                        # справочная колонка: та же клетка при s = 5 % (из БД, прежняя карта)
             reps = [p[w] for p in pair_rows for w in ("winner", "both_moved") if p[w]]
             r5rows = store.cells_lookup(SIDENAME[side], UNI, WIN, sorted({x["ref5_key"] for x in reps}), bins=bins)
