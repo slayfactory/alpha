@@ -30,6 +30,7 @@ pub mod store_fill;
 pub mod tick;
 pub mod tick_cli;
 pub mod trade;
+pub mod volstop;
 
 #[cfg(test)]
 mod lx_tests;
@@ -41,6 +42,8 @@ mod store_tests;
 mod tests;
 #[cfg(test)]
 mod tick_tests;
+#[cfg(test)]
+mod volstop_tests;
 
 use std::sync::Mutex;
 

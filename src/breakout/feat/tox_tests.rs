@@ -12,23 +12,30 @@ use std::collections::BTreeMap;
 const D0: i64 = 20_697;
 const NAN: f64 = f64::NAN;
 
-struct Rng(u64);
+pub(super) struct Rng(pub(super) u64);
 
 impl Rng {
-    fn next(&mut self) -> u64 {
+    pub(super) fn next(&mut self) -> u64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
         self.0 ^= self.0 << 17;
         self.0
     }
 
-    fn unit(&mut self) -> f64 {
+    pub(super) fn unit(&mut self) -> f64 {
         (self.next() >> 11) as f64 / (1u64 << 53) as f64
     }
 }
 
 /// Сутки `d`: `n` записей в `[from_ms, to_ms)` суток (мс от полуночи), цена — блуждание с шагом 0,01, количество — тяжёлый хвост.
-fn gen_day(rng: &mut Rng, d: i64, n: usize, from_ms: i64, to_ms: i64, p0: f64) -> DayTradesP {
+pub(super) fn gen_day(
+    rng: &mut Rng,
+    d: i64,
+    n: usize,
+    from_ms: i64,
+    to_ms: i64,
+    p0: f64,
+) -> DayTradesP {
     let mut offs: Vec<i64> = (0..n)
         .map(|_| from_ms + (rng.unit() * (to_ms - from_ms) as f64) as i64)
         .collect();
@@ -48,7 +55,7 @@ fn gen_day(rng: &mut Rng, d: i64, n: usize, from_ms: i64, to_ms: i64, p0: f64) -
     day
 }
 
-fn win_of(parts: &[&DayTradesP]) -> Win {
+pub(super) fn win_of(parts: &[&DayTradesP]) -> Win {
     let mut w = Win::default();
     for d in parts {
         w.t.extend_from_slice(&d.t);
@@ -59,7 +66,7 @@ fn win_of(parts: &[&DayTradesP]) -> Win {
     w
 }
 
-fn win_from(t: &[i64], p: &[f64], v: &[f64], b: &[bool]) -> Win {
+pub(super) fn win_from(t: &[i64], p: &[f64], v: &[f64], b: &[bool]) -> Win {
     Win {
         t: t.to_vec(),
         p: p.to_vec(),
@@ -72,14 +79,14 @@ fn feats(w: &Win, sig: i64, s: i64, q99: Option<f64>, avail_from: i64) -> [f64; 
     tox_features(w, sig, s, q99, Some(0), avail_from, &mut Scratch::default())
 }
 
-fn same(a: &[f64], b: &[f64]) -> bool {
+pub(super) fn same(a: &[f64], b: &[f64]) -> bool {
     a.len() == b.len()
         && a.iter()
             .zip(b)
             .all(|(x, y)| x.to_bits() == y.to_bits() || (x.is_nan() && y.is_nan()))
 }
 
-fn close(a: f64, b: f64, rel: f64) -> bool {
+pub(super) fn close(a: f64, b: f64, rel: f64) -> bool {
     (a - b).abs() <= rel * a.abs().max(b.abs()).max(1e-300)
 }
 
@@ -180,7 +187,7 @@ fn naive_kyle_amih(w: &Win, sig: i64, wm: i64) -> (f64, f64) {
     (kyle, amih)
 }
 
-fn naive_markout(w: &Win, sig: i64, h: i64, win: i64) -> f64 {
+pub(super) fn naive_markout(w: &Win, sig: i64, h: i64, win: i64) -> f64 {
     let n = w.t.partition_point(|&x| x < sig);
     let (mut num, mut den) = (0.0, 0.0);
     for i in 0..n {
@@ -275,8 +282,8 @@ fn start_of_day_gates_follow_available_data() {
     assert!(g[idx("vpin6h")].is_nan() && g[idx("vpin1h")].is_finite());
 }
 
-struct MemSrc {
-    days: BTreeMap<(String, i64), DayTradesP>,
+pub(super) struct MemSrc {
+    pub(super) days: BTreeMap<(String, i64), DayTradesP>,
 }
 
 impl DaySrc for MemSrc {

@@ -398,6 +398,7 @@ fn out_manual(entry_ms: i64, exit_ms: i64, exit_px: f64, marks: Vec<(usize, i64)
         kind: ExitKind::Forced,
         takes: 0,
         marks,
+        floor: [false; 2],
         tl: None,
     }
 }
@@ -1597,6 +1598,8 @@ fn run_lc(
         lp: s * px(lp),
         far: s * px(far),
         rng: None,
+        vol: -1,
+        volz: -1,
     };
     sim_fill_lc(
         &mut stream(ticks),
@@ -3691,6 +3694,8 @@ fn run_rng(
         lp: s * px(lp),
         far: s * px(lp),
         rng,
+        vol: -1,
+        volz: -1,
     };
     sim_fill_lc(
         &mut stream(ticks),
@@ -4851,4 +4856,482 @@ fn tpp_trp_keys_parse_validate_and_show_in_debug_only_when_on() {
         "tpp несовместим с tj"
     );
     assert!(super::cli::reject_tick_only(&p, "x").is_err());
+}
+
+// ───────────────────────── TK-677: доля второго лота (`w2`), вход за N тиков (`e2t`), общий стоп (`s2`) ─────────────────────────
+
+/// Сценарий §13.19: лот 1 по 99,70 на сигнале, подход к 99,95 → лот 2, затем обвал до 85.
+const SPLIT_SCEN: [(i64, f64, bool); 5] = [
+    (0, 99.6, false),
+    (10_000, 99.7, false),
+    (20_000, 99.85, false),
+    (30_000, 99.95, false),
+    (40_000, 85.0, true),
+];
+
+#[test]
+fn split_keys_parse_validate_and_default_params_string_unchanged() {
+    use super::params::parse_variant;
+    let base = Params::base();
+    let s0 = format!("{base:?}");
+    assert!(
+        !s0.contains("w2_pct") && !s0.contains("e2t") && !s0.contains("s2"),
+        "ключи выключены — строка params прежняя"
+    );
+    let (_, p0) = parse_variant("x ew=100 e2=0.05").expect("разбор");
+    assert!(
+        !format!("{p0:?}").contains("w2_pct"),
+        "прежние 50/50 — строка params прежняя"
+    );
+    assert_eq!(
+        p0.exit.lots(NOTIONAL_U),
+        (NOTIONAL_U / 2, NOTIONAL_U / 2),
+        "умолчание — прежние половины"
+    );
+    assert_eq!(base.exit.lots(NOTIONAL_U), (NOTIONAL_U, 0));
+    let (_, p) = parse_variant("x ew=100 e2t=1 w2=25 s2=1").expect("разбор");
+    let e = &p.exit;
+    assert_eq!((e.e2t, e.w2_pct, e.s2, e.split()), (1, 25, true, true));
+    assert_eq!(e.lots(NOTIONAL_U), (375_000_000, 125_000_000));
+    assert!(format!("{e:?}").ends_with("w2_pct: 25, e2t: 1, s2: true }"));
+    assert!(super::cli::reject_tick_only(&p, "x").is_err());
+    for bad in [
+        "w2=25",                  // доля без второго входа
+        "s2=1",                   // общий стоп без второго входа
+        "e2t=1",                  // без входа по ленте
+        "ew=100 e2t=1 e2=0.05",   // два правила второго входа
+        "ew=100 e2t=-1",          // отрицательные тики
+        "ew=100 e2=0.05 w2=0",    // доля вне [5, 95]
+        "ew=100 e2=0.05 w2=100",  // вся ставка во втором лоте — не две части
+        "ew=100 e2t=1 s2=1 sn=2", // общий стоп с NATR-стопом лота
+        "ew=100 e2t=1 xb=1",      // вход на пробой — одной ставкой
+    ] {
+        assert!(parse_variant(&format!("x {bad}")).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn split_default_share_and_stop_keys_equal_legacy_e2_run() {
+    let w = e2_world();
+    let a = w.run(&SPLIT_SCEN);
+    let mut w2 = e2_world();
+    w2.ex.w2_pct = 50;
+    w2.ex.s2 = false;
+    w2.ex.e2t = 0;
+    let b = w2.run(&SPLIT_SCEN);
+    assert_eq!(a.lot2, b.lot2);
+    let (x, y) = (&a.trades[0], &b.trades[0]);
+    assert_eq!(
+        (
+            x.gross.to_bits(),
+            x.fees.to_bits(),
+            x.net.to_bits(),
+            x.exit_ms
+        ),
+        (
+            y.gross.to_bits(),
+            y.fees.to_bits(),
+            y.net.to_bits(),
+            y.exit_ms
+        )
+    );
+}
+
+#[test]
+fn w2_share_sizes_both_lots_and_lot1_alone_is_counted_at_its_share() {
+    let mut w = e2_world();
+    w.ex.w2_pct = 25;
+    let r = w.run(&SPLIT_SCEN);
+    assert_eq!(r.lot2, [0, 1, 0, 0]);
+    let t = &r.trades[0];
+    let l2 = t.lot2.as_ref().expect("второй лот");
+    assert_eq!(t.legs.last().map(|l| l.u), Some(375_000_000));
+    assert_eq!(l2.legs.last().map(|l| l.u), Some(125_000_000));
+    let n1 = t.net1.expect("P&L лота 1");
+    assert!(n1 < 0.0 && t.net < n1, "лот 2 — net − net1");
+    let want = 375.0 * (85.0 - 99.7) / 99.7 + 125.0 * (85.0 - 99.95) / 99.95;
+    assert!((t.gross - want).abs() < 0.01, "брутто {}", t.gross);
+    let fee = crate::lob::costs::leg_fee_bps(true) / 1e4;
+    let want_fees = 500.0 * fee + 375.0 * (85.0 / 99.7) * fee + 125.0 * (85.0 / 99.95) * fee;
+    assert!((t.fees - want_fees).abs() < 0.01, "комиссии {}", t.fees);
+    // уровень не достигнут (лот 1 закрыт стопом до подхода): сделка остаётся в счёте размером лота 1 — 375 $
+    let r = w.run(&[
+        (0, 99.6, false),
+        (10_000, 99.7, false),
+        (20_000, 85.0, true),
+        (30_000, 99.95, false),
+    ]);
+    assert_eq!((r.trades.len(), r.lot2), (1, [0, 0, 1, 0]));
+    let t = &r.trades[0];
+    assert!(t.lot2.is_none());
+    assert_eq!(t.kind, ExitKind::HardStop);
+    let want = 375.0 * (85.0 - 99.7) / 99.7;
+    assert!((t.gross - want).abs() < 0.01, "брутто {}", t.gross);
+}
+
+#[test]
+fn e2t_second_lot_enters_n_ticks_before_level_and_is_rejected_without_tick() {
+    let mut w = e2_world();
+    w.ex.e2_pm = 0;
+    w.ex.e2t = 2; // тик 0,01 → L − d = 99,98
+    let scen = [
+        (0, 99.60, false),
+        (10_000, 99.70, false), // сигнал, лот 1
+        (20_000, 99.97, false), // 3 тика до уровня — рано
+        (30_000, 99.98, false), // 2 тика → лот 2
+        (40_000, 85.0, true),
+    ];
+    let ex = w.ex.clone();
+    let r = w.run_mk(&ex, &scen, 0);
+    assert_eq!(r.lot2, [0, 1, 0, 0]);
+    let l2 = r.trades[0].lot2.as_ref().expect("второй лот");
+    assert_eq!((l2.entry_ms, l2.entry_px), (w.abs(30_004), px(99.98)));
+    // на 1 тике та же лента лот 2 не даёт: 99,98 < L − 0,01
+    let mut ex1 = ex.clone();
+    ex1.e2t = 1;
+    let r = w.run_mk(&ex1, &scen, 0);
+    assert_eq!(r.lot2, [0, 0, 1, 0]);
+    assert!(r.trades[0].lot2.is_none());
+    // сделок до входа лота 1 меньше окна — тика нет: лот 2 — отказ, лот 1 остаётся в счёте
+    let r = w.run(&scen);
+    assert_eq!((r.trades.len(), r.lot2), (1, [0, 0, 0, 1]));
+}
+
+#[test]
+fn s2_common_stop_puts_lot2_hard_stop_at_lot1_stop_price() {
+    use super::tick::entry_stop_px;
+    let scen = [
+        (0, 99.6, false),
+        (10_000, 99.7, false),
+        (30_000, 99.95, false), // лот 2 по 99,95: свой стоп 5 % — 94,9525; стоп лота 1 — 94,715
+        (40_000, 94.9, true),
+        (50_000, 94.6, true),
+    ];
+    let mut w = e2_world();
+    let r = w.run(&scen);
+    let t = &r.trades[0];
+    let l2 = t.lot2.as_ref().expect("второй лот");
+    assert_eq!(
+        (l2.exit_ms, l2.kind, t.exit_ms),
+        (w.abs(40_000), ExitKind::HardStop, w.abs(50_000)),
+        "s2 = 0: у лота 2 свой стоп от своей цены входа"
+    );
+    w.ex.s2 = true;
+    let r = w.run(&scen);
+    let t = &r.trades[0];
+    let l2 = t.lot2.as_ref().expect("второй лот");
+    assert_eq!(
+        (l2.exit_ms, l2.kind, t.exit_ms),
+        (w.abs(50_000), ExitKind::HardStop, w.abs(50_000)),
+        "s2 = 1: оба лота закрыты на стопе лота 1"
+    );
+    let sp = entry_stop_px(px(99.7), Side::Long, NATR, &w.ex, None, 0);
+    assert_eq!(sp, px(99.7) - px(99.7) / 20);
+}
+
+// ───────────── TK-681: окно NATR 5 (`natr_p=5`), источник фильтра живости (`nf`), зона входа от волатильности (`ev/ea/el/eh`) ─────────────
+
+/// Мир TK-681: ход цены +1 % на минуте `a` и возврат на `a + 1` (остальное — 90,0), минута `t1` — у уровня 100,025 (`o, h, l, c` = `q`).
+/// Реализованная волатильность окна с обеими минутами — 1,407 % (1_407_229 e8), с одной минутой возврата — 0,990 %.
+fn z_world(t1: usize, a: usize, q: (f64, f64, f64, f64)) -> Cols {
+    let mut c = level_world();
+    set(&mut c, a, 90.0, 90.9, 90.0, 90.9);
+    set(&mut c, a + 1, 90.9, 90.9, 90.0, 90.0);
+    set(&mut c, t1, q.0, q.1, q.2, q.3);
+    c
+}
+
+const Z_NEAR: (f64, f64, f64, f64) = (99.85, 99.95, 99.84, 99.90);
+const Z_FAR: (f64, f64, f64, f64) = (99.40, 99.50, 99.39, 99.45);
+
+fn z_params(line: &str) -> Params {
+    let (_, mut p) = super::params::parse_variant(&format!("x {line}")).expect("разбор");
+    p.sig.lv.k = 1;
+    p.sig.lv.d_pm = 300;
+    p.sig.t1h_u = 0;
+    p
+}
+
+#[test]
+fn natr_window_5_is_allowed_for_the_pool_filter_only() {
+    let t1 = BORN + 100;
+    let c = z_world(t1, t1 - 3, Z_NEAR);
+    let s = sym(c.clone());
+    assert_eq!(
+        s.natr_for(5).expect("окно 5"),
+        super::data::natr_series(&c, 5).as_slice()
+    );
+    // NATR 5 на `t1 − 1`: (0,9 + 0,9) / 5 / 90 = 0,4 %; NATR 30 — 0,067 %
+    let on = z_params("natr_p=5 natr_min=0.3");
+    assert_eq!(cand_minutes(c.clone(), &on, Side::Long), vec![t1]);
+    let base = z_params("natr_min=0.3");
+    assert!(cand_minutes(c, &base, Side::Long).is_empty());
+    for bad in ["natr_p=7", "natr_p=10", "natr_exit_p=5"] {
+        assert!(
+            super::params::parse_variant(&format!("x {bad}")).is_err(),
+            "{bad}"
+        );
+    }
+}
+
+#[test]
+fn nf_switches_the_liveness_filter_to_a_volatility_series_of_closed_minutes() {
+    let t1 = BORN + 100;
+    let c = z_world(t1, t1 - 3, Z_NEAR);
+    // порог 0,5 %: NATR 30 (0,067 %) не проходит, реализованная 5 минут (1,407 %) проходит
+    assert!(cand_minutes(c.clone(), &z_params("natr_min=0.5"), Side::Long).is_empty());
+    for nf in [5, 6, 7, 8] {
+        let p = z_params(&format!("nf={nf} natr_min=0.5"));
+        assert_eq!(cand_minutes(c.clone(), &p, Side::Long), vec![t1], "nf={nf}");
+    }
+    assert!(cand_minutes(c.clone(), &z_params("nf=5 natr_min=1.5"), Side::Long).is_empty());
+    // коды 1–4 — NATR: `nf=1` — тот же ряд, что `natr_p=5`
+    let a = cand_minutes(c.clone(), &z_params("nf=1 natr_min=0.3"), Side::Long);
+    let b = cand_minutes(c.clone(), &z_params("natr_p=5 natr_min=0.3"), Side::Long);
+    assert_eq!((a, b), (vec![t1], vec![t1]));
+    assert_eq!(
+        cand_minutes(c.clone(), &z_params("nf=3 natr_min=0.05"), Side::Long),
+        cand_minutes(c, &z_params("natr_min=0.05"), Side::Long),
+        "nf=3 — NATR 30, как база"
+    );
+}
+
+#[test]
+fn nf_window_edges_and_no_lookahead() {
+    let t1 = BORN + 100;
+    // окно 5 минут на `t1 − 1` — минуты `t1 − 5 … t1 − 1`: возврат на `t1 − 5` ещё в окне (0,990 %), на `t1 − 6` — уже нет
+    let p5 = z_params("nf=5 natr_min=0.5");
+    let inside = z_world(t1, t1 - 6, Z_NEAR);
+    assert_eq!(cand_minutes(inside, &p5, Side::Long), vec![t1]);
+    let outside = z_world(t1, t1 - 7, Z_NEAR);
+    assert!(cand_minutes(outside.clone(), &p5, Side::Long).is_empty());
+    // тот же мир в окне 15 минут виден
+    let p15 = z_params("nf=6 natr_min=0.5");
+    assert_eq!(cand_minutes(outside.clone(), &p15, Side::Long), vec![t1]);
+    // скачок самой минуты `t1` (90 → 99,9) фильтр не читает: значение — закрытая минутка `t1 − 1`
+    let rv5 = sym(outside).vol_for(5).expect("rv5").to_vec();
+    assert_eq!(rv5[t1 - 1], 0);
+    assert!(rv5[t1] > 5_000_000);
+}
+
+#[test]
+fn zone_from_volatility_formula_clamp_and_track() {
+    let p = z_params("ev=5 ea=0.5").sig;
+    assert_eq!(p.zone_e8(600_000), Some(300_000), "0,5 · 0,6 % = 0,3 %");
+    assert_eq!(p.zone_e8(10_000), Some(50_000), "низ зажима el = 0,05 %");
+    assert_eq!(
+        p.zone_e8(5_000_000),
+        Some(1_000_000),
+        "верх зажима eh = 1 %"
+    );
+    assert_eq!(p.zone_e8(0), Some(50_000));
+    assert_eq!(p.zone_e8(-1), None, "нет значения — зоны нет");
+    let q = z_params("ev=5 ea=0.5 el=0.1 eh=3 track=0.5").sig;
+    assert_eq!(q.zone_e8(20_000), Some(100_000));
+    assert_eq!(
+        q.zone_e8(5_000_000),
+        Some(500_000),
+        "как раньше — не шире track"
+    );
+    // ev = 0: прежняя зона `min(e, track)`, волатильность не читается
+    let b = z_params("").sig;
+    assert_eq!(
+        (b.zone_e8(-1), b.zone_e8(9_000_000)),
+        (Some(300_000), Some(300_000))
+    );
+    assert_eq!(z_params("e=0.2 track=0.1").sig.zone_e8(1), Some(100_000));
+}
+
+#[test]
+fn zone_from_volatility_drives_candidates_and_tick_signals() {
+    let t1 = BORN + 100;
+    let day = t1 / 1440;
+    // минутка в 0,525 % под уровнем: постоянная зона 0,3 % кандидата не даёт
+    let c = z_world(t1, t1 - 3, Z_FAR);
+    assert!(cand_minutes(c.clone(), &z_params("natr_min=0"), Side::Long).is_empty());
+    // V = 1,407 % на `t1 − 1`: зона 0,5·V = 0,7036 % — кандидат есть; 0,2·V = 0,281 % — нет
+    let wide = z_params("natr_min=0 ev=5 ea=0.5");
+    assert_eq!(cand_minutes(c.clone(), &wide, Side::Long), vec![t1]);
+    let narrow = z_params("natr_min=0 ev=5 ea=0.2");
+    assert!(cand_minutes(c.clone(), &narrow, Side::Long).is_empty());
+    // ход вышел из окна 5 минут: V = 0 → зона = el (0,05 %) — кандидата нет; в окне 15 минут — есть
+    let old = z_world(t1, t1 - 7, Z_FAR);
+    assert!(cand_minutes(old.clone(), &wide, Side::Long).is_empty());
+    let wide15 = z_params("natr_min=0 ev=6 ea=0.5");
+    assert_eq!(cand_minutes(old, &wide15, Side::Long), vec![t1]);
+    // сигнал по сделкам — в той же зоне: 99,30 (0,725 %) дальше зоны, 99,45 (0,575 %) — сигнал
+    let ticks = vec![
+        tk(t1, 0, 99.25, false),
+        tk(t1, 5_000, 99.30, false),
+        tk(t1, 10_000, 99.45, false),
+        tk(t1, 20_000, 99.50, false),
+    ];
+    let (sg, ctr) = ap_signals(c.clone(), &wide, Side::Long, vec![(day, ticks.clone())]);
+    assert_eq!(sig_minutes(&sg), vec![t1]);
+    assert_eq!(sg[0].idx, 2);
+    assert!(i64::from(sg[0].dist) <= 703_614 && sg[0].dist > 570_000);
+    assert_eq!(ctr.cands, 1);
+    let (s0, c0) = ap_signals(c, &z_params("natr_min=0"), Side::Long, vec![(day, ticks)]);
+    assert!(
+        s0.is_empty() && c0.cands == 0,
+        "ev = 0: зона 0,3 % — как раньше"
+    );
+}
+
+#[test]
+fn zone_from_volatility_mirrors_for_short() {
+    let t1 = BORN + 100;
+    let c = mirror(&z_world(t1, t1 - 3, Z_FAR), 200.0);
+    let wide = z_params("natr_min=0 ev=5 ea=0.5");
+    let got = cand_minutes(c.clone(), &wide, Side::Short);
+    assert_eq!(got, vec![t1]);
+    assert!(cand_minutes(c, &z_params("natr_min=0"), Side::Short).is_empty());
+}
+
+#[test]
+fn tk681_keys_default_off_validate_and_stay_out_of_fingerprints() {
+    let base = Params::base();
+    assert!(format!("{:?}", base.sig).ends_with("fr_b_pm: 500 }"));
+    assert_eq!((base.sig.nf, base.sig.ev, base.sig.ea_m), (0, 0, 0));
+    let k0 = super::sigcache::cfg_key_text(&base.sig);
+    assert!(!k0.contains("nf=") && !k0.contains("ev="));
+    let p = z_params("nf=5");
+    assert!(format!("{:?}", p.sig).ends_with(", nf: 5 }"));
+    let q = z_params("ev=6 ea=0.5 el=0.1 eh=0.6");
+    assert!(format!("{:?}", q.sig).ends_with(", ev: 6, ea_m: 500, el_pm: 100, eh_pm: 600 }"));
+    let key = |line: &str| super::sigcache::cfg_key_text(&z_params(line).sig);
+    let keys = [
+        key(""),
+        key("nf=5"),
+        key("nf=6"),
+        key("ev=5 ea=0.5"),
+        key("ev=6 ea=0.5"),
+        key("ev=5 ea=0.6"),
+        key("ev=5 ea=0.5 el=0.1"),
+        key("ev=5 ea=0.5 eh=0.9"),
+    ];
+    let distinct: std::collections::HashSet<&String> = keys.iter().collect();
+    assert_eq!(distinct.len(), keys.len());
+    for bad in [
+        "nf=9",
+        "ev=9 ea=1",
+        "ev=5",
+        "ea=1",
+        "el=0.1",
+        "eh=2",
+        "ev=5 ea=1 el=2 eh=1",
+        "ev=5 ea=1 el=0",
+    ] {
+        assert!(
+            super::params::parse_variant(&format!("x {bad}")).is_err(),
+            "{bad}"
+        );
+    }
+    // минутный движок ключи отвергает
+    for line in ["nf=5", "ev=5 ea=1"] {
+        assert!(super::cli::reject_tick_only(&z_params(line), line).is_err());
+    }
+    assert!(super::cli::reject_tick_only(&z_params("natr_p=5"), "").is_ok());
+}
+
+#[test]
+fn sm_floor_keeps_level_stops_away_from_entry() {
+    let mut ex = ex_test();
+    // k = 0,25 NATR: 100,3 − 0,125 = 100,175 выше входа; sm = 0 — прежний зажим «вход − 1e-8»
+    ex.sl_m = 250;
+    let t = || vec![(1100, 99.99, true), (1200, 99.81, true), (1300, 99.8, true)];
+    let out = run_lc(t(), Side::Long, &ex, 100.3, 99.9);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1100));
+    assert_eq!(out.floor, [false, true]);
+    // sm = 0,2 %: стоп не ближе 99,8 — край: 99,81 не стоп, 99,8 стоп
+    ex.sm_pm = 200;
+    let out = run_lc(t(), Side::Long, &ex, 100.3, 99.9);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1300));
+    assert_eq!(out.legs.last().map(|l| l.px), Some(px(99.8)));
+    assert_eq!(out.floor, [true, true]);
+    // форма ниже входа, но ближе sm (k = 0,7 → 99,95): сдвинута, прежний зажим не сработал бы
+    ex.sl_m = 700;
+    let out = run_lc(t(), Side::Long, &ex, 100.3, 99.9);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1300));
+    assert_eq!(out.floor, [true, false]);
+    // форма дальше sm (k = 1,5 → 99,55) не меняется
+    ex.sl_m = 1500;
+    let far = vec![(1100, 99.8, true), (1200, 99.56, true), (1300, 99.55, true)];
+    let out = run_lc(far, Side::Long, &ex, 100.3, 99.9);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1300));
+    assert_eq!(out.floor, [false, false]);
+    // потолок s: sm = 10 % дальше жёсткого стопа 5 % → стоп 95
+    ex.sl_m = 250;
+    ex.sm_pm = 10_000;
+    let out = run_lc(
+        vec![(1100, 95.01, true), (1200, 95.0, true)],
+        Side::Long,
+        &ex,
+        100.3,
+        99.9,
+    );
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1200));
+    assert_eq!(out.legs.last().map(|l| l.px), Some(px(95.0)));
+    // шорт зеркально: уровень 99,7, k = 0,25 → 99,825 ниже входа; sm = 0,2 % → стоп 100,2
+    ex.sm_pm = 200;
+    let t = vec![
+        (1100, 100.01, false),
+        (1200, 100.19, false),
+        (1300, 100.2, false),
+    ];
+    let out = run_lc(t, Side::Short, &ex, 99.7, 99.8);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1300));
+    assert_eq!(out.legs.last().map(|l| l.px), Some(px(100.2)));
+    assert_eq!(out.floor, [true, true]);
+}
+
+#[test]
+fn sm_floor_applies_to_nx_and_cw() {
+    let mut ex = ex_test();
+    // nx: k = 0,25 NATR → порог 100,175 выше входа; sm = 0 — выход первой же сделкой ниже входа
+    ex.nx_m = 250;
+    let t = || vec![(1100, 99.99, true), (1200, 99.81, true), (1300, 99.8, true)];
+    let out = run_lc(t(), Side::Long, &ex, 100.3, 99.9);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::NoTouch, 1100));
+    assert_eq!(out.floor, [false, true]);
+    ex.sm_pm = 200;
+    let out = run_lc(t(), Side::Long, &ex, 100.3, 99.9);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::NoTouch, 1300));
+    assert_eq!(out.legs.last().map(|l| l.px), Some(px(99.8)));
+    assert_eq!(out.floor, [true, true]);
+    // cw: диапазон 99,95–100,5 (ширина 0,55 ∈ [0,5; 1,5]), отступ 0 → стоп 99,95; sm = 0,2 % → 99,8
+    let mut ex = ex_test();
+    ex.cs_w = 60;
+    ex.cs_lo_m = 1000;
+    ex.cs_hi_m = 3000;
+    let out = run_rng(t(), Side::Long, &ex, 100.3, Some((99.95, 100.5)));
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1200));
+    assert_eq!(out.floor, [false, false]);
+    ex.sm_pm = 200;
+    let out = run_rng(t(), Side::Long, &ex, 100.3, Some((99.95, 100.5)));
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1300));
+    assert_eq!(out.floor, [true, false]);
+}
+
+#[test]
+fn sm_key_default_off_validates_and_stays_out_of_fingerprint() {
+    let base = Params::base();
+    assert_eq!(base.exit.sm_pm, 0);
+    assert!(!format!("{:?}", base.exit).contains("sm_pm"));
+    let p = z_params("sl=1 sm=0.2");
+    assert!(format!("{:?}", p.exit).ends_with(", sm_pm: 200 }"));
+    for ok in ["nx=1 sm=0.2", "cw=60 cl=1 ch=3 sm=0.2"] {
+        assert!(
+            super::params::parse_variant(&format!("x {ok}")).is_ok(),
+            "{ok}"
+        );
+    }
+    for bad in ["sm=0.2", "sl=1 sm=-0.1"] {
+        assert!(
+            super::params::parse_variant(&format!("x {bad}")).is_err(),
+            "{bad}"
+        );
+    }
+    // минутный движок ключ отвергает
+    assert!(super::cli::reject_tick_only(&z_params("sl=1 sm=0.2"), "sl=1 sm=0.2").is_err());
 }
