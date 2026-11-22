@@ -172,6 +172,12 @@ UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"      # TK674_UNI
 SIDENAME = {"L": "long", "S": "short"}
 VMAX, SIGMAX = 400, 26                          # вариантов и разных проходов сигналов на вызов движка (память: 26 проходов ≈ 30 ГБ при двух сторонах)
 MIN_N, MIN_MONTH = 150, (15, 15, 15, 15, 8)     # охрана (а) §13.73
+GUARD_A_C539 = {"long": (105, (11, 11, 11, 11, 6)), "short": (81, (9, 9, 9, 9, 5))}      # охрана (а) на c539: формула PS-975 разд. 3 от якорей L-334 (298 / 172 против 428 / 319), числа записаны L-335
+
+
+def guard_a(side_name):
+    """Порог охраны (а) стороны: (n, по месяцам). На c539 — масштабированный по якорям (L-335), иначе §13.73 без изменений."""
+    return GUARD_A_C539[side_name] if UNI == "c539" else (MIN_N, MIN_MONTH)
 FEAT_COLS = ("tpm60", "cons60", "zv6h", "mv5", "n24", "m24")
 
 
@@ -710,7 +716,8 @@ def guards(row, base):
     b = base["extra"]
     k_base = sum(1 for m_ in b["months"] if m_[1] > 0)
     g = {}
-    g["a"] = ex["n"] >= MIN_N and all(m_[0] >= mn for m_, mn in zip(ex["months"], MIN_MONTH))
+    n_min, mon_min = guard_a(row["side"])
+    g["a"] = ex["n"] >= n_min and all(m_[0] >= mn for m_, mn in zip(ex["months"], mon_min))
     g["b"] = sum(1 for m_ in ex["months"] if m_[1] > 0) >= min(4, k_base)
     g["c"] = ex["maxdd"] <= 2 * b["maxdd"]
     g["d"] = ex["lmax"]["usd"] <= b["lmax"]["usd"] + 1e-9
