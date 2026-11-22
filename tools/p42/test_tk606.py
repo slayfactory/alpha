@@ -52,7 +52,7 @@ def test_engine_keys_base_and_search():
     assert sorted(x["name"] for s, x in feats if x["src"] != ["engine"] and x["search"] != "нет") == ["SHARP", "cons60", "n24", "tpm60", "zv6h"]
     assert all(x["base"] == "—" for s, x in feats if x["src"] != ["engine"])
     hist = next(s for s in f["sets"] if s["id"] == "history")
-    assert {"n_ok_d7", "ok10_d14"} <= {x["name"] for g in hist["groups"] for x in g["features"]}
+    assert {"ok10_d7", "ok10_d14"} <= {x["name"] for g in hist["groups"] for x in g["features"]}
     assert all(x["search"] == "нет" for g in hist["groups"] for x in g["features"])
     assert sorted(x["n"] for s, x in feats) == list(range(1, 252))
     bad = [x["name"] for s, x in feats if len(x["what"].split()) > 12 or re.search(r"TK-|docs/|бп|ключ пула|столбец таблицы", x["what"] + x["base"] + x["search"])]
