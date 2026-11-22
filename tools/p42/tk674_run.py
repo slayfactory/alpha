@@ -282,8 +282,10 @@ def feat_tabs(side, st, u, eps):
     import tk654_run as r54
     hist = tf.episode_history(eps, tf.SIDE_NAME[side])
     tabs = {w.name: r54.load_window(w, side, hist) for w in st.TRADE_WINDOWS}
+    keep = None
     if u.name == "c539":                            # §13.73.16: таблицы признаков построены по базе h775; строки крипто-кандидатов — её подмножество
         import tk625_run as r5
+        keep = set(u.coins())
         u = r5.Uni("h775")
     for w in st.TRADE_WINDOWS:
         t38 = t8.load_window(u, w, side)
@@ -292,6 +294,13 @@ def feat_tabs(side, st, u, eps):
         tabs[w.name]["n24"], tabs[w.name]["m24"] = t38["n24"], t38["m24"]
     if any(tabs[w]["gkey_mv5_bad"] for w in tabs):
         raise SystemExit("G-key %s: mv5 эпизодов ≠ таблице TK-634" % side)
+    if keep is not None:                            # c539: только строки крипто-кандидатов (пороги и таблицы фильтров — по составу)
+        for tab in tabs.values():
+            msk = np.array([x in keep for x in tab["sym"]])
+            n_rows = len(msk)
+            for k_, v_ in list(tab.items()):
+                if isinstance(v_, np.ndarray) and len(v_) == n_rows:
+                    tab[k_] = v_[msk]
     if LEVEL == 1:                                  # единички TK-680: столбцы таблицы TK-671 к тем же строкам кандидатов
         import tk680_singles as s80
         s80.add_columns(side, st, tabs)
@@ -361,6 +370,10 @@ def cmd_counts(a):
             for lab in labels:
                 if lab == "on":
                     d[lab] = (feat, op, qthr("mv5", 0.5))
+                elif lab.startswith("q") and name == "N24" and UNI == "c539":      # состав c539: квантиль n24 по кандидатам c539 тем же способом, что TK-638 (зачётные диапазоны, без m24)
+                    import tk638_run as t8
+                    v = np.concatenate([tabs[w.name]["n24"][~tabs[w.name]["m24"] & t8.in_scored_range(w, tabs[w.name]["ms"])] for w in st.TRADE_WINDOWS]).astype(float)
+                    d[lab] = (feat, op, float(t8.sig2(float(np.quantile(v, int(lab[1:]) / 100, method="linear")))))
                 elif lab.startswith("q") and name == "N24":
                     d[lab] = (feat, op, float(thr38[side]["N24"]["q"]["%.2f" % (int(lab[1:]) / 100)]))
                 elif lab.startswith("q"):
@@ -371,6 +384,13 @@ def cmd_counts(a):
         out[side] = axs
         cells, _, _, _ = build_cells(side, axs)
         cols = write_ftab(side, st, tabs, cells)
+        if UNI == "c539":                           # trcols674 — только справка по сделкам базы h775 (с TradFi), на c539 не пишется
+            json.dump(cols, open(t.q("res", "ftabcols674%s-%s.json" % (FSUF, side)), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+            report[side] = dict(cols=len(cols), cells_filter=sum(1 for c in cells.values() if c["filt"]), n_rows={w.name: int(len(tabs[w.name]["sym"])) for w in st.TRADE_WINDOWS})
+            say("== %s: c539 — строк таблиц %s, составных столбцов %d, клеток с фильтром %d" % (side, report[side]["n_rows"], len(cols), report[side]["cells_filter"]))
+            for name, d in axs.items():
+                say("   %-6s %s" % (name, ", ".join("%s → %g" % (lab, v[2]) for lab, v in d.items())))
+            continue
         W, S_, R = r34.trade_rows(u, side)
         idx = {w.name: {(x, int(r)): i for i, (x, r) in enumerate(zip(tabs[w.name]["sym"], tabs[w.name]["ms"]))} for w in st.TRADE_WINDOWS}
         tr = {c: np.full(len(W), np.nan) for c in FEAT_COLS}

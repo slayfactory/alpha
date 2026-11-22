@@ -66,22 +66,36 @@ if os.environ.get("TK674_SPLITW") == "1":       # поправка §13.73.10 (�
         SPLIT_NB[fam + "w90"] = (fam + "w80",)
 
 
-if os.environ.get("TK674_SPLIT67") == "1":      # поправка §13.73.19 (PS-977, В-177): доля части B 67 % (первая заявка — треть объёма) в обоих семействах; соседи плато по w2: 25 · 50 · 67 · 75 [· 80 · 90]
-    _fam = (("e2", dict(e2=0.05, e2t=0)), ("t1", dict(e2=0, e2t=1)))
-    for fam, kw in _fam:
-        SPLIT_VALS["%sw67" % fam] = dict(kw, w2=67, s2=0)
-    _extra = {k: SPLIT_NB[k] for k in ("off", "t2w50", "t3w50", "t1w50s2")}
-    _ord = ["off"]
-    for fam, _ in _fam:
-        _chain = sorted((v for v in SPLIT_VALS if v.startswith(fam + "w") and v != fam + "w50s2"), key=lambda v: int(v[len(fam) + 1:]))
-        _ord += _chain
-        for i, v in enumerate(_chain):
-            SPLIT_NB[v] = tuple(_chain[j] for j in (i - 1, i + 1) if 0 <= j < len(_chain))
-        _mid = fam + "w50"
-        SPLIT_NB[_mid] = SPLIT_NB[_mid] + (("off",) if fam == "e2" else ("t2w50", "t1w50s2", "off"))
-    _ord += ["t2w50", "t3w50", "t1w50s2"]
+if os.environ.get("TK674_SPLIT67") == "1" or os.environ.get("TK674_SPLIT178") == "1":
+    # поправка §13.73.19 (PS-977, В-177): доля части B 67 % (первая заявка — треть объёма) в обоих семействах; поправка §13.73.21 (В-178): доля части B 70 % и 80 % (часть A 30 % / 20 %) при e2t = 1, 2, 3
+    # (TK674_SPLIT178=1: t1w70, t2w70, t3w70, t2w80, t3w80; t1w80 — из TK674_SPLITW). Соседи плато: по w2 внутри семейства (e2t) и по e2t при том же w2; остальное — как в §13.73.4.
+    if os.environ.get("TK674_SPLIT67") == "1":
+        for fam, kw in (("e2", dict(e2=0.05, e2t=0)), ("t1", dict(e2=0, e2t=1))):
+            SPLIT_VALS["%sw67" % fam] = dict(kw, w2=67, s2=0)
+    if os.environ.get("TK674_SPLIT178") == "1":
+        for e_, w_ in ((1, 70), (2, 70), (3, 70), (2, 80), (3, 80)):
+            SPLIT_VALS["t%dw%d" % (e_, w_)] = dict(e2=0, e2t=e_, w2=w_, s2=0)
+    _extra = {k: SPLIT_NB[k] for k in ("off", "t1w50s2")}
+    _e2 = sorted((v for v in SPLIT_VALS if v.startswith("e2w")), key=lambda v: int(v[3:]))
+    _t = {}
+    for v in SPLIT_VALS:
+        if len(v) > 3 and v[0] == "t" and v[1].isdigit() and v[2] == "w" and v[3:].isdigit():
+            _t.setdefault(int(v[1]), []).append(int(v[3:]))
+    for e_ in _t:
+        _t[e_].sort()
+    for i, v in enumerate(_e2):
+        SPLIT_NB[v] = tuple(_e2[j] for j in (i - 1, i + 1) if 0 <= j < len(_e2)) + (("off",) if v == "e2w50" else ())
+    for e_, ws in _t.items():
+        for i, w_ in enumerate(ws):
+            nb = [(e_, ws[j]) for j in (i - 1, i + 1) if 0 <= j < len(ws)] + [(e2_, w_) for e2_ in (e_ - 1, e_ + 1) if e2_ in _t and w_ in _t[e2_]]
+            lab = ["t%dw%d" % x for x in nb]
+            if e_ == 1 and w_ == 50:
+                lab += ["t1w50s2", "off"]
+            SPLIT_NB["t%dw%d" % (e_, w_)] = tuple(lab)
+    _ord = ["off"] + _e2 + ["t%dw%d" % (e_, w_) for e_ in sorted(_t) for w_ in _t[e_]] + ["t1w50s2"]
     SPLIT_VALS = {k: SPLIT_VALS[k] for k in _ord}
     SPLIT_NB.update(_extra)
+    SPLIT_NB["t1w50s2"] = ("t1w50",)
 
 
 def nb_idx(name, vals, i):
