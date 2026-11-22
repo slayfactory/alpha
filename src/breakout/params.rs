@@ -227,6 +227,8 @@ pub struct ExitCfg {
     /// TK-676 (`vz`, `vr`): режимный множитель `(V_z / V)^ρ` — источник `V_z` (коды `vs`; 0 выкл.) и ρ ×1000.
     pub vz: u8,
     pub vr_m: i64,
+    /// TK-681 (`sm`): нижний зажим стопов от уровня (`sl`, `cw`) и порога `nx` — не ближе `sm` % цены входа; тысячные процента, 0 — выкл.
+    pub sm_pm: i64,
     /// TK-677 (`w2`): доля второго лота (ближнего к уровню), % ставки; первый лот — остаток. 50 — прежние 50/50; только при включённом втором входе.
     pub w2_pct: i64,
     /// TK-677 (`e2t`): второй вход за N тиков до уровня (`p ≥ L − N·тик`, тик — `tick_at` на входе лота 1); 0 — выкл. Вместо `e2`, требует `ew > 0`.
@@ -300,6 +302,9 @@ impl std::fmt::Debug for ExitCfg {
             d.field("w2_pct", &self.w2_pct)
                 .field("e2t", &self.e2t)
                 .field("s2", &self.s2);
+        }
+        if self.sm_pm != 0 {
+            d.field("sm_pm", &self.sm_pm);
         }
         d.finish()
     }
@@ -430,6 +435,7 @@ impl ExitCfg {
             || self.cs_lo_m != 0
             || self.cs_hi_m != 0
             || self.cs_m_m != 0
+            || self.sm_pm != 0
     }
 
     /// Любая опция §13.19 включена (`breakout tick` only).
@@ -557,6 +563,7 @@ impl Params {
                 vm_pm: 500,
                 vz: 0,
                 vr_m: 0,
+                sm_pm: 0,
                 w2_pct: 50,
                 e2t: 0,
                 s2: false,
@@ -660,6 +667,7 @@ impl Params {
             "tl" => self.exit.tl = u.min(255) as u8,
             "nx" => self.exit.nx_m = pm(f),
             "sl" => self.exit.sl_m = pm(f),
+            "sm" => self.exit.sm_pm = pm(f),
             "cw" => self.exit.cs_w = f.round() as i64,
             "cl" => self.exit.cs_lo_m = pm(f),
             "ch" => self.exit.cs_hi_m = pm(f),
@@ -808,6 +816,7 @@ impl Params {
             || e.cs_lo_m < 0
             || e.cs_hi_m < 0
             || e.cs_m_m < 0
+            || e.sm_pm < 0
             || e.tu_min < 0
         {
             bail!("nx, sl, cw, cl, ch, cm, tu ≥ 0");
@@ -817,6 +826,9 @@ impl Params {
         }
         if e.cs_w > 0 && e.cs_lo_m >= e.cs_hi_m {
             bail!("cw требует ch > cl (допустимая ширина проторговки)");
+        }
+        if e.sm_pm > 0 && e.nx_m == 0 && e.sl_m == 0 && e.cs_w == 0 {
+            bail!("sm требует nx, sl или cw (нижний зажим цен от уровня)");
         }
         Ok(())
     }

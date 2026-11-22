@@ -398,6 +398,7 @@ fn out_manual(entry_ms: i64, exit_ms: i64, exit_px: f64, marks: Vec<(usize, i64)
         kind: ExitKind::Forced,
         takes: 0,
         marks,
+        floor: [false; 2],
         tl: None,
     }
 }
@@ -5231,4 +5232,106 @@ fn tk681_keys_default_off_validate_and_stay_out_of_fingerprints() {
         assert!(super::cli::reject_tick_only(&z_params(line), line).is_err());
     }
     assert!(super::cli::reject_tick_only(&z_params("natr_p=5"), "").is_ok());
+}
+
+#[test]
+fn sm_floor_keeps_level_stops_away_from_entry() {
+    let mut ex = ex_test();
+    // k = 0,25 NATR: 100,3 − 0,125 = 100,175 выше входа; sm = 0 — прежний зажим «вход − 1e-8»
+    ex.sl_m = 250;
+    let t = || vec![(1100, 99.99, true), (1200, 99.81, true), (1300, 99.8, true)];
+    let out = run_lc(t(), Side::Long, &ex, 100.3, 99.9);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1100));
+    assert_eq!(out.floor, [false, true]);
+    // sm = 0,2 %: стоп не ближе 99,8 — край: 99,81 не стоп, 99,8 стоп
+    ex.sm_pm = 200;
+    let out = run_lc(t(), Side::Long, &ex, 100.3, 99.9);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1300));
+    assert_eq!(out.legs.last().map(|l| l.px), Some(px(99.8)));
+    assert_eq!(out.floor, [true, true]);
+    // форма ниже входа, но ближе sm (k = 0,7 → 99,95): сдвинута, прежний зажим не сработал бы
+    ex.sl_m = 700;
+    let out = run_lc(t(), Side::Long, &ex, 100.3, 99.9);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1300));
+    assert_eq!(out.floor, [true, false]);
+    // форма дальше sm (k = 1,5 → 99,55) не меняется
+    ex.sl_m = 1500;
+    let far = vec![(1100, 99.8, true), (1200, 99.56, true), (1300, 99.55, true)];
+    let out = run_lc(far, Side::Long, &ex, 100.3, 99.9);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1300));
+    assert_eq!(out.floor, [false, false]);
+    // потолок s: sm = 10 % дальше жёсткого стопа 5 % → стоп 95
+    ex.sl_m = 250;
+    ex.sm_pm = 10_000;
+    let out = run_lc(
+        vec![(1100, 95.01, true), (1200, 95.0, true)],
+        Side::Long,
+        &ex,
+        100.3,
+        99.9,
+    );
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1200));
+    assert_eq!(out.legs.last().map(|l| l.px), Some(px(95.0)));
+    // шорт зеркально: уровень 99,7, k = 0,25 → 99,825 ниже входа; sm = 0,2 % → стоп 100,2
+    ex.sm_pm = 200;
+    let t = vec![
+        (1100, 100.01, false),
+        (1200, 100.19, false),
+        (1300, 100.2, false),
+    ];
+    let out = run_lc(t, Side::Short, &ex, 99.7, 99.8);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1300));
+    assert_eq!(out.legs.last().map(|l| l.px), Some(px(100.2)));
+    assert_eq!(out.floor, [true, true]);
+}
+
+#[test]
+fn sm_floor_applies_to_nx_and_cw() {
+    let mut ex = ex_test();
+    // nx: k = 0,25 NATR → порог 100,175 выше входа; sm = 0 — выход первой же сделкой ниже входа
+    ex.nx_m = 250;
+    let t = || vec![(1100, 99.99, true), (1200, 99.81, true), (1300, 99.8, true)];
+    let out = run_lc(t(), Side::Long, &ex, 100.3, 99.9);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::NoTouch, 1100));
+    assert_eq!(out.floor, [false, true]);
+    ex.sm_pm = 200;
+    let out = run_lc(t(), Side::Long, &ex, 100.3, 99.9);
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::NoTouch, 1300));
+    assert_eq!(out.legs.last().map(|l| l.px), Some(px(99.8)));
+    assert_eq!(out.floor, [true, true]);
+    // cw: диапазон 99,95–100,5 (ширина 0,55 ∈ [0,5; 1,5]), отступ 0 → стоп 99,95; sm = 0,2 % → 99,8
+    let mut ex = ex_test();
+    ex.cs_w = 60;
+    ex.cs_lo_m = 1000;
+    ex.cs_hi_m = 3000;
+    let out = run_rng(t(), Side::Long, &ex, 100.3, Some((99.95, 100.5)));
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1200));
+    assert_eq!(out.floor, [false, false]);
+    ex.sm_pm = 200;
+    let out = run_rng(t(), Side::Long, &ex, 100.3, Some((99.95, 100.5)));
+    assert_eq!((out.kind, out.exit_ms), (ExitKind::HardStop, 1300));
+    assert_eq!(out.floor, [true, false]);
+}
+
+#[test]
+fn sm_key_default_off_validates_and_stays_out_of_fingerprint() {
+    let base = Params::base();
+    assert_eq!(base.exit.sm_pm, 0);
+    assert!(!format!("{:?}", base.exit).contains("sm_pm"));
+    let p = z_params("sl=1 sm=0.2");
+    assert!(format!("{:?}", p.exit).ends_with(", sm_pm: 200 }"));
+    for ok in ["nx=1 sm=0.2", "cw=60 cl=1 ch=3 sm=0.2"] {
+        assert!(
+            super::params::parse_variant(&format!("x {ok}")).is_ok(),
+            "{ok}"
+        );
+    }
+    for bad in ["sm=0.2", "sl=1 sm=-0.1"] {
+        assert!(
+            super::params::parse_variant(&format!("x {bad}")).is_err(),
+            "{bad}"
+        );
+    }
+    // минутный движок ключ отвергает
+    assert!(super::cli::reject_tick_only(&z_params("sl=1 sm=0.2"), "sl=1 sm=0.2").is_err());
 }

@@ -763,6 +763,9 @@ pub fn run(
             if p.exit.split() {
                 meta["lot2_[now,later,cancelled,rejected]"] = serde_json::json!(r.lot2);
             }
+            if p.exit.nx_m > 0 || p.exit.sl_m > 0 || p.exit.cs_w > 0 {
+                meta["lvl_stop_[floored,clamped]"] = serde_json::json!(r.floor);
+            }
             if p.ek > 0 {
                 meta["ek_[filled,expired,touched,rejected,not_placed]"] = serde_json::json!(r.ek);
             }
