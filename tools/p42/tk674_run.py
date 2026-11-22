@@ -35,8 +35,9 @@ SIDES = ax.SIDES
 ENGNAME = {"L": "long", "S": "short"}
 CMP_FILES = ("trades.csv", "daily.csv", "coinday.csv", "entryrej.csv")
 say = t.say
-LEVEL = int(os.environ.get("TK674_LEVEL", "2"))  # уровень карты: 2 — пары; 3, 4 — тройки, четвёрки (клетки уровня — `tk674_level.py select`)
-FSUF = str(LEVEL) if LEVEL > 2 else ""          # таблица составных фильтров уровня (ftab674<FSUF>)
+LEVEL = int(os.environ.get("TK674_LEVEL", "2"))  # уровень карты: 2 — пары; 3, 4 — тройки, четвёрки (клетки уровня — `tk674_level.py select`); 1 — единички TK-680 (`tk680_singles.py select`)
+AUTHOR = os.environ.get("TK674_AUTHOR", "TK-674")
+FSUF = str(LEVEL) if LEVEL != 2 else ""          # таблица составных фильтров уровня (ftab674<FSUF>)
 SUF = ax.SUF2 + FSUF         # файлы плана / партий / карты при базе стопа ≤ 4 % (поправка §13.73.2) и уровня — рядом с прежними
 
 
@@ -195,9 +196,17 @@ def one_side_env(side):
 
 
 # ---- признаки и пороги (без P&L) --------------------------------------------------------------------------------------------------
-def _pass(feat, x, tab):
-    """Клетка оставляет кандидата: признак ≤ порога (≥ для n24), «определён и не проходит» — исключён, пусто проходит (как tk654 `_bad`)."""
+def _pass(feat, x, tab, op=None):
+    """Клетка оставляет кандидата: признак ≤ порога (≥ для n24), «определён и не проходит» — исключён, пусто проходит (как tk654 `_bad`).
+    Единички TK-680 (LEVEL = 1): любой столбец таблицы и оба знака — по знаку смысла фильтра (`op`), правило то же."""
     with np.errstate(invalid="ignore"):
+        if LEVEL == 1:
+            v = np.where(tab["m24"].astype(bool), np.nan, tab["n24"]) if feat == "n24" else tab[feat]
+            if op == "<=":
+                return ~(np.isfinite(v) & ~(v <= x))
+            if op == ">=":
+                return ~(np.isfinite(v) & ~(v >= x))
+            raise SystemExit("знак %s у признака %s" % (op, feat))
         if feat in ("tpm60", "cons60", "zv6h"):
             v = tab[feat]
             return ~(np.isfinite(v) & ~(v <= x))
@@ -251,6 +260,9 @@ def feat_tabs(side, st, u, eps):
         tabs[w.name]["n24"], tabs[w.name]["m24"] = t38["n24"], t38["m24"]
     if any(tabs[w]["gkey_mv5_bad"] for w in tabs):
         raise SystemExit("G-key %s: mv5 эпизодов ≠ таблице TK-634" % side)
+    if LEVEL == 1:                                  # единички TK-680: столбцы таблицы TK-671 к тем же строкам кандидатов
+        import tk680_singles as s80
+        s80.add_columns(side, st, tabs)
     return tabs
 
 
@@ -260,7 +272,7 @@ def write_ftab(side, st, tabs, cells):
     sem_list = {sem: parse_sem(sem) for sem in cols}
     for w in st.TRADE_WINDOWS:
         tab = tabs[w.name]
-        pm = {sem: np.logical_and.reduce([_pass(f_, x, tab) for f_, _, x in parts]) for sem, parts in sem_list.items()}
+        pm = {sem: np.logical_and.reduce([_pass(f_, x, tab, op_) for f_, op_, x in parts]) for sem, parts in sem_list.items()}
         path = t.q("ftab674" + FSUF, "%s-%s.csv" % (w.name, side))
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write("sym,sig_ms," + ",".join(cols[s_] for s_ in sem_list) + "\n")
@@ -273,8 +285,8 @@ def write_ftab(side, st, tabs, cells):
 def cmd_ftab(a):
     """Таблица составных фильтров клеток уровня (TK674_LEVEL > 2): пороги — готовые из res/thr674.json, без P&L."""
     import tk654_run as r54
-    if LEVEL <= 2:
-        raise SystemExit("ftab — только для уровня > 2 (у пар таблицу пишет counts)")
+    if LEVEL == 2:
+        raise SystemExit("ftab — только для уровней 1, 3, 4 (у пар таблицу пишет counts)")
     st, r5, _, _ = t._srv()
     u = r5.Uni(UNI)
     eps = r54.episodes_h775()
@@ -342,7 +354,7 @@ def level_path(side):
 
 
 def plan_side(side, store=None):
-    if LEVEL > 2:                                   # клетки уровня — из отбора `tk674_level.py select` (правило отсечения — поправка уровня)
+    if LEVEL != 2:                                  # клетки уровня — из отбора `tk674_level.py select` (правило отсечения — поправка уровня)
         inv = load_invalid(side)
         raw = json.load(open(level_path(side), encoding="utf-8"))["cells"]
         cells = {k: dict(ckey=k, cid=c["cid"], patch=c["patch"], filt=[tuple(x) for x in c["filt"]], sig=tuple(tuple(x) for x in c["sig"]), pairs=[])
@@ -651,10 +663,10 @@ def cmd_tables(a):
                 rows.append(dict(side=SIDENAME[side], uni=UNI, win=WIN, ckey=res["ckey"], bin=binm, cell=m["cid"], trades=m["n"], usd=m["usd"], mean_usd=m["mean_usd"], sharpe=m["sharpe"],
                                  extra=m, src="tools/p42/tk674_run.py", src_ptr="srv:%s/cells/*-%s/%s" % (ROOT, side, m["cid"])))
                 if len(rows) >= 200:
-                    n_new += store.cells_put(a.entry, rows, author="TK-674")["new"]
+                    n_new += store.cells_put(a.entry, rows, author=AUTHOR)["new"]
                     rows = []
             if rows:
-                n_new += store.cells_put(a.entry, rows, author="TK-674")["new"]
+                n_new += store.cells_put(a.entry, rows, author=AUTHOR)["new"]
         say("   %s: строк записано %d; нарушений охран %d" % (side, n_new, len(bad)))
     if cmean:
         mc = float(np.mean(cmean))

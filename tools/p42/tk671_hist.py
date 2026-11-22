@@ -47,15 +47,15 @@ def load(ev_dir=EV_DIR, coindays=COINDAYS, universe=UNIVERSE):
     return _C[key]
 
 
-def features_by_coin(h, sym, t):
+def features_by_coin(h, sym, t, ds=f5.DS):
     """`ok_matrix(features(h, sym, t))` по группам одной монеты: те же функции TK-625, но маски `sym == s` считаются на малых массивах (на всём наборе — O(монет × строк))."""
     order = np.argsort(sym, kind="stable")
     ss = sym[order]
     bounds = np.concatenate([[0], np.flatnonzero(ss[1:] != ss[:-1]) + 1, [len(ss)]])
-    out = {c: np.full(len(t), np.nan) for c in f5.COLS}
+    out = {f5.col_name(m, d): np.full(len(t), np.nan) for m in f5.MS_NAMES for d in ds}
     for a, b in zip(bounds[:-1], bounds[1:]):
         idx = order[a:b]
-        for k, v in f5.ok_matrix(f5.features(h, sym[idx], t[idx])).items():
+        for k, v in f5.ok_matrix(f5.features(h, sym[idx], t[idx], ds)).items():
             out[k][idx] = v
     return out
 
