@@ -2444,6 +2444,8 @@ pub struct TickTrade {
     pub tl: Option<(i64, i64)>,
     /// TK-676 (`vf`): расстояние стопа от волатильности, тысячные процента цены входа; −1 — стопа нет или нет значения источника (остался жёсткий `s`).
     pub vd_pm: i64,
+    /// TK-677: чистый P&L лота 1 при включённом втором входе (лот 2 — `net − net1`); `None` — позиция одним лотом.
+    pub net1: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -2814,6 +2816,7 @@ pub fn run_tick_xb(
         });
         open.sort_by_key(|o| o.exit_ms);
         let mut st = settle_tick_mk(sym, side, &tr, lot_n, !maker);
+        let net1 = split.then_some(st.gross - st.fees + st.funding);
         if let Some(t2) = &tr2 {
             let s2 = settle_tick_mk(sym, side, t2, lot2_n, !maker);
             st.gross += s2.gross;
@@ -2853,6 +2856,7 @@ pub fn run_tick_xb(
             tl: tr.tl,
             lot2: tr2,
             vd_pm: volstop::stop_pm(ex, lc.vol, lc.volz).unwrap_or(-1),
+            net1,
         });
     }
     res

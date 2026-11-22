@@ -4946,6 +4946,8 @@ fn w2_share_sizes_both_lots_and_lot1_alone_is_counted_at_its_share() {
     let l2 = t.lot2.as_ref().expect("второй лот");
     assert_eq!(t.legs.last().map(|l| l.u), Some(375_000_000));
     assert_eq!(l2.legs.last().map(|l| l.u), Some(125_000_000));
+    let n1 = t.net1.expect("P&L лота 1");
+    assert!(n1 < 0.0 && t.net < n1, "лот 2 — net − net1");
     let want = 375.0 * (85.0 - 99.7) / 99.7 + 125.0 * (85.0 - 99.95) / 99.95;
     assert!((t.gross - want).abs() < 0.01, "брутто {}", t.gross);
     let fee = crate::lob::costs::leg_fee_bps(true) / 1e4;

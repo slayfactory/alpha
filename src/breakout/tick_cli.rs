@@ -57,6 +57,35 @@ fn write_outputs(dir: &Path, syms: &[Sym], side: Side, r: &TickResult) -> Result
         );
     }
     fs::write(dir.join(format!("{}-trades.csv", side.name())), t)?;
+    // TK-677: лоты сделок при включённом втором входе — строки в порядке trades.csv; `lot2 = 0` — вошёл только лот 1
+    if r.trades.iter().any(|x| x.net1.is_some()) {
+        let mut l = String::from(
+            "sym,level,sig_ms,lot2,kind1,kind2,net1,net2,entry2_ms,entry2_px_e8
+",
+        );
+        for x in &r.trades {
+            let n1 = x.net1.unwrap_or(x.net);
+            let (k2, ms2, px2) = x
+                .lot2
+                .as_ref()
+                .map_or(("", 0, 0), |t2| (t2.kind.name(), t2.entry_ms, t2.entry_px));
+            let _ = writeln!(
+                l,
+                "{},{},{},{},{},{},{:.6},{:.6},{},{}",
+                syms[x.sym as usize].name,
+                x.level,
+                x.sig_ms,
+                u8::from(x.lot2.is_some()),
+                x.kind1.name(),
+                k2,
+                n1,
+                x.net - n1,
+                ms2,
+                px2
+            );
+        }
+        fs::write(dir.join(format!("{}-lots.csv", side.name())), l)?;
+    }
     let mut d = String::from("day,pnl\n");
     for (i, v) in r.daily.iter().enumerate() {
         let _ = writeln!(d, "{i},{v:.6}");
