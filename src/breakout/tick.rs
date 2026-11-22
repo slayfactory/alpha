@@ -292,6 +292,8 @@ type DaySlot = Arc<OnceLock<Option<Arc<Vec<Tick>>>>>;
 type GcdMap = HashMap<(String, usize), Arc<OnceLock<Option<Arc<GcdSteps>>>>>;
 
 struct Lru {
+    /// Было ли вытеснение суток (память под сутки исчерпана).
+    evicted: bool,
     map: HashMap<(String, usize), DaySlot>,
     order: VecDeque<(String, usize)>,
     bytes: usize,
@@ -325,6 +327,7 @@ impl ZipSrc {
             dir,
             cap_bytes,
             lru: Mutex::new(Lru {
+                evicted: false,
                 map: HashMap::new(),
                 order: VecDeque::new(),
                 bytes: 0,
@@ -359,6 +362,11 @@ impl ZipSrc {
             "{date}-{}-{}-{}.gcd",
             m.size, m.mtime_s, m.mtime_ns
         )))
+    }
+
+    /// TK-683: память под сутки (`cap_bytes`) уже исчерпана — загрузка впрок (разогрев) бесполезна.
+    pub fn evicted(&self) -> bool {
+        self.lru.lock().is_ok_and(|g| g.evicted)
     }
 
     /// Сутки, уже лежащие в памяти (без загрузки).
@@ -550,6 +558,7 @@ impl TradeSrc for ZipSrc {
             }
             while g.bytes > self.cap_bytes && g.order.len() > 1 {
                 if let Some(k) = g.order.pop_front() {
+                    g.evicted = true;
                     if let Some(old) = g.map.remove(&k) {
                         g.bytes = g.bytes.saturating_sub(old.get().map_or(0, size));
                     }

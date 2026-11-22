@@ -700,14 +700,23 @@ pub fn run(
             .flat_map(|&(vi, side, j)| split[&j].iter().map(move |v| (vi, side, v)))
             .collect();
         par_map(&items, threads, |&(vi, side, v)| {
+            // память под сутки кончилась — дальше разогрев только вытеснял бы загруженное
+            if src.evicted() {
+                return;
+            }
             let p = &vs[vi].1;
             run_tick_xb(&syms, v, side, &p.exit, &p.port, &src, p.mk, p.ek, p.xb);
         });
         eprintln!(
-            "разогрев суток сделок: {:.1} с, вариантов {}, проходов по монетам {}",
+            "разогрев суток сделок: {:.1} с, вариантов {}, проходов по монетам {}{}",
             t1.elapsed().as_secs_f64(),
             scouts.len(),
-            items.len()
+            items.len(),
+            if src.evicted() {
+                " (прерван: память под сутки исчерпана)"
+            } else {
+                ""
+            }
         );
     }
     let done = std::sync::atomic::AtomicUsize::new(0);
