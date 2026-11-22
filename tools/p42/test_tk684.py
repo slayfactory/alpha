@@ -63,3 +63,21 @@ def test_variants_list():
         assert v["default"][s] in [x["id"] for x in v["variants"] if x["side"] == s]
         labels = [(x["group"], x["label"]) for x in v["variants"] if x["side"] == s]
         assert len(labels) == len(set(labels))
+
+
+def test_daily_metrics_of_ready_series():
+    s = [1.0, -1.0, 2.0, 0.0]                                          # накопленный 1 0 2 2: просадка 1, максимумы в сутки 0 и 2
+    m = mt.daily_metrics(s)
+    assert m["dd"] == 1.0 and m["gap"] == 2 and abs(m["sharpe"] - mt.sharpe(s)) < 1e-12
+    assert mt.daily_metrics([0, 0, 0]) == {"sharpe": None, "dd": 0.0, "gap": 3}
+
+
+def test_fan_axes_of():
+    import pytest
+    pytest.importorskip("numpy")
+    import tk684_fan as fan
+    assert fan.fnum(1.0) == "1" and fan.fnum(0.25) == "0.25"
+    assert fan.axes_of({"s": 3.0, "rf": 0.0}, []) == ([("rf", "0")], False)                            # стоп — не ось
+    assert fan.axes_of({"s": 4.0, "e2": 0.3}, []) == ([("e2", "0.3")], False)                          # e2 без e2t — обычная ось
+    assert fan.axes_of({"s": 4.0, "e2": 0.5, "e2t": 1.0}, []) == ([("split", "e2=0.5 e2t=1")], True)    # раздельный вход — одна ось
+    assert fan.axes_of({"s": 3.0}, [["q", 100], "tu_60"]) == ([("q", "100"), ("tu", "60")], False)      # фильтры: пара и «имя_значение»
