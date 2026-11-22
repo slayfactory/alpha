@@ -60,7 +60,7 @@ const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'Н
       ok(w[3][c] != null && close(+r.v[c], w[3][c]), `${m} ${w[0]} ${c}: ${r.v[c]} ≠ ${w[3][c]}`);
       eq(r.t[c], FMT[c](w[3][c]), `${m} ${w[0]} ${c} текст`);
     }); });
-    ok(d.prose === 0 && d.views === 0 && d.tableOver <= 0 && d.cards === 1 && d.tables === 1 && d.svgs === 1, m + ' на виде только выбор, график и одна таблица: ' + JSON.stringify([d.prose, d.views, d.tableOver, d.cards, d.tables, d.svgs]));
+    ok(d.prose === 0 && d.views === 2 && d.tableOver <= 0 && d.cards === 1 && d.tables === 1 && d.svgs === 1, m + ' на виде только выбор, график и одна таблица: ' + JSON.stringify([d.prose, d.views, d.tableOver, d.cards, d.tables, d.svgs]));
     ok(!/медиан/i.test(d.text) && !/TK-\d|L-\d{3}/.test(d.text), m + ' медиана или номер задачи в тексте');
     ok(d.overflow <= 0, m + ' горизонтальный перелив ' + d.overflow);
   };

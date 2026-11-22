@@ -5,6 +5,7 @@
 Цели TK-598 — progress.json → targets (по умолчанию <каталог>/data/progress.json; источник — tools/p42/ml_progress.json, проверяется по ml_progress.schema.json рядом со скриптом).
 TK-606: вкладка «Признаки» — features.json (по умолчанию <каталог>/data/features.json; источник — tools/p42/ml_features.json, схема ml_features.schema.json,
 плюс проверки: ссылки src ∈ sources, имена признаков не повторяются, у набора «идёт» нет цифр).
+TK-684: вид «Веер» — код tk684_fan.js рядом со скриптом вшивается в страницу, данные data/fan/ (tk684_fan.py) страница подгружает сама.
 TK-684: вкладка «Эквити» — variants.json (по умолчанию <каталог>/data/variants.json; строит tk684_equity.py: сделки вариантов лонга и шорта, сверка с летописью — там же).
 """
 from __future__ import annotations
@@ -61,7 +62,7 @@ def main():
     variants = json.load(open(variants_path, encoding="utf-8"))
     check_variants(variants)
     tpl = open(tpl_path, encoding="utf-8").read()
-    parts = {"/*__PROGRESS__*/": blob({"targets": progress["targets"]}), "/*__FEATURES__*/": blob(features), "/*__VARIANTS__*/": blob(variants)}
+    parts = {"/*__FANJS__*/": open(os.path.join(HERE, "tk684_fan.js"), encoding="utf-8").read(), "/*__PROGRESS__*/": blob({"targets": progress["targets"]}), "/*__FEATURES__*/": blob(features), "/*__VARIANTS__*/": blob(variants)}
     assert all(tpl.count(k) == 1 for k in parts), "шаблон: метки данных"
     html = tpl
     for k, v in parts.items():

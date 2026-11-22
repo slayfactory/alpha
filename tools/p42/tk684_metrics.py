@@ -52,6 +52,12 @@ def gap_longest(s):
     return max(best, len(s) - 1 - last)
 
 
+def daily_metrics(s):
+    """Метрики готового суточного ряда (веер, tk684_fan.py): Шарп, просадка, перехай."""
+    s = [float(x) for x in s]
+    return {"sharpe": sharpe(s), "dd": maxdd(s), "gap": gap_longest(s)}
+
+
 def rr(vals):
     win = [v for v in vals if v > 0]
     loss = [v for v in vals if v < 0]

@@ -62,6 +62,27 @@ section{scroll-margin-top:130px}
 .vr-pick .tabs button{padding:6px 12px}
 .vr-g{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-width:0}
 .vr-grp{color:var(--mfg);font-size:12px}
+.fan-ctl,.fan-sl,.fan-pin{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:10px 0 0}
+.fan-ctl .tabs{flex-wrap:wrap}
+.fan-ctl .tabs button{padding:6px 12px}
+.fan-ctl select,.fan-pin button{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font:500 13px inherit;color:var(--fg);background:#fff;cursor:pointer}
+.fan-pin button[aria-pressed=true]{background:var(--fg);border-color:var(--fg);color:#fff}
+.fan-pin b{font-weight:600;font-size:13px;overflow-wrap:anywhere}
+.fan-pin .sw{display:inline-block;width:18px;border-top:3px solid}
+.fan-s1{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;font-size:12.5px;color:var(--z600);flex:1 1 200px;min-width:0}
+.fan-s1 input{min-width:0;width:100%;accent-color:var(--fg)}
+.fan-s1 output{min-width:38px;text-align:right;color:var(--fg);font-variant-numeric:tabular-nums}
+.fan-row{margin:8px 0 0}
+.fan-cnt,.fan-msg{font-size:13px;color:var(--z600);font-variant-numeric:tabular-nums}
+.fan-msg{margin:16px 0}
+.fan-cv{position:relative;margin-top:6px}
+.fan-cv canvas{position:absolute;left:0;top:0;width:100%}
+.fan-cv canvas[data-fan=over]{cursor:crosshair}
+.fan-t tbody tr{cursor:pointer}
+.fan-t tr.pin td{background:#fdf2f6}
+.fan-t td[data-f=name]{white-space:normal;overflow-wrap:anywhere;min-width:150px}
+.fan-star{border:0;background:transparent;font-size:16px;line-height:1;cursor:pointer;color:var(--z400);padding:0 2px}
+.fan-star[aria-pressed=true]{color:#b8860b}
 .eqt td.vst{white-space:normal;color:var(--mfg);font-size:12px;min-width:96px;max-width:150px}
 .eq-card{margin-top:20px}
 .eq-card .card-b{padding:12px 20px 18px}
@@ -78,7 +99,8 @@ section{scroll-margin-top:130px}
 .eqt tr{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 0;border-bottom:1px solid var(--border)}
 .eqt tr:last-child{border-bottom:0}
 .eqt td,.eqt td:first-child{padding:0;border:0;min-width:0;text-align:left;white-space:normal}
-.eqt td:first-child,.eqt td.vst{grid-column:1/-1}
+.eqt td:first-child,.eqt td.vst,.fan-t td[data-f=name]{grid-column:1/-1}
+.fan-t td.fan-s{display:none}
 .eqt td.vst{max-width:none}
 .eqt td.vst:empty{display:none}
 .eqt td[data-lab]::before{content:attr(data-lab);display:block;margin-bottom:1px;color:var(--mfg);font-size:11.5px;font-weight:400}}
@@ -173,7 +195,7 @@ section.ft-set{margin-top:22px}
   <div class="pane" id="pane-equity" hidden>
     <div class="prog" id="equity">
       <div class="eq-h"><h2>Эквити</h2><span class="muted small" id="eq-sub">после комиссий, без фандинга · 500 $ на сделку · 01.07–13.11.2026</span></div>
-      <div class="eq-ctls"><div class="tabs eq-ctl" id="eq-tabs" role="tablist"></div></div>
+      <div class="eq-ctls"><div class="tabs eq-ctl" id="eq-views" role="tablist"></div><div class="tabs eq-ctl" id="eq-tabs" role="tablist"></div></div>
       <div id="eq-view"></div>
     </div>
   </div>
@@ -278,12 +300,17 @@ const fday = ms => { const d = new Date(ms); return `${pad2(d.getUTCDate())}.${p
 const money = (v, d = 2) => num(v, d, true);
 
 function renderEquity() {
-  const view = document.getElementById('eq-view');
-  document.querySelectorAll('#eq-tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.side === ST.eq));
-  view.replaceChildren();
-  view.append(variantsView(ST.eq, Math.max(300, Math.floor(view.clientWidth - (view.clientWidth < 520 ? 22 : 42)))));
+  const view = document.getElementById('eq-view'), fan = ST.view === 'fan';
+  if (fan && ST.eq === 'both') ST.eq = 'short';
+  document.querySelectorAll('#eq-views button').forEach(b => b.setAttribute('aria-selected', b.dataset.view === ST.view));
+  document.querySelectorAll('#eq-tabs button').forEach(b => { b.setAttribute('aria-selected', b.dataset.side === ST.eq); b.hidden = fan && b.dataset.side === 'both'; });
+  tip.style.display = 'none';
+  const width = Math.max(300, Math.floor(view.clientWidth - (view.clientWidth < 520 ? 22 : 42)));
+  view.replaceChildren(fan ? fanView(ST.eq, width) : variantsView(ST.eq, width));
 }
 function initEquity() {
+  const vs = document.getElementById('eq-views');
+  [['var', 'Варианты'], ['fan', 'Веер']].forEach(([k, t]) => { const b = h('button', {role: 'tab', 'data-view': k, 'aria-selected': 'false'}, t); b.onclick = () => { ST.view = k; setHash(); renderEquity(); }; vs.append(b); });
   const tabs = document.getElementById('eq-tabs');
   EQ_SIDES.forEach(([k, t]) => { const b = h('button', {role: 'tab', 'data-side': k, 'aria-selected': 'false'}, t); b.onclick = () => { ST.eq = k; setHash(); renderEquity(); }; tabs.append(b); });
 }
@@ -296,19 +323,26 @@ const V_COL = {long: '#eb6834', short: '#2a78d6', both: '#18181b'};
 const V_SIDE = {long: 'Лонг', short: 'Шорт', both: 'Шорт + лонг'};
 const V_COLS = [['n', 'Сделок'], ['sum', 'Сумма, $'], ['mean', 'На сделку, $'], ['sharpe', 'Шарп (год)'], ['dd', 'Просадка, $'], ['ddp', 'Просадка, % маржи'], ['gap', 'Перехай, сут.'], ['rr', 'R:R'], ['worst', 'Худшая сделка, $']];
 const V_FMT = {n: ints, sum: v => ints(money(v, 0)), mean: v => money(v, 2), sharpe: v => num(v, 2), dd: v => num(v, 0), ddp: v => num(v, 0) + ' %', gap: String, rr: v => num(v, 2), worst: v => money(v, 2)};
-const vPick = s => V_BY.get(s === 'long' ? ST.vl : ST.vs) || null;
+const vPick = s => { const id = s === 'long' ? ST.vl : ST.vs; return V_BY.get(id) || (id && FAN_TOK.test(id) ? fanVariant(id) : null); };      // клетка веера — по токену, когда её пакет загружен
+// сводка сделок линии: у варианта — из сделок, у клетки веера — готовая из летописи
+function vAgg(p) {
+  if (p.agg) return p.agg;
+  const w = p.v.filter(x => x > 0), l = p.v.filter(x => x < 0), s = a => a.reduce((x, y) => x + y, 0);
+  return {n: p.v.length, sum: s(p.v), nw: w.length, sw: s(w), nl: l.length, sl: s(l), worst: p.v.length ? p.v.reduce((a, b) => Math.min(a, b)) : null};
+}
 function vStats(parts) {
-  const S = new Array(V.days).fill(0), vals = [];
-  parts.forEach(p => p.d.forEach((d, i) => { S[d] += p.v[i]; vals.push(p.v[i]); }));
-  const n = vals.length, sum = vals.reduce((a, b) => a + b, 0), mean = S.reduce((a, b) => a + b, 0) / V.days;
+  if (parts.length === 1 && parts[0].m) return parts[0].m;
+  const S = new Array(V.days).fill(0), A = parts.map(vAgg), tot = k => A.reduce((a, x) => a + x[k], 0);
+  parts.forEach(p => p.d.forEach((d, i) => { S[d] += p.v[i]; }));
+  const n = tot('n'), sum = tot('sum'), nw = tot('nw'), nl = tot('nl'), mean = S.reduce((a, b) => a + b, 0) / V.days;
   let ss = 0; S.forEach(x => { ss += (x - mean) * (x - mean); });
   const sd = Math.sqrt(ss / (V.days - 1));
   let c = 0, pk = 0, dd = 0, hi = 0, last = -1, gap = 0;
   S.forEach((x, i) => { c += x; pk = Math.max(pk, c); dd = Math.max(dd, pk - c); if (c > hi + 1e-9) { gap = Math.max(gap, i - last); last = i; hi = c; } });
   gap = Math.max(gap, V.days - 1 - last);
-  const win = vals.filter(x => x > 0), loss = vals.filter(x => x < 0), avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+  const worst = A.map(x => x.worst).filter(x => x != null && !Number.isNaN(x));
   return {n, sum, mean: n ? sum / n : null, sharpe: sd > 0 ? mean / sd * Math.sqrt(365) : null, dd, ddp: dd / (V.margin * parts.length) * 100, gap,
-    rr: win.length && loss.length ? avg(win) / Math.abs(avg(loss)) : null, worst: n ? vals.reduce((a, b) => Math.min(a, b)) : null};
+    rr: nw && nl ? (tot('sw') / nw) / Math.abs(tot('sl') / nl) : null, worst: worst.length ? Math.min(...worst) : null};
 }
 function vLines(side) {
   const L = vPick('long'), S = vPick('short'), out = [];
@@ -365,6 +399,7 @@ function vTable() {
 }
 function variantsView(side, width) {
   const box = h('div', {'data-varview': side});
+  fanNeed([ST.vl, ST.vs, ...ST.fav]);
   [['long', 'Лонг'], ['short', 'Шорт']].forEach(([s, t]) => {
     const row = h('div', {class: 'vr-pick', 'data-pick': s}, h('b', {}, t)), cur = (s === 'long' ? ST.vl : ST.vs) || '-';
     const btn = (id, label, key) => {
@@ -379,6 +414,9 @@ function variantsView(side, width) {
       vs.forEach(v => tabs.append(btn(v.id, v.label, v.key)));
       row.append(h('div', {class: 'vr-g'}, [g.label ? h('span', {class: 'vr-grp'}, g.label) : null, tabs]));
     });
+    // клетки веера: избранное и выбранная
+    const ft = [...new Set(fanFavs(s).concat(cur !== '-' && FAN_TOK.test(cur) ? [cur] : []))];
+    if (ft.length) row.append(h('div', {class: 'vr-g'}, [h('span', {class: 'vr-grp'}, 'из веера'), h('div', {class: 'tabs', role: 'tablist'}, ft.map(tok => { const c = fanCell(tok); return btn(tok, c ? c.P.keys[c.i] : '…', null); }))]));
     box.append(row);
   });
   const lines = vLines(side), card = h('div', {class: 'card eq-card', 'data-varcard': side}), b = h('div', {class: 'card-b'});
@@ -439,20 +477,28 @@ function renderFeatures() {
   FEAT.sets.forEach(s => root.append(ftCard(s)));
 }
 
-// ── вкладки верхнего уровня: хеш #targets | #equity[/short|long|both[/<лонг>/<шорт>]] (TK-684: id варианта или «-») | #features[/<набор>[/<№>]]; всё прочее — «Эквити»
+/*__FANJS__*/
+// ── вкладки верхнего уровня: хеш #targets | #equity[/short|long|both[/<лонг>/<шорт>]] (TK-684: id варианта, токен клетки веера или «-») | #equity/fan/<short|long>/<параметры веера> (+ /f=<избранное через точку>) | #features[/<набор>[/<№>]]; всё прочее — «Эквити»
 const TABS = [['targets', 'Цели TK-598'], ['equity', 'Эквити'], ['features', 'Признаки']];
-const ST = {tab: 'equity', ft: null, fn: null, eq: 'short', vl: V.default.long, vs: V.default.short};
+const ST = {tab: 'equity', ft: null, fn: null, eq: 'short', view: 'var', vl: V.default.long, vs: V.default.short, fan: FAN_DEF(), fav: []};
 function parseHash() {
   const [a, b, c, d] = location.hash.replace(/^#/, '').split('/');
   ST.tab = TABS.some(t => t[0] === a) ? a : 'equity';
   ST.ft = a === 'features' && FEAT.sets.some(s => s.id === b) ? b : null;
   ST.fn = ST.ft && FT_BY_N.get(+c) === ST.ft ? +c : null;      // TK-678: #features/<набор>/<№> — строка признака
   // TK-684: прежние ссылки (#equity/<сторона>/where|bases|shape|curve|comp, #live, #progress, #model) открывают «Варианты» с базами
-  const pick = (x, s) => x === '-' ? null : V_BY.has(x) && V_BY.get(x).side === s ? x : V.default[s];
-  ST.eq = a === 'equity' && EQ_SIDES.some(s => s[0] === b) ? b : 'short';
-  ST.vl = pick(a === 'equity' ? c : null, 'long'); ST.vs = pick(a === 'equity' ? d : null, 'short');
+  const eqv = a === 'equity', seg = location.hash.split('/'), fv = eqv && seg.find(x => x.startsWith('f='));
+  if (eqv) ST.fav = fv ? [...new Set(fv.slice(2).split('.').filter(x => FAN_TOK.test(x)))] : [];
+  ST.view = eqv && b === 'fan' ? 'fan' : 'var';
+  if (ST.view === 'fan') { ST.eq = c === 'long' ? 'long' : 'short'; ST.fan = fanParse(d && !d.startsWith('f=') ? d : ''); return; }
+  const pick = (x, s) => x === '-' ? null : (V_BY.has(x) && V_BY.get(x).side === s) || (FAN_TOK.test(x || '') && x[0] === (s === 'long' ? 'L' : 'S')) ? x : V.default[s];
+  ST.eq = eqv && EQ_SIDES.some(s => s[0] === b) ? b : 'short';
+  ST.vl = pick(eqv ? c : null, 'long'); ST.vs = pick(eqv ? d : null, 'short');
 }
-function setHash() { history.replaceState(null, '', '#' + ST.tab + (ST.tab === 'equity' ? '/' + ST.eq + '/' + (ST.vl || '-') + '/' + (ST.vs || '-') : ST.tab === 'features' && ST.ft ? '/' + ST.ft + (ST.fn ? '/' + ST.fn : '') : '')); }
+function setHash() {
+  const eq = ST.view === 'fan' ? '/fan/' + ST.eq + '/' + fanHash() : '/' + ST.eq + '/' + (ST.vl || '-') + '/' + (ST.vs || '-');
+  history.replaceState(null, '', '#' + ST.tab + (ST.tab === 'equity' ? eq + (ST.fav.length ? '/f=' + ST.fav.join('.') : '') : ST.tab === 'features' && ST.ft ? '/' + ST.ft + (ST.fn ? '/' + ST.fn : '') : ''));
+}
 function route() {
   TABS.forEach(([k]) => { document.getElementById('pane-' + k).hidden = k !== ST.tab; });
   document.querySelectorAll('#toptabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === ST.tab));
