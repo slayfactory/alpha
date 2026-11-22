@@ -33,7 +33,7 @@ VERDICTS = ("работает", "не работает", "не ясно", "оп�
 METRIC_COLS = ("side", "cell", "uni", "win", "trades", "usd", "mean_usd", "sharpe", "verdict", "same_data", "from_text", "src", "src_commit",
                "src_ptr", "extra")
 KINDS = ("verdict", "prereg", "amend", "freeze", "result", "step", "measure", "experiment", "correction", "note")
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 # почему у записи нет чисел (TK-661): строка metric_gap — объяснение пробела в БД, не в карточке
 GAP_REASONS = ("предрегистрация", "заморозка", "не запускалось", "числа не вписаны", "чисел сделок нет")
 HERE = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
@@ -157,6 +157,13 @@ CREATE TABLE metric_fix(
 CREATE TRIGGER metric_fix_noupdate BEFORE UPDATE ON metric_fix BEGIN SELECT RAISE(ABORT, 'chron: замены чисел только добавляются'); END;
 CREATE TRIGGER metric_fix_nodelete BEFORE DELETE ON metric_fix BEGIN SELECT RAISE(ABORT, 'chron: замены чисел только добавляются'); END;
 CREATE VIEW metric_cur AS SELECT * FROM metric WHERE id NOT IN (SELECT metric FROM metric_fix);
+""",
+           7: """
+-- хранилище клеток бэктеста (TK-674): та же таблица metric; ckey = канонический ключ клетки движка, bin = md5 бинарника движка.
+-- У прежних строк оба NULL; METRIC_COLS и h прежних строк не меняются. Вид metric_cur (SELECT *) подхватывает столбцы сам.
+ALTER TABLE metric ADD COLUMN ckey TEXT;
+ALTER TABLE metric ADD COLUMN bin TEXT;
+CREATE INDEX metric_cell ON metric(side, uni, win, ckey);
 """}
 FTS_SQL = "CREATE VIRTUAL TABLE fts USING fts5(node UNINDEXED, title, body, tokenize='trigram')"
 
@@ -572,6 +579,83 @@ class Store:
             self.c.execute("ROLLBACK")
             raise
 
+    # ── хранилище клеток бэктеста (TK-674, миграция 7): те же строки metric, у которых заполнен ckey; правило — «сначала lookup, потом счёт»
+    CELL_SIDES = ("long", "short", "both")
+    BIN_RE = re.compile(r"^[0-9a-f]{8,64}$")
+
+    @staticmethod
+    def cell_h(side, uni, win, ckey, bin_):
+        return sha("|".join((side, uni, win, ckey, bin_)))
+
+    def cells_lookup(self, side, uni, win, ckeys, bins=None):
+        """Клетки, уже посчитанные и лежащие в БД: {ckey: строка metric_cur (extra — разобран из JSON)}; только строки с ckey.
+        bins — список md5 бинарников движка: если задан, берутся клетки только этих бинарников (иначе — любого; при нескольких — последняя
+        записанная, бинарник в строке: `bin`). Ключи пачками (лимит переменных SQLite)."""
+        ckeys = list(dict.fromkeys(ckeys))
+        bins = [bins] if isinstance(bins, str) else (list(bins) if bins else [])
+        out = {}
+        for i in range(0, len(ckeys), 400):
+            chunk = ckeys[i:i + 400]
+            sql = "SELECT * FROM metric_cur WHERE side=? AND uni=? AND win=? AND ckey IN (%s)" % ",".join("?" * len(chunk))
+            args = [side, uni, win] + chunk
+            if bins:
+                sql += " AND bin IN (%s)" % ",".join("?" * len(bins))
+                args += bins
+            for r in self.c.execute(sql + " ORDER BY id", args):
+                d = dict(r)
+                d["extra"] = json.loads(d["extra"]) if d.get("extra") else None
+                out[d["ckey"]] = d
+        return out
+
+    def cells_put(self, entry_id, rows, author=None):
+        """rows: [{side, uni, win, ckey, bin, cell, trades, usd, mean_usd, sharpe, extra, src, src_ptr}] → {new, same, diff}.
+        Одна транзакция; запись (L-N или номер) должна существовать; h = sha(side|uni|win|ckey|bin), повтор не пишется (INSERT OR IGNORE).
+        diff — из повторов те, у которых сделки / Σ $ отличаются от записанных (детерминизм движка: должно быть 0). Битая партия не пишет ничего."""
+        eid = int(str(entry_id).lstrip("LЛ-")) if str(entry_id).lstrip("LЛ-").isdigit() else None
+        if eid is None:
+            raise ChronError("запись «%s» — нужен L-N или номер" % entry_id)
+        now_ = now()
+        self.c.execute("BEGIN IMMEDIATE")
+        try:
+            if self.c.execute("SELECT 1 FROM entry WHERE id=?", (eid,)).fetchone() is None:
+                raise ChronError("нет записи L-%d" % eid)
+            new = diff = 0
+            for r in rows:
+                for k in ("uni", "win", "ckey", "src"):
+                    if not isinstance(r.get(k), str) or not r[k]:
+                        raise ChronError("клетка без поля «%s»: %s" % (k, str(r)[:200]))
+                if r.get("side") not in self.CELL_SIDES:
+                    raise ChronError("сторона «%s» — только long / short / both" % r.get("side"))
+                if not isinstance(r.get("bin"), str) or not self.BIN_RE.match(r["bin"]):
+                    raise ChronError("бинарник «%s» — md5 строчными hex, 8+ знаков" % r.get("bin"))
+                h = self.cell_h(r["side"], r["uni"], r["win"], r["ckey"], r["bin"])
+                ex = r.get("extra")
+                cur = self.c.execute(
+                    "INSERT OR IGNORE INTO metric(entry, side, cell, uni, win, trades, usd, mean_usd, sharpe, from_text, src, src_ptr, extra, h, author, created, ckey, bin)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?)",
+                    (eid, r["side"], r.get("cell"), r["uni"], r["win"], r.get("trades"), r.get("usd"), r.get("mean_usd"), r.get("sharpe"),
+                     r["src"], r.get("src_ptr"), json.dumps(ex, ensure_ascii=False, sort_keys=True) if ex else None, h, author, now_, r["ckey"], r["bin"]))
+                if cur.rowcount:
+                    new += 1
+                else:
+                    old = self.c.execute("SELECT trades, usd FROM metric WHERE h=?", (h,)).fetchone()
+                    if old and (old[0] != r.get("trades") or (old[1] is None) != (r.get("usd") is None)
+                                or (old[1] is not None and abs(old[1] - r["usd"]) > 1e-6 * max(1.0, abs(old[1])))):
+                        diff += 1
+            self.c.execute("COMMIT")
+            return {"new": new, "same": len(rows) - new, "diff": diff}
+        except BaseException:
+            self.c.execute("ROLLBACK")
+            raise
+
+    def cells_count(self, bins=None):
+        """Сколько клеток в БД: [{side, uni, win, bin, n}]; bins — только эти бинарники."""
+        bins = [bins] if isinstance(bins, str) else (list(bins) if bins else [])
+        sql = "SELECT side, uni, win, bin, count(*) AS n FROM metric_cur WHERE ckey IS NOT NULL"
+        if bins:
+            sql += " AND bin IN (%s)" % ",".join("?" * len(bins))
+        return [dict(r) for r in self.c.execute(sql + " GROUP BY side, uni, win, bin ORDER BY side, uni, win, bin", bins)]
+
     def sync_kb(self, nodes):
         self.c.execute("BEGIN IMMEDIATE")
         self.c.execute("DELETE FROM kb_node")
@@ -895,7 +979,7 @@ class Store:
         return {"entries": q("SELECT count(*) FROM entry"), "entries_imported": q("SELECT count(*) FROM entry WHERE src IS NOT NULL"),
                 "protocols": q("SELECT count(*) FROM protocol"), "sections": q("SELECT count(*) FROM psec"),
                 "sections_prereg": q("SELECT count(*) FROM psec_cur WHERE prereg=1"), "flag_fixes": q("SELECT count(*) FROM psec_flag"), "num_fixes": q("SELECT count(*) FROM psec_num"),
-                "metrics": q("SELECT count(*) FROM metric_cur"), "entries_with_metrics": q("SELECT count(DISTINCT entry) FROM metric_cur"), "links": q("SELECT count(*) FROM link"),
+                "metrics": q("SELECT count(*) FROM metric_cur WHERE ckey IS NULL"), "cells": q("SELECT count(*) FROM metric_cur WHERE ckey IS NOT NULL"), "entries_with_metrics": q("SELECT count(DISTINCT entry) FROM metric_cur"), "links": q("SELECT count(*) FROM link"),
                 "kb_nodes": q("SELECT count(*) FROM kb_node"), "docs": q("SELECT count(DISTINCT path) FROM doc"),
                 "db_bytes": q("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()")}
 
@@ -943,6 +1027,10 @@ class Store:
             args.append(int(f["min_trades"]))
         if f.get("has_usd"):
             where.append("m.usd IS NOT NULL")
+        if f.get("cells") in (1, "1", True):  # клетки хранилища (TK-674) — только по запросу или по записи, в общем списке их нет (их тысячи)
+            where.append("m.ckey IS NOT NULL")
+        elif not f.get("entry"):
+            where.append("m.ckey IS NULL")
         sql = " FROM metric_cur m JOIN entry e ON e.id = m.entry" + (" WHERE " + " AND ".join(where) if where else "")
         total = self.c.execute("SELECT count(*)" + sql, args).fetchone()[0]
         srt = f.get("sort") or "-date"
@@ -955,9 +1043,9 @@ class Store:
         return {"rows": [dict(r) for r in rows], "total": total}
 
     def metrics_facets(self):
-        q = lambda col: [r[0] for r in self.c.execute("SELECT %s FROM metric_cur WHERE %s IS NOT NULL GROUP BY %s ORDER BY count(*) DESC LIMIT 60" % (col, col, col))]
+        q = lambda col: [r[0] for r in self.c.execute("SELECT %s FROM metric_cur WHERE ckey IS NULL AND %s IS NOT NULL GROUP BY %s ORDER BY count(*) DESC LIMIT 60" % (col, col, col))]
         return {"uni": q("uni"), "win": q("win"),
-                "projects": [r[0] for r in self.c.execute("SELECT e.project FROM metric_cur m JOIN entry e ON e.id=m.entry WHERE e.project IS NOT NULL"
+                "projects": [r[0] for r in self.c.execute("SELECT e.project FROM metric_cur m JOIN entry e ON e.id=m.entry WHERE m.ckey IS NULL AND e.project IS NOT NULL"
                                                           " GROUP BY e.project ORDER BY count(*) DESC")]}
 
     def metrics_coverage(self):
@@ -977,7 +1065,7 @@ class Store:
             d.update(dict(self.c.execute(
                 "SELECT count(*) AS rows, count(m.side) AS side, count(m.uni) AS uni, count(m.win) AS win, count(m.usd) AS usd,"
                 " count(m.mean_usd) AS mean_usd, count(m.sharpe) AS sharpe, count(m.verdict) AS verdict, count(m.same_data) AS same_data,"
-                " sum(m.from_text) AS from_text FROM metric_cur m JOIN entry e ON e.id = m.entry WHERE coalesce(e.project, '—') = ?", (d["project"],)).fetchone()))
+                " sum(m.from_text) AS from_text FROM metric_cur m JOIN entry e ON e.id = m.entry WHERE m.ckey IS NULL AND coalesce(e.project, '—') = ?", (d["project"],)).fetchone()))
             out.append(d)
         return out
 
@@ -991,7 +1079,7 @@ class Store:
         return out
 
     def metrics_sources(self):
-        return [list(r) for r in self.c.execute("SELECT DISTINCT src, src_commit FROM metric UNION SELECT DISTINCT src, NULL FROM metric_gap WHERE src IS NOT NULL")]
+        return [list(r) for r in self.c.execute("SELECT DISTINCT src, src_commit FROM metric WHERE ckey IS NULL UNION SELECT DISTINCT src, NULL FROM metric_gap WHERE src IS NOT NULL")]
 
     def check_db(self):
         """Внутренняя целостность: битые ссылки (кроме commit/file — их проверяет клиент по git), триггеры, FTS, снимки md."""
@@ -1017,9 +1105,12 @@ class Store:
             issues.append("замена числа #%d — другая запись или замена заменённой" % r[0])
         for r in self.c.execute("SELECT id, entry FROM metric WHERE entry NOT IN (SELECT id FROM entry)"):
             issues.append("число #%d — нет записи L-%d" % (r[0], r[1]))
-        n_m = self.c.execute("SELECT count(*) FROM metric WHERE from_text = 0 AND src NOT LIKE 'docs/%'").fetchone()[0]
+        n_m = self.c.execute("SELECT count(*) FROM metric WHERE ckey IS NULL AND from_text = 0 AND src NOT LIKE 'docs/%'").fetchone()[0]
         if n_m:
             issues.append("чисел из файла вне docs/: %d" % n_m)
+        n_c = self.c.execute("SELECT count(*) FROM metric WHERE (ckey IS NULL) <> (bin IS NULL) OR (ckey IS NOT NULL AND (side IS NULL OR uni IS NULL OR win IS NULL))").fetchone()[0]
+        if n_c:
+            issues.append("клеток без стороны / вселенной / окна / бинарника: %d" % n_c)
         for r in self.c.execute("SELECT id FROM entry WHERE corrects IS NOT NULL AND corrects NOT IN (SELECT id FROM entry)"):
             issues.append("L-%d исправляет несуществующую запись" % r[0])
         for r in self.c.execute("SELECT path, max(ver) AS ver, sha256 FROM doc GROUP BY path"):
@@ -1027,6 +1118,9 @@ class Store:
             if got != self.c.execute("SELECT sha256 FROM doc WHERE ver=?", (r["ver"],)).fetchone()[0]:
                 issues.append("снимок %s не восстанавливается байт в байт" % r["path"])
         return issues
+
+
+Chron = Store  # имя для srv-скриптов: chron.Chron(chron.connect(chron.SRV_DB)).cells_put(...)
 
 
 # ───────────────────────── разбор md (клиент) ─────────────────────────
@@ -1649,14 +1743,14 @@ def call(op, *args, **kw):
 
 
 RO_OPS = {"query", "search", "links_of", "get", "protocol_text", "protocols", "facets", "links_all", "stats", "fields_report", "check_db", "reconstruct",
-          "exists", "label", "metrics_query", "metrics_facets", "metrics_coverage", "metrics_sources", "entries_for_metrics"}
+          "exists", "label", "metrics_query", "metrics_facets", "metrics_coverage", "metrics_sources", "entries_for_metrics", "cells_lookup", "cells_count"}
 
 
 def rpc_main():
     req = json.loads(base64.b64decode(globals()["RPC"]).decode("utf-8"))
     os.environ.setdefault("CHRON_DB", SRV_DB)
     try:
-        if req["op"] not in RO_OPS | {"add_entry", "add_psec", "edit_psec", "lock_psec", "flag_psec", "num_psec", "add_metrics", "add_gaps", "add_metric_fixes", "sync_kb", "import_docs",
+        if req["op"] not in RO_OPS | {"add_entry", "add_psec", "edit_psec", "lock_psec", "flag_psec", "num_psec", "add_metrics", "add_gaps", "add_metric_fixes", "cells_put", "sync_kb", "import_docs",
                                       "new_protocol"}:
             raise ChronError("операция %s недоступна" % req["op"])
         res = {"ok": call(req["op"], *req["args"], **req["kw"])}
@@ -1770,7 +1864,7 @@ def fmt_metric_row(m, with_entry=True):
 
 
 def metric_filters(a):
-    f = {k: getattr(a, k, None) for k in ("entry", "project", "side", "uni", "win", "cell", "verdict", "same_data", "text", "min_trades", "src", "sort")}
+    f = {k: getattr(a, k, None) for k in ("entry", "project", "side", "uni", "win", "cell", "verdict", "same_data", "text", "min_trades", "src", "sort", "cells")}
     f["limit"] = a.n
     return f
 
@@ -1795,6 +1889,40 @@ def cmd_metrics(a):
     for m in res["rows"]:
         print(fmt_metric_row(m))
     print("— %d из %d" % (len(res["rows"]), res["total"]), file=sys.stderr)
+    return 0
+
+
+def read_keys(path):
+    """Файл ключей клеток: JSON-массив строк (или объект — его ключи); иначе по ключу в строке."""
+    text = Path(path).read_text(encoding="utf-8")
+    try:
+        v = json.loads(text)
+    except ValueError:
+        return [x for x in text.splitlines() if x.strip()]
+    if isinstance(v, dict):
+        v = list(v)
+    if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+        raise ChronError("%s: нужен JSON-массив строк (ключей клеток)" % path)
+    return v
+
+
+def cmd_cells_lookup(a):
+    """Что из клеток уже посчитано и лежит в БД (TK-674): печатает найденные ключи JSON-массивом; --rows — строки целиком {ключ: строка}."""
+    keys = read_keys(a.keys_file)
+    bins = [b for b in (a.bin or "").split(",") if b.strip()]
+    found = call("cells_lookup", a.side, a.uni, a.win, keys, [b.strip() for b in bins] or None)
+    print(json.dumps(found if a.rows else [k for k in dict.fromkeys(keys) if k in found], ensure_ascii=False, sort_keys=bool(a.rows)))
+    print("— найдено %d из %d" % (len(found), len(set(keys))), file=sys.stderr)
+    return 0
+
+
+def cmd_cells_count(a):
+    bins = [b.strip() for b in (a.bin or "").split(",") if b.strip()]
+    rows = call("cells_count", bins or None)
+    print("%-6s %-10s %-14s %-34s %9s" % ("сторона", "вселенная", "окно", "бинарник", "клеток"))
+    for r in rows:
+        print("%-6s %-10s %-14s %-34s %9d" % (r["side"], r["uni"], r["win"], r["bin"], r["n"]))
+    print("всего клеток %d" % sum(r["n"] for r in rows))
     return 0
 
 
@@ -2387,7 +2515,7 @@ class Site:
 
     def metrics_page(self, qs):
         st = self.store()
-        keys = ("entry", "project", "side", "uni", "win", "cell", "verdict", "same_data", "text", "min_trades", "src", "sort")
+        keys = ("entry", "project", "side", "uni", "win", "cell", "verdict", "same_data", "text", "min_trades", "src", "sort", "cells")
         f = {k: (qs.get(k) or [""])[0].strip() for k in keys}
         f["sort"] = f["sort"] or "-date"
         page_n = max(1, int((qs.get("page") or ["1"])[0] or 1))
@@ -2407,12 +2535,12 @@ class Site:
                '<input name="cell" id="m-cell" type="search" placeholder="клетка (подстрока)" value="%s">%s%s%s%s%s%s%s'
                '<input class="sm" name="min_trades" id="m-min" type="number" min="0" placeholder="сделок ≥" value="%s">'
                '<input class="sm" name="entry" id="m-entry" placeholder="L-N" value="%s">'
-               '%s<button>показать</button></form>') % (
+               '%s%s<button>показать</button></form>') % (
             html.escape(f["cell"]), sel("project", fc["projects"], "все проекты"), sel("side", ["long", "short", "both", "—"], "любая сторона", SIDE_RU),
             sel("uni", fc["uni"], "любая вселенная"), sel("win", fc["win"], "любое окно"), sel("verdict", list(VERDICTS) + ["—"], "любой вердикт"),
             sel("same_data", ["1", "0", "—"], "найдено на этих данных: всё", {"1": "найдено на этих данных", "0": "не на этих данных", "—": "не сказано"}),
             sel("text", ["0", "1"], "источник: любой", {"0": "из файлов результатов", "1": "«из текста»"}),
-            html.escape(f["min_trades"]), html.escape(f["entry"]),
+            html.escape(f["min_trades"]), html.escape(f["entry"]), sel("cells", ["1"], "без клеток хранилища", {"1": "клетки хранилища (TK-674)"}),
             sel("sort", ["-date", "-usd", "usd", "-sharpe", "sharpe", "-trades", "-mean", "mean", "entry"], "порядок",
                 {"-date": "новые записи", "-usd": "Σ $ ↓", "usd": "Σ $ ↑", "-sharpe": "Шарп ↓", "sharpe": "Шарп ↑", "-trades": "сделок ↓",
                  "-mean": "$ / сделку ↓", "mean": "$ / сделку ↑", "entry": "по записи"}))
@@ -2668,11 +2796,23 @@ def main(argv=None):
     s.add_argument("--same-data", dest="same_data", choices=("0", "1", "—"))
     s.add_argument("--text", choices=("0", "1"), help="1 — только «из текста», 0 — только из файлов")
     s.add_argument("--min-trades", dest="min_trades", type=int)
+    s.add_argument("--cells", action="store_true", help="только клетки хранилища (ckey, TK-674); без флага в общем списке их нет, по --entry показаны все")
     s.add_argument("--src", help="подстрока пути источника")
     s.add_argument("--sort", default="-date", help="usd | sharpe | trades | mean | date | entry; «-» — по убыванию")
     s.add_argument("-n", type=int, default=100)
     s.add_argument("--coverage", action="store_true", help="покрытие по проектам")
     s.set_defaults(fn=cmd_metrics)
+    s = sp.add_parser("cells-lookup", help="клетки бэктеста, уже посчитанные и лежащие в БД (TK-674): сначала это, потом счёт")
+    s.add_argument("--side", required=True, choices=("long", "short", "both"))
+    s.add_argument("--uni", required=True)
+    s.add_argument("--win", required=True)
+    s.add_argument("--bin", help="md5 бинарника движка (через запятую); без него — любого")
+    s.add_argument("--keys-file", required=True, help="JSON-массив ключей клеток (или по ключу в строке)")
+    s.add_argument("--rows", action="store_true", help="печатать строки целиком {ключ: строка}, не только найденные ключи")
+    s.set_defaults(fn=cmd_cells_lookup)
+    s = sp.add_parser("cells-count", help="сколько клеток бэктеста в БД: сторона × вселенная × окно × бинарник")
+    s.add_argument("--bin", help="md5 бинарника движка (через запятую)")
+    s.set_defaults(fn=cmd_cells_count)
     s = sp.add_parser("metrics-import", help="числа записей из файлов результатов в git → БД (повтор не дублирует)")
     s.add_argument("--entry", action="append", help="только эти L-N")
     s.add_argument("--dry-run", action="store_true")

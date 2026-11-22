@@ -583,6 +583,180 @@ class TestMetrics(Base):
         self.assertEqual(got["13.6"], (1, "2026-11-19"))
 
 
+def crow(i, **kw):
+    r = {"side": "short", "uni": "h775", "win": "01.07–13.11", "ckey": "k=%06d;n=24;q=0.3" % i, "bin": "abcdef0123456789", "cell": "S_%d" % i,
+         "trades": 100 + i % 7, "usd": 12.5 - i % 5, "mean_usd": 0.125, "sharpe": 1.5, "extra": {"dd": 0.11, "dirs": {"07": 3}},
+         "src": "/data/p42-tk674/cells/run1.jsonl", "src_ptr": "строка %d" % i}
+    r.update(kw)
+    return r
+
+
+class TestCells(Base):
+    """TK-674 (миграция 7): хранилище клеток бэктеста в таблице metric — ckey / bin, cells_put / cells_lookup / cells_count."""
+
+    def old_db(self, name, versions):
+        db = os.path.join(self.tmp.name, name)
+        c = sqlite3.connect(db, isolation_level=None)
+        for stmt in chron.split_sql(chron.SCHEMA) + [x for v in versions for x in chron.split_sql(chron.MIGRATE[v])]:
+            c.execute(stmt)
+        c.execute(chron.FTS_SQL)
+        c.execute("PRAGMA user_version=%d" % max(versions))
+        return c, db
+
+    def test_migrate_v6_to_v7_old_rows_untouched(self):
+        c, db = self.old_db("v6.sqlite", (3, 4, 5, 6))
+        c.execute("INSERT INTO entry(kind, title, body, h, created) VALUES ('verdict', 'старая', 'текст', 'h', '2026-11-20T10:00+04:00')")
+        c.execute("INSERT INTO fts(node, title, body) VALUES ('L-1', 'старая', 'текст')")
+        r = mrow(1, cell="L_n24", usd=294.31)
+        h = chron.sha(json.dumps([1] + [r.get(k) for k in chron.METRIC_COLS], ensure_ascii=False, default=str))
+        c.execute("INSERT INTO metric(entry, side, cell, uni, win, trades, usd, from_text, src, h, created) VALUES (1,'long','L_n24','h775','all',10,294.31,0,'docs/x.json',?,'t')", (h,))
+        c.close()
+        st = chron.Store(chron.connect(db, ro=True))  # чтение тоже переводит схему
+        try:
+            self.assertEqual(st.c.execute("PRAGMA user_version").fetchone()[0], chron.SCHEMA_VERSION)
+            cols = [x[1] for x in st.c.execute("PRAGMA table_info(metric)")]
+            self.assertEqual(cols[-2:], ["ckey", "bin"])
+            self.assertIn("metric_cell", {x[0] for x in st.c.execute("SELECT name FROM sqlite_master WHERE type='index'")})
+            row = st.c.execute("SELECT ckey, bin, h, usd FROM metric_cur").fetchone()  # вид подхватил столбцы
+            self.assertEqual((row["ckey"], row["bin"], row["h"], row["usd"]), (None, None, h, 294.31))
+        finally:
+            st.c.close()
+        st = chron.Store(chron.connect(db))
+        try:
+            self.assertEqual(st.add_metrics([r]), {"new": 0, "same": 1})  # прежняя строка не пишется повторно: h не изменился
+            for sql in ("UPDATE metric SET usd=0", "DELETE FROM metric"):
+                with self.assertRaises(sqlite3.DatabaseError):
+                    st.c.execute(sql)
+            self.assertEqual(st.cells_put(1, [crow(1)]), {"new": 1, "same": 0, "diff": 0})
+            self.assertEqual(st.check_db(), [])
+            self.assertEqual((st.stats()["metrics"], st.stats()["cells"]), (1, 1))
+        finally:
+            st.c.close()
+
+    def test_put_lookup_idempotent(self):
+        e = int(self.st.add_entry(entry("клетки", kind="experiment"), [])[2:])
+        rows = [crow(i) for i in range(5)] + [crow(9, bin="0123456789abcdef", ckey="k=000000;n=24;q=0.3")]
+        self.assertEqual(self.st.cells_put("L-%d" % e, rows), {"new": 6, "same": 0, "diff": 0})
+        self.assertEqual(self.st.cells_put(e, rows[:3] + [crow(5)]), {"new": 1, "same": 3, "diff": 0})  # повтор не пишется, новая — пишется
+        self.assertEqual(self.st.c.execute("SELECT count(*) FROM metric").fetchone()[0], 7)
+        keys = ["k=%06d;n=24;q=0.3" % i for i in range(7)] + ["нет такой"]
+        got = self.st.cells_lookup("short", "h775", "01.07–13.11", keys)
+        self.assertEqual(sorted(got), sorted(keys[:6]))  # 6 разных ключей; k=000000 есть у двух бинарников → последняя запись
+        self.assertEqual(got["k=000000;n=24;q=0.3"]["bin"], "0123456789abcdef")
+        g = self.st.cells_lookup("short", "h775", "01.07–13.11", keys, bins=["abcdef0123456789"])
+        self.assertEqual(g["k=000000;n=24;q=0.3"]["bin"], "abcdef0123456789")
+        self.assertEqual(g["k=000003;n=24;q=0.3"]["extra"], {"dd": 0.11, "dirs": {"07": 3}})  # extra разобран из JSON
+        self.assertEqual((g["k=000003;n=24;q=0.3"]["trades"], g["k=000003;n=24;q=0.3"]["entry"]), (103, e))
+        self.assertEqual(self.st.cells_lookup("short", "h775", "01.07–13.11", keys, bins="0123456789abcdef").keys(), {"k=000000;n=24;q=0.3"})
+        for side, uni, win in (("long", "h775", "01.07–13.11"), ("short", "o566", "01.07–13.11"), ("short", "h775", "all")):
+            self.assertEqual(self.st.cells_lookup(side, uni, win, keys), {})  # сторона / вселенная / окно — часть ключа
+        self.assertEqual(self.st.cells_lookup("short", "h775", "01.07–13.11", []), {})
+        # те же ключи с другими числами — «diff» (движок обязан быть детерминированным), прежняя строка остаётся
+        self.assertEqual(self.st.cells_put(e, [crow(1, usd=99.0)]), {"new": 0, "same": 1, "diff": 1})
+        self.assertEqual(self.st.cells_lookup("short", "h775", "01.07–13.11", keys[1:2])[keys[1]]["usd"], 11.5)
+        cnt = self.st.cells_count()
+        self.assertEqual([(x["bin"], x["n"]) for x in cnt], [("0123456789abcdef", 1), ("abcdef0123456789", 6)])
+        self.assertEqual(self.st.cells_count(["0123456789abcdef"])[0]["n"], 1)
+
+    def test_put_refusals_write_nothing(self):
+        e = int(self.st.add_entry(entry("клетки"), [])[2:])
+        for bad in (crow(7, bin="XYZ"), crow(7, bin=None), crow(7, bin="abcdef0"), crow(7, side="up"), crow(7, ckey=""), crow(7, uni=None), crow(7, win=""), crow(7, src=None)):
+            with self.assertRaises(chron.ChronError):
+                self.st.cells_put(e, [crow(1), bad])
+        for ent in (999, "L-999", "мусор"):
+            with self.assertRaises(chron.ChronError):
+                self.st.cells_put(ent, [crow(1)])
+        self.assertEqual(self.st.c.execute("SELECT count(*) FROM metric").fetchone()[0], 0)  # битая партия не пишет ничего
+
+    def test_cells_append_only_and_check(self):
+        e = int(self.st.add_entry(entry("клетки"), [])[2:])
+        self.st.cells_put(e, [crow(i) for i in range(3)])
+        for sql in ("UPDATE metric SET usd=0", "UPDATE metric SET ckey='x'", "DELETE FROM metric"):
+            with self.assertRaises(sqlite3.DatabaseError):
+                self.st.c.execute(sql)
+        self.assertEqual(self.st.check_db(), [])  # src клетки — путь на srv, не файл в git: check не краснеет
+        self.assertEqual(self.st.metrics_sources(), [])
+        self.st.c.execute("BEGIN")
+        self.st.c.execute("INSERT INTO metric(entry, side, uni, win, src, h, created, ckey) VALUES (?, 'long', 'u', 'w', 's', 'hh', 't', 'k')", (e,))  # ckey без bin
+        self.assertEqual(len(self.st.check_db()), 1)
+        self.st.c.execute("ROLLBACK")
+
+    def test_cells_not_in_general_lists(self):
+        a = int(self.st.add_entry(entry("человеческие числа", project="П-42"), [])[2:])
+        b = int(self.st.add_entry(entry("клетки", project="П-42"), [])[2:])
+        self.st.add_metrics([mrow(a)])
+        self.st.cells_put(b, [crow(i) for i in range(4)])
+        self.assertEqual(self.st.metrics_query({})["total"], 1)  # общий список — без клеток
+        self.assertEqual(self.st.metrics_query({"project": "П-42"})["total"], 1)
+        self.assertEqual(self.st.metrics_query({"entry": b})["total"], 4)  # по записи — все
+        self.assertEqual(self.st.metrics_query({"cells": "1"})["total"], 4)
+        self.assertEqual(self.st.metrics_query({"cells": "1"})["rows"][0]["ckey"][:2], "k=")
+        self.assertEqual(self.st.metrics_facets()["uni"], ["h775"])
+        self.assertEqual([c["rows"] for c in self.st.metrics_coverage() if c["project"] == "П-42"], [1])
+        self.assertEqual(self.st.get("L-%d" % b)["metrics_total"], 4)
+        site = chron.Site(self.db, None)
+        self.assertIn("4 строк", site.metrics_page({"cells": ["1"]}))
+        self.assertIn("1 строк", site.metrics_page({}))
+        self.assertIn("Числа (4)", site.entry(b))
+        gc.collect()
+
+    def test_batch_10k_seconds(self):
+        import time
+        e = int(self.st.add_entry(entry("клетки"), [])[2:])
+        rows = [crow(i) for i in range(10000)]
+        t = time.time()
+        self.assertEqual(self.st.cells_put(e, rows), {"new": 10000, "same": 0, "diff": 0})
+        t_put = time.time() - t
+        t = time.time()
+        got = self.st.cells_lookup("short", "h775", "01.07–13.11", [r["ckey"] for r in rows] + ["нет"], bins=["abcdef0123456789"])
+        t_get = time.time() - t
+        t = time.time()
+        self.assertEqual(self.st.cells_put(e, rows), {"new": 0, "same": 10000, "diff": 0})
+        t_again = time.time() - t
+        self.assertEqual(len(got), 10000)
+        self.assertLess(t_put, 10)
+        self.assertLess(t_get, 5)
+        self.assertLess(t_again, 10)
+        self.assertEqual(self.st.check_db(), [])
+
+    def test_cli_cells_lookup_count(self):
+        e = int(self.st.add_entry(entry("клетки"), [])[2:])
+        self.st.cells_put(e, [crow(i) for i in range(3)])
+        kf = os.path.join(self.tmp.name, "keys.json")
+        Path(kf).write_text(json.dumps(["k=000001;n=24;q=0.3", "k=000002;n=24;q=0.3", "нет"], ensure_ascii=False), encoding="utf-8")
+        rc, out = self.cli("cells-lookup", "--side", "short", "--uni", "h775", "--win", "01.07–13.11", "--keys-file", kf)
+        self.assertEqual((rc, json.loads(out)), (0, ["k=000001;n=24;q=0.3", "k=000002;n=24;q=0.3"]))
+        rc, out = self.cli("cells-lookup", "--side", "short", "--uni", "h775", "--win", "01.07–13.11", "--keys-file", kf, "--bin", "ffffffffffff")
+        self.assertEqual((rc, json.loads(out)), (0, []))
+        rc, out = self.cli("cells-lookup", "--side", "short", "--uni", "h775", "--win", "01.07–13.11", "--keys-file", kf, "--bin", "abcdef0123456789,1111111111", "--rows")
+        self.assertEqual(sorted(json.loads(out)), ["k=000001;n=24;q=0.3", "k=000002;n=24;q=0.3"])
+        Path(kf).write_text("k=000000;n=24;q=0.3\nнет\n", encoding="utf-8")  # по ключу в строке
+        rc, out = self.cli("cells-lookup", "--side", "short", "--uni", "h775", "--win", "01.07–13.11", "--keys-file", kf)
+        self.assertEqual(json.loads(out), ["k=000000;n=24;q=0.3"])
+        rc, out = self.cli("cells-count")
+        self.assertIn("всего клеток 3", out)
+        self.assertIn("abcdef0123456789", out)
+        rc, out = self.cli("cells-count", "--bin", "ffffffffffff")
+        self.assertIn("всего клеток 0", out)
+
+    def test_rpc_cells(self):
+        """Путь «с ПК на srv»: cells_put / cells_lookup / cells_count допущены к вызову по сети."""
+        import base64
+        e = int(self.st.add_entry(entry("клетки"), [])[2:])
+        env = dict(os.environ, CHRON_RPC="1", CHRON_DB=self.db, PYTHONUTF8="1")
+
+        def rpc(op, *args):
+            payload = base64.b64encode(json.dumps({"op": op, "args": args, "kw": {}}, ensure_ascii=False).encode("utf-8")).decode()
+            prog = "RPC = %r\n" % payload + (TOOLS / "chron.py").read_text(encoding="utf-8")
+            r = subprocess.run([sys.executable, "-"], input=prog.encode("utf-8"), capture_output=True, env=env)
+            m = re.search(r"^CHRON-RESULT (.*)$", r.stdout.decode("utf-8"), re.M)
+            self.assertTrue(m, r.stderr.decode("utf-8", "replace"))
+            return json.loads(m.group(1))
+        self.assertEqual(rpc("cells_put", e, [crow(1)])["ok"], {"new": 1, "same": 0, "diff": 0})
+        self.assertEqual(list(rpc("cells_lookup", "short", "h775", "01.07–13.11", ["k=000001;n=24;q=0.3"], None)["ok"]), ["k=000001;n=24;q=0.3"])
+        self.assertEqual(rpc("cells_count", None)["ok"][0]["n"], 1)
+
+
 class TestMetricFiles(unittest.TestCase):
     """chron_metrics: строки чисел из JSON / CSV / таблиц md на маленьких файлах."""
 

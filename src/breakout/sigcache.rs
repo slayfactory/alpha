@@ -81,6 +81,11 @@ pub fn cfg_key_text(cfg: &SigCfg) -> String {
         fr_share,
         fr_b_pm,
         fg_m,
+        nf,
+        ev,
+        ea_m,
+        el_pm,
+        eh_pm,
     } = cfg;
     let LevelCfg {
         tf_min,
@@ -99,6 +104,17 @@ pub fn cfg_key_text(cfg: &SigCfg) -> String {
     } else {
         String::new()
     };
+    // TK-681: `nf`, `ev/ea/el/eh` — только при ≠ 0
+    let nfs = if *nf != 0 {
+        format!(",nf={nf}")
+    } else {
+        String::new()
+    };
+    let evs = if *ev != 0 {
+        format!(",ev={ev},ea_m={ea_m},el_pm={el_pm},eh_pm={eh_pm}")
+    } else {
+        String::new()
+    };
     // TK-668: `lx`/`lw` — тоже только при ≠ 0 (ключи базовых конфигураций совпадают с `master`, кэш не промахивается)
     let lxw = if *lx != 0 || *lw != 0 {
         format!(",lx={lx},lw={lw}")
@@ -107,7 +123,7 @@ pub fn cfg_key_text(cfg: &SigCfg) -> String {
     };
     format!(
         "lv[tf_min={tf_min},k={k},d_pm={d_pm},n={n},tau_pm={tau_pm},l_days={l_days},pk={pk}{lxw}],natr_p={natr_p},natr_min_pm={natr_min_pm},t1h_u={t1h_u},t24_u={t24_u},\
-         track_pm={track_pm},e_pm={e_pm},color={color},f_pm={f_pm},r_min={r_min},ban={ban},ap={ap},pb={pb},fr_h_min={fr_h_min},fr_k={fr_k},fr_share={fr_share},fr_b_pm={fr_b_pm}{fg}"
+         track_pm={track_pm},e_pm={e_pm},color={color},f_pm={f_pm},r_min={r_min},ban={ban},ap={ap},pb={pb},fr_h_min={fr_h_min},fr_k={fr_k},fr_share={fr_share},fr_b_pm={fr_b_pm}{fg}{nfs}{evs}"
     )
 }
 

@@ -6,6 +6,7 @@
 
 pub mod deriv;
 pub mod f12;
+pub mod fast;
 pub mod flow;
 pub mod io;
 pub mod npcompat;
@@ -17,6 +18,8 @@ pub mod tsize;
 
 #[cfg(test)]
 mod f12_tests;
+#[cfg(test)]
+mod fast_tests;
 #[cfg(test)]
 mod tcount_tests;
 #[cfg(test)]
