@@ -2861,7 +2861,7 @@ fn sig_mode_off_values_disable_every_portfolio_limit_and_each_one_alone_binds() 
 
 // ───────────────────────── §13.28: вход лимиткой (`mk`) ─────────────────────────
 
-use super::tick::{mk_decision, run_tick_mk, tick_at};
+use super::tick::{e1_decision, mk_decision, run_tick_mk, tick_at};
 
 /// TK-683: ступени НОД дают тот же НОД, первую цену и число сделок, что прямой проход, для каждого начала суток.
 #[test]
@@ -5068,6 +5068,304 @@ fn s2_common_stop_puts_lot2_hard_stop_at_lot1_stop_price() {
     );
     let sp = entry_stop_px(px(99.7), Side::Long, NATR, &w.ex, None, 0);
     assert_eq!(sp, px(99.7) - px(99.7) / 20);
+}
+
+// ───────────── TK-688: вход одной лимиткой в N тиках от уровня (`e1t`, знак — сторона) ─────────────
+
+/// Решение `e1t` для сигнала на сделке `extra[0]` (1000 мс), уровень `lp` (рама), `ticks` тиков со знаком; тик 0,01 (`mk_fill`), заявка встаёт в 1004 мс.
+fn e1_run(extra: Vec<Tick>, side: Side, lp: i64, ticks: i64) -> EntryDec {
+    let mut v = mk_fill();
+    let k = v.len();
+    v.extend(extra);
+    let src = esrc(v);
+    let mut sg = esig(k, 0.0);
+    sg.lp = lp;
+    let ex = etape_cfg(100, 0);
+    let sym = esym();
+    let mut cache = HashMap::new();
+    let mut tick_of = |t: i64| tick_at(&src, &sym.name, 0, t, &mut cache);
+    e1_decision(&src, &sym, side, &sg, &ex, ticks, &mut tick_of)
+}
+
+#[test]
+fn e1t_approach_limit_is_level_minus_n_ticks_armed_in_the_zone_and_filled_strictly_through() {
+    let run = |ticks: i64, tail: Vec<Tick>| {
+        let mut e = vec![et(1000, 99.50, false)];
+        e.extend(tail);
+        e1_run(e, Side::Long, px(100.0), ticks)
+    };
+    // 2 тика: лимит 99,98; сделка 99,99 (зона p ≥ L − 2·тик) ставит заявку с 1014; сделка 99,97 после — заполняет по цене лимита
+    assert_eq!(
+        run(2, vec![et(1010, 99.99, false), et(1030, 99.97, true)]),
+        fill(1030, 99.98)
+    );
+    // сделка до конца задержки (1012 ≤ 1014) не заполняет; сделка на цене лимита (очередь впереди) — тоже
+    assert_eq!(
+        run(
+            2,
+            vec![
+                et(1010, 99.99, false),
+                et(1012, 99.90, true),
+                et(1030, 99.90, true)
+            ]
+        ),
+        fill(1030, 99.98)
+    );
+    assert_eq!(
+        run(2, vec![et(1010, 99.99, false), et(1030, 99.98, true)]),
+        rej(EntryRej::Unfilled)
+    );
+    // цена не дошла до зоны: заявка выше рынка — не мейкер, не заполняется; нет заполнения и на сделках ниже лимита
+    assert_eq!(
+        run(2, vec![et(1010, 99.60, false), et(1020, 99.40, true)]),
+        rej(EntryRej::Unfilled)
+    );
+    // N задаёт цену лимита: 1 тик — 99,99, 3 тика — 99,97
+    let tail = || vec![et(1010, 99.99, false), et(1030, 99.95, true)];
+    assert_eq!(run(1, tail()), fill(1030, 99.99));
+    assert_eq!(run(3, tail()), fill(1030, 99.97));
+    // рынок уже в зоне при постановке: заявка стоит с 1004
+    let r = e1_run(
+        vec![et(1000, 99.99, false), et(1010, 99.97, true)],
+        Side::Long,
+        px(100.0),
+        2,
+    );
+    assert_eq!(r, fill(1010, 99.98));
+    // жизнь — до конца минуты, содержащей 1004
+    assert_eq!(
+        run(2, vec![et(1010, 99.99, false), et(59_999, 99.90, true)]),
+        fill(59_999, 99.98)
+    );
+    assert_eq!(
+        run(2, vec![et(1010, 99.99, false), et(60_000, 99.90, true)]),
+        rej(EntryRej::Unfilled)
+    );
+}
+
+#[test]
+fn e1t_approach_is_cancelled_by_a_touch_of_the_level_only_before_the_fill() {
+    let run = |tail: Vec<Tick>| {
+        let mut e = vec![et(1000, 99.50, false)];
+        e.extend(tail);
+        e1_run(e, Side::Long, px(100.0), 2)
+    };
+    assert_eq!(
+        run(vec![
+            et(1010, 99.99, false),
+            et(1020, 100.00, false),
+            et(1030, 99.90, true)
+        ]),
+        rej(EntryRej::Touched)
+    );
+    assert_eq!(
+        run(vec![
+            et(1010, 99.99, false),
+            et(1030, 99.97, true),
+            et(1040, 100.00, false)
+        ]),
+        fill(1030, 99.98),
+        "касание после заполнения заявку не трогает"
+    );
+    // последняя сделка стороны на уровне при постановке — уровень уже тронут
+    assert_eq!(
+        e1_run(vec![et(1000, 100.00, false)], Side::Long, px(100.0), 2),
+        rej(EntryRej::Touched)
+    );
+}
+
+#[test]
+fn e1t_beyond_limit_is_level_plus_n_ticks_armed_after_the_breakout_and_filled_on_the_way_back() {
+    let run = |ticks: i64, tail: Vec<Tick>| {
+        let mut e = vec![et(1000, 99.50, false)];
+        e.extend(tail);
+        e1_run(e, Side::Long, px(100.0), ticks)
+    };
+    // −1: лимит 100,01; касание уровня заявку не снимает; сделка 100,02 ставит её с 1024; возврат на 100,00 заполняет по 100,01
+    assert_eq!(
+        run(
+            -1,
+            vec![
+                et(1010, 100.00, false),
+                et(1020, 100.02, false),
+                et(1030, 100.00, true)
+            ]
+        ),
+        fill(1030, 100.01)
+    );
+    // сделка на цене лимита не заполняет; цена не ушла за лимит — заявки нет
+    assert_eq!(
+        run(-1, vec![et(1020, 100.02, false), et(1030, 100.01, true)]),
+        rej(EntryRej::Unfilled)
+    );
+    assert_eq!(
+        run(-1, vec![et(1010, 100.00, false), et(1020, 99.90, true)]),
+        rej(EntryRej::Unfilled)
+    );
+    // −2: лимит 100,02
+    assert_eq!(
+        run(-2, vec![et(1020, 100.03, false), et(1030, 100.01, true)]),
+        fill(1030, 100.02)
+    );
+}
+
+#[test]
+fn e1t_short_mirrors_the_long_in_the_frame_on_both_sides_of_the_level() {
+    // шорт: уровень 98,00 (рама −98,00), сигнальная — продавец-тейкер 98,50; подход — сверху
+    let run = |ticks: i64, tail: Vec<Tick>| {
+        let mut e = vec![et(1000, 98.50, true)];
+        e.extend(tail);
+        e1_run(e, Side::Short, -px(98.0), ticks)
+    };
+    let short = |off: i64, price: f64| EntryDec::Fill {
+        ms: MK_DAY + off,
+        p0: -px(price),
+    };
+    // 2 тика: лимит 98,02 (зона 98,00 < p ≤ 98,02); цена выше лимита заполняет
+    assert_eq!(
+        run(2, vec![et(1010, 98.02, false), et(1030, 98.03, false)]),
+        short(1030, 98.02)
+    );
+    assert_eq!(
+        run(
+            2,
+            vec![
+                et(1010, 98.02, false),
+                et(1020, 98.00, true),
+                et(1030, 98.03, false)
+            ]
+        ),
+        rej(EntryRej::Touched)
+    );
+    // за уровнем (−1): лимит 97,99 — заявка после ухода цены ниже, заполняет возврат выше
+    assert_eq!(
+        run(
+            -1,
+            vec![
+                et(1010, 98.00, true),
+                et(1020, 97.98, true),
+                et(1030, 98.00, false)
+            ]
+        ),
+        short(1030, 97.99)
+    );
+}
+
+#[test]
+fn e1t_run_is_one_maker_lot_without_slippage_and_counts_orders() {
+    let w = e2_world();
+    let mut ex = w.ex.clone();
+    ex.e2_pm = 0;
+    ex.slip_bps = 1;
+    ex.e1t = 2;
+    let crash = [
+        (0, 99.60, false),
+        (10_000, 99.70, false), // сигнал
+        (10_100, 99.99, false), // зона L − 2·тик, заявка с 10 104
+        (10_200, 99.97, true),  // заполнение по 99,98
+        (40_000, 85.0, true),
+    ];
+    let r = w.run_mk(&ex, &crash, 0);
+    assert_eq!((r.trades.len(), r.mk, r.lot2), (1, [1, 0, 0], [0; 4]));
+    let t = &r.trades[0];
+    assert!(t.lot2.is_none());
+    assert_eq!((t.entry_ms, t.entry_px), (w.abs(10_200), px(99.98)));
+    assert_eq!(t.legs.last().map(|l| l.u), Some(NOTIONAL_U), "вся ставка");
+    let fee = |taker| crate::lob::costs::leg_fee_bps(taker) / 1e4;
+    let want = 500.0 * fee(false) + 500.0 * (85.0 * (1.0 - 1e-4) / 99.98) * fee(true);
+    assert!(
+        (t.fees - want).abs() < 1e-6,
+        "комиссии {} против {}",
+        t.fees,
+        want
+    );
+    // не заполнилась / сорван уровень — отказы, уровень не потрачен
+    let r = w.run_mk(
+        &ex,
+        &[
+            (0, 99.60, false),
+            (10_000, 99.70, false),
+            (20_000, 99.80, false),
+        ],
+        0,
+    );
+    assert!(r.trades.is_empty());
+    assert_eq!((r.mk, r.entry_rej[0].3), ([0, 1, 0], EntryRej::Unfilled));
+    let r = w.run_mk(
+        &ex,
+        &[
+            (0, 99.60, false),
+            (10_000, 99.70, false),
+            (20_000, 100.00, false),
+        ],
+        0,
+    );
+    assert_eq!((r.mk, r.entry_rej[0].3), ([0, 0, 1], EntryRej::Touched));
+    // выключен: тейкер со своим проскальзыванием, счётчики заявок нулевые
+    ex.e1t = 0;
+    let r = w.run_mk(&ex, &crash, 0);
+    let t = &r.trades[0];
+    assert_eq!(t.entry_px, px(99.70) + px(99.70) / 10_000);
+    assert_eq!(r.mk, [0, 0, 0]);
+}
+
+#[test]
+fn e1t_key_parses_before_the_level_only_validates_and_keeps_the_params_string_at_zero() {
+    use super::params::parse_variant;
+    let (_, p0) = parse_variant("x ew=100").expect("разбор");
+    assert_eq!(p0.exit.e1t, 0);
+    assert!(
+        !format!("{p0:?}").contains("e1t"),
+        "выключен — строка params прежняя"
+    );
+    for (line, t) in [
+        ("x ew=100 e1t=1", 1),
+        ("x ew=100 e1t=2", 2),
+        ("x ew=100 e1t=3", 3),
+    ] {
+        let (_, p) = parse_variant(line).expect(line);
+        assert_eq!(p.exit.e1t, t, "{line}");
+        assert!(format!("{:?}", p.exit).ends_with(&format!("e1t: {t} }}")));
+    }
+    let (_, p) = parse_variant("x ew=100 e1t=2").expect("разбор");
+    assert!(super::cli::reject_tick_only(&p, "x").is_err());
+    for bad in [
+        "e1t=2",                // без входа по ленте
+        "ew=100 e1t=1 mk=1",    // два правила лимитного входа
+        "ew=100 e1t=1 ek=5",    // и подтверждения
+        "ew=100 e1t=1 xb=1",    // и пробоя
+        "ew=100 e1t=-1",        // за уровнем не регистрируется (В-178)
+        "ew=100 e1t=1 e2=0.05", // вся ставка одной заявкой
+        "ew=100 e1t=1 e2t=1",
+        "ew=100 e1t=2 w2=25",
+        "ew=100 e1t=1001",
+        "ew=100 e1t=2 pw=1000",
+    ] {
+        assert!(parse_variant(&format!("x {bad}")).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn w2_67_and_70_are_accepted_by_both_second_entry_keys_and_split_the_stake() {
+    use super::params::parse_variant;
+    for w2 in [67, 70] {
+        for line in [
+            format!("x ew=100 e2t=1 w2={w2}"),
+            format!("x ew=100 e2t=2 w2={w2}"),
+            format!("x ew=100 e2t=3 w2={w2}"),
+            format!("x ew=100 e2=0.05 w2={w2}"),
+        ] {
+            let (_, p) = parse_variant(&line).expect(&line);
+            let (l1, l2) = p.exit.lots(NOTIONAL_U);
+            assert_eq!(p.exit.w2_pct, w2);
+            assert_eq!(
+                (l1, l2),
+                (NOTIONAL_U / 100 * (100 - w2), NOTIONAL_U / 100 * w2),
+                "{line}"
+            );
+            assert_eq!(l1 + l2, NOTIONAL_U);
+        }
+    }
 }
 
 // ───────────── TK-681: окно NATR 5 (`natr_p=5`), источник фильтра живости (`nf`), зона входа от волатильности (`ev/ea/el/eh`) ─────────────

@@ -114,7 +114,7 @@ set -o pipefail
 $CMD
 EOS
   case "$WHAT" in all|gate) PRIO=2 ;; *) PRIO=1 ;; esac
-  ssh "${KEY[@]}" "$HOST" "RBUILD_ID=$$ RBUILD_PRIO=${RBUILD_PRIO:-$PRIO} RBUILD_DIR=$RB bash $RUNR $ARCR $RB/in/cmd-$$.sh"
+  ssh "${KEY[@]}" "$HOST" "${SRV_CORES:+SRV_CORES=$SRV_CORES }RBUILD_ID=$$ RBUILD_PRIO=${RBUILD_PRIO:-$PRIO} RBUILD_DIR=$RB bash $RUNR $ARCR $RB/in/cmd-$$.sh"
   RC=$?
 else
 ssh "${KEY[@]}" "$HOST" "export RBUILD_T0=\$(date +%s.%N); set -o pipefail; rm -rf $SRC && mkdir -p $SRC && tar -xzf $ARCR -C $SRC   && cd $SRC && { find src tests examples -name '*.rs' -exec touch {} + 2>/dev/null; for f in build.rs Cargo.toml; do [ -e \"\$f\" ] && touch \"\$f\"; done; true; } && export PATH=\$HOME/.cargo/bin:\$PATH && flock -w 7200 /opt/alpha-compute/.build.lock env ALPHA_TICKET=$LABEL nice -n 5 /opt/alpha-compute/sweep.sh run $TGT bash -c '$CMD'; RC=\$?; rm -rf $SRC; exit \$RC"   # TK-614: свой каталог исходников (≈160 МБ) убираем сами — таймер sweep на Софии не идёт, остатки копились (6 шт. = 1 ГБ)

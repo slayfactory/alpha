@@ -2550,6 +2550,65 @@ pub fn lot2_decision_mk_d(
     Lot2Dec::Cancel
 }
 
+/// TK-688 (`e1t`): вся ставка одной лимитной заявкой в `|ticks|` тиков от уровня; `ticks` со знаком: > 0 — со стороны подхода (лимит `L − ticks·тик`
+/// в раме), < 0 — за уровнем (лимит `L + |ticks|·тик`). Заявка встаёт в `сигнал + lat` и живёт до конца минуты этого момента (как `mk`); допуск по
+/// ленте и тик — как у `mk_order` (`Stale` / `Beyond` / `NoTick`). Цена — уровень, округлённый вниз на сетку заменителя (как mk2), минус `ticks·тик`.
+/// В книге заявка стоит, только пока рынок не ниже лимита (зона как у `e2t`: `p ≥ L − N·тик`; лимитная покупка выше рынка исполнилась бы сразу
+/// как тейкер — мейкером она не была бы): последняя сделка стороны ≥ лимита — со времени постановки, иначе — с первой сделки `p ≥ лимит` плюс `lat`.
+/// Заполняет первая сделка строго позже этого момента строго ниже лимита (сделка на цене лимита — очередь впереди — не заполняет), по цене лимита.
+/// Со стороны подхода сделка `p ≥ L` до заполнения снимает заявку (`Touched`; последняя сделка стороны ≥ L при постановке — тоже); за уровнем снятия
+/// касанием нет: заявка встаёт после пробоя на `|ticks|` тиков и заполняется возвратом цены ниже лимита (ретест), как mk2 со сдвигом.
+pub fn e1_decision(
+    src: &dyn TradeSrc,
+    sym: &Sym,
+    side: Side,
+    sig: &TSig,
+    ex: &ExitCfg,
+    ticks: i64,
+    tick_of: &mut dyn FnMut(i64) -> Option<i64>,
+) -> EntryDec {
+    let t = sig.ms + ex.lat_ms;
+    let day = usize::from(sig.day);
+    let p_sur = match entry_at(src, sym, side, day, t, sig.lp, ex) {
+        EntryDec::Fill { p0, .. } => p0,
+        other => return other,
+    };
+    let Some(tick) = tick_of(t) else {
+        return EntryDec::Reject(EntryRej::NoTick);
+    };
+    let approach = ticks > 0;
+    if approach && p_sur >= sig.lp {
+        return EntryDec::Reject(EntryRej::Touched);
+    }
+    let limit = p_sur + (sig.lp - p_sur).div_euclid(tick) * tick - ticks * tick;
+    let until = minute_end(t);
+    let mut live_from = if p_sur >= limit { t } else { NONE_MS };
+    let s = side.s();
+    let mut cur = Cursor::new(src, &sym.name, day, sig.idx as usize + 1);
+    while let Some((ms, px, _)) = cur.next_tick() {
+        if ms <= t {
+            continue;
+        }
+        if ms >= until {
+            break;
+        }
+        let p = s * px;
+        if approach && p >= sig.lp {
+            return EntryDec::Reject(EntryRej::Touched);
+        }
+        if live_from == NONE_MS {
+            if p >= limit {
+                live_from = ms + ex.lat_ms;
+            }
+            continue;
+        }
+        if ms > live_from && p < limit {
+            return EntryDec::Fill { ms, p0: limit };
+        }
+    }
+    EntryDec::Reject(EntryRej::Unfilled)
+}
+
 /// Вход прежней модели для сигнала (§13.2 п. 2): (время, цена ×1e8 без проскальзывания) первой сделки стороны со временем
 /// ≥ `сигнал + lat` после сигнальной; справочно для сравнения с §13.16.
 pub fn old_entry(
@@ -2859,7 +2918,8 @@ pub fn run_tick_xb(
         floor: [0; 2],
         prio: [0; 6],
     };
-    let maker = mk > 0;
+    // TK-688 (`e1t`): вход одной лимитной заявкой — мейкер (комиссия, проскальзывание 0, счётчики заявок), как у `mk`
+    let maker = mk > 0 || ex.e1t != 0;
     let entry_slip = if maker { 0 } else { ex.slip_bps };
     let mut tick_cache: HashMap<(u16, usize), PxGcd> = HashMap::new();
     let mut busy = vec![false; ns];
@@ -3006,7 +3066,10 @@ pub fn run_tick_xb(
         let mut ek_end: Option<i64> = None;
         let mut xb_end: Option<i64> = None;
         let tr = if natr > 0 {
-            dec = if maker {
+            dec = if ex.e1t != 0 {
+                let mut tick_of = |t: i64| tick_at(src, &sym.name, sg.sym, t, &mut tick_cache);
+                e1_decision(src, sym, side, sg, ex, ex.e1t, &mut tick_of)
+            } else if maker {
                 let mut tick_of = |t: i64| tick_at(src, &sym.name, sg.sym, t, &mut tick_cache);
                 mk_decision(src, sym, side, sg, ex, mk, &mut tick_of)
             } else if ek > 0 {

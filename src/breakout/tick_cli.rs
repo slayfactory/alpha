@@ -132,7 +132,7 @@ fn write_vstop(dir: &Path, syms: &[Sym], side: Side, r: &TickResult) -> Result<(
     Ok(())
 }
 
-/// §13.28 (`mk > 0`): счётчики заявок мейкера — `<side>-maker.json`: лот 1 (заполнено, не заполнено, снято уровнем, заявок = сумма), число отказов
+/// §13.28 (`mk > 0`, TK-688 `e1t != 0`): счётчики заявок мейкера — `<side>-maker.json`: лот 1 (заполнено, не заполнено, снято уровнем, заявок = сумма), число отказов
 /// `notick` и лот 2 (`e2`: сразу, позже, отменён, отказ — как `lot2_[…]` в `meta.json`).
 fn write_maker(dir: &Path, side: Side, r: &TickResult) -> Result<()> {
     let n_of = |w: EntryRej| r.entry_rej.iter().filter(|x| x.3 == w).count();
@@ -708,7 +708,7 @@ pub fn run(
             if p.exit.tape_entry() {
                 write_entry_rej(&dir, &syms, side, &r)?;
             }
-            if p.mk > 0 {
+            if p.mk > 0 || p.exit.e1t != 0 {
                 write_maker(&dir, side, &r)?;
             }
             if p.exit.vf > 0 {
