@@ -38,6 +38,7 @@ DROP_WHY = {"ew": "ew = 0 — вход по минутным барам: упр�
 
 R_COLKEY = "столбец × ключ сигнала TK-680 (natr_p, tau, pk, pb, fh, fk, fm, fb, fg, f, r, ban, track, color, ap): sig_ms таблицы признаков не совпадут"
 R_SAMECOL = "два столбца с одним признаком и знаком"
+R_BAND = "полоса одного столбца пустая по построению: порог «≤» не выше порога «≥»"
 R_COMPOUND = "составные оси с общим ключом-родителем"
 R_XB = "xb несовместим с e2 / mk / ek / split (params.rs)"
 R_TPP = "tpp несовместим с tj (params.rs)"
@@ -377,6 +378,13 @@ def cell_check(side, am, assign):
         for k in d1.keys() & d2.keys():
             if d1[k] is not None and d2[k] is not None and abs(d1[k] - d2[k]) > 1e-12:
                 return "ключ %s: ось %s требует %g, ось %s — %g" % (k, n1, d1[k], n2, d2[k])
+    cols = [(am[n], v) for n, v in assign.items() if am[n]["cls"] == "filter" and am[n].get("x680") and v in (am[n].get("thr") or {})]
+    for (a, va), (b, vb) in itertools.combinations(cols, 2):   # один столбец с двух сторон — полоса; порог «≤» ниже порога «≥» — пустая по построению
+        ta, tb = a["thr"][va], b["thr"][vb]
+        if _colsrc(a)[0] == _colsrc(b)[0] and {ta[1], tb[1]} == {"<=", ">="}:
+            le, ge = (ta[2], tb[2]) if ta[1] == "<=" else (tb[2], ta[2])
+            if le <= ge:                                     # равные пороги — только совпадения со значением порога: тоже не полоса
+                return R_BAND
     return ""
 
 
