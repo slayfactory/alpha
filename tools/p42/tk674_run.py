@@ -253,6 +253,9 @@ def feat_tabs(side, st, u, eps):
     import tk654_run as r54
     hist = tf.episode_history(eps, tf.SIDE_NAME[side])
     tabs = {w.name: r54.load_window(w, side, hist) for w in st.TRADE_WINDOWS}
+    if u.name == "c539":                            # §13.73.15: таблицы признаков построены по базе h775; строки крипто-кандидатов — её подмножество (проверяет G-key: no_key = 0)
+        import tk625_run as r5
+        u = r5.Uni("h775")
     for w in st.TRADE_WINDOWS:
         t38 = t8.load_window(u, w, side)
         if list(t38["sym"]) != list(tabs[w.name]["sym"]) or not np.array_equal(t38["ms"], tabs[w.name]["ms"]):
