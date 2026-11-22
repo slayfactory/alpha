@@ -260,6 +260,9 @@ def main():
         stage_pathgate()
     elif a.stage == "join":
         stage_join()
+    elif a.stage in ("plots", "report"):
+        import tk685_report as RP
+        getattr(RP, "stage_" + a.stage)()
     else:
         import tk685_stages as S
         getattr(S, "stage_" + a.stage)()
