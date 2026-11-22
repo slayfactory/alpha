@@ -665,6 +665,34 @@ pub fn run(
     let tasks: Vec<(usize, Side)> = (0..vs.len())
         .flat_map(|i| sides.iter().map(move |&sd| (i, sd)))
         .collect();
+    // TK-683: разогрев суток сделок. Потоки вариантов идут по сигналам в одном порядке и ждут разбора одних и тех же суток по цепочке;
+    // до фазы 2 сигналы самого частого задания проходятся по монетам параллельно (исходы отбрасываются), сутки разбирают все потоки сразу.
+    // На результат вариантов разогрев не влияет; мало заданий на поток — лишний проход не окупается.
+    if threads > 1 && tasks.len() >= 4 * threads && std::env::var_os("P42_SIGSX_ONLY").is_none() {
+        let t1 = std::time::Instant::now();
+        let mut uses: HashMap<usize, (usize, (usize, Side))> = HashMap::new();
+        for &(vi, side) in &tasks {
+            if let Some(&j) = job_idx.get(&(vs[vi].1.sig.clone(), side)) {
+                uses.entry(j).or_insert((0, (vi, side))).0 += 1;
+            }
+        }
+        if let Some((&j, &(_, (vi, side)))) = uses.iter().max_by_key(|(&j, &(n, _))| (n, j)) {
+            let p = &vs[vi].1;
+            let mut by_sym: Vec<Vec<TSig>> = vec![Vec::new(); syms.len()];
+            for s in &sigs[j] {
+                by_sym[s.sym as usize].push(*s);
+            }
+            by_sym.retain(|v| !v.is_empty());
+            par_map(&by_sym, threads, |v| {
+                run_tick_xb(&syms, v, side, &p.exit, &p.port, &src, p.mk, p.ek, p.xb);
+            });
+            eprintln!(
+                "разогрев суток сделок: {:.1} с, монет {}",
+                t1.elapsed().as_secs_f64(),
+                by_sym.len()
+            );
+        }
+    }
     let done = std::sync::atomic::AtomicUsize::new(0);
     let total = tasks.len();
     let parts = par_map(
