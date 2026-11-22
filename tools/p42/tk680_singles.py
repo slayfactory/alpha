@@ -44,21 +44,25 @@ def coverage_cols():
     return json.load(open(COLS_FILE, encoding="utf-8"))
 
 
-def add_columns(side, st, tabs):
-    """Столбцы таблицы TK-671 к строкам кандидатов базы (ключ окно + sym + sig_ms, строка с meta_base_pass > 0, бит 1 раньше бита 2); нет строки — пусто (проходит)."""
+def add_columns(side, st, tabs, cl=None, ctx=None, hist=None):
+    """Столбцы таблицы TK-671 к строкам кандидатов базы (ключ окно + sym + sig_ms, строка с meta_base_pass > 0, бит 1 раньше бита 2); нет строки — пусто (проходит).
+    По умолчанию — столбцы набора процесса (TK680_SET). Режим TK674_X680 (`tk674_x680.column_specs`) задаёт сам: `cl` — [(имя, источник, знаки)], `ctx` — считать cosig15
+    (набор «контекст»), `hist` — взять ok10_d3 / d5 из файла tk680_hist.py (набор «история пробоев»); маски те же, что в счёте единичек этих наборов."""
     import numpy as np
     import pandas as pd
     import pyarrow.parquet as pq
+    ctx = (a80.SET == "ctx") if ctx is None else ctx
+    hist = (a80.SET == "hist") if hist is None else hist
     have = set(pq.ParquetFile(a80.PARQUET % ENGNAME[side]).schema.names)
-    if a80.SET == "ctx":
+    if ctx:
         for w in st.TRADE_WINDOWS:
             tabs[w.name]["cosig15"] = cosig15(tabs[w.name]["sym"], tabs[w.name]["ms"])
     extra = set()
-    if a80.SET == "hist":
+    if hist:
         extra = set(pq.ParquetFile(a80.HIST_EXTRA % ENGNAME[side]).schema.names) - have
         have |= extra
         rid = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["row_id"])["row_id"].to_numpy()
-    cl = a80.column_list(coverage_cols())
+    cl = a80.column_list(coverage_cols()) if cl is None else cl
     srcs = lambda src: src if isinstance(src, tuple) else (src,)
     absent = [name for name, src, _ in cl if not all(x in have for x in srcs(src)) and name not in tabs[st.TRADE_WINDOWS[0].name]]
     cl = [c for c in cl if c[0] not in absent]

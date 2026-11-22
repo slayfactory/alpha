@@ -2,7 +2,8 @@
 """П-42 §13.73 (поправка 22.11, TK-674): оси линии, все совместные пары, клетки и канонический ключ клетки (ключ строки в БД летописи).
 Без движка и без P&L. Клетка = база стороны + заплатка ключей движка (+ составной фильтр по таблице `--ftab`).
   канонический ключ = все ключи строки (база + u.extra + заплатка, позднее значение побеждает) без значений по умолчанию движка, отсортированные,
-  плюс «F=…» — смысл фильтра (признак, знак, абсолютный порог), а не имя столбца таблицы; rf=0 → rs не значим, tt=0 → tb не значим."""
+  плюс «F=…» — смысл фильтра (признак, знак, абсолютный порог), а не имя столбца таблицы; rf=0 → rs не значим, tt=0 → tb не значим.
+Режим TK674_X680=1 (поправка §13.73.7, PS-960): к осям карты добавляются активные оси единичек TK-680 (`tk674_x680.py`), пары — только новая × любая; файлы с суффиксом «x»."""
 from __future__ import annotations
 
 import itertools
@@ -30,6 +31,11 @@ POOL_KEYS = ("natr_min", "t1h", "t24")
 # TK674_REBASE=1 включает новую базу; без переменной — прежняя карта (s = 5 %, L-292) воспроизводится как была.
 REBASE = os.environ.get("TK674_REBASE") == "1"
 BASE_STOP = {"L": 3, "S": 4}
+# поправка §13.73.7 (PS-960, TK-674 × TK-680): TK674_X680=1 добавляет активные оси единичек TK-680 (`tk674_x680.py`) и строит только пары, где есть новая ось;
+# база — стоп ≤ 4 % (как у единичек), файлы плана / карты — с суффиксом «bx» (`tk674_run.FSUF`), прежние файлы не затрагиваются
+X680 = os.environ.get("TK674_X680") == "1"
+if X680 and not REBASE:
+    raise SystemExit("TK674_X680=1 требует TK674_REBASE=1: единички TK-680 считались на базе стопа Л 3 % / Ш 4 %")
 LINE_STOP = 5                                  # стоп в строке базы движка
 # поправка §13.73.4 (В-171, TK-677): составная ось `split` — вход двумя частями; TK674_SPLIT=1 добавляет ось (файлы с суффиксом «s»)
 SPLIT = os.environ.get("TK674_SPLIT") == "1"
@@ -63,6 +69,10 @@ def nb_idx(name, vals, i):
     """Индексы соседей значения i оси на шаг (плато (г)): у обычной оси — i ± 1, у составной оси split — по SPLIT_NB."""
     if name == "split":
         return [vals.index(x) for x in SPLIT_NB[vals[i]] if x in vals]
+    if X680:
+        r = _x6().nb_idx(name, vals, i)          # ось ключа единичек TK-680: соседи — внутри своей формы (как в карте единичек)
+        if r is not None:
+            return r
     return [j for j in (i - 1, i + 1) if 0 <= j < len(vals)]
 NOTIONAL_U, MIN_LOT_USD = 500_000_000, 5.0     # `trade.rs` NOTIONAL_U; минимальная стоимость ордера Bybit (§13.50 п. 7 (з))
 
@@ -161,12 +171,25 @@ FILTERS = {
 }
 
 
-def axes(side):
+def _old_axes(side):
     out = _common(side)
     if SPLIT:
         out.append(dict(name="split", cls="entry", key="split", vals=list(SPLIT_VALS), base=SPLIT_BASE[side]))
     for name, feat, op, labels in FILTERS[side]:
         out.append(dict(name=name, cls="filter", key=feat, op=op, vals=list(labels) + ["off"], base="off"))
+    return out
+
+
+def _x6():
+    import tk674_x680 as x6          # ленивый импорт: модуль сам импортирует эти оси
+    return x6
+
+
+def axes(side):
+    """Оси карты TK-674; при TK674_X680=1 — оси, расширенные победителем набора «сетки шире», и следом активные оси единичек TK-680 (поле `x680`), по одной на имя."""
+    out = _old_axes(side)
+    if X680:
+        out = _x6().merge_axes(side, out)
     return out
 
 
@@ -177,6 +200,10 @@ def axis_map(side):
 def compat(side, a, b):
     """(совместимы, причина) для пары осей; пары, в которых часть значений нельзя, отфильтровываются по клеткам (`cell_ok`)."""
     ca, cb = a["cls"], b["cls"]
+    if X680 and (a.get("x680") or b.get("x680")):
+        r = _x6().compat(side, a, b)             # запреты пар с новой осью (§13.73.7); None — дальше прежние правила
+        if r is not None:
+            return r
     if {a["name"], b["name"]} == {"ek", "mk"}:
         return False, "ek несовместим с mk (params.rs)"
     if {a["name"], b["name"]} == {"split", "e2"}:
@@ -229,6 +256,9 @@ def cell_assign(side, assign):
                 if SPLIT_VALS[v][k] != SPLIT_LINE[side][k]:
                     patch[k] = SPLIT_VALS[v][k]
             continue
+        if a.get("patches") is not None:                # ось ключа единичек TK-680 (X680): заплатка метки, у составной оси — несколько ключей
+            patch.update(a["patches"][v])
+            continue
         if a["base"] is None or v != a["base"]:
             patch[a["key"]] = v
     if REBASE and "s" not in assign:
@@ -244,6 +274,10 @@ def cell_assign(side, assign):
         for k in POOL_KEYS:
             if k in patch and float(patch[k]) < DEFAULTS_BASE(side)[k]:
                 return patch, filt, False, "ослабленный пул (%s) не покрыт строками таблицы признаков" % k
+    if X680 and any(am[n].get("x680") for n in assign):
+        why = _x6().cell_check(side, am, assign)         # две оси требуют разные значения одного ключа движка
+        if why:
+            return patch, filt, False, why
     return patch, filt, True, ""
 
 
@@ -265,20 +299,36 @@ def sigkey(patch):
     return tuple(sorted((k, num(patch[k])) for k in SIG_KEYS if k in patch))
 
 
-def pair_grids(side):
-    """{(A, B): {vals, cells: {(i, j): (patch, filt, ok, reason)}}} по всем совместимым парам осей; плюс список пропущенных пар с причиной."""
+def pair_grid(side, a, b):
+    """Сетка пары осей: {vals: (значения a, значения b), cells: {(i, j): (patch, filt, ok, reason)}}."""
+    cells = {}
+    for (i, va), (j, vb) in itertools.product(enumerate(a["vals"]), enumerate(b["vals"])):
+        cells[(i, j)] = cell_assign(side, {a["name"]: va, b["name"]: vb})
+    return dict(vals=(list(a["vals"]), list(b["vals"])), cells=cells)
+
+
+def pair_grids(side, only=None):
+    """{(A, B): {vals, cells: {(i, j): (patch, filt, ok, reason)}}} по всем совместимым парам осей; плюс список пропущенных пар с причиной.
+    TK674_X680=1: только пары, где есть новая ось (старые × старые — карта TK-674, не пересчитываются); only — множество пар (A, B), сетки строятся лишь для них."""
     ax = axes(side)
     grids, skipped = {}, []
     for a, b in itertools.combinations(ax, 2):
+        if X680 and not (a.get("x680") or b.get("x680")):
+            continue
         ok, why = compat(side, a, b)
         if not ok:
             skipped.append((a["name"], b["name"], why))
             continue
-        cells = {}
-        for (i, va), (j, vb) in itertools.product(enumerate(a["vals"]), enumerate(b["vals"])):
-            cells[(i, j)] = cell_assign(side, {a["name"]: va, b["name"]: vb})
-        grids[(a["name"], b["name"])] = dict(vals=(list(a["vals"]), list(b["vals"])), cells=cells)
+        if only is not None and (a["name"], b["name"]) not in only:
+            continue
+        grids[(a["name"], b["name"])] = pair_grid(side, a, b)
     return grids, skipped
+
+
+def cell_ckey(side, patch, filt, thr):
+    """Канонический ключ клетки: база стороны + заплатка + смысл составного фильтра (thr — {ось: {метка: (признак, знак, порог)}})."""
+    ft = [(thr[n][lab][0], thr[n][lab][1], thr[n][lab][2]) for n, lab in filt] if filt else []
+    return canon(BASE_LINE(side) + (" " + patch_str(patch) if patch else ""), ft)
 
 
 def cell_id(patch, filt):
