@@ -549,6 +549,8 @@ pub fn run(
         Some(t)
     };
     fs::create_dir_all(out)?;
+    // TK-683: время этапов вызова — в журнал (на результат не влияет)
+    let t_parsed = t0.elapsed().as_secs_f64();
     // задания фазы 1: различные (SigCfg, сторона)
     let mut job_idx: HashMap<(SigCfg, Side), usize> = HashMap::new();
     let mut jobs: Vec<(SigCfg, Side)> = Vec::new();
@@ -566,6 +568,7 @@ pub fn run(
         .map(|o| TickStore::open(&o).map(Arc::new))
         .transpose()
         .context("склад сделок")?;
+    let t_store = t0.elapsed().as_secs_f64();
     let mut src = ZipSrc::new(trades.to_path_buf(), cap_gb << 30);
     if let Some(st) = &store {
         src = src.with_store(Arc::clone(st));
@@ -585,6 +588,7 @@ pub fn run(
         .map(|o| SigCache::open(&o, cache, trades, &names))
         .transpose()
         .context("кэш сигналов")?;
+    let t_sc_open = t0.elapsed().as_secs_f64();
     let keys: Vec<Option<String>> = jobs
         .iter()
         .map(|(cfg, side)| sigcache.as_ref().and_then(|c| c.key(cfg, *side)))
@@ -602,6 +606,10 @@ pub fn run(
             None => todo.push(j),
         }
     }
+    let t_sc_read = t0.elapsed().as_secs_f64();
+    eprintln!(
+        "этапы до фазы 1, с от старта: варианты и таблица {t_parsed:.2}, склад сделок {t_store:.2}, кэш сигналов открыт {t_sc_open:.2}, прочитан {t_sc_read:.2}"
+    );
     if !todo.is_empty() {
         let tjobs: Vec<(SigCfg, Side)> = todo.iter().map(|&j| jobs[j].clone()).collect();
         let idx: Vec<usize> = (0..syms.len()).collect();
@@ -721,6 +729,15 @@ pub fn run(
     }
     let done = std::sync::atomic::AtomicUsize::new(0);
     let total = tasks.len();
+    let (run_ns, write_ns) = (
+        std::sync::atomic::AtomicU64::new(0),
+        std::sync::atomic::AtomicU64::new(0),
+    );
+    let t_ph2 = std::time::Instant::now();
+    let warm_ns = (
+        src.load_ns.load(std::sync::atomic::Ordering::Relaxed),
+        src.wait_ns.load(std::sync::atomic::Ordering::Relaxed),
+    );
     // TK-683: `P42_WIDE=<рабочих фазы 2>` (не меньше `threads`): сутки, не помещающиеся в `--cap-gb`, каждая волна вариантов разбирает
     // заново — чем шире волна, тем меньше разборов; считают одновременно по-прежнему `threads` рабочих. На результат не влияет.
     let wide = match std::env::var("P42_WIDE") {
@@ -764,6 +781,7 @@ pub fn run(
                 _ => &sigs[j],
             };
             // `P42_SIGSX_ONLY` (§13.18, v20): сетка суток длиннее окна сделок (COUNT_DAYS), портфель не считается — только сигналы и дампы.
+            let t_run = std::time::Instant::now();
             let r = if std::env::var_os("P42_SIGSX_ONLY").is_some() {
                 TickResult::empty()
             } else {
@@ -771,7 +789,16 @@ pub fn run(
                     &syms, port_sigs, side, &p.exit, &p.port, &src, p.mk, p.ek, p.xb,
                 )
             };
+            run_ns.fetch_add(
+                t_run.elapsed().as_nanos() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            let t_write = std::time::Instant::now();
             write_outputs(&dir, &syms, side, &r)?;
+            write_ns.fetch_add(
+                t_write.elapsed().as_nanos() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
             if p.exit.tape_entry() {
                 write_entry_rej(&dir, &syms, side, &r)?;
             }
@@ -914,6 +941,18 @@ pub fn run(
         ls.files,
         ls.errors
     );
+    {
+        use std::sync::atomic::Ordering::Relaxed;
+        let s = |ns: u64| ns as f64 / 1e9;
+        eprintln!(
+            "фаза 2: стена {:.1} с; по потокам, с: варианты (портфель и исходы, с сутками) {:.1}, из них разбор суток {:.1} и ожидание суток и разрешения {:.1}; запись основных файлов {:.1}",
+            t_ph2.elapsed().as_secs_f64(),
+            s(run_ns.load(Relaxed)),
+            s(src.load_ns.load(Relaxed) - warm_ns.0),
+            s(src.wait_ns.load(Relaxed) - warm_ns.1),
+            s(write_ns.load(Relaxed))
+        );
+    }
     if src.evicted() {
         eprintln!(
             "сутки сверх памяти: возвращено без разбора {}",

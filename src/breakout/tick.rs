@@ -349,6 +349,9 @@ pub struct ZipSrc {
     /// TK-683: каталог файлов ступеней НОД суток (`<каталог>/<МОНЕТА>/<день>-<размер>-<mtime zip>.gcd`): тик монеты (`tick_at`) берёт НОД
     /// прежних суток, не разбирая их сделки. Имя файла несёт отпечаток zip — другой zip даёт другой файл.
     gcd_dir: Option<PathBuf>,
+    /// TK-683: время потоков в `day`, нс: разбор суток (загрузчик) и ожидание чужого разбора (вместе с ожиданием разрешения на счёт).
+    pub load_ns: AtomicU64,
+    pub wait_ns: AtomicU64,
 }
 
 impl ZipSrc {
@@ -368,6 +371,8 @@ impl ZipSrc {
             stat: Mutex::new(LoadStat::default()),
             store: None,
             gcd_dir: None,
+            load_ns: AtomicU64::new(0),
+            wait_ns: AtomicU64::new(0),
         }
     }
 
@@ -562,23 +567,29 @@ impl TradeSrc for ZipSrc {
             Some(v) => v.clone(),
             None => {
                 // ожидающий чужой загрузки разрешение на счёт не держит (`P42_WIDE`); загрузчик берёт его на время разбора
+                let t0 = std::time::Instant::now();
                 let paused = super::pause(day);
-                slot.get_or_init(|| {
-                    paused.work(|| {
-                        fresh = true;
-                        match self.load_day(sym, day, false) {
-                            Ok(v) => v.map(|d| Arc::new(d.ticks)),
-                            Err(e) => {
-                                eprintln!("ОШИБКА загрузки {sym} день {day}: {e:#}");
-                                if let Ok(mut g) = self.stat.lock() {
-                                    g.errors += 1;
+                let v = slot
+                    .get_or_init(|| {
+                        paused.work(|| {
+                            fresh = true;
+                            match self.load_day(sym, day, false) {
+                                Ok(v) => v.map(|d| Arc::new(d.ticks)),
+                                Err(e) => {
+                                    eprintln!("ОШИБКА загрузки {sym} день {day}: {e:#}");
+                                    if let Ok(mut g) = self.stat.lock() {
+                                        g.errors += 1;
+                                    }
+                                    None
                                 }
-                                None
                             }
-                        }
+                        })
                     })
-                })
-                .clone()
+                    .clone();
+                drop(paused);
+                let ns = t0.elapsed().as_nanos() as u64;
+                if fresh { &self.load_ns } else { &self.wait_ns }.fetch_add(ns, Ordering::Relaxed);
+                v
             }
         };
         if !fresh {
