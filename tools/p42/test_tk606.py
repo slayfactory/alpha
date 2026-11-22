@@ -1,5 +1,5 @@
 """TK-606: данные вкладки «Признаки» (ml_features.json) — схема, ссылки на источники, повторы имён, цифры только у готовых наборов.
-TK-678: наборы параметров движка по темам (94 ключа), «База» / «Перебор» и сквозной номер n у каждого признака, «что значит» — не больше 12 слов."""
+TK-678: наборы параметров движка по темам (99 ключей), «База» / «Перебор» и сквозной номер n у каждого признака, «что значит» — не больше 12 слов."""
 import json
 import os
 import sys
@@ -33,19 +33,19 @@ def test_schema_and_semantics():
 def test_counts_and_known_names():
     f = load("ml_features.json")
     n = {s["id"]: sum(len(g["features"]) for g in s["groups"]) for s in f["sets"]}
-    assert n == {"pcoins": 4, "plevel": 8, "pfresh": 11, "pentry": 8, "psplit": 4, "pstop": 13, "pvol": 9, "pexit": 21, "pport": 9, "pexec": 7,
-                 "f12": 12, "flow": 30, "setup": 47, "toxic": 13, "breakability": 6, "history": 4, "impulse": 6, "coin": 10, "tcount": 9, "windows": 20}, n
+    assert n == {"pcoins": 5, "plevel": 8, "pfresh": 11, "pentry": 12, "psplit": 4, "pstop": 13, "pvol": 9, "pexit": 21, "pport": 9, "pexec": 7,
+                 "f12": 12, "flow": 30, "setup": 47, "toxic": 13, "breakability": 6, "history": 4, "impulse": 6, "coin": 10, "tcount": 9, "windows": 20, "fast": 50}, n
     names = {x["name"] for s in f["sets"] for g in s["groups"] for x in g["features"]}
     assert {"lturn24", "bd_thin30", "mk60_1800", "bk60", "SHARP"} <= names
 
 
 def test_engine_keys_base_and_search():
-    """TK-678: 94 ключа движка в наборах p*, ключи master-версии params.rs — все на странице; оси перебора среди столбцов таблицы — ровно пять."""
+    """TK-678: 99 ключей движка в наборах p*, ключи master-версии params.rs — все на странице; оси перебора среди столбцов таблицы — ровно пять."""
     import re
     f = load("ml_features.json")
     feats = [(s, x) for s in f["sets"] for g in s["groups"] for x in g["features"]]
     eng = {x["name"] for s, x in feats if x["src"] == ["engine"]}
-    assert len(eng) == 94 and all(s["id"].startswith("p") and s["numbers"] == [] for s, x in feats if x["src"] == ["engine"])
+    assert len(eng) == 99 and all(s["id"].startswith("p") and s["numbers"] == [] for s, x in feats if x["src"] == ["engine"])
     rs = open(os.path.join(HERE, "..", "..", "src", "breakout", "params.rs"), encoding="utf-8").read()
     keys = set(re.findall(r'^\s+"([a-z0-9_]+)" =>', rs, re.M)) - {"lo", "hi"}    # значения ключа fo
     assert len(keys) >= 82 and keys <= eng, sorted(keys - eng)
@@ -54,7 +54,7 @@ def test_engine_keys_base_and_search():
     hist = next(s for s in f["sets"] if s["id"] == "history")
     assert {"ok10_d7", "ok10_d14"} <= {x["name"] for g in hist["groups"] for x in g["features"]}
     assert all(x["search"] == "нет" for g in hist["groups"] for x in g["features"])
-    assert sorted(x["n"] for s, x in feats) == list(range(1, 252))
+    assert sorted(x["n"] for s, x in feats) == list(range(1, 307))
     bad = [x["name"] for s, x in feats if len(x["what"].split()) > 12 or re.search(r"TK-|docs/|бп|ключ пула|столбец таблицы", x["what"] + x["base"] + x["search"])]
     assert not bad, bad
 
