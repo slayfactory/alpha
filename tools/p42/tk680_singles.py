@@ -20,7 +20,7 @@ import tk680_axes as a80  # noqa: E402
 COLS_FILE = os.path.join(HERE, "tk680_cols.json")     # имена столбцов покрытия (docs/findings/p42-titration-coverage-2026-11-22/cols.json)
 ENGNAME = {"L": "long", "S": "short"}
 OPS = {"le": "<=", "ge": ">="}
-THR_NAME = {"hist": "thr680h.json", "grid": "thr680g.json", "ctx": "thr680c.json"}.get(a80.SET, "thr680.json")     # пороги набора «история пробоев» (§13.73.8) — свой файл, заморозка thr680.json не трогается
+THR_NAME = {"hist": "thr680h.json", "grid": "thr680g.json", "ctx": "thr680c.json", "t681": "thr680t.json"}.get(a80.SET, "thr680.json")     # пороги набора «история пробоев» (§13.73.8) — свой файл, заморозка thr680.json не трогается
 
 
 def cosig15(sym, ms):
@@ -41,7 +41,31 @@ def coverage_cols():
         return list(a80.HIST_COLS)
     if a80.SET == "ctx":
         return list(a80.CTX_COLS)
+    if a80.SET == "t681":
+        return list(a80.FAST_NAMES)
     return json.load(open(COLS_FILE, encoding="utf-8"))
+
+
+def fast_join(side, df):
+    """Набор t681: к строкам df (win, row_id, sym, meta_sig_ms) — 50 столбцов FAST из `fast.csv` TK-681; ключ окно + row_id, строки сверяются по монете и sig_ms; строка без пары — ошибка."""
+    import pandas as pd
+    parts = []
+    for w in a80.T681_WINS:
+        d = a80.T681_FASTDIR % (w, ENGNAME[side])
+        key = pd.read_csv(d + "/eps-key.csv", usecols=["row_id", "sym", "sig_ms"])
+        fc = pd.read_csv(d + "/fast.csv")
+        if len(key) != len(fc) or not (key["sym"].to_numpy() == fc["sym"].to_numpy()).all() or not (key["sig_ms"].to_numpy() == fc["sig_ms"].to_numpy()).all():
+            raise SystemExit("FAST %s %s: fast.csv и eps-key.csv не совпадают построчно" % (w, side))
+        if list(fc.columns[2:]) != a80.FAST_NAMES:
+            raise SystemExit("FAST %s %s: столбцы fast.csv ≠ списку поправки" % (w, side))
+        fc = fc.rename(columns={"sym": "f_sym", "sig_ms": "f_ms"})
+        fc.insert(0, "row_id", key["row_id"].to_numpy())
+        fc.insert(0, "win", w)
+        parts.append(fc)
+    m = df.merge(pd.concat(parts, ignore_index=True), on=["win", "row_id"], how="left", validate="one_to_one")
+    if m["f_sym"].isna().any() or not (m["f_sym"].to_numpy() == m["sym"].to_numpy()).all() or not (m["f_ms"].to_numpy() == m["meta_sig_ms"].to_numpy()).all():
+        raise SystemExit("FAST %s: строки кандидатов не совпадают с fast.csv (монета / sig_ms / нет пары)" % side)
+    return m.drop(columns=["f_sym", "f_ms"])
 
 
 def add_columns(side, st, tabs):
@@ -54,6 +78,8 @@ def add_columns(side, st, tabs):
         for w in st.TRADE_WINDOWS:
             tabs[w.name]["cosig15"] = cosig15(tabs[w.name]["sym"], tabs[w.name]["ms"])
     extra = set()
+    if a80.SET == "t681":
+        have |= set(a80.FAST_NAMES)
     if a80.SET == "hist":
         extra = set(pq.ParquetFile(a80.HIST_EXTRA % ENGNAME[side]).schema.names) - have
         have |= extra
@@ -63,7 +89,8 @@ def add_columns(side, st, tabs):
     absent = [name for name, src, _ in cl if not all(x in have for x in srcs(src)) and name not in tabs[st.TRADE_WINDOWS[0].name]]
     cl = [c for c in cl if c[0] not in absent]
     need = sorted({x for _, src, _ in cl for x in srcs(src) if x in have})
-    df = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["win", "sym", "meta_sig_ms", "meta_base_pass"] + [x for x in need if x not in extra])
+    fast = set(a80.FAST_NAMES) if a80.SET == "t681" else set()
+    df = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["win", "sym", "meta_sig_ms", "meta_base_pass"] + (["row_id"] if fast else []) + [x for x in need if x not in extra and x not in fast])
     if extra:                                       # ok10_d3 / d5: файл tk680_hist.py, строки в порядке таблицы TK-671 (ключ сверяется)
         ex = pd.read_parquet(a80.HIST_EXTRA % ENGNAME[side])
         if len(ex) != len(df) or not ((ex["win"].astype(str).to_numpy() == df["win"].astype(str).to_numpy()) & (ex["row_id"].to_numpy() == rid)).all():
@@ -72,6 +99,8 @@ def add_columns(side, st, tabs):
             df[x] = ex[x].to_numpy()
     df = df[df["meta_base_pass"] > 0].copy()
     df["win"], df["sym"] = df["win"].astype(str), df["sym"].astype(str)
+    if fast:
+        df = fast_join(side, df)
     df["_pri"] = (df["meta_base_pass"] != 1).astype(int)
     df = df.sort_values("_pri", kind="stable").drop_duplicates(["win", "sym", "meta_sig_ms"])
     rep = {}
@@ -169,7 +198,7 @@ def cmd_select():
                     vals.append([lab, put("%s.%s" % (cname, d), lab, {}, (cname, OPS[d], x)), x, cut])
                 if vals:
                     vals = (vals + [["off", base_ck]]) if d == "le" else ([["off", base_ck]] + vals)      # «off» рядом с самым мягким порогом
-                    axes.append(dict(axis="%s.%s" % (cname, d), kind="col", base="off", vals=vals))
+                    axes.append(dict(axis="%s.%s" % (cname, d), kind="col", base="off", vals=vals, n=int(len(fin)), n_all=int(len(allv))))
         found = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(cells), bins=bins)
         nk = sum(1 for c in cells.values() if not c["filt"])
         sigs = {tuple(tuple(x) for x in c["sig"]) for k, c in cells.items() if k not in found and c["sig"]}
@@ -208,6 +237,19 @@ def _concurrency(row):
     return best
 
 
+def _lvl_stop(row):
+    """[сдвинуто зажимом sm, вплотную] — сумма `lvl_stop_[floored,clamped]` из meta.json клетки по окнам; None, если счётчика нет (клетка считалась старым бинарём)."""
+    tot = [0, 0]
+    for d in row["extra"]["dirs"].values():
+        meta = json.load(open(os.path.join(d, "meta.json"), encoding="utf-8"))
+        v = meta.get("lvl_stop_[floored,clamped]", (meta.get(row["side_name"]) or {}).get("lvl_stop_[floored,clamped]"))
+        if v is None:
+            return None
+        tot[0] += int(v[0])
+        tot[1] += int(v[1])
+    return tot
+
+
 def _nan_keys(side):
     """{столбец: {окно: множество (монета, sig_ms) кандидатов с пустым значением}} — набор «история пробоев» (§13.73.8: пустое проходит фильтр)."""
     import numpy as np
@@ -217,7 +259,7 @@ def _nan_keys(side):
     st, r5, _, _ = t._srv()
     tabs = run.feat_tabs(side, st, r5.Uni(run.UNI), r54.episodes_h775())
     out = {}
-    for c in a80.HIST_COLS:
+    for c in a80.nan_cols():
         out[c] = {}
         for w in st.TRADE_WINDOWS:
             tab = tabs[w.name]
@@ -255,7 +297,7 @@ def cmd_map():
         lv = json.load(open(run.level_path(side), encoding="utf-8"))
         inv = run.load_invalid(side)
         base_ck = ax.base_ckey(side)
-        nank = _nan_keys(side) if a80.SET == "hist" else None
+        nank = _nan_keys(side) if a80.SET in ("hist", "t681") else None
         rows = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(lv["cells"]) + [base_ck], bins=bins)
         brow = rows[base_ck]
         bsh, busd = brow["sharpe"], brow["usd"]
@@ -286,6 +328,10 @@ def cmd_map():
                 if nank is not None and ck != base_ck and a["axis"].split(".")[0] in nank:
                     nn, nu = _nan_trades(dict(r, side_name=ENGNAME[side]), nank[a["axis"].split(".")[0]])
                     rep.update(nan_n=nn, nan_usd=nu)
+                if a["axis"].startswith("sm_") and ck != base_ck:      # §13.73.14: счётчики зажима sm (новый бинарь; клетка из БД со старым бинарём — без счётчика)
+                    lv_ = _lvl_stop(dict(r, side_name=ENGNAME[side]))
+                    if lv_ is not None:
+                        rep.update(lvl_floored=lv_[0], lvl_clamped=lv_[1])
                 if a["axis"] == "p":                   # число позиций меняет капитал под риском: маржа в работе и просадка — в долях счёта
                     nc = _concurrency(dict(r, side_name=ENGNAME[side]))
                     rep.update(conc=nc, conc_margin=nc * MARGIN_POS, conc_margin_pct=nc * MARGIN_POS / ACCOUNT * 100.0, maxdd_acct_pct=r["extra"]["maxdd"] / ACCOUNT * 100.0)
@@ -296,7 +342,9 @@ def cmd_map():
             win = run.pick(full)
             wr = run.rep_cell(win, bsh)
             active = bool(wr and wr["sharpe"] > bsh and wr["usd"] >= busd)
-            return dict(axis=a["axis"], kind=a["kind"], base=a["base"], cells=cells, guarded=len(full), winner=wr, active=active, gain=(wr["sharpe"] - bsh) if wr else None)
+            low = bool(a.get("n_all") and a["n"] / a["n_all"] < a80.COVER_MIN)       # §13.73.14: столбец определён менее чем у COVER_MIN кандидатов — активным не бывает
+            return dict(axis=a["axis"], kind=a["kind"], base=a["base"], cells=cells, guarded=len(full), winner=wr, active=active and not low, gain=(wr["sharpe"] - bsh) if wr else None,
+                        n=a.get("n"), n_all=a.get("n_all"), low_cover=low)
 
         out_axes = []
         for a in lv["axes"]:
@@ -365,6 +413,8 @@ def cmd_md(d, out=None):
         L.append("\n### Все оси (%s)\n" % sname.lower())
         for a in m["axes"]:
             note = " — активная" if a["active"] else ""
+            if a.get("n_all"):
+                note += "; определён у %d из %d кандидатов базы (%s %%)%s" % (a["n"], a["n_all"], ("%.0f" % (100.0 * a["n"] / a["n_all"])), ", активным не бывает (определён менее чем у половины)" if a.get("low_cover") else "")
             if "old_active" in a:                      # §13.73.9: вердикт по прежней сетке рядом
                 note += "; по прежней сетке — %s%s" % ("активная (%s)" % a["old_winner"] if a["old_active"] else "не активная",
                                                        ", смена — от новых соседей плато" if a["old_active"] != a["active"] else "")
@@ -378,6 +428,8 @@ def cmd_md(d, out=None):
                     lab = c["label"] + ((" (порог %s, убрано %d)" % (ax.num(c["thr"]).replace(".", ","), c["cut"])) if "thr" in c else "")
                     if "nan_n" in c:
                         lab += "; с пустым значением: %d сд., %s $" % (c["nan_n"], _f(c["nan_usd"], 0))
+                    if "lvl_floored" in c:
+                        lab += "; стоп сдвинут зажимом sm: %d сд., вплотную к входу: %d сд." % (c["lvl_floored"], c["lvl_clamped"])
                     L.append(_line(lab, c, b["sharpe"]))
             if a["axis"] == "p":
                 L.append("\nМаржа в работе (позиция 250 $, счёт 2 500 $): " + "; ".join("p = %s — одновременно до %d позиций, %d $ (%d %% счёта), просадка %s %% счёта" % (

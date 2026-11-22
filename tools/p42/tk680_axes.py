@@ -56,6 +56,8 @@ def engine_axes(side):
         return grid_axes(side)
     if SET in ("hist", "ctx"):
         return []
+    if SET == "t681":
+        return t681_axes(side)
     S = side == "S"
     out = [
         _grid("natr_p", [15, 30, 60], 30),
@@ -139,6 +141,56 @@ CTX_COLS = {"btc_mv5": [("le0.1", 10.0), ("le0.2", 20.0), ("le0.3", 30.0)], "cos
 HIST_EXTRA = "/data/p42-tk680h/hist35/%s.parquet"      # ok10_d3 / d5 (и xok10_d3 / d5) построчно к таблице TK-671 — tk680_hist.py
 
 
+# поправка §13.73.14 (TK-680, единички ключей и столбцов TK-681; бинарь 4e1fb286): набор TK680_SET=t681 (свой каталог TK674_ROOT = /data/p42-tk680t)
+T681_VOLQ = os.environ.get("TK681_VOLQ", "/data/p42-tk681/res/volq681.json")       # пороги источников волатильности (по долям отсечённых минут) и медианы
+T681_FASTDIR = "/data/p42-tk681/fast/%s-%s"                                         # fast.csv + eps-key.csv по окну и стороне (long / short)
+T681_WINS = ("wa", "wb", "wc")
+T681_NF = (1, 2, 4, 5, 6, 7, 8)                  # источники фильтра живости; код 3 = NATR 30 = база (контрольная клетка nf3)
+T681_NATR_MIN = (0.2, 0.4, 0.6)                  # пороги natr_min базового источника, по доле отсечённых минут которых берутся пороги остальных источников (volq681.json, grid[].match)
+T681_EA_MULT = (0.5, 1, 2)                       # коэффициент ea = (e базы стороны / медиана источника) × множитель; ea хранится с точностью 0,001
+T681_E_BASE = {"L": 0.3, "S": 0.15}              # зона входа базы стороны, % цены
+T681_EL = (0.02, 0.1)                            # зажим снизу при ev = 3, ea = 1 × медиана (умолчание 0,05)
+T681_EH = (0.5, 2)                               # зажим сверху (умолчание 1)
+T681_SM = (0.1, 0.2, 0.3, 0.5)                   # минимальное расстояние стопа от входа, % цены
+T681_SM_PARENT = (("sl", dict(sl=3.5)), ("cw", dict(cw=30, cl=0, ch=1000, cm=0.5)), ("nx", dict(nx=3.5)))
+FAST_NAMES = (["tfv30", "tfn30", "vpin300", "bigimb10", "bigimb30", "bigimb60", "sac10", "sac30", "sac60", "mk1_10", "mk1_30", "mk5_30", "mk5_60", "mk10_60", "kyle1m", "amih1m",
+               "kyle5m", "amih5m"] + ["acc%s%d_%d" % (k, s_, P) for s_ in (1, 5, 10, 30) for P in (60, 300) for k in ("n", "v", "dn", "dv")])
+COVER_MIN = 0.5 if SET == "t681" else 0.0       # столбец, определённый менее чем у такой доли кандидатов базы (зачётный диапазон), активным не бывает — только описание
+
+
+def nan_cols():
+    """Столбцы, у которых пустое значение пропускает фильтр и поэтому считается отдельно (сделки с пустым значением, их Σ $)."""
+    return list(HIST_COLS) if SET == "hist" else (list(FAST_NAMES) if SET == "t681" else [])
+
+
+def t681_volq():
+    import json
+    return json.load(open(T681_VOLQ, encoding="utf-8"))
+
+
+def t681_ea(vq, side, code, mult):
+    """Коэффициент зоны входа: ea · V[t−1] = e базы стороны на медиане источника, умноженный на `mult` (V — доля цены в %)."""
+    return round(T681_E_BASE[side] / vq["quantiles_pct"][str(code)]["q50"] * mult, 3)
+
+
+def t681_axes(side):
+    """Оси ключей TK-681 (§13.73.14): `natr_p` 5; `nf` 7 источников × 3 порога; `ev` 8 источников × 3 множителя; `el` / `eh` при ev = 3; `sm` при трёх родителях стопа."""
+    vq = t681_volq()
+    m = {g["natr_min"]: g["match"] for g in vq["grid"]}
+    out = [_grid("natr_p", [5, 15, 30, 60], 30)]
+    for k in T681_NF:
+        out.append(("nf%d" % k, [("off", {})] + [("n" + ax.num(v), dict(nf=k, natr_min=m[v][str(k)])) for v in T681_NATR_MIN], "off"))
+    out.append(("nf3", [("off", {}), ("n0.4", dict(nf=3))], "off"))                      # контроль: код 3 при пороге базы обязан дать сделки базы (same_as_base)
+    for k in range(1, 9):
+        out.append(("ev%d" % k, [("off", {})] + [("x" + ax.num(x), dict(ev=k, ea=t681_ea(vq, side, k, x))) for x in T681_EA_MULT], "off"))
+    e3 = dict(ev=3, ea=t681_ea(vq, side, 3, 1))
+    out.append(("el", [("off", {}), ("0.02", dict(e3, el=0.02)), ("0.05", dict(e3)), ("0.1", dict(e3, el=0.1))], "off"))
+    out.append(("eh", [("off", {}), ("0.5", dict(e3, eh=0.5)), ("1", dict(e3)), ("2", dict(e3, eh=2))], "off"))
+    for name, par in T681_SM_PARENT:
+        out.append(("sm_" + name, [("off", {}), ("sm0", dict(par))] + [("sm" + ax.num(v), dict(par, sm=v)) for v in T681_SM], "off"))
+    return out
+
+
 def horizon_skip(c):
     h = HORIZON.get(c)
     if h is None and c not in HORIZON_NONE:
@@ -158,6 +210,8 @@ def column_list(coverage_cols):
         return []
     if SET == "ctx":
         return [(c, c, ("le",)) for c in CTX_COLS]
+    if SET == "t681":
+        return [(c, c, ("le", "ge")) for c in FAST_NAMES]
     out = []
     for c in coverage_cols:
         if c in COL_SKIP or horizon_skip(c):
