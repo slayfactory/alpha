@@ -634,11 +634,21 @@ pub fn candidates_fg(
     };
     let dmax0 = (cfg.e_pm * 1000).min(cfg.track_pm * 1000);
     let natr_min = cfg.natr_min_pm * 1000;
+    // TK-683: пороги, зависящие только от цены версии уровня, считаются при смене версии, а не на каждой минуте:
+    // (нижняя граница постоянной зоны входа, порог возврата `ban`, порог прокола `pk`)
+    let marks = |lp: i64| {
+        (
+            lp - mul_div(lp.abs(), dmax0 + 1, SCALE) as i64 - 1,
+            lp - mul_div(lp.abs(), cfg.f_pm, 100_000) as i64,
+            lp + mul_div(lp.abs(), cfg.lv.tau_pm, 100_000) as i64,
+        )
+    };
     for (li, lv) in levels.iter().enumerate() {
         let end = (lv.end as usize).min(N_MIN);
         let mut seg = 0;
         let mut price = lv.segs[0].1;
         let mut far = lv.far_edge(0, s);
+        let (mut zone_lo0, mut back, mut pk_thr) = marks(s * price);
         let mut pend: Option<usize> = None;
         let mut forbidden = false;
         let mut pk_dead = false;
@@ -649,6 +659,7 @@ pub fn candidates_fg(
                 seg += 1;
                 price = lv.segs[seg].1;
                 far = lv.far_edge(seg, s);
+                (zone_lo0, back, pk_thr) = marks(s * price);
             }
             if sym.o[t] == 0 {
                 continue;
@@ -660,13 +671,14 @@ pub fn candidates_fg(
                 (-sym.l[t], -sym.h[t])
             };
             // зона входа минуты: постоянная или от волатильности закрытой минутки `t−1` (`ev`); нет значения — кандидата нет
-            let dmax = match evol {
-                None => Some(dmax0),
-                Some(v) if t > 0 => cfg.zone_e8(i64::from(v[t - 1])),
+            let zone_lo = match evol {
+                None => Some(zone_lo0),
+                Some(v) if t > 0 => cfg
+                    .zone_e8(i64::from(v[t - 1]))
+                    .map(|dmax| lp - mul_div(lp.abs(), dmax + 1, SCALE) as i64 - 1),
                 Some(_) => None,
             };
-            if let (true, Some(dmax)) = (t >= START_MIN && !forbidden && lo < lp, dmax) {
-                let zone_lo = lp - mul_div(lp.abs(), dmax + 1, SCALE) as i64 - 1;
+            if let (true, Some(zone_lo)) = (t >= START_MIN && !forbidden && lo < lp, zone_lo) {
                 let nv = i64::from(live[t - 1]);
                 if hi >= zone_lo
                     && nv >= 0
@@ -708,18 +720,15 @@ pub fn candidates_fg(
             if hi > lp && pend.is_none() {
                 pend = Some(t);
             }
-            if cfg.ban && pend.is_some() {
-                let back = lp - mul_div(lp.abs(), cfg.f_pm, 100_000) as i64;
-                if s * sym.c[t] < back {
-                    if cfg.fg_m > 0 && susp.is_none() {
-                        susp = Some(t);
-                        fgc[2] += 1;
-                    }
-                    forbidden = true;
+            if cfg.ban && pend.is_some() && s * sym.c[t] < back {
+                if cfg.fg_m > 0 && susp.is_none() {
+                    susp = Some(t);
+                    fgc[2] += 1;
                 }
+                forbidden = true;
             }
             // §13.11 (`pk`): прокол цены версии больше чем на τ убивает уровень навсегда, со следующей минуты
-            if cfg.lv.pk && !pk_dead && hi > lp + mul_div(lp.abs(), cfg.lv.tau_pm, 100_000) as i64 {
+            if cfg.lv.pk && !pk_dead && hi > pk_thr {
                 pk_dead = true;
                 if !forbidden {
                     PK_MINUTE_KILLED.fetch_add(1, Ordering::Relaxed);
