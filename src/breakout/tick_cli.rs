@@ -731,7 +731,7 @@ pub fn run(
                 meta["filter_[cands,dropped,no_key,no_value]"] =
                     serde_json::json!([st.cands, st.dropped, st.no_key, st.no_value]);
             }
-            if p.exit.e2_pm > 0 {
+            if p.exit.split() {
                 meta["lot2_[now,later,cancelled,rejected]"] = serde_json::json!(r.lot2);
             }
             if p.ek > 0 {
