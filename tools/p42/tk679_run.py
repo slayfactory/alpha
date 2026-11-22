@@ -23,6 +23,7 @@ BIN = ROOT + "/bin/alpha-tk679"
 m.BIN = BIN
 say = t.say
 ENG = m.ENGNAME
+STOP = {"L": 3, "S": 4}                         # база' PS-955: стоп лонга 3 %, шорта 4 %
 PS = (3, 2, 1)
 PRS = (0, 1, 2, 3)
 PWS = (0, 1000, 5000, 60000)
@@ -31,13 +32,13 @@ PRIO = "prio_[windows,multi,order_changed,late_fill,late_rej,same_ms_moved]"
 REJ = "rej_[consumed,busy,coin_pause,global_pause,cap,no_outcome]"
 
 
-def rows():
-    """Строки прохода: имя → правка базы стороны (ключи портфеля: один проход сигналов на сторону)."""
+def rows(side):
+    """Строки прохода: имя → правка базы' стороны (ключи портфеля и стоп: один проход сигналов на сторону)."""
     out = []
     for p in PS:
         for pw in PWS:
             for pr in PRS:
-                patch = {}
+                patch = {"s": STOP[side]}
                 if p != 3:
                     patch["p"] = p
                 if pr:
@@ -75,9 +76,9 @@ def cmd_touch(a):
     st, r5, _, _ = t._srv()
     m._bin()
     u = r5.Uni("h775")
-    rws = rows()
     res, cost = {}, {}
     for side in a.sides.split(","):
+        rws = rows(side)
         acc = {name: dict(p=p, pr=pr, pw=pw, trades=0, cap=0, prio=[0] * 6, d_ctrl=0, d_base=0) for name, p, pr, pw, _ in rws}
         secs = 0.0
         for w in st.TRADE_WINDOWS:
@@ -102,7 +103,7 @@ def cmd_touch(a):
         res[side] = acc
         cost[side] = dict(secs=secs, variants=len(rws))
     json.dump(dict(touch=res, cost=cost), open(t.q("res", "touch679.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    lines = ["# TK-679: приоритет кандидатов — сколько сделок задето (h775, 3 окна, измерено; деньги не читались)", "",
+    lines = ["# TK-679: приоритет кандидатов — сколько сделок задето (h775, 3 окна, база' PS-955: стоп лонга 3 %, шорта 4 %; измерено; деньги не читались)", "",
              "«≠ контроль» — сделок (ключ: монета, уровень, время сигнала, время входа), которых нет в одной из двух строк: эта и строка с прежним порядком",
              "(`pr=0`) при том же окне и том же `p`; «≠ без приоритета» — то же против строки `pr=0 pw=0` с тем же `p`.", ""]
     for side in res:
