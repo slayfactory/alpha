@@ -9,7 +9,7 @@ import itertools
 import os
 import re
 
-SIDES = ("L", "S")
+SIDES = tuple(os.environ.get("TK674_SIDES", "LS"))    # одна сторона на процесс — TK674_SIDES=L | S (стадия cells уровней идёт двумя процессами)
 FV_PASS = 0.5
 
 # значения по умолчанию движка (`Params::base()`, src/breakout/params.rs) — ключ с таким значением в канонический ключ не входит

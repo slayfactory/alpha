@@ -9,7 +9,14 @@ LOG=/data/p42-tk674/log/chain${TK674_REBASE:+b}${TK674_LEVEL:-}.log
 stage() { echo "== $(date -u +%FT%TZ) $*" >> "$LOG"; "$PY" tk674_run.py "$@" >> "$LOG" 2>&1; }
 if [ "${TK674_LEVEL:-2}" -gt 2 ]; then stage ftab; fi
 stage validate
-stage cells
+if [ "${TK674_LEVEL:-2}" -gt 2 ]; then                  # уровни: стороны двумя процессами (движок по 2 потока)
+  echo "== $(date -u +%FT%TZ) cells L | S" >> "$LOG"
+  TK674_SIDES=L "$PY" tk674_run.py cells >> "$LOG.L" 2>&1 & pl=$!
+  TK674_SIDES=S "$PY" tk674_run.py cells >> "$LOG.S" 2>&1 & ps=$!
+  wait $pl; wait $ps
+else
+  stage cells
+fi
 stage tables --entry "$ENTRY"
 stage ccheck
 if [ "${TK674_LEVEL:-2}" -gt 2 ]; then "$PY" tk674_level.py map "${TK674_LEVEL}" >> "$LOG" 2>&1; else stage map; fi
