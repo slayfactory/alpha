@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """П-42, TK-679: приоритет кандидатов (ключи движка `pr`, `pw`) — гейты нового бинаря и счётчики «сколько сделок задето». Клетки карты считает `tk674_run` (TK-674).
   python3 tk679_run.py gates   — G-bin, G-base (6 строк баз байт в байт), md5 бинаря → равные (res/eqbins674.json)
+  python3 tk679_run.py cluster — §13.75: кластеры сигналов без потолка позиций (строки p100000r0w0, p3r0w0, free шага 0; `tk679_cluster.py`) → out/cluster679.md
   python3 tk679_run.py touch   — проход строк оси при p = 1, 2, 3; таблица счётчиков: окна, смены порядка, входы после окна, сделки, отличные от строки
                                  без приоритета с тем же p (ключ сделки: монета, уровень, время сигнала, время входа)
 Из вывода клеток читаются только счётчики `meta.json` и ключ сделки; столбцы денег не читаются и не печатаются (клетки — после предрегистрации, в TK-674)."""
@@ -128,14 +129,22 @@ def cmd_touch(a):
     say("\n".join(lines))
 
 
+def cmd_cluster(a):
+    """§13.75 (PS-967): разбор кластеров сигналов по готовым строкам шага 0; движок не запускается."""
+    import tk679_cluster as cl
+    say(cl.run(ROOT, a.sides.split(","), t.q))
+
+
 def main():
     ap = argparse.ArgumentParser()
     sp = ap.add_subparsers(dest="cmd", required=True)
     sp.add_parser("gates")
     r = sp.add_parser("touch")
     r.add_argument("--sides", default="L,S")
+    r = sp.add_parser("cluster")
+    r.add_argument("--sides", default="L,S")
     a = ap.parse_args()
-    {"gates": cmd_gates, "touch": cmd_touch}[a.cmd](a)
+    {"gates": cmd_gates, "touch": cmd_touch, "cluster": cmd_cluster}[a.cmd](a)
 
 
 if __name__ == "__main__":
