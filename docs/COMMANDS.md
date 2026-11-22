@@ -390,6 +390,7 @@ sudo bash -c 'set -a; . /etc/alpha/bybit.env; set +a; /opt/alpha/alpha-collector
   (жёсткие ссылки сохраняются), сверка (число файлов/ссылок, байты, повторный `rsync -n`, sha256 выборки), `--delete` только после
   сверки; отказывает на защищённых каталогах и на занятых (запущенный юнит / процесс). Запуск только через `systemd-run`.
   Манифест 18.11 — `docs/findings/srv-offload-2026-11-18.md` (каталог → путь на боксе `/home/offload-srv-2026-11-18/<каталог>`).
+- **Подкаталоги и `/root`, часть оставить (TK-675, 22.11):** `tools/srv-offload-paths.py spec.json --manifest M.jsonl [--preflight] [--delete]` — по очереди, как выше, плюс `exclude`; перед переносом сырья — `--preflight` (симлинки окон счёта на сырьё). Манифест — `docs/findings/srv-offload-2026-11-22.md` (путь → `/home/offload-srv-2026-11-22/<путь>`).
 
 ## VPS София — диск (TK-075)
 
