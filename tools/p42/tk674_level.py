@@ -29,13 +29,20 @@ def axis_combos(side, n):
     return out
 
 
+def level_vals(side, a):
+    """Значения оси в сетках уровней: при базе стопа ≤ 4 % стоп выше базы стороны не считается (охрану (д) не проходит по построению, §13.73.3)."""
+    if ax.REBASE and a["name"] == "s":
+        return [v for v in a["vals"] if v <= ax.BASE_STOP[side]]
+    return a["vals"]
+
+
 def combo_cells(side, names, thr, cells=None, only_all_moved=False):
     """Клетки комбинации осей → {ckey: клетка}; thr — {ось: {метка: (признак, знак, порог)}} из res/thr674.json.
     only_all_moved — только позиции, где каждая ось сдвинута с базы (остальные позиции — клетки комбинаций меньшего уровня)."""
     amap = ax.axis_map(side)
     cells = {} if cells is None else cells
     base_line = ax.BASE_LINE(side)
-    vals = [amap[n]["vals"] for n in names]
+    vals = [level_vals(side, amap[n]) for n in names]
     for vs in itertools.product(*vals):
         if only_all_moved and any(v == amap[n]["base"] for n, v in zip(names, vs)):
             continue
@@ -147,7 +154,7 @@ def combo_grid(side, names, thr):
     """{позиция (i, j, …): канонический ключ | None} комбинации осей и индексы базы по осям (None — у оси нет значения базы)."""
     amap = ax.axis_map(side)
     base_line = ax.BASE_LINE(side)
-    vals = [amap[n]["vals"] for n in names]
+    vals = [level_vals(side, amap[n]) for n in names]
     grid = {}
     for pos in itertools.product(*[range(len(v)) for v in vals]):
         patch, filt, ok, why = ax.cell_assign(side, {n: vals[d][i] for d, (n, i) in enumerate(zip(names, pos))})
