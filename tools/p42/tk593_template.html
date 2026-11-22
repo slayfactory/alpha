@@ -169,6 +169,10 @@ section.ft-set{margin-top:22px}
 .ft tr.hit td{background:#eff6ff}
 .ft tr.hit td.no{color:var(--accent);font-weight:650;box-shadow:inset 3px 0 0 var(--accent)}
 .ft td.base,.ft td.srch{font-size:13px;overflow-wrap:anywhere}
+.ft td.rel,.ft td.st{font-size:13px;overflow-wrap:anywhere}
+.ft td.rel a{color:var(--accent);text-decoration:none;cursor:pointer;font-variant-numeric:tabular-nums}
+.ft td.rel a:hover{text-decoration:underline}
+.ft td.st{color:var(--mfg)}
 .ft tr.grp td{background:var(--muted);border-bottom:0;padding:6px 12px;font-weight:600;font-size:12.5px}
 .ft tr.grp+tr td{border-top:0}
 @media(max-width:640px){
@@ -183,13 +187,15 @@ section.ft-set{margin-top:22px}
 .ft,.ft tbody{display:block}
 .ft thead{display:none}
 .ft tr{display:grid;grid-template-columns:auto 1fr;gap:3px 8px;padding:10px 0;border-bottom:1px solid var(--border)}
-.ft td.what,.ft td.base,.ft td.srch{grid-column:1/-1}
-.ft td.base:empty,.ft td.srch:empty{display:none}
+.ft td.what,.ft td.base,.ft td.srch,.ft td.rel,.ft td.st{grid-column:1/-1}
+.ft td.base:empty,.ft td.srch:empty,.ft td.rel:empty,.ft td.st:empty{display:none}
 .ft tr.hit td.no{box-shadow:none}
 .ft tr:last-child{border-bottom:0}
 .ft td,.ft td:first-child{padding:0;border:0;min-width:0;max-width:none;width:auto;white-space:normal}
 .ft td.base::before{content:"База: ";color:var(--mfg)}
 .ft td.srch::before{content:"Перебор: ";color:var(--mfg)}
+.ft td.rel::before{content:"Связан с №: ";color:var(--mfg)}
+.ft td.st::before{content:"Статус: ";color:var(--mfg)}
 .ft tr.grp{display:block;padding:0;border:0;margin-top:6px}
 .ft tr.grp td{padding:6px 10px;border-radius:6px}
 }
@@ -1126,21 +1132,24 @@ function ftRow(f, sid, cols) {
   const tds = [no, h('td', {class: 'nm', 'data-f': 'name'}, [h('code', {}, f.name.replace(/_bp$/, ''))]), h('td', {class: 'what', 'data-f': 'what'}, f.what)];
   if (cols.base) tds.push(h('td', {class: 'base', 'data-f': 'base'}, ftVal(f.base, '—')));
   if (cols.search) tds.push(h('td', {class: 'srch', 'data-f': 'search'}, ftVal(f.search, 'нет')));
+  // TK-682: «Связан с №» — номера-ссылки на строки (в том числе в других наборах); статус — только у набора, где он есть
+  if (cols.rel) tds.push(h('td', {class: 'rel', 'data-f': 'rel'}, (f.rel || []).flatMap((k, i) => { const a = h('a', {'data-rel': k, href: `#features/${FT_BY_N.get(k)}/${k}`}, String(k)); a.onclick = ev => { ev.preventDefault(); ST.ft = FT_BY_N.get(k); ST.fn = k; setHash(); ftGo(); }; return i ? [', ', a] : [a]; })));
+  if (cols.st) tds.push(h('td', {class: 'st', 'data-f': 'st'}, f.st || ''));
   return h('tr', {'data-feature': f.name, 'data-n': f.n, id: 'ft-n-' + f.n}, tds);
 }
 function ftCard(s) {
   const feats = s.groups.flatMap(g => g.features);
   // колонка без единого значения в наборе не рисуется
-  const cols = {base: feats.some(f => f.base !== '—'), search: feats.some(f => f.search !== 'нет')};
+  const cols = {base: feats.some(f => f.base !== '—'), search: feats.some(f => f.search !== 'нет'), rel: feats.some(f => f.rel), st: feats.some(f => f.st)};
   const sec = h('section', {class: 'ft-set', id: 'ft-' + s.id, 'data-set': s.id});
   const card = h('div', {class: 'card'});
   card.append(h('div', {class: 'card-h'}, [h('b', {}, s.title)]));
   const b = h('div', {class: 'card-b'});
   const tb = h('table', {class: 'ft'});
-  tb.append(h('colgroup', {}, [h('col', {style: 'width:56px'}), h('col', {style: 'width:170px'}), h('col'), ...(cols.base ? [h('col', {style: 'width:170px'})] : []), ...(cols.search ? [h('col', {style: 'width:270px'})] : [])]));
-  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, '№'), h('th', {}, 'Признак'), h('th', {}, 'Что значит'), ...(cols.base ? [h('th', {}, 'База')] : []), ...(cols.search ? [h('th', {}, 'Перебор')] : [])])));
+  tb.append(h('colgroup', {}, [h('col', {style: 'width:56px'}), h('col', {style: 'width:130px'}), h('col'), ...(cols.base ? [h('col', {style: 'width:130px'})] : []), ...(cols.search ? [h('col', {style: 'width:200px'})] : []), ...(cols.rel ? [h('col', {style: 'width:140px'})] : []), ...(cols.st ? [h('col', {style: 'width:130px'})] : [])]));
+  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, '№'), h('th', {}, 'Признак'), h('th', {}, 'Что значит'), ...(cols.base ? [h('th', {}, 'База')] : []), ...(cols.search ? [h('th', {}, 'Перебор')] : []), ...(cols.rel ? [h('th', {}, 'Связан с №')] : []), ...(cols.st ? [h('th', {}, 'Статус')] : [])])));
   const body = h('tbody');
-  s.groups.forEach(g => { if (g.title) body.append(h('tr', {class: 'grp'}, h('td', {colspan: 3 + cols.base + cols.search}, g.title))); g.features.forEach(f => body.append(ftRow(f, s.id, cols))); });
+  s.groups.forEach(g => { if (g.title) body.append(h('tr', {class: 'grp'}, h('td', {colspan: 3 + cols.base + cols.search + cols.rel + cols.st}, g.title))); g.features.forEach(f => body.append(ftRow(f, s.id, cols))); });
   tb.append(body);
   b.append(h('div', {class: 'ft-tw'}, tb));
   card.append(b); sec.append(card);
