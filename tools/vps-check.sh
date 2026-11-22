@@ -35,7 +35,8 @@ case "$CHECK_HOST" in srv) HOST=root@5.231.25.224 ;; vps) HOST=root@13.140.29.17
 TAG="${VPS_TAG:-}"   # непустой тег — свой каталог исходников и target: параллельные вызовы не затирают друг друга
 SRC=/opt/alpha-compute/wave2-src$TAG-$$   # TK-169: свой каталог на вызов — ожидающий замка не теряет исходники из-за чужого rm -rf
 # TK-169: общий постоянный target (сборки идут по очереди под замком — гонки нет): зависимости из реестра не
-# пересобираются; свои крейты cargo пересобирает по mtime (SRC разных тегов — разные пути). Чистит его sweep.sh run
+# пересобираются; свои крейты cargo пересобирает по mtime. TK-687: исходникам своего крейта на Софии — touch после распаковки (как E-011 на srv):
+# иначе дерево старее чужой последней сборки не пересобиралось и проверялся чужой бинарь (1 623 теста вместо 1 649). Чистит его sweep.sh run
 # при свободном месте < порога (SWEEP_SHARED_FLOOR_GB), иначе живёт
 TGT=/opt/alpha-compute/shared-target
 ARCR=/opt/alpha-compute/wave2$TAG.tgz
@@ -116,7 +117,7 @@ EOS
   ssh "${KEY[@]}" "$HOST" "RBUILD_ID=$$ RBUILD_PRIO=${RBUILD_PRIO:-$PRIO} RBUILD_DIR=$RB bash $RUNR $ARCR $RB/in/cmd-$$.sh"
   RC=$?
 else
-ssh "${KEY[@]}" "$HOST" "export RBUILD_T0=\$(date +%s.%N); set -o pipefail; rm -rf $SRC && mkdir -p $SRC && tar -xzf $ARCR -C $SRC   && cd $SRC && export PATH=\$HOME/.cargo/bin:\$PATH && flock -w 7200 /opt/alpha-compute/.build.lock env ALPHA_TICKET=$LABEL nice -n 5 /opt/alpha-compute/sweep.sh run $TGT bash -c '$CMD'; RC=\$?; rm -rf $SRC; exit \$RC"   # TK-614: свой каталог исходников (≈160 МБ) убираем сами — таймер sweep на Софии не идёт, остатки копились (6 шт. = 1 ГБ)
+ssh "${KEY[@]}" "$HOST" "export RBUILD_T0=\$(date +%s.%N); set -o pipefail; rm -rf $SRC && mkdir -p $SRC && tar -xzf $ARCR -C $SRC   && cd $SRC && { find src tests examples -name '*.rs' -exec touch {} + 2>/dev/null; for f in build.rs Cargo.toml; do [ -e \"\$f\" ] && touch \"\$f\"; done; true; } && export PATH=\$HOME/.cargo/bin:\$PATH && flock -w 7200 /opt/alpha-compute/.build.lock env ALPHA_TICKET=$LABEL nice -n 5 /opt/alpha-compute/sweep.sh run $TGT bash -c '$CMD'; RC=\$?; rm -rf $SRC; exit \$RC"   # TK-614: свой каталог исходников (≈160 МБ) убираем сами — таймер sweep на Софии не идёт, остатки копились (6 шт. = 1 ГБ)
 RC=$?
 fi
 set -e
