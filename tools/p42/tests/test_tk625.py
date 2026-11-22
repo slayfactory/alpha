@@ -167,6 +167,28 @@ def test_count_window_and_class_and_coin():
     assert int(oc[0]) == 0
 
 
+def test_windows_3_and_5_days_edge_and_no_lookahead():
+    """TK-680: окна 3 и 5 суток — тот же счётчик; пересечение в (t − D, t], будущее и незакрытое не учитываются; прежние окна от параметра `ds` не меняются."""
+    d = 86_400_000
+    rows = [("long", "AAA", T0 - 3 * d, {"10": ("o", T0 - 3 * d + 5 * MIN)}),            # ровно t − 3 сут.: вне окна D = 3 (левый край исключён), в окне D = 5
+            ("long", "AAA", T0 - 3 * d + 1, {"10": ("o", T0 - 3 * d + 5 * MIN)}),        # на 1 мс позже края: в окне D = 3
+            ("long", "AAA", T0 - 5 * d, {"10": ("o", T0 - 5 * d + 5 * MIN)}),            # ровно t − 5 сут.: вне D = 5, в D = 7
+            ("long", "AAA", T0 - 20 * MIN, {"10": ("o", T0 - 4 * MIN)}),                 # закрытие T0 + 1 мин: на момент T0 не закрыт
+            ("long", "AAA", T0 + 1 * d, {"10": ("o", T0 + 1 * d + 5 * MIN)})]            # будущее
+    h = hist_for(rows)
+    sym, t = np.array(["AAA"], dtype=object), np.array([T0])
+    f = f5.ok_matrix(f5.features(h, sym, t, (3, 5, 7)))
+    assert (f["ok10_d3"][0], f["ok10_d5"][0], f["ok10_d7"][0]) == (1.0, 2.0, 3.0)
+    h2 = hist_for(rows[:3])                                                              # без будущего и незакрытого — те же значения
+    f2 = f5.ok_matrix(f5.features(h2, sym, t, (3, 5, 7)))
+    assert all(f[k][0] == f2[k][0] for k in f)
+    old = f5.ok_matrix(f5.features(h, sym, t))                                           # по умолчанию — прежние 9 столбцов, значения те же
+    assert sorted(old) == sorted(f5.COLS) and old["ok10_d7"][0] == f["ok10_d7"][0]
+    full = f5.ok_matrix(f5.features(h, sym, t, (3, 5) + f5.DS))
+    assert all(full[k][0] == old[k][0] for k in old)
+    assert np.isnan(f5.ok_matrix(f5.features(h, sym, np.array([f5.HIST_START_MS + 3 * d - 1]), (3,)))["ok10_d3"][0])   # окно начинается до 24.06 — пусто
+
+
 def test_event_unresolved_at_t_is_not_counted_and_future_does_not_leak():
     c = T0 - 15 * MIN
     h = hist_for([("long", "AAA", c, {"10": ("o", c + 20 * MIN)})])                # исход на T0 + 5 мин, закрытие T0 + 10 мин: на момент T0 не закрыт

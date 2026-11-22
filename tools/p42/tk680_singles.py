@@ -20,9 +20,12 @@ import tk680_axes as a80  # noqa: E402
 COLS_FILE = os.path.join(HERE, "tk680_cols.json")     # имена столбцов покрытия (docs/findings/p42-titration-coverage-2026-11-22/cols.json)
 ENGNAME = {"L": "long", "S": "short"}
 OPS = {"le": "<=", "ge": ">="}
+THR_NAME = "thr680h.json" if a80.SET == "hist" else "thr680.json"     # пороги набора «история пробоев» (§13.73.8) — свой файл, заморозка thr680.json не трогается
 
 
 def coverage_cols():
+    if a80.SET == "hist":
+        return list(a80.HIST_COLS)
     return json.load(open(COLS_FILE, encoding="utf-8"))
 
 
@@ -32,12 +35,23 @@ def add_columns(side, st, tabs):
     import pandas as pd
     import pyarrow.parquet as pq
     have = set(pq.ParquetFile(a80.PARQUET % ENGNAME[side]).schema.names)
+    extra = set()
+    if a80.SET == "hist":
+        extra = set(pq.ParquetFile(a80.HIST_EXTRA % ENGNAME[side]).schema.names) - have
+        have |= extra
+        rid = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["row_id"])["row_id"].to_numpy()
     cl = a80.column_list(coverage_cols())
     srcs = lambda src: src if isinstance(src, tuple) else (src,)
     absent = [name for name, src, _ in cl if not all(x in have for x in srcs(src)) and name not in tabs[st.TRADE_WINDOWS[0].name]]
     cl = [c for c in cl if c[0] not in absent]
     need = sorted({x for _, src, _ in cl for x in srcs(src) if x in have})
-    df = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["win", "sym", "meta_sig_ms", "meta_base_pass"] + need)
+    df = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["win", "sym", "meta_sig_ms", "meta_base_pass"] + [x for x in need if x not in extra])
+    if extra:                                       # ok10_d3 / d5: файл tk680_hist.py, строки в порядке таблицы TK-671 (ключ сверяется)
+        ex = pd.read_parquet(a80.HIST_EXTRA % ENGNAME[side])
+        if len(ex) != len(df) or not ((ex["win"].astype(str).to_numpy() == df["win"].astype(str).to_numpy()) & (ex["row_id"].to_numpy() == rid)).all():
+            raise SystemExit("таблица ok10_d3 / d5 %s: строки не совпадают с таблицей TK-671" % side)
+        for x in sorted(extra & set(need)):
+            df[x] = ex[x].to_numpy()
     df = df[df["meta_base_pass"] > 0].copy()
     df["win"], df["sym"] = df["win"].astype(str), df["sym"].astype(str)
     df["_pri"] = (df["meta_base_pass"] != 1).astype(int)
@@ -72,6 +86,8 @@ def _thresholds(v):
     u = np.unique(v)
     if len(u) <= 1:
         return [], []
+    if a80.SET == "hist":                           # числа пробоев: пороги заданы поправкой §13.73.8, не данными
+        return list(a80.HIST_THR[0]), list(a80.HIST_THR[1])
     if len(u) <= 4:
         return [("v%s" % ax.num(x), float(x)) for x in u[:-1]], [("v%s" % ax.num(x), float(x)) for x in u[1:]]
     out, seen = [], set()
@@ -105,7 +121,7 @@ def cmd_select():
                 return base_ck
             cells.setdefault(c["ckey"], c)
             return c["ckey"]
-        for name, vals, base in a80.engine_axes(side):
+        for name, vals, base in ([] if a80.SET == "hist" else a80.engine_axes(side)):
             axes.append(dict(axis=name, kind="key", base=base, vals=[[lab, base_ck if lab == base else put(name, lab, patch)] for lab, patch in vals]))
         tabs = run.feat_tabs(side, st, u, eps)
         sc = {w.name: r54.in_scored_range(w, tabs[w.name]["ms"]) for w in st.TRADE_WINDOWS}
@@ -143,7 +159,7 @@ def cmd_select():
         print("== %s: осей %d (ключи %d, столбцы %d), клеток %d (ключи %d, столбцы %d), в БД есть %d, считаем %d; проходов сигналов %d; столбцов без оси %d" % (
             side, len(axes), sum(1 for a in axes if a["kind"] == "key"), sum(1 for a in axes if a["kind"] == "col"), len(cells), nk, len(cells) - nk, len(found),
             len(cells) - len(found), len(sigs), len(skipped)), flush=True)
-    tp = os.path.join(run.ROOT, "res", "thr680.json")
+    tp = os.path.join(run.ROOT, "res", THR_NAME)
     json.dump(thr_out, open(tp, "w", encoding="utf-8"), ensure_ascii=False, indent=1, sort_keys=True)
     print("select готово; пороги %s sha256 %s" % (tp, _sha(tp)))
 
@@ -237,7 +253,7 @@ def cmd_map():
                                                  **run.loss_fields(bx)),
                    axes=out_axes, n_cells=len(shs), m=m_side, sharpe_sd=sd, noise_max=sd * float(np.sqrt(2 * np.log(max(m_side, 2)))),
                    same_as_base=sorted(by_sig.get(bsig, [])), skipped=lv["skipped"], invalid=inv,
-                   thr_sha256=_sha(os.path.join(run.ROOT, "res", "thr680.json")))
+                   thr_sha256=_sha(os.path.join(run.ROOT, "res", THR_NAME)))
         json.dump(out, open(os.path.join(run.ROOT, "res", "map674b1-%s.json" % side), "w", encoding="utf-8"), ensure_ascii=False)
         print("== %s: осей %d, клеток %d, m %d, шум ≈ %.2f; активных осей %d (ключи %d, столбцы %d); клеток со сделками базы %d" % (
             side, len(out_axes), len(shs), m_side, out["noise_max"], sum(a["active"] for a in out_axes), sum(a["active"] for a in out_axes if a["kind"] == "key"),
