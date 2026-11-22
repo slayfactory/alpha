@@ -4,7 +4,7 @@ type: runbook
 status: running
 title: "srv: сырьё коллекторов уходит на Storage Box само (TK-608)"
 date: 2026-11-20
-links: [srv, storage-box, G-022, В-155, docs/COMMANDS.md, tools/srv-offload-delete.py, tools/srv-offload-dirs.py]
+links: [srv, storage-box, G-022, В-155, TK-675, docs/COMMANDS.md, tools/srv-offload-delete.py, tools/srv-offload-dirs.py, tools/srv-offload-paths.py]
 supersedes: []
 ---
 Цепочка (TK-608, [[В-155]]; подробности и грабли — [[docs/COMMANDS.md]], раздел «srv — диск»): `collector-day-upload.timer` (каждый час, :17) → [[storage-box]] `alpha/collect/<биржа>/<день>/` с sha256 каждого файла → **`collector-offload-delete.timer` (каждый час, :47)** удаляет на [[srv]] закрытые сутки, сверенные на боксе. Скрипт `/opt/day-upload/offload-delete.py --keep-hours 37 --sample 20 --go` (в репозитории — [[tools/srv-offload-delete.py]]).
@@ -14,3 +14,4 @@ supersedes: []
 - **Журнал:** `journalctl -u collector-offload-delete` (строки `DEL` / `SKIP`). План без удаления — `systemd-run --wait --pipe -p Nice=19 -p IOSchedulingClass=idle python3 /opt/day-upload/offload-delete.py --keep-hours 37`. Выключить — `systemctl disable --now collector-offload-delete.timer`.
 - **Вернуть сутки:** `rsync -a box:alpha/collect/<биржа>/<день>/ /data/collect/<биржа>/data/<день>/` (для `bybit` корень — `/data/turbo-probe/soak-bybit/data`).
 - **Холодные каталоги `/data/<имя>`:** [[tools/srv-offload-dirs.py]] — один `rsync -aH` на набор, сверка (число файлов и ссылок, байты, повторный `rsync -n`, sha256 выборки), `--delete` только после сверки; запуск только через `systemd-run`.
+- **Любой путь, часть оставить (TK-675, 22.11):** [[tools/srv-offload-paths.py]] — список `{src, dest, exclude}`, по очереди: отказ при занятости → сводка → `rsync -aH` → сверка (файлы, ссылки, байты, `ls -lAR` бокса без исключённых поддеревьев, `rsync -aHn` без отличий, sha256 выборки) → удаляются только перенесённые файлы. **Сначала `--preflight`:** окна счёта (`p42-tk621/{wa,wb,wc}`, `p42-tk599/{wa,wb,wc}`, `p42-tk616/fwd`, `p42-tk625/h775`, `p42-tk604/w0`) состоят из ≈ 280 тыс. симлинков на сырьё (`/data/aggtrades/binance`, `/data/p42-past`, `/data/p42-past06`, `/data/p42-tk596/dl`, `/data/p42v2/cache`), а `breakout tick --trades <окно>/aggtrades` читает их при каждом счёте — перенос цели оставил бы ссылки висеть. Несколько путей можно гнать параллельно отдельными юнитами со своим spec (один поток к боксу ≈ 5 МБ/с; в `--only` путь не писать — юнит с этим путём сам станет «занятым»).
