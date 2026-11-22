@@ -79,7 +79,8 @@ section{scroll-margin-top:130px}
 .fan-cv canvas{position:absolute;left:0;top:0;width:100%}
 .fan-cv canvas[data-fan=over]{cursor:crosshair}
 .fan-t tbody tr{cursor:pointer}
-.fan-t tr.pin td{background:#fdf2f6}
+.fan-t tr.pin{background:#fdf2f6}
+.fan-nm{display:inline-block;vertical-align:middle;max-width:calc(100% - 26px);overflow-wrap:anywhere}
 .fan-t td[data-f=name]{white-space:normal;overflow-wrap:anywhere;min-width:150px}
 .fan-star{border:0;background:transparent;font-size:16px;line-height:1;cursor:pointer;color:var(--z400);padding:0 2px}
 .fan-star[aria-pressed=true]{color:#b8860b}
@@ -100,7 +101,10 @@ section{scroll-margin-top:130px}
 .eqt tr:last-child{border-bottom:0}
 .eqt td,.eqt td:first-child{padding:0;border:0;min-width:0;text-align:left;white-space:normal}
 .eqt td:first-child,.eqt td.vst,.fan-t td[data-f=name]{grid-column:1/-1}
-.fan-t td.fan-s{display:none}
+.fan-t tr{position:relative}
+.fan-t td.fan-s{position:absolute;right:0;top:2px;z-index:1}
+.fan-t td.fan-s .fan-star{padding:8px 10px;font-size:18px}
+.fan-t td[data-f=name]{padding-right:40px}
 .eqt td.vst{max-width:none}
 .eqt td.vst:empty{display:none}
 .eqt td[data-lab]::before{content:attr(data-lab);display:block;margin-bottom:1px;color:var(--mfg);font-size:11.5px;font-weight:400}}

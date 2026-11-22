@@ -252,7 +252,7 @@ function fanTable(X) {
     const star = h('button', {class: 'fan-star', 'data-fav': tok, 'aria-pressed': String(fav), title: fav ? 'убрать из избранного' : 'в избранное'}, fav ? '★' : '☆');
     star.onclick = ev => { ev.stopPropagation(); fanFav(tok); };
     const tr = h('tr', {'data-tok': tok, 'data-kind': kind, class: (kind === 'anchor' ? 'base' : '') + (tok === ST.fan.pin ? ' pin' : '')}, [h('td', {class: 'fan-s'}, star),
-      h('td', {'data-f': 'name'}, [h('span', {class: 'sw', style: `border-color:${col}`}), kind === 'anchor' ? V_BY.get(V.default[side]).label : c.P.keys[c.i]]),
+      h('td', {'data-f': 'name'}, [h('span', {class: 'sw', style: `border-color:${col}`}), h('span', {class: 'fan-nm'}, kind === 'anchor' ? V_BY.get(V.default[side]).label : c.P.keys[c.i])]),
       ...V_COLS.map(([k, lab]) => h('td', {class: 'num', 'data-f': k, 'data-lab': lab, 'data-v': st[k] == null ? '' : st[k]}, st[k] == null ? '—' : V_FMT[k](st[k]))),
       sel.sim ? h('td', {class: 'num', 'data-f': 'sim', 'data-lab': 'Сходство'}, c.j == null ? '' : num(sel.score[c.j], 2)) : null]);
     tr.onclick = () => fanPin(tok);
