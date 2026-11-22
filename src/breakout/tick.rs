@@ -65,6 +65,11 @@ pub struct Tick {
 /// Источник сделок: сутки монеты (0 = 01.09) по времени; `None` — файла нет.
 pub trait TradeSrc: Sync {
     fn day(&self, sym: &str, day: usize) -> Option<Arc<Vec<Tick>>>;
+
+    /// TK-683: ступени НОД цен суток (для `tick_at`); источник с памятью считает их один раз на сутки за запуск.
+    fn gcd_steps(&self, sym: &str, day: usize) -> Option<Arc<GcdSteps>> {
+        self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v)))
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -299,6 +304,8 @@ pub struct ZipSrc {
     dir: PathBuf,
     cap_bytes: usize,
     lru: Mutex<Lru>,
+    /// TK-683: ступени НОД суток — на весь запуск (десятки байт на сутки), вытеснение суток из `lru` их не трогает.
+    gcds: Mutex<HashMap<(String, usize), Option<Arc<GcdSteps>>>>,
     pub stat: Mutex<LoadStat>,
     /// TK-607 (L1): склад разобранных суток; без него — прежний путь (`unzip` + CSV).
     store: Option<Arc<TickStore>>,
@@ -314,6 +321,7 @@ impl ZipSrc {
                 order: VecDeque::new(),
                 bytes: 0,
             }),
+            gcds: Mutex::new(HashMap::new()),
             stat: Mutex::new(LoadStat::default()),
             store: None,
         }
@@ -458,6 +466,20 @@ impl TradeSrc for ZipSrc {
             }
         }
         loaded
+    }
+
+    fn gcd_steps(&self, sym: &str, day: usize) -> Option<Arc<GcdSteps>> {
+        let key = (sym.to_string(), day);
+        if let Ok(g) = self.gcds.lock() {
+            if let Some(v) = g.get(&key) {
+                return v.clone();
+            }
+        }
+        let steps = self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v)));
+        if let Ok(mut g) = self.gcds.lock() {
+            g.insert(key, steps.clone());
+        }
+        steps
     }
 }
 
@@ -2066,6 +2088,61 @@ impl PxGcd {
     }
 }
 
+/// TK-683: НОД каждого начала суток без повторного прохода по сделкам. НОД разностей к первой цене при добавлении сделок только
+/// делится, поэтому меняется считаные разы: хранятся ступени (число сделок, после которого НОД стал таким; НОД).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GcdSteps {
+    p0: i64,
+    n: usize,
+    steps: Vec<(usize, i64)>,
+}
+
+impl GcdSteps {
+    pub fn of(ticks: &[Tick]) -> GcdSteps {
+        let Some(first) = ticks.first() else {
+            return GcdSteps::default();
+        };
+        let mut g = 0;
+        let mut steps = Vec::new();
+        for (i, t) in ticks.iter().enumerate() {
+            if g != 1 {
+                let d = (t.px - first.px).abs();
+                // d кратно g — НОД прежний (частый случай: одно деление вместо цикла)
+                if g == 0 || d % g != 0 {
+                    g = gcd(g, d);
+                    if g != 0 {
+                        steps.push((i + 1, g));
+                    }
+                }
+            }
+        }
+        GcdSteps {
+            p0: first.px,
+            n: ticks.len(),
+            steps,
+        }
+    }
+
+    /// То же, что `PxGcd::of(&ticks[..k])`.
+    pub fn prefix(&self, k: usize) -> PxGcd {
+        let k = k.min(self.n);
+        if k == 0 {
+            return PxGcd::default();
+        }
+        let i = self.steps.partition_point(|s| s.0 <= k);
+        PxGcd {
+            g: if i == 0 { 0 } else { self.steps[i - 1].1 },
+            p0: self.p0,
+            n: k,
+        }
+    }
+
+    /// То же, что `PxGcd::of(ticks)`.
+    pub fn full(&self) -> PxGcd {
+        self.prefix(self.n)
+    }
+}
+
 /// §13.28: тик монеты на момент `t` — НОД разностей цен сделок строго до `t` за предыдущие `MK_TICK_DAYS` суток и сутки `t` до `t`;
 /// окно меньше `MK_MIN_TRADES` сделок — последнее более раннее окно (то же правило, закончившееся сутками раньше), в котором тик определён.
 /// Сделок позже `t` не читает. `cache` — НОД полных суток монеты (ключ — номер монеты и сутки).
@@ -2078,13 +2155,16 @@ pub fn tick_at(
 ) -> Option<i64> {
     let day = t.div_euclid(DAY_MS) as usize;
     let mut full = |d: usize| -> PxGcd {
-        *cache
-            .entry((sym_i, d))
-            .or_insert_with(|| src.day(name, d).map_or(PxGcd::default(), |v| PxGcd::of(&v)))
+        *cache.entry((sym_i, d)).or_insert_with(|| {
+            src.gcd_steps(name, d)
+                .map_or(PxGcd::default(), |s| s.full())
+        })
     };
     let part = src.day(name, day).map_or(PxGcd::default(), |v| {
         let off = t - day as i64 * DAY_MS;
-        PxGcd::of(&v[..v.partition_point(|x| i64::from(x.off) < off)])
+        let k = v.partition_point(|x| i64::from(x.off) < off);
+        src.gcd_steps(name, day)
+            .map_or(PxGcd::default(), |s| s.prefix(k))
     });
     let mut w = part;
     for d in day.saturating_sub(MK_TICK_DAYS)..day {
