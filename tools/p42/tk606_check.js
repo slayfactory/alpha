@@ -50,7 +50,8 @@ const base = url.split('#')[0];
   eq(dom.prose, 0, 'текстовые блоки на вкладке'); eq(dom.kids, ['DIV.prog-h', 'DIV.bar ft-bar', ...J.sets.map(() => 'SECTION.ft-set')], 'состав вкладки');
   eq(dom.navs, J.sets.map(s => `${s.id}|${s.short}`), 'навигация');
   eq(dom.sets.map(s => s.id), J.sets.map(s => s.id), 'порядок наборов');
-  eq(dom.sets.flatMap(s => s.rows.map(r => +r.n)), Array.from({length: total}, (_, i) => i + 1), 'сквозная нумерация 1…N в порядке страницы');
+  // TK-681: новый признак получает следующий номер, но стоит в своём наборе по теме — номера 1…N без пропусков и повторов, порядок на странице не обязан быть по возрастанию
+  eq(dom.sets.flatMap(s => s.rows.map(r => +r.n)).sort((a, b) => a - b), Array.from({length: total}, (_, i) => i + 1), 'сквозная нумерация 1…N без пропусков и повторов');
   J.sets.forEach((s, i) => {
     const d = dom.sets[i]; if (!d) return;
     const feats = s.groups.flatMap(g => g.features), hasB = feats.some(f => f.base !== '—'), hasS = feats.some(f => f.search !== 'нет'), hasR = feats.some(f => f.rel), hasT = feats.some(f => f.st);
