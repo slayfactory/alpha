@@ -26,6 +26,8 @@ ENG = m.ENGNAME
 STOP = {"L": 3, "S": 4}                         # база' PS-955: стоп лонга 3 %, шорта 4 %
 PS = (3, 2, 1)
 PINF = 100000
+FREE = "free"
+SIGSX = "14:73"                                # дамп всех сигналов прохода (сутки сетки окна), §13.75
 PRS = (0, 1, 2, 3)
 PWS = (0, 1000, 5000, 60000)
 KEY = ("sym", "level", "sig_ms", "entry_ms")
@@ -49,6 +51,8 @@ def rows(side):
                 out.append(("p%dr%dw%d" % (p, pr, pw), p, pr, pw, patch))
     # В-173: строка без потолка позиций — для разбора кластеров сигналов (своя предрегистрация); здесь по ней только счётчики
     out.append(("p%dr0w0" % PINF, PINF, 0, 0, {"s": STOP[side], "p": PINF}))
+    # §13.75: то же без пауз монеты и общей паузы — сколько сигналов групп не вошло из-за пауз
+    out.append((FREE, PINF, 0, 0, {"s": STOP[side], "p": PINF, "c": 0, "m": 1000000, "s_glob": 1000000, "ww": 0}))
     return out
 
 
@@ -70,9 +74,11 @@ def meta_of(d, side):
     raise SystemExit("нет счётчиков в %s" % d)
 
 
-def keys_of(d, side):
+def keys_of(d, side, w):
+    """Ключи сделок зачётного диапазона окна (по времени входа)."""
+    import tk604_feat as f4
     with open(os.path.join(d, "%s-trades.csv" % ENG[side]), encoding="utf-8", newline="") as f:
-        return {tuple(r[k] for k in KEY) for r in csv.DictReader(f)}
+        return {tuple(r[k] for k in KEY) for r in csv.DictReader(f) if f4.in_range([int(r["entry_ms"]) + w.t0_ms], w)[0]}
 
 
 def cmd_touch(a):
@@ -82,22 +88,23 @@ def cmd_touch(a):
     res, cost = {}, {}
     for side in a.sides.split(","):
         rws = rows(side)
-        acc = {name: dict(p=p, pr=pr, pw=pw, trades=0, cap=0, prio=[0] * 6, d_ctrl=0, d_base=0) for name, p, pr, pw, _ in rws}
+        acc = {name: dict(p=p, pr=pr, pw=pw, trades=0, scored=0, cap=0, prio=[0] * 6, d_ctrl=0, d_base=0) for name, p, pr, pw, _ in rws}
         secs = 0.0
         for w in st.TRADE_WINDOWS:
             out = os.path.join(ROOT, "touch", "%s-%s" % (w.name, side))
             if not os.path.exists(out + "/DONE"):
                 t0 = time.time()
                 r5.tick(u, w, [(name, t.variant_line(r5, u, side, patch)) for name, _, _, _, patch in rws], out,
-                        {"P42_SIDES": ENG[side]}, t.q("log", "touch-%s-%s.log" % (w.name, side)))
+                        {"P42_SIDES": ENG[side], "P42_SIGSX": SIGSX}, t.q("log", "touch-%s-%s.log" % (w.name, side)))
                 json.dump(time.time() - t0, open(out + "/secs.json", "w"))
                 open(out + "/DONE", "w").close()
             secs += json.load(open(out + "/secs.json"))
-            ks = {name: keys_of(os.path.join(out, name), side) for name, _, _, _, _ in rws}
+            ks = {name: keys_of(os.path.join(out, name), side, w) for name, _, _, _, _ in rws}
             for name, p, pr, pw, _ in rws:
                 h = meta_of(os.path.join(out, name), side)
                 c = acc[name]
                 c["trades"] += h["trades"]
+                c["scored"] += len(ks[name])
                 c["cap"] += h[REJ][4]
                 c["prio"] = [x + y for x, y in zip(c["prio"], h.get(PRIO, [0] * 6))]
                 # контроль — прежний порядок с тем же окном и тем же p; база — без приоритета с тем же p
@@ -107,14 +114,15 @@ def cmd_touch(a):
         cost[side] = dict(secs=secs, variants=len(rws))
     json.dump(dict(touch=res, cost=cost), open(t.q("res", "touch679.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     lines = ["# TK-679: приоритет кандидатов — сколько сделок задето (h775, 3 окна, база' PS-955: стоп лонга 3 %, шорта 4 %; измерено; деньги не читались)", "",
+             "Сделки и «≠» — в зачётных диапазонах окон (по времени входа); счётчики движка (сделок всего, отказы, окна) — по окнам целиком.",
              "«≠ контроль» — сделок (ключ: монета, уровень, время сигнала, время входа), которых нет в одной из двух строк: эта и строка с прежним порядком",
              "(`pr=0`) при том же окне и том же `p`; «≠ без приоритета» — то же против строки `pr=0 pw=0` с тем же `p`.", ""]
     for side in res:
         lines += ["## %s" % m.SIDENAME[side], "",
-                  "| p | pr | pw, мс | сделок | отказов «потолок» | окон | окон с ≥ 2 кандидатами | смен порядка | входов после окна | отказов после окна | переставлено в одной мс | ≠ контроль | ≠ без приоритета |",
-                  "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+                  "| строка | p | pr | pw, мс | сделок в зачёте | сделок всего | отказов «потолок» | окон | окон с ≥ 2 кандидатами | смен порядка | входов после окна | отказов после окна | переставлено в одной мс | ≠ контроль | ≠ без приоритета |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for name, c in res[side].items():
-            lines.append("| %d | %d | %d | %d | %d | %s | %d | %d |" % (c["p"], c["pr"], c["pw"], c["trades"], c["cap"], " | ".join(map(str, c["prio"])), c["d_ctrl"], c["d_base"]))
+            lines.append("| %s | %d | %d | %d | %d | %d | %d | %s | %d | %d |" % (name, c["p"], c["pr"], c["pw"], c["scored"], c["trades"], c["cap"], " | ".join(map(str, c["prio"])), c["d_ctrl"], c["d_base"]))
         lines += ["", "Время движка: %.0f с на %d строк × 3 окна." % (cost[side]["secs"], cost[side]["variants"]), ""]
     open(t.q("out", "touch679.md"), "w", encoding="utf-8").write("\n".join(lines) + "\n")
     say("\n".join(lines))
