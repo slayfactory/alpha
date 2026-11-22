@@ -12,9 +12,14 @@ if [ "${TK674_LEVEL:-2}" -gt 2 ]; then stage ftab; fi
 stage validate
 if [ "${TK674_LEVEL:-2}" -gt 2 ]; then                  # уровни: стороны двумя процессами (движок по 2 потока)
   echo "== $(date -u +%FT%TZ) cells L | S" >> "$LOG"
-  TK674_SIDES=L "$PY" tk674_run.py cells >> "$LOG.L" 2>&1 & pl=$!
-  TK674_SIDES=S "$PY" tk674_run.py cells >> "$LOG.S" 2>&1 & ps=$!
-  wait $pl; wait $ps
+  if [ -n "${TK674_SEQ:-}" ]; then                      # стороны по очереди: один движок за раз (22.11: L | S вместе — 40 ГБ, OOM; 26 проходов сигналов ≈ 30 ГБ)
+    TK674_SIDES=L "$PY" tk674_run.py cells >> "$LOG.L" 2>&1
+    TK674_SIDES=S "$PY" tk674_run.py cells >> "$LOG.S" 2>&1
+  else
+    TK674_SIDES=L "$PY" tk674_run.py cells >> "$LOG.L" 2>&1 & pl=$!
+    TK674_SIDES=S "$PY" tk674_run.py cells >> "$LOG.S" 2>&1 & ps=$!
+    wait $pl; wait $ps
+  fi
 else
   stage cells
 fi
