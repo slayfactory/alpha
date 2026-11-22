@@ -227,13 +227,16 @@ def _nan_keys(side):
 
 
 def _nan_trades(row, keys):
-    """(число, Σ $ gross − fees) сделок клетки, чей кандидат прошёл с пустым значением столбца."""
+    """(число, Σ $ gross − fees) зачётных сделок клетки, чей кандидат прошёл с пустым значением столбца; зачётные — как в `tk604_stats.splice` (вход в сутках окна;
+    файл сделок держит и разгонные сутки — их считать нельзя: у них нет истории, значение пусто всегда)."""
     import tk604_stats as st
     n, usd = 0, 0.0
-    for wn, d in row["extra"]["dirs"].items():
-        tb = st.read_trades_csv(os.path.join(d, "%s-trades.csv" % row["side_name"]))
+    for w in st.TRADE_WINDOWS:
+        tb = st.read_trades_csv(os.path.join(row["extra"]["dirs"][w.name], "%s-trades.csv" % row["side_name"]))
+        d = st.abs_day(w, tb.entry_ms)
+        lo_i, hi_i = (w.lod - st.D0).days, (w.hid - st.D0).days
         for i in range(len(tb.sym)):
-            if (str(tb.sym[i]), int(tb.sig_ms[i])) in keys[wn]:
+            if lo_i <= d[i] <= hi_i and (str(tb.sym[i]), int(tb.sig_ms[i])) in keys[w.name]:
                 n += 1
                 usd += float(tb.gross[i] - tb.fees[i])
     return n, usd

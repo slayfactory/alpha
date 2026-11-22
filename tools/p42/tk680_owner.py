@@ -18,10 +18,24 @@ ACCOUNT = 2500.0
 NL = chr(10)
 
 
-def _stats(row, side):
-    """Зачётные сделки клетки — как `tk604_stats.splice`: по окнам, вход в сутках окна; сверка с числом сделок и Σ $ клетки."""
+DYN_STOP = ("cw", "sl", "nx", "ls", "sn", "sg", "vf")      # ключи стопа не от фиксированного процента: размер убытка не различает «только A» и «A + B»
+
+
+def _tokens(ck):
+    return dict(t.split("=", 1) for t in ck.split(" ") if "=" in t)
+
+
+def _stats(row, side, ck):
+    """Зачётные сделки клетки — как `tk604_stats.splice`: по окнам, вход в сутках окна; сверка с числом сделок и Σ $ клетки.
+    Разделённый вход (`e2` > 0 в ключе клетки, у шорта база): полные стопы делятся по размеру убытка на «A + B» (вся ставка) и «только A» (часть A, ≈ половина ставки);
+    порог — 75 % убытка по цене стопа (убытки двугорбые: ≈ −10 и ≈ −20 $); при стопе не от фиксированного процента (`cw`, `sl`, `ls`, …) размер не разделяет — смесь."""
     import tk604_stats as st
-    full, after, nets = [], [], []
+    import tk674_stats as ms
+    tk = _tokens(ck)
+    split = float(tk.get("e2", 0)) > 0
+    dyn = any(k in tk for k in DYN_STOP)
+    cut = 0.75 * (500.0 * float(row["extra"]["lmax"]["s"]) / 100.0 + ms.COST_USD)
+    full, after, nets, only_a, a_b = [], [], [], [], []
     for w in st.TRADE_WINDOWS:
         with open(os.path.join(row["extra"]["dirs"][w.name], "%s-trades.csv" % ENGNAME[side]), encoding="utf-8", newline="") as f:
             rows = list(csv.DictReader(f))
@@ -33,12 +47,32 @@ def _stats(row, side):
             net = float(t["gross"]) - float(t["fees"])
             nets.append(net)
             if t["kind"] == "stop":
-                (after if int(float(t["takes"])) >= 1 else full).append(net)
+                if int(float(t["takes"])) >= 1:
+                    after.append(net)
+                else:
+                    full.append(net)
+                    if split and not dyn:
+                        (only_a if -net < cut else a_b).append(net)
     if len(nets) != row["trades"] or abs(sum(nets) - row["usd"]) > 1e-3:
         raise SystemExit("клетка %s: сделок %d / Σ %.4f из файлов ≠ %d / %.4f в БД" % (row["cell"], len(nets), sum(nets), row["trades"], row["usd"]))
     m = lambda v: sum(v) / len(v) if v else None
-    return dict(n=len(nets), full_n=len(full), full_mean=m(full), after_n=len(after), after_mean=m(after), after_loss_n=sum(x < 0 for x in after),
+    return dict(split=split and not dyn, split_mixed=split and dyn, a_n=len(only_a), a_mean=m(only_a), ab_n=len(a_b), ab_mean=m(a_b),
+                n=len(nets), full_n=len(full), full_mean=m(full), after_n=len(after), after_mean=m(after), after_loss_n=sum(x < 0 for x in after),
                 after_loss_mean=m([x for x in after if x < 0]), worst=min(nets) if nets else None)
+
+
+COMPANION = {"ew": ("e2", "0")}                  # §13.73.9: у шорта `ew` = 0 идёт с `e2` = 0 (правило движка) — рядом печатается клетка `e2` = 0 при базовом `ew`
+
+
+def _companion(m, a, side):
+    if side != "S" or a["axis"] not in COMPANION or not a.get("winner"):
+        return None
+    win = next(c for c in a["cells"] if c.get("ckey") == a["winner"]["ckey"])
+    ax2, lab = COMPANION[a["axis"]]
+    if win["label"] != "0":
+        return None
+    ob = next((x for x in m["axes"] if x["axis"] == ax2), None)
+    return next((c for c in ob["cells"] if c.get("label") == lab and c.get("ckey")), None) if ob else None
 
 
 def _pick(a, only):
@@ -56,10 +90,13 @@ def cmd_owner(map_l, map_s, out, only=None):
         for a in m["axes"]:
             if _pick(a, only):
                 want[a["winner"]["ckey"]] = a["axis"]
+                comp = _companion(m, a, side)
+                if comp:
+                    want[comp["ckey"]] = a["axis"] + "+"
         rows = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, sorted(want), bins=run.eq_bins())
         res[side] = {}
         for ck, name in want.items():
-            res[side].setdefault(name, {})[ck] = dict(_stats(rows[ck], side), sharpe=rows[ck]["sharpe"], usd=rows[ck]["usd"], trades=rows[ck]["trades"])
+            res[side].setdefault(name, {})[ck] = dict(_stats(rows[ck], side, ck), sharpe=rows[ck]["sharpe"], usd=rows[ck]["usd"], trades=rows[ck]["trades"])
         print(side, "ячеек", len(want), flush=True)
     json.dump(res, open(out, "w", encoding="utf-8"), ensure_ascii=False)
 
@@ -68,10 +105,18 @@ def _f(x, nd=2, sign=True):
     return "—" if x is None or x != x else (("%+.*f" if sign else "%.*f") % (nd, x)).replace(".", ",")
 
 
+def _full(own):
+    if own.get("split"):
+        return "A+B %s (%d); только A %s (%d)" % (_f(own["ab_mean"], 1), own["ab_n"], _f(own["a_mean"], 1), own["a_n"])
+    if own.get("split_mixed"):
+        return "смесь A / A+B %s (%d)" % (_f(own["full_mean"], 1), own["full_n"])
+    return "%s (%d)" % (_f(own["full_mean"], 1), own["full_n"])
+
+
 def _row(name, lab, w, own, bsh):
     """Строка таблицы: столбцы владельца (R:R, убытки на стоп, худшая сделка) — перед Σ $."""
-    return "| %s | %s | %s | %s (%d) | %s (%d) | %s (%s %%) | %d | %s | %s | %s (%s) | %s (%s %%) | %d |" % (
-        name, lab, _f(w["rr"], 2, False), _f(own["full_mean"], 1), own["full_n"], _f(own["after_loss_mean"], 1), own["after_loss_n"],
+    return "| %s | %s | %s | %s | %s (%d) | %s (%s %%) | %d | %s | %s | %s (%s) | %s (%s %%) | %d |" % (
+        name, lab, _f(w["rr"], 2, False), _full(own), _f(own["after_loss_mean"], 1), own["after_loss_n"],
         _f(-w["worst"], 1), _f(-w["worst"] / MARGIN * 100, 1, False), w["n"], _f(w["usd"], 0), _f(w["mean_usd"]),
         _f(w["sharpe"], 2, False), _f(w["sharpe"] - bsh), _f(w["maxdd"], 0, False), _f(w["maxdd_pct"], 1, False), w["gap_longest"])
 
@@ -101,6 +146,7 @@ def cmd_table(d, out=None, only=None, sd_ref=None):
         n_key, n_col = sum(a["kind"] == "key" for a in act), sum(a["kind"] == "col" for a in act)
         L.append("%s: осей набора %d, активных %d (ключи %d, столбцы %d); m = %d, σ Sharpe клеток %s → шум ≈ %s Sharpe; наибольший прирост среди осей набора %s — %s шума. "
                  "Якорь — база %s. Худшая сделка и убытки на стоп — $ при ставке 500 $; в скобках — число сделок; «стоп после тейка» — только убыточные; "
+                 "у разделённого входа (шорт, e2 > 0) полный стоп — «A + B» (вся ставка) и «только A» (часть A, ≈ половина ставки; по размеру убытка, порог 75 %% полного); "
                  "Sharpe в скобках — прирост над базой." % (
                      sname, len(sel), len(act), n_key, n_col, m["m"], ("%.2f" % sd).replace(".", ","), ("%.2f" % noise).replace(".", ","),
                      _f(max(gains), 2) if gains else "—", "ниже" if not gains or max(gains) < noise else "выше", sname.lower()))
@@ -121,6 +167,10 @@ def cmd_table(d, out=None, only=None, sd_ref=None):
             nm = "`%s`%s" % (a["axis"], " ⚑" if a["axis"] in both else "")
             old = (" %s |" % ("активная (%s)" % a["old_winner"] if a.get("old_active") else "не активная")) if grid else ""
             L.append(_row(nm, c["label"], w, o, b["sharpe"]) + old)
+            comp = _companion(m, a, side)
+            if comp:
+                co = ow[side][a["axis"] + "+"][comp["ckey"]]
+                L.append(_row("`e2` при `ew` = 5 — рядом с `%s` = 0" % a["axis"], comp["label"], comp, co, b["sharpe"]) + (" |" if grid else ""))
         L.append("")
         if both:
             L.append("⚑ — активны обе стороны порога одного столбца (%s): признак шума, а не направления; по правилу идут в пары, но как одна находка, не две." % "; ".join(
