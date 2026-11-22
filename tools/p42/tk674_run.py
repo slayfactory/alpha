@@ -526,6 +526,44 @@ def eff_flags(side, patch):
     return dict((k, float(patch.get(k, b[k])) > 0) for k in b)
 
 
+def _cc_job(job):
+    """c-проверка Lmax по клетке: сделки с выходом `stop` и убытком ≥ 90 % от 500 $ × s (полный стоп; остаток после частичного закрытия — не полный)."""
+    side, cid, bname, s_pct = job
+    st, p8 = _W["st"], _W["p8"]
+    dirs = {w.name: (os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), bname, cid), side) for w in st.TRADE_WINDOWS}
+    tables, _ = p8.read_tables(dirs)
+    kinds, pnl = p8.kinds_pnl(tables)
+    kinds, pnl = np.array(kinds), np.asarray(pnl, dtype=float)
+    base = 500.0 * s_pct / 100.0
+    hard = kinds == "stop"
+    loss = -pnl[hard]
+    full = loss >= 0.9 * base
+    return dict(cid=cid, n_stop=int(hard.sum()), n_full=int(full.sum()), c_full=float((loss[full] - base).mean()) if full.any() else None,
+                c_all=float((loss - base).mean()) if len(loss) else None, n_over=int((loss > base + 0.415 + 1e-6).sum()))
+
+
+def cmd_ccheck(a):
+    """c-проверка Lmax на полных стопах (без записи в БД, без метрик P&L); выход: res/ccheck674.json."""
+    st, r5, _, _ = t._srv()
+    store = chron_store(ro=True)
+    out = {}
+    for side in SIDES:
+        cells, grids, skipped, bad_pos, found = plan_side(side, store)
+        index = json.load(open(os.path.join(ROOT, "res", "batches674-%s.json" % side), encoding="utf-8"))
+        where = {ck: nm for nm, cks in index.items() for ck in cks}
+        jobs = [(side, c["cid"], where[k], float(c["patch"].get("s", 5))) for k, c in cells.items() if k in where]
+        with mp.Pool(3, initializer=_winit) as pool:
+            res = list(pool.imap_unordered(_cc_job, jobs, chunksize=8))
+        out[side] = res
+        cf = [r["c_full"] for r in res if r["c_full"] is not None and r["n_full"] >= 20]
+        ca = [r["c_all"] for r in res if r["c_all"] is not None and r["n_stop"] >= 20]
+        say("== %s: клеток %d; с ≥ 20 полными стопами %d: средний c = %.3f $ (мин %.3f, макс %.3f); все stop-выходы (как в tables): %.3f $ (%d клеток); сделок с убытком > Lmax: %d" % (
+            side, len(res), len(cf), float(np.mean(cf)) if cf else float("nan"), min(cf) if cf else float("nan"), max(cf) if cf else float("nan"),
+            float(np.mean(ca)) if ca else float("nan"), len(ca), sum(r["n_over"] for r in res)))
+    json.dump(out, open(t.q("res", "ccheck674.json"), "w", encoding="utf-8"))
+    say("ccheck готово")
+
+
 def cmd_tables(a):
     if not a.entry:
         raise SystemExit("--entry L-N")
@@ -671,7 +709,7 @@ def cmd_map(a):
 
 
 
-COMMANDS = {"probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "validate": cmd_validate, "cells": cmd_cells, "tables": cmd_tables, "map": cmd_map}
+COMMANDS = {"probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "validate": cmd_validate, "cells": cmd_cells, "tables": cmd_tables, "ccheck": cmd_ccheck, "map": cmd_map}
 
 
 def main():
