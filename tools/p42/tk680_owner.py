@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""П-42 TK-680: столбцы владельца для сводки единичек (критик thr_m27kv64m9h, 22.11): R:R, убыток на полный стоп и на стоп после тейка, худшая сделка.
-  srv:    TK674_ROOT=<каталог набора> python3 tk680_owner.py owner <map674b1-L.json> <map674b1-S.json> <owner.json>   — из файлов сделок клеток активных осей и базы, без нового счёта
-  ПК:     python3 tk680_owner.py table <каталог с картами и owner.json> [--out файл]                                  — таблицы «активные оси» (обе стороны)
+"""П-42 TK-680: столбцы владельца для сводок единичек (критик thr_m27kv64m9h, 22.11): R:R, убыток на полный стоп и на стоп после тейка, худшая сделка.
+  srv:    TK674_ROOT=<каталог набора> python3 tk680_owner.py owner <map674b1-L.json> <map674b1-S.json> <owner.json> [--only <приставки осей через запятую>]
+          — из файлов сделок клеток активных осей и базы, без нового счёта
+  ПК:     python3 tk680_owner.py table <каталог с картами и owner.json> [--out файл] [--only <приставки>] [--sd <σ лонг;σ шорт>]
+          — таблицы «активные оси» (обе стороны); --sd — σ Sharpe клеток другого набора: шум = больший σ × √(2 ln m)
 Полный стоп — выход `stop` без тейков; стоп после тейка — выход `stop` при takes ≥ 1 (убыток = gross − fees)."""
 import csv
 import json
+import math
 import os
 import sys
 
@@ -12,6 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ENGNAME = {"L": "long", "S": "short"}
 MARGIN = 250.0
 ACCOUNT = 2500.0
+NL = chr(10)
 
 
 def _stats(row, side):
@@ -37,7 +41,11 @@ def _stats(row, side):
                 after_loss_mean=m([x for x in after if x < 0]), worst=min(nets) if nets else None)
 
 
-def cmd_owner(map_l, map_s, out):
+def _pick(a, only):
+    return a["active"] and (not only or a["axis"].startswith(tuple(only)))
+
+
+def cmd_owner(map_l, map_s, out, only=None):
     sys.path.insert(0, HERE)
     import tk674_run as run
     store = run.chron_store(ro=True)
@@ -46,7 +54,7 @@ def cmd_owner(map_l, map_s, out):
         m = json.load(open(path, encoding="utf-8"))
         want = {m["base"]["ckey"]: "база"}
         for a in m["axes"]:
-            if a["active"]:
+            if _pick(a, only):
                 want[a["winner"]["ckey"]] = a["axis"]
         rows = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, sorted(want), bins=run.eq_bins())
         res[side] = {}
@@ -68,30 +76,51 @@ def _row(name, lab, w, own, bsh):
         _f(w["sharpe"], 2, False), _f(w["sharpe"] - bsh), _f(w["maxdd"], 0, False), _f(w["maxdd_pct"], 1, False), w["gap_longest"])
 
 
-def cmd_table(d, out=None):
+HEAD = ("| Ось | Значение | R:R | Убыток на полный стоп, $ (сд.) | Убыток на стоп после тейка, $ (сд.) | Худшая сделка, $ (% маржи) | Сделок | Σ $ | $ на сделку"
+        " | Sharpe (Δ) | Просадка $ (% маржи) | Перехай, сут |")
+SEP = "|---|---|---|---|---|---|---|---|---|---|---|---|"
+
+
+def cmd_table(d, out=None, only=None, sd_ref=None):
     ow = json.load(open(os.path.join(d, "owner.json"), encoding="utf-8"))
     L = []
     for side, sname in (("L", "Лонг"), ("S", "Шорт")):
         m = json.load(open(os.path.join(d, "map674b1-%s.json" % side), encoding="utf-8"))
         b = m["base"]
-        act = sorted([a for a in m["axes"] if a["active"]], key=lambda a: -a["gain"])
+        act = sorted([a for a in m["axes"] if _pick(a, only)], key=lambda a: -a["gain"])
+        grid = any("old_active" in a for a in m["axes"])
         cols = {}
         for a in act:
             if "." in a["axis"]:
                 cols.setdefault(a["axis"].split(".")[0], []).append(a["axis"])
         both = {x for v in cols.values() if len(v) > 1 for x in v}
-        L.append("%s — %d осей (ключи %d, столбцы %d); якорь — база %s. Худшая сделка и убытки на стоп — $ при ставке 500 $; в скобках — число сделок; «стоп после тейка» — только убыточные; Sharpe в скобках — прирост над базой.\n" % (
-            sname, len(act), sum(a["kind"] == "key" for a in act), sum(a["kind"] == "col" for a in act), sname.lower()))
-        L.append("| Ось | Значение | R:R | Убыток на полный стоп, $ (сд.) | Убыток на стоп после тейка, $ (сд.) | Худшая сделка, $ (% маржи) | Сделок | Σ $ | $ на сделку | Sharpe (Δ) | Просадка $ (% маржи) | Перехай, сут |\n|---|---|---|---|---|---|---|---|---|---|---|---|")
+        sd = max(m["sharpe_sd"], sd_ref[side]) if sd_ref else m["sharpe_sd"]
+        noise = sd * math.sqrt(2 * math.log(max(m["m"], 2)))
+        sel = [a for a in m["axes"] if not only or a["axis"].startswith(tuple(only))]
+        gains = [a["gain"] for a in sel if a["gain"] is not None]
+        n_key, n_col = sum(a["kind"] == "key" for a in act), sum(a["kind"] == "col" for a in act)
+        L.append("%s: осей набора %d, активных %d (ключи %d, столбцы %d); m = %d, σ Sharpe клеток %s → шум ≈ %s Sharpe; наибольший прирост среди осей набора %s — %s шума. "
+                 "Якорь — база %s. Худшая сделка и убытки на стоп — $ при ставке 500 $; в скобках — число сделок; «стоп после тейка» — только убыточные; "
+                 "Sharpe в скобках — прирост над базой." % (
+                     sname, len(sel), len(act), n_key, n_col, m["m"], ("%.2f" % sd).replace(".", ","), ("%.2f" % noise).replace(".", ","),
+                     _f(max(gains), 2) if gains else "—", "ниже" if not gains or max(gains) < noise else "выше", sname.lower()))
+        L.append("")
+        if not act:
+            L.append("Активных осей нет.")
+            L.append("")
+            continue
+        L.append(HEAD + (" По прежней сетке |" if grid else ""))
+        L.append(SEP + ("---|" if grid else ""))
         bo = ow[side]["база"][b["ckey"]]
         bc = next(c for a in m["axes"] for c in a["cells"] if c.get("is_base"))
-        L.append(_row("**база (якорь)**", "", bc, bo, b["sharpe"]))
+        L.append(_row("**база (якорь)**", "", bc, bo, b["sharpe"]) + (" |" if grid else ""))
         for a in act:
             w = a["winner"]
             c = next(c for c in a["cells"] if c.get("ckey") == w["ckey"])
             o = ow[side][a["axis"]][w["ckey"]]
             nm = "`%s`%s" % (a["axis"], " ⚑" if a["axis"] in both else "")
-            L.append(_row(nm, c["label"], w, o, b["sharpe"]))
+            old = (" %s |" % ("активная (%s)" % a["old_winner"] if a.get("old_active") else "не активная")) if grid else ""
+            L.append(_row(nm, c["label"], w, o, b["sharpe"]) + old)
         L.append("")
         if both:
             L.append("⚑ — активны обе стороны порога одного столбца (%s): признак шума, а не направления; по правилу идут в пары, но как одна находка, не две." % "; ".join(
@@ -100,22 +129,28 @@ def cmd_table(d, out=None):
         pa = next((a for a in act if a["axis"] == "p"), None)
         if pa is not None:
             c = next(c for c in pa["cells"] if c.get("ckey") == pa["winner"]["ckey"])
-            L.append("Ось `p` (до N позиций одновременно, маржа в работе): p = %s — одновременно открыто до %d позиций, %d $ маржи = %s %% счёта 2 500 $; просадка %s $ = %s %% счёта (база: %s %% счёта)." % (
+            L.append("Ось `p` (до N позиций одновременно, маржа в работе): p = %s — максимум одновременно открытых позиций — %d, маржа %d $ = %s %% счёта 2 500 $; просадка %s $ = %s %% счёта (база: %s %% счёта)." % (
                 c["label"], c["conc"], c["conc_margin"], _f(c["conc_margin_pct"], 0, False), _f(c["maxdd"], 0, False), _f(c["maxdd_acct_pct"], 1, False),
                 _f(b["maxdd"] / ACCOUNT * 100, 1, False)))
             L.append("")
-    txt = "\n".join(L) + "\n"
+    txt = NL.join(L) + NL
     if out:
-        open(out, "w", encoding="utf-8", newline="\n").write(txt)
+        open(out, "w", encoding="utf-8", newline=NL).write(txt)
     else:
         sys.stdout.write(txt)
 
 
+def _opt(name):
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else None
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
-    if cmd == "owner" and len(sys.argv) == 5:
-        cmd_owner(*sys.argv[2:5])
+    only = _opt("--only").split(",") if _opt("--only") else None
+    if cmd == "owner" and len(sys.argv) >= 5:
+        cmd_owner(*sys.argv[2:5], only=only)
     elif cmd == "table" and len(sys.argv) >= 3:
-        cmd_table(sys.argv[2], sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else None)
+        sd = _opt("--sd")
+        cmd_table(sys.argv[2], _opt("--out"), only, dict(zip("LS", map(float, sd.replace(",", ".").split(";")))) if sd else None)
     else:
         raise SystemExit(__doc__)

@@ -280,7 +280,7 @@ def cmd_map():
                 rep.update(label=lab, is_base=ck == base_ck, guards={k: bool(v) for k, v in g.items()})
                 if len(a["vals"][i]) > 2:
                     rep.update(thr=a["vals"][i][2], cut=a["vals"][i][3])
-                if nank is not None and ck != base_ck:
+                if nank is not None and ck != base_ck and a["axis"].split(".")[0] in nank:
                     nn, nu = _nan_trades(dict(r, side_name=ENGNAME[side]), nank[a["axis"].split(".")[0]])
                     rep.update(nan_n=nn, nan_usd=nu)
                 if a["axis"] == "p":                   # число позиций меняет капитал под риском: маржа в работе и просадка — в долях счёта
