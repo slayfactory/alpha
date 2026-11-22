@@ -5,7 +5,7 @@
 Сверка (расхождение = остановка, код 1): метрики каждой линии == принятым — строка `metric` БД летописи (поле chron варианта: клетка, h775, последняя запись)
 и числа ref варианта (из текста записи летописи, округлённые: допуск 0,006; сделки и перехай — точно).
 Запуск на srv: python3 tk684_equity.py <код TK-639 (/data/p42-tk639/code)> <tk684_variants.json> <chron.sqlite> <variants.json> <variants_check.json>   (ml_page_update.sh — перед сборкой)
-Выход: variants.json — {d0, days, stake, margin, start_ms, end_ms, groups, default, variants: [{id, side, group, label, key, t (закрытие, мс, по возрастанию), d (сутки входа), v ($)}]};
+Выход: variants.json — {d0, days, stake, margin, start_ms, end_ms, groups, default, variants: [{id, side, group, label, status (пометка линии в таблице), key, t (закрытие, мс, по возрастанию), d (сутки входа), v ($)}]};
 variants_check.json — ожидаемые метрики для клик-теста: single {id: метрики}, both {«лонг|шорт»: метрики суммы} по всем парам."""
 import datetime as dt
 import json
@@ -73,7 +73,7 @@ for v in SRC["variants"]:
     assert "ref" in v or "chron" in v, v["id"] + ": нет принятых чисел (ref / chron)"
     ser = load(v["side"], v["dir"])
     order = np.lexsort((ser.t_in, ser.t_out))
-    one = {"id": v["id"], "side": v["side"], "group": v["group"], "label": v["label"], "key": v["key"],
+    one = {"id": v["id"], "side": v["side"], "group": v["group"], "label": v["label"], "status": v.get("status", ""), "key": v["key"],
            "t": [int(ser.t_out[i]) for i in order], "d": [int(ser.day[i]) for i in order], "v": [round(float(ser.val[i]), 6) for i in order]}
     assert min(int(x) for x in ser.t_in) >= D0_MS and max(int(x) for x in ser.t_in) < st.LAST_MS, v["id"] + ": вход вне 01.07–13.11"
     m = mt.metrics(one["d"], one["v"])

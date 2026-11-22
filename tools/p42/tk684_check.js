@@ -14,7 +14,7 @@ function num(v, d, sign) { const s = Math.abs(v).toFixed(d).replace('.', ','), z
 const ints = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 const FMT = {n: ints, sum: v => ints(num(v, 0, true)), mean: v => num(v, 2, true), sharpe: v => num(v, 2), dd: v => num(v, 0), ddp: v => num(v, 0) + ' %', gap: String, rr: v => num(v, 2), worst: v => num(v, 2, true)};
 const COLS = ['n', 'sum', 'mean', 'sharpe', 'dd', 'ddp', 'gap', 'rr', 'worst'];
-const HEAD = ['Линия', 'Сделок', 'Сумма, $', 'На сделку, $', 'Шарп (год)', 'Просадка, $', 'Просадка, % маржи', 'Перехай, сут.', 'R:R', 'Худшая сделка, $'];
+const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'На сделку, $', 'Шарп (год)', 'Просадка, $', 'Просадка, % маржи', 'Перехай, сут.', 'R:R', 'Худшая сделка, $'];
 (async () => {
   const browser = await chromium.launch({executablePath: process.env.CHROME, args: ['--no-sandbox']});
   const page = await browser.newPage({viewport: {width: W, height: 900}});
@@ -29,15 +29,15 @@ const HEAD = ['Линия', 'Сделок', 'Сумма, $', 'На сделку,
   const dom = () => page.evaluate(() => ({
     hash: location.hash,
     tab: [...document.querySelectorAll('#toptabs button[aria-selected="true"]')].map(b => b.dataset.tab).join(), pane: [...document.querySelectorAll('.pane')].filter(p => !p.hidden).map(p => p.id).join(),
-    side: (document.querySelector('#eq-tabs button[aria-selected="true"]') || {dataset: {}}).dataset.side, view: (document.querySelector('#eq-views button[aria-selected="true"]') || {dataset: {}}).dataset.view,
+    side: (document.querySelector('#eq-tabs button[aria-selected="true"]') || {dataset: {}}).dataset.side, views: document.querySelectorAll('#eq-views button, #eq-cmp, #eq-desc, #where-box').length,
     pick: Object.fromEntries([...document.querySelectorAll('.vr-pick')].map(r => [r.dataset.pick, [...r.querySelectorAll('button[aria-selected="true"]')].map(b => b.dataset.var)])),
     head: [...document.querySelectorAll('table[data-vtable] thead th')].map(t => t.textContent),
-    rows: [...document.querySelectorAll('table[data-vtable] tbody tr')].map(r => ({line: r.dataset.line, ids: r.dataset.ids, name: r.querySelector('[data-f=name]').textContent, title: r.querySelector('[data-f=name]').title,
+    rows: [...document.querySelectorAll('table[data-vtable] tbody tr')].map(r => ({line: r.dataset.line, ids: r.dataset.ids, name: r.querySelector('[data-f=name]').textContent, status: r.querySelector('[data-f=status]').textContent, title: r.querySelector('[data-f=name]').title,
       v: Object.fromEntries([...r.querySelectorAll('td.num')].map(c => [c.dataset.f, c.dataset.v])), t: Object.fromEntries([...r.querySelectorAll('td.num')].map(c => [c.dataset.f, c.textContent]))})),
     paths: [...document.querySelectorAll('#eq-view path[data-chart^="var."]')].map(p => ({k: p.dataset.chart.slice(4), fin: +p.dataset.final, w: +p.getAttribute('stroke-width'), len: p.getAttribute('d').length})),
     legend: [...document.querySelectorAll('#eq-view .legend span')].map(s => s.textContent),
     prose: document.querySelectorAll('#eq-view p, #eq-view ul, #eq-view ol, #eq-view li, #eq-view .eq-note, #eq-view .badge, #eq-view a').length,
-    descHidden: document.getElementById('eq-desc').hidden, cmpHidden: document.getElementById('eq-cmp').hidden, cards: document.querySelectorAll('#eq-view .card').length, tables: document.querySelectorAll('#eq-view table').length,
+    tableOver: (t => t ? t.scrollWidth - t.parentElement.clientWidth : 0)(document.querySelector('table[data-vtable]')), cards: document.querySelectorAll('#eq-view .card').length, tables: document.querySelectorAll('#eq-view table').length,
     svgs: document.querySelectorAll('#eq-view svg[data-chart="var"]').length, text: document.getElementById('equity').innerText, overflow: document.documentElement.scrollWidth - innerWidth,
   }));
   await page.goto(base + '#equity/short', {waitUntil: 'load'});
@@ -50,16 +50,17 @@ const HEAD = ['Линия', 'Сделок', 'Сумма, $', 'На сделку,
   // таблица == данные: строки по выбранным линиям, числа (data-v) и текст ячеек
   const checkTable = (d, l, s, m) => {
     const want = [];
+    const stOf = ids => [...new Set(ids.map(i => BY[i].status).filter(Boolean))].join(' · ');
     if (l) want.push(['long', l, 'Лонг · ' + BY[l].label, K.single[l], BY[l].key]);
     if (s) want.push(['short', s, 'Шорт · ' + BY[s].label, K.single[s], BY[s].key]);
     if (l && s) want.push(['both', l + '|' + s, 'Шорт + лонг', K.both[l + '|' + s], BY[l].key + ' + ' + BY[s].key]);
     eq(d.head, HEAD, m + ' шапка');
-    eq(d.rows.map(r => [r.line, r.ids, r.name, r.title]), want.map(w => [w[0], w[1], w[2], w[4]]), m + ' строки');
+    eq(d.rows.map(r => [r.line, r.ids, r.name, r.title, r.status]), want.map(w => [w[0], w[1], w[2], w[4], stOf(w[1].split('|'))]), m + ' строки');
     want.forEach((w, i) => { const r = d.rows[i]; if (!r) return; COLS.forEach(c => {
       ok(w[3][c] != null && close(+r.v[c], w[3][c]), `${m} ${w[0]} ${c}: ${r.v[c]} ≠ ${w[3][c]}`);
       eq(r.t[c], FMT[c](w[3][c]), `${m} ${w[0]} ${c} текст`);
     }); });
-    ok(d.prose === 0 && d.descHidden && d.cmpHidden && d.cards === 1 && d.tables === 1 && d.svgs === 1, m + ' на виде только выбор, график и одна таблица: ' + JSON.stringify([d.prose, d.descHidden, d.cmpHidden, d.cards, d.tables, d.svgs]));
+    ok(d.prose === 0 && d.views === 0 && d.tableOver <= 0 && d.cards === 1 && d.tables === 1 && d.svgs === 1, m + ' на виде только выбор, график и одна таблица: ' + JSON.stringify([d.prose, d.views, d.tableOver, d.cards, d.tables, d.svgs]));
     ok(!/медиан/i.test(d.text) && !/TK-\d|L-\d{3}/.test(d.text), m + ' медиана или номер задачи в тексте');
     ok(d.overflow <= 0, m + ' горизонтальный перелив ' + d.overflow);
   };
@@ -75,7 +76,7 @@ const HEAD = ['Линия', 'Сделок', 'Сумма, $', 'На сделку,
   };
   const state = async (side, l, s, m) => {
     const d = await dom();
-    eq([d.hash, d.tab, d.pane, d.side, d.view], [`#equity/${side}/${l || '-'}/${s || '-'}`, 'equity', 'pane-equity', side, 'var'], m + ' состояние');
+    eq([d.hash, d.tab, d.pane, d.side], [`#equity/${side}/${l || '-'}/${s || '-'}`, 'equity', 'pane-equity', side], m + ' состояние');
     eq(d.pick, {long: [l || '-'], short: [s || '-']}, m + ' выбранные кнопки');
     checkTable(d, l, s, m); checkChart(d, side, l, s, m);
     return d;
@@ -92,6 +93,7 @@ const HEAD = ['Линия', 'Сделок', 'Сумма, $', 'На сделку,
   for (const [side, list] of [['long', longs], ['short', shorts]]) {
     const r = btns.find(x => x.side === side);
     eq(r.b, [['-', 'нет', '']].concat(list.map(v => [v.id, v.label, v.key])), side + ' кнопки выбора');
+    list.forEach(v => ok(v.group === 'frozen' ? /заморожено/.test(v.status) : /пара|тройка|четвёрка|двумя/.test(v.label) ? v.status === 'подобрано на этих данных' : v.status === '', side + ' статус ' + v.id));
     eq(r.grp, J.groups.filter(g => g.label && list.some(v => v.group === g.id)).map(g => g.label), side + ' подпись группы');
     list.forEach(v => ok(v.label.replace(/·/g, ' ').trim().split(/\s+/).length <= 6 && !v.label.includes(v.key), side + ' подпись ' + v.label));
   }
@@ -143,13 +145,18 @@ const HEAD = ['Линия', 'Сделок', 'Сумма, $', 'На сделку,
   // прежние хеши: стороны — «Варианты» с выбором по умолчанию; неизвестный id — выбор по умолчанию; прочие виды живы
   for (const side of ['short', 'long', 'both']) { await page.goto('about:blank'); await page.goto(base + '#equity/' + side, {waitUntil: 'load'}); await page.waitForSelector('table[data-vtable]'); await state(side, dl, ds, 'прежний хеш #equity/' + side); }
   await page.goto('about:blank'); await page.goto(base + '#equity/both/zzz/' + shorts[1].id, {waitUntil: 'load'}); await page.waitForSelector('table[data-vtable]'); await state('both', dl, shorts[1].id, 'неизвестный id лонга');
-  for (const [hsh, view, sel] of [['#equity/short/where', 'where', '#where-box'], ['#equity/long/bases', 'bases', '.eq-card[data-bases]'], ['#equity/short/shape', 'shape', '.eq-card'], ['#equity/short/curve', 'curve', 'table.eqt[data-eqchart]'], ['#equity/long/comp/dep=7000', 'curve', 'table.cmpt']]) {
-    await page.goto('about:blank'); await page.goto(base + hsh, {waitUntil: 'load'}); await page.waitForSelector('#eq-view ' + sel);
-    const d = await dom(); eq([d.hash, d.view, d.rows.length, d.descHidden], [hsh, view, 0, false], 'прежний вид ' + hsh);
+  // убранные виды («Где мы», «Кривая», «Базы», «Форма»): прежние ссылки открывают «Варианты» с базами
+  for (const [hsh, side] of [['#equity/short/where', 'short'], ['#equity/long/bases', 'long'], ['#equity/short/shape', 'short'], ['#equity/both/curve', 'both'], ['#equity/long/comp/dep=7000', 'long']]) {
+    await page.goto('about:blank'); await page.goto(base + hsh, {waitUntil: 'load'}); await page.waitForSelector('table[data-vtable]'); await state(side, dl, ds, 'прежний вид ' + hsh);
   }
-  // кнопки видов: «Варианты» ↔ «Кривая»
-  await page.click('#eq-views button[data-view="var"]'); await page.waitForSelector('table[data-vtable]'); await state('long', dl, ds, 'кнопка «Варианты»');
-  await page.click('#eq-views button[data-view="curve"]'); await page.waitForSelector('table.eqt[data-eqchart]'); eq((await dom()).hash, '#equity/long/comp/dep=7000', 'кнопка «Кривая» после ссылки с компаундингом');
+  // верхние вкладки — ровно три; прежние хеши убранных вкладок (#live, #progress, #model, …) и пустой хеш открывают «Эквити» · «Варианты» без ошибок консоли
+  eq(await page.evaluate(() => [...document.querySelectorAll('#toptabs button')].map(b => b.innerText)), ['Цели TK-598', 'Эквити', 'Признаки'], 'верхние вкладки');
+  for (const hsh of ['#live', '#progress', '#model', '#model/long', '#long', '#short', '']) {
+    const e0 = errs.length;
+    await page.goto('about:blank'); await page.goto(base + hsh, {waitUntil: 'load'}); await page.waitForSelector('table[data-vtable]');
+    await state('short', dl, ds, 'старый хеш «' + hsh + '» → «Эквити» · «Варианты»');
+    eq(errs.slice(e0), [], 'старый хеш «' + hsh + '»: ошибки консоли');
+  }
   // остальные вкладки живы
   const tabs = await page.evaluate(() => [...document.querySelectorAll('#toptabs button')].map(b => b.dataset.tab));
   for (const k of tabs) {
@@ -157,7 +164,7 @@ const HEAD = ['Линия', 'Сделок', 'Сумма, $', 'На сделку,
     const d = await page.evaluate(() => ({pane: [...document.querySelectorAll('.pane')].filter(p => !p.hidden).map(p => p.id).join(), h: [...document.querySelectorAll('.pane')].filter(p => !p.hidden)[0].innerText.length}));
     ok(d.pane === 'pane-' + k && d.h > 40, 'вкладка ' + k + ': ' + JSON.stringify(d));
   }
-  await page.click('#toptabs button[data-tab="equity"]'); await page.click('#eq-views button[data-view="var"]'); await page.waitForSelector('table[data-vtable]');
+  await page.click('#toptabs button[data-tab="equity"]'); await page.waitForSelector('table[data-vtable]');
   await clickSide('both'); await state('both', dl, ds, 'возврат на «Эквити»');
   await shot('final-both');
   rep.variants = {long: longs.map(v => v.id), short: shorts.map(v => v.id)};

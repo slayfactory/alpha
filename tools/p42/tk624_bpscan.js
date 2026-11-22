@@ -6,8 +6,8 @@ const fs = require('fs');
 const [url, out, widthArg] = process.argv.slice(2);
 const base = url.split('#')[0];
 const RE = /(?:^|[^\wа-яё])(?:бп|bps?|базисн\w*)(?![\wа-яё])|\w+_bp(?![a-z])/gi;
-const ROUTES = ['#progress', '#targets', '#features', '#model/long', '#model/short'];
-for (const s of ['short', 'long', 'both']) for (const v of ['', '/curve', '/shape', '/bases', '/where', '/comp']) ROUTES.push('#equity/' + s + v);
+const ROUTES = ['#targets', '#features'];
+for (const s of ['short', 'long', 'both']) ROUTES.push('#equity/' + s);
 
 (async () => {
   const browser = await chromium.launch({executablePath: process.env.CHROME, args: ['--no-sandbox']});
@@ -23,7 +23,7 @@ for (const s of ['short', 'long', 'both']) for (const v of ['', '/curve', '/shap
   for (const r of nav) {
     await page.goto(base + r, {waitUntil: 'load'});
     await page.waitForTimeout(400);
-    // «Признаки» и «Модель»: пройти по всем вложенным ссылкам/наборам нельзя перебором — берём весь отрисованный DOM маршрута
+    // «Признаки»: пройти по всем вложенным ссылкам/наборам нельзя перебором — берём весь отрисованный DOM маршрута
     const info = await page.evaluate(async () => {
       const c = document.body.cloneNode(true);
       c.querySelectorAll('script,style').forEach(x => x.remove());
