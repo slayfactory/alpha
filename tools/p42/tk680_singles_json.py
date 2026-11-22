@@ -81,7 +81,7 @@ def values(axes, kind, sk=""):
     if kind == "key":
         return " / ".join(lab(c["label"]) + ("*" if c.get("is_base") else "") for c in axes[0]["cells"] if "invalid" not in c)
     parts = []
-    for a in sorted(axes, key=lambda x: x["axis"], reverse=True):          # ≥ раньше ≤
+    for a in sorted(axes, key=lambda x: x["axis"]):          # ≥ раньше ≤ (ge < le)
         n, d = a["axis"].split(".")
         vs = [c["label"] for c in a["cells"] if not c.get("is_base") and c["label"] != "off" and "invalid" not in c]
         parts.append(cut_text(d, vs, UNIT.get(n, "") if sk == "ctx" else ""))
@@ -124,7 +124,7 @@ def build():
                 axes = sides.get(side)
                 if not axes:
                     continue
-                res_ax = [(a, *side_text(maps[sk][side], a)) for a in sorted(axes, key=lambda x: x["axis"], reverse=True)]
+                res_ax = [(a, *side_text(maps[sk][side], a)) for a in sorted(axes, key=lambda x: x["axis"])]
                 act = [r for r in res_ax if not r[1].startswith("не активна")]
                 texts = []
                 for a, t, g in (act or res_ax[:1]):                # неактивные оси стороны — одним «не активна»; активные — каждая

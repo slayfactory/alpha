@@ -1,5 +1,5 @@
 """TK-606: данные вкладки «Признаки» (ml_features.json) — схема, ссылки на источники, повторы имён, цифры только у готовых наборов.
-TK-678: наборы параметров движка по темам (94 ключа), «База» / «Перебор» и сквозной номер n у каждого признака, «что значит» — не больше 12 слов."""
+TK-678: наборы параметров движка по темам (100 ключей), «База» / «Перебор» и сквозной номер n у каждого признака, «что значит» — не больше 12 слов."""
 import json
 import os
 import sys
@@ -33,30 +33,32 @@ def test_schema_and_semantics():
 def test_counts_and_known_names():
     f = load("ml_features.json")
     n = {s["id"]: sum(len(g["features"]) for g in s["groups"]) for s in f["sets"]}
-    assert n == {"pcoins": 4, "plevel": 8, "pfresh": 11, "pentry": 8, "psplit": 4, "pstop": 13, "pvol": 9, "pexit": 21, "pport": 9, "pexec": 7,
-                 "f12": 12, "flow": 30, "setup": 47, "toxic": 13, "breakability": 6, "history": 8, "impulse": 6, "coin": 10, "tcount": 9, "windows": 20}, n
+    assert n == {"pcoins": 5, "plevel": 8, "pfresh": 11, "pentry": 12, "psplit": 4, "pstop": 14, "pvol": 9, "pexit": 21, "pport": 9, "pexec": 7,
+                 "f12": 12, "flow": 30, "setup": 47, "toxic": 13, "breakability": 6, "history": 8, "impulse": 6, "coin": 10, "tcount": 9, "windows": 20, "fast": 50}, n
     names = {x["name"] for s in f["sets"] for g in s["groups"] for x in g["features"]}
     assert {"lturn24", "bd_thin30", "mk60_1800", "bk60", "SHARP"} <= names
 
 
 def test_engine_keys_base_and_search():
-    """TK-678: 94 ключа движка в наборах p*, ключи master-версии params.rs — все на странице; оси перебора среди столбцов таблицы — ровно пять."""
+    """TK-678: 100 ключей движка в наборах p*, ключи master-версии params.rs — все на странице; оси перебора среди столбцов таблицы — ровно пять."""
     import re
     f = load("ml_features.json")
     feats = [(s, x) for s in f["sets"] for g in s["groups"] for x in g["features"]]
     eng = {x["name"] for s, x in feats if x["src"] == ["engine"]}
-    assert len(eng) == 94 and all(s["id"].startswith("p") and s["numbers"] == [] for s, x in feats if x["src"] == ["engine"])
+    assert len(eng) == 100 and all(s["id"].startswith("p") and s["numbers"] == [] for s, x in feats if x["src"] == ["engine"])
     rs = open(os.path.join(HERE, "..", "..", "src", "breakout", "params.rs"), encoding="utf-8").read()
     keys = set(re.findall(r'^\s+"([a-z0-9_]+)" =>', rs, re.M)) - {"lo", "hi"}    # значения ключа fo
     assert len(keys) >= 82 and keys <= eng, sorted(keys - eng)
+    five = {"SHARP", "cons60", "n24", "tpm60", "zv6h"}
+    vals = json.load(open(os.path.join(HERE, "..", "..", "docs", "findings", "p42-titration-coverage-2026-11-22", "search-values.json"), encoding="utf-8"))   # TK-680: «Перебор» единичек
+    assert {x["name"] for s, x in feats if x["src"] != ["engine"] and x["search"] != "нет"} == five | {n for n in vals if n not in eng}
+    assert all(x["search"] != "нет" for s, x in feats if x["name"] in vals)
     ok10 = ["ok10_d14", "ok10_d3", "ok10_d30", "ok10_d5", "ok10_d7"]      # TK-680: единички PS-960 / PS-961 — «≥ 1 / 2 / 3; ≤ 0 / 1 / 2»
-    assert sorted(x["name"] for s, x in feats if x["src"] != ["engine"] and x["search"] != "нет") == sorted(["SHARP", "cons60", "n24", "tpm60", "zv6h"] + ok10)
     assert all(x["base"] == "—" for s, x in feats if x["src"] != ["engine"])
     hist = next(s for s in f["sets"] if s["id"] == "history")
     assert {"ok10_d7", "ok10_d14"} <= {x["name"] for g in hist["groups"] for x in g["features"]}
     assert all((x["search"] != "нет") == (x["name"] in ok10) for g in hist["groups"] for x in g["features"])
-    ns = sorted(x["n"] for s, x in feats)      # 1…251 и 308…311 (TK-680); № 252–307 приносит слияние TK-681 — после него 1…311 без пропусков
-    assert ns[:251] == list(range(1, 252)) and ns[251:] in ([308, 309, 310, 311], list(range(252, 312)))
+    assert sorted(x["n"] for s, x in feats) == list(range(1, 312))
     bad = [x["name"] for s, x in feats if len(x["what"].split()) > 12 or re.search(r"TK-|docs/|бп|ключ пула|столбец таблицы", x["what"] + x["base"] + x["search"])]
     assert not bad, bad
 
