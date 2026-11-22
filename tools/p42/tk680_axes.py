@@ -54,6 +54,8 @@ GRID_OLD = {"natr_min": _o(0.2, 0.4, 0.6, 0.8), "t1h": _o(0.25, 0.5, 1, 2), "t24
 def engine_axes(side):
     if SET == "grid":
         return grid_axes(side)
+    if SET in ("hist", "ctx"):
+        return []
     S = side == "S"
     out = [
         _grid("natr_p", [15, 30, 60], 30),
@@ -131,6 +133,9 @@ HMAX = 60
 SET = os.environ.get("TK680_SET", "")
 HIST_COLS = ["ok10_d3", "ok10_d5", "ok10_d7", "ok10_d14", "ok10_d30"]
 HIST_THR = ([("le0", 0.0), ("le1", 1.0), ("le2", 2.0)], [("ge1", 1.0), ("ge2", 2.0), ("ge3", 3.0)])
+# поправка §13.73.12 (находка TK-679 L-317, приказ координатора): две оси контекста с порогами, заданными до счёта, — только «не выше»:
+# btc_mv5 — ход BTC к пробою за 5 мин, бп (пропуск при > 0,1 / 0,2 / 0,3 %); cosig15 — других монет с сигналом базы той же стороны в (t − 15 мин, t) (пропуск при ≥ 2 / 3 / 4)
+CTX_COLS = {"btc_mv5": [("le0.1", 10.0), ("le0.2", 20.0), ("le0.3", 30.0)], "cosig15": [("lt2", 1.0), ("lt3", 2.0), ("lt4", 3.0)]}
 HIST_EXTRA = "/data/p42-tk680h/hist35/%s.parquet"      # ok10_d3 / d5 (и xok10_d3 / d5) построчно к таблице TK-671 — tk680_hist.py
 
 
@@ -151,6 +156,8 @@ def column_list(coverage_cols):
         return [(c, c, ("le", "ge")) for c in HIST_COLS]
     if SET == "grid":
         return []
+    if SET == "ctx":
+        return [(c, c, ("le",)) for c in CTX_COLS]
     out = []
     for c in coverage_cols:
         if c in COL_SKIP or horizon_skip(c):

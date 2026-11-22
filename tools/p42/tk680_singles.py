@@ -20,12 +20,27 @@ import tk680_axes as a80  # noqa: E402
 COLS_FILE = os.path.join(HERE, "tk680_cols.json")     # имена столбцов покрытия (docs/findings/p42-titration-coverage-2026-11-22/cols.json)
 ENGNAME = {"L": "long", "S": "short"}
 OPS = {"le": "<=", "ge": ">="}
-THR_NAME = {"hist": "thr680h.json", "grid": "thr680g.json"}.get(a80.SET, "thr680.json")     # пороги набора «история пробоев» (§13.73.8) — свой файл, заморозка thr680.json не трогается
+THR_NAME = {"hist": "thr680h.json", "grid": "thr680g.json", "ctx": "thr680c.json"}.get(a80.SET, "thr680.json")     # пороги набора «история пробоев» (§13.73.8) — свой файл, заморозка thr680.json не трогается
+
+
+def cosig15(sym, ms):
+    """Число других монет с сигналом (кандидатом базы той же стороны) в (t − 15 мин, t) — только прошлое; как `sigfeat_join.py`, на кандидатах базы h775."""
+    import numpy as np
+    ms = np.asarray(ms, dtype=np.int64)
+    order = np.argsort(ms, kind="stable")
+    sm, ss = ms[order], [str(sym[i]) for i in order]
+    out = np.zeros(len(ms))
+    for i in range(len(ms)):
+        i0, i1 = np.searchsorted(sm, ms[i] - 15 * 60_000, "right"), np.searchsorted(sm, ms[i], "left")
+        out[i] = len(set(ss[i0:i1]) - {str(sym[i])})
+    return out
 
 
 def coverage_cols():
     if a80.SET == "hist":
         return list(a80.HIST_COLS)
+    if a80.SET == "ctx":
+        return list(a80.CTX_COLS)
     return json.load(open(COLS_FILE, encoding="utf-8"))
 
 
@@ -35,6 +50,9 @@ def add_columns(side, st, tabs):
     import pandas as pd
     import pyarrow.parquet as pq
     have = set(pq.ParquetFile(a80.PARQUET % ENGNAME[side]).schema.names)
+    if a80.SET == "ctx":
+        for w in st.TRADE_WINDOWS:
+            tabs[w.name]["cosig15"] = cosig15(tabs[w.name]["sym"], tabs[w.name]["ms"])
     extra = set()
     if a80.SET == "hist":
         extra = set(pq.ParquetFile(a80.HIST_EXTRA % ENGNAME[side]).schema.names) - have
@@ -79,13 +97,15 @@ def add_columns(side, st, tabs):
     return rep
 
 
-def _thresholds(v):
+def _thresholds(v, cname=None):
     """[(метка, порог ≤), …], [(метка, порог ≥), …] столбца по значениям кандидатов базы в зачётном диапазоне."""
     import numpy as np
     import tk638_run as t8
     u = np.unique(v)
     if len(u) <= 1:
         return [], []
+    if a80.SET == "ctx":
+        return list(a80.CTX_COLS[cname]), []
     if a80.SET == "hist":                           # числа пробоев: пороги заданы поправкой §13.73.8, не данными
         return list(a80.HIST_THR[0]), list(a80.HIST_THR[1])
     if len(u) <= 4:
@@ -121,7 +141,7 @@ def cmd_select():
                 return base_ck
             cells.setdefault(c["ckey"], c)
             return c["ckey"]
-        for name, vals, base in ([] if a80.SET == "hist" else a80.engine_axes(side)):
+        for name, vals, base in a80.engine_axes(side):
             axes.append(dict(axis=name, kind="key", base=base, vals=[[lab, base_ck if lab == base else put(name, lab, patch)] for lab, patch in vals]))
         tabs = run.feat_tabs(side, st, u, eps)
         sc = {w.name: r54.in_scored_range(w, tabs[w.name]["ms"]) for w in st.TRADE_WINDOWS}
@@ -135,7 +155,7 @@ def cmd_select():
             if cname == "n24":
                 allv = np.where(np.concatenate([tabs[w.name]["m24"][sc[w.name]] for w in st.TRADE_WINDOWS]).astype(bool), np.nan, allv)
             fin = allv[np.isfinite(allv)]
-            le, ge = _thresholds(fin)
+            le, ge = _thresholds(fin, cname)
             if not le and not ge:
                 skipped.append([cname, "одно значение у кандидатов базы"])
                 continue
