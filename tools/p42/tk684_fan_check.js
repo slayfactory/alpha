@@ -17,14 +17,14 @@ const MS_MAX = 250;      // кадр на самом большом наборе
   page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
   page.on('pageerror', e => errs.push(String(e)));
   page.on('requestfailed', r => errs.push('request failed: ' + r.url()));
-  const rep = {url: base, width: W, errors: errs, fails: [], checks: 0, clicks: 0, ms: {}};
+  const rep = {url: base, width: W, errors: errs, fails: [], checks: 0, clicks: 0, ms: {}, brk: {}};
   const ok = (c, m) => { rep.checks++; if (!c) rep.fails.push(m); };
   const eq = (a, b, m) => ok(JSON.stringify(a) === JSON.stringify(b), m + ': ' + JSON.stringify(a).slice(0, 200) + ' ≠ ' + JSON.stringify(b).slice(0, 200));
   const shot = n => page.screenshot({path: `${out}/fan-${n}-${W}.png`, fullPage: true});
   const ready = () => page.waitForFunction(() => { const c = document.querySelector('canvas[data-fan="base"]'); return c && c.dataset.n != null && !document.querySelector('[data-fanload]'); }, null, {timeout: 60000});
   const dom = () => page.evaluate(() => {
     const c = document.querySelector('canvas[data-fan="base"]'), q = s => [...document.querySelectorAll(s)];
-    return {hash: decodeURIComponent(location.hash), n: +c.dataset.n, pass: +c.dataset.pass, total: +c.dataset.total, ms: +c.dataset.ms, mode: c.dataset.mode, cnt: document.getElementById('fan-cnt').textContent,
+    return {hash: decodeURIComponent(location.hash), n: +c.dataset.n, pass: +c.dataset.pass, total: +c.dataset.total, ms: +c.dataset.ms, msSel: +c.dataset.msSel, msDraw: +c.dataset.msDraw, mode: c.dataset.mode, cnt: document.getElementById('fan-cnt').textContent,
       side: (document.querySelector('#eq-tabs button[aria-selected="true"]') || {dataset: {}}).dataset.side, bothHidden: document.querySelector('#eq-tabs button[data-side="both"]').hidden,
       view: (document.querySelector('#eq-views button[aria-selected="true"]') || {dataset: {}}).dataset.view, lv: (document.querySelector('#fan-lv button[aria-selected="true"]') || {dataset: {}}).dataset.lv,
       head: q('table[data-fantable] thead th').map(t => t.textContent), rows: q('table[data-fantable] tbody tr').map(r => ({tok: r.dataset.tok, kind: r.dataset.kind, pin: r.classList.contains('pin'), name: r.querySelector('[data-f=name]').textContent,
@@ -96,7 +96,7 @@ const MS_MAX = 250;      // кадр на самом большом наборе
       const want = await page.evaluate(([s, l]) => window.__T.count(s, l, {}), [side, lv]);
       eq([d.total, d.n, d.lv, d.side], [want.tot, want.tot, lv, side], `${side} уровень ${lv}`);
       ok(d.ink > 2000 && d.mode === (d.n > 300 ? 'density' : 'lines'), `${side} ${lv}: холст ${d.ink}, режим ${d.mode}`);
-      rep.ms[side + '/' + lv] = d.ms;
+      rep.ms[side + '/' + lv] = d.ms; rep.brk[side + '/' + lv] = [d.msSel, d.msDraw];
     }
     d = await dom(); anchorRow(d, side); clean(d, side + ' все');
     await shot('all-' + side);
@@ -188,7 +188,7 @@ const MS_MAX = 250;      // кадр на самом большом наборе
   d = await dom(); ok(!/\/f=/.test(d.hash) && d.rows.every(r => r.fav === 'false'), 'избранное снято: ' + d.hash);
   await shot('final');
   fs.writeFileSync(`${out}/report684fan-${W}.json`, JSON.stringify(rep, null, 1));
-  console.log(JSON.stringify({width: W, checks: rep.checks, clicks: rep.clicks, cells: I.n, ms: rep.ms, errors: errs, fails: rep.fails.slice(0, 12), nfails: rep.fails.length}));
+  console.log(JSON.stringify({width: W, checks: rep.checks, clicks: rep.clicks, cells: I.n, ms: rep.ms, brk: rep.brk, errors: errs, fails: rep.fails.slice(0, 12), nfails: rep.fails.length}));
   await browser.close();
   process.exit(errs.length || rep.fails.length ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(2); });

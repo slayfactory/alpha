@@ -95,9 +95,19 @@ function fanHash() {
   return out.join(';');
 }
 
-// видимый набор: фильтры и ползунки → порядок (сходство с образцом или Шарп / сумма) → топ N
+// первые K по убыванию score без полной сортировки: порог — K-й по величине (числовая сортировка типизированного массива), потом упорядочиваются только набранные
+function fanTopK(pass, score, K) {
+  const n = pass.length; let cand = pass;
+  if (n > K) {
+    const sc = new Float64Array(n); for (let q = 0; q < n; q++) sc[q] = score[pass[q]];
+    sc.sort(); const thr = sc[n - K]; cand = [];
+    for (let q = 0; q < n; q++) if (score[pass[q]] >= thr) cand.push(pass[q]);
+  }
+  return Array.from(cand).sort((x, y) => score[y] > score[x] ? 1 : score[y] < score[x] ? -1 : 0).slice(0, K);
+}
+// видимый набор: фильтры и ползунки → порядок (сходство с образцом или Шарп / сумма) → топ N; без топа порядок нужен только строкам таблицы (head), линии рисуются все
 function fanSelect(S, side) {
-  const f = ST.fan, I = FAN.index, NF = I.fields.length, D = I.days, axi = f.ax ? I.axes.findIndex(a => a.name === f.ax) : -1, pass = [];
+  const f = ST.fan, I = FAN.index, NF = I.fields.length, D = I.days, axi = f.ax ? I.axes.findIndex(a => a.name === f.ax) : -1, buf = new Int32Array(S.n); let np = 0;
   for (let j = 0; j < S.n; j++) {
     const P = S.sp[j], o = S.si[j] * NF, F = P.F;
     if (f.dd != null && F[o + F_DD] > f.dd) continue;
@@ -106,9 +116,9 @@ function fanSelect(S, side) {
     if (f.sum != null && F[o + F_USD] < f.sum) continue;
     if (f.sh != null && !(F[o + F_SH] >= f.sh)) continue;
     if (axi >= 0 && !P.axes[S.si[j]].some(a => a[0] === axi)) continue;
-    pass.push(j);
+    buf[np++] = j;
   }
-  const pin = f.pin && f.pin[0] === fanP(side) ? fanCell(f.pin) : null, score = new Float64Array(S.n);
+  const pass = buf.subarray(0, np), pin = f.pin && f.pin[0] === fanP(side) ? fanCell(f.pin) : null, score = new Float64Array(S.n);
   if (f.sim && pin) {
     // сходство формы: корреляция накопленных суточных рядов минус штраф за разницу просадки и перехая (в долях)
     const a = pin.P.cum.subarray(pin.i * D, pin.i * D + D), pm = fanM(pin); let ma = 0; for (let d = 0; d < D; d++) ma += a[d]; ma /= D;
@@ -117,16 +127,16 @@ function fanSelect(S, side) {
     pass.forEach(j => {
       const P = S.sp[j], b = P.cum, o = S.si[j] * D; let mb = 0; for (let d = 0; d < D; d++) mb += b[o + d]; mb /= D;
       let vb = 0, ab = 0; for (let d = 0; d < D; d++) { const y = b[o + d] - mb; vb += y * y; ab += (a[d] - ma) * y; }
-      const F = P.F, q = S.si[j] * NF;
-      score[j] = (va > 0 && vb > 0 ? ab / Math.sqrt(va * vb) : 0) - 0.25 * rel(F[q + F_DD], pm.dd) - 0.25 * rel(F[q + F_GAP], pm.gap);
+      const F = P.F, q = S.si[j] * NF, v = (va > 0 && vb > 0 ? ab / Math.sqrt(va * vb) : 0) - 0.25 * rel(F[q + F_DD], pm.dd) - 0.25 * rel(F[q + F_GAP], pm.gap);
+      score[j] = Number.isNaN(v) ? -Infinity : v;
     });
   } else {
     const fi = f.by === 'sum' ? F_USD : F_SH;
     pass.forEach(j => { const v = S.sp[j].F[S.si[j] * NF + fi]; score[j] = Number.isNaN(v) ? -Infinity : v; });
   }
-  const order = pass.slice().sort((x, y) => score[y] - score[x]);
   const top = f.sim && pin ? (f.top || FAN_SIM_N) : f.top;
-  return {pass: pass.length, shown: top ? order.slice(0, top) : order, score, sim: !!(f.sim && pin), pin, axi};
+  const shown = top ? fanTopK(pass, score, top) : pass, head = top ? shown.slice(0, FAN_ROWS) : fanTopK(pass, score, FAN_ROWS);
+  return {pass: np, shown, head, score, sim: !!(f.sim && pin), pin, axi};
 }
 
 const fanRGB = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
@@ -154,17 +164,26 @@ function fanDraw() {
   const base = fanRGB(V_COL[side]), axv = sel.axi >= 0 ? I.axes[sel.axi].vals.length : 0;
   const colOf = j => { if (sel.axi < 0) return base; const a = S.sp[j].axes[S.si[j]].find(x => x[0] === sel.axi); return a ? fanHue(a[1], axv) : base; };
   if (sel.shown.length > FAN_LINES) {
-    const gw = Math.min(Math.round(pw), D * 3), gh = Math.round(ph), cnt = new Uint32Array(gw * gh), mix = axv ? new Float32Array(gw * gh * 3) : null, ky = gh / (hi - lo);
-    for (let s = 0; s < sel.shown.length; s++) {
-      const j = sel.shown[s], b = S.sp[j].cum, o = S.si[j] * D, c = mix && colOf(j); let y0 = (hi - 0) * ky, x0 = 0;
-      for (let d = 0; d < D; d++) {
-        const y1 = (hi - b[o + d]) * ky, x1 = (d + 1) * gw / D, dy = (y1 - y0) / (x1 - x0);
-        for (let x = Math.ceil(x0); x < x1 && x < gw; x++) {
-          let y = (y0 + dy * (x - x0)) | 0; if (y < 0) y = 0; else if (y >= gh) y = gh - 1;
-          const q = y * gw + x; cnt[q]++;
-          if (mix) { mix[q * 3] += c[0]; mix[q * 3 + 1] += c[1]; mix[q * 3 + 2] += c[2]; }
+    // сетка — два столбца на сутки; столбец → доля пути внутри суток (одна линия = одна запись на столбец)
+    const gw = Math.min(Math.round(pw), D * 2), gh = Math.round(ph), cnt = new Uint32Array(gw * gh), mix = axv ? new Float32Array(gw * gh * 3) : null, ky = gh / (hi - lo);
+    const xa = new Int32Array(D + 1), fr = new Float64Array(gw), shown = sel.shown;
+    for (let d = 0; d <= D; d++) xa[d] = Math.min(Math.ceil(d * gw / D), gw);
+    for (let d = 0; d < D; d++) for (let x = xa[d]; x < xa[d + 1]; x++) fr[x] = (x - d * gw / D) / (gw / D);
+    for (let s = 0; s < shown.length; s++) {
+      const j = shown[s], b = S.sp[j].cum, o = S.si[j] * D; let y0 = hi * ky;
+      if (mix) {
+        const c = colOf(j);
+        for (let d = 0; d < D; d++) {
+          const y1 = (hi - b[o + d]) * ky, dy = y1 - y0;
+          for (let x = xa[d], xe = xa[d + 1]; x < xe; x++) { const q = ((y0 + dy * fr[x]) | 0) * gw + x; cnt[q]++; mix[q * 3] += c[0]; mix[q * 3 + 1] += c[1]; mix[q * 3 + 2] += c[2]; }
+          y0 = y1;
         }
-        y0 = y1; x0 = x1;
+      } else {
+        for (let d = 0; d < D; d++) {
+          const y1 = (hi - b[o + d]) * ky, dy = y1 - y0;
+          for (let x = xa[d], xe = xa[d + 1]; x < xe; x++) cnt[((y0 + dy * fr[x]) | 0) * gw + x]++;
+          y0 = y1;
+        }
       }
     }
     let mx = 1; for (let q = 0; q < cnt.length; q++) if (cnt[q] > mx) mx = cnt[q];
@@ -224,7 +243,7 @@ function fanTable(X) {
   const {S, sel, side} = X, rows = [], seen = new Set();
   const add = (c, kind) => { if (!c) return; const tok = fanTok(c.P, c.i); if (seen.has(tok)) return; seen.add(tok); rows.push([c, kind, tok]); };
   add(X.anchor, 'anchor'); add(sel.pin, 'pin'); fanFavs(side).forEach(t => add(fanCell(t), 'fav'));
-  sel.shown.slice(0, FAN_ROWS).forEach(j => add({P: S.sp[j], i: S.si[j], j}, 'row'));
+  sel.head.forEach(j => add({P: S.sp[j], i: S.si[j], j}, 'row'));
   const tb = h('table', {class: 'eqt fan-t', 'data-fantable': '1'});
   tb.append(h('thead', {}, h('tr', {}, [h('th', {}, ''), h('th', {}, 'Линия'), ...V_COLS.map(([, t]) => h('th', {class: 'num'}, t)), sel.sim ? h('th', {class: 'num'}, 'Сходство') : null])));
   const body = h('tbody'), favs = fanFavs(side);
@@ -273,14 +292,14 @@ function fanView(side, width) {
   const X = {S, side, w: width, h: width < 520 ? 320 : 460, anchor: fanAnchor(side), cv: h('canvas', {'data-fan': 'base'}), ov: h('canvas', {'data-fan': 'over'})};
   const tblBox = h('div'), legBox = h('div');
   const refresh = () => {
-    const t0 = performance.now(); X.sel = fanSelect(S, side); fanDraw();
+    const t0 = performance.now(); X.sel = fanSelect(S, side); const t1 = performance.now(); fanDraw(); const t2 = performance.now();
     cnt.textContent = `линий ${ints(X.sel.shown.length)} из ${ints(S.n)}`;
     const items = [[swLine(FAN_COL.anchor, 3), 'база']];
     if (X.sel.pin) items.push([swLine(FAN_COL.pin, 3), 'образец']);
     fanFavs(side).forEach((t, k) => { const c = fanCell(t); if (c) items.push([swLine(FAN_COL.fav[k % FAN_COL.fav.length], 2), c.P.keys[c.i]]); });
     if (X.sel.axi >= 0) I.axes[X.sel.axi].vals.forEach((v, k, a) => { const c = fanHue(k, a.length); items.push([swLine(`rgb(${c[0]},${c[1]},${c[2]})`, 2), fanAxName(I.axes[X.sel.axi].name) + ' ' + v]); });
     legBox.replaceChildren(legend(items)); tblBox.replaceChildren(fanTable(X));
-    X.cv.dataset.ms = (performance.now() - t0).toFixed(1);      // весь кадр: отбор, холст, таблица
+    X.cv.dataset.ms = (performance.now() - t0).toFixed(1); X.cv.dataset.msSel = (t1 - t0).toFixed(1); X.cv.dataset.msDraw = (t2 - t1).toFixed(1);      // весь кадр: отбор, холст, таблица
   };
   let raf = 0;
   FAN_SL.forEach(([k, lab, fi, dir, step], q) => {

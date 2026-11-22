@@ -15,6 +15,8 @@
    "ref": {"entry": "L-303", "n": 163, "sum": 260.53, "sharpe": 6.58, "dd": 27.14, "gap": 23}},
   {"id": "l4", "side": "long", "group": "base", "label": "лучшая четвёрка", "status": "подобрано на этих данных", "key": "ek5+q100+s3+tu60+N24_220000", "dir": "/data/p42-tk674/cells/{w}-L/f23fbc1a018/ek5+q100+s3+tu60+N24_220000", "chron": "ek5+q100+s3+tu60+N24_220000",
    "ref": {"entry": "L-315", "n": 163, "sum": 268.60, "sharpe": 6.92, "dd": 23.80, "gap": 23}},
+  {"id": "lsplit", "side": "long", "group": "base", "label": "вход двумя частями", "status": "подобрано на этих данных", "key": "e2t1+s3+N24_220000", "dir": "/data/p42-tk674/cells/{w}-L/fd8727f85bb/e2t1+s3+N24_220000", "chron": "e2t1+s3+N24_220000",
+   "ref": {"entry": "L-305", "n": 181, "sum": 170.09, "sharpe": 5.49}},
   {"id": "lcap", "side": "long", "group": "base", "label": "без потолка позиций", "key": "A_s3_none p=100000", "dir": "/data/p42-tk679/touch/{w}-L/p100000r0w0",
    "ref": {"entry": "L-317", "n": 438, "sum": 220.00, "sharpe": 2.92, "dd": 61.87, "gap": 28}},
   {"id": "fl", "side": "long", "group": "frozen", "label": "лонг-база", "status": "заморожено 20.11, стоп 5 %", "key": "L_base", "dir": "/data/p42-tk621/out/all_t24/{w}/L_base",
