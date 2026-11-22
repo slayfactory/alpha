@@ -36,7 +36,7 @@ say = r4.say
 write_json = r4.write_json
 sha256 = r4.sha256
 GuardError = st.GuardError
-TICK_STORE = ["--tick-store", "/data/p42-tk599/tick-store", "--tick-store-cap-gb", "3", "--tick-store-min-free-gb", "5"] + (["--cap-gb", os.environ["TK674_CAPGB"]] if os.environ.get("TK674_CAPGB") else [])     # TK-683: кэш тиковых суток движка (умолчание 24 ГБ), на результат не влияет
+TICK_STORE = ["--tick-store", "/data/p42-tk599/tick-store", "--tick-store-cap-gb", "3", "--tick-store-min-free-gb", "5"]
 M_TRIAL = "10"                                  # главное m = 1 NATR (первый тейк T_low); 05 и 20 — соседи для плато
 CELL_Q = (0.15, 0.30)                           # доли исключённых среди сделок со значением, из которых берётся порог c (п. 4 протокола)
 _C = {}
@@ -70,8 +70,6 @@ class Uni:
             self.coins_file, self.extra, self.tree = r4.SYMS, "", "/data/p42-tk599"
         elif name == "h775":
             self.coins_file, self.extra, self.tree = "/data/p42-tk621/universe/symbols-all.txt", " t24=12", "/data/p42-tk621"
-        elif name == "c539":                        # В-175 / §13.73.17: только крипта (539 из 775, без TradFi) — те же деревья и дампы h775, список монет — symbols-crypto.txt
-            self.coins_file, self.extra, self.tree = "/data/p42-tk621/universe/symbols-crypto.txt", " t24=12", "/data/p42-tk621"
         else:
             raise GuardError("вселенная %r неизвестна" % name)
 
