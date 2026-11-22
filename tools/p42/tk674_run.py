@@ -42,6 +42,7 @@ CMP_FILES = ("trades.csv", "daily.csv", "coinday.csv", "entryrej.csv")
 say = t.say
 LEVEL = int(os.environ.get("TK674_LEVEL", "2"))  # уровень карты: 2 — пары; 3, 4 — тройки, четвёрки (клетки уровня — `tk674_level.py select`); 1 — единички TK-680 (`tk680_singles.py select`)
 AUTHOR = os.environ.get("TK674_AUTHOR", "TK-674")
+PARTIAL = bool(os.environ.get("TK674_PARTIAL"))  # tables: только партии, посчитанные на диске во всех трёх окнах (счёт остановлен до конца: В-175); индекс партий — из плана + маркеров done
 if ax.X680 and LEVEL != 2:
     raise SystemExit("TK674_X680=1 — только пары (TK674_LEVEL=2)")
 FSUF = str(LEVEL) if LEVEL != 2 else ("x" if ax.X680 else "")          # таблица составных фильтров уровня (ftab674<FSUF>); режим X680 — своя таблица и суффикс bx
@@ -685,6 +686,19 @@ def _cc_job(job):
                 c_all=float((loss - base).mean()) if len(loss) else None, worst=float(lf.max()) if full.any() else None, n_above=int((lf > lm + 1e-6).sum()), ex_max=float((lf - lm).max()) if full.any() else None)
 
 
+def batch_index(side, cells, found, st):
+    """{партия: [ключи клеток]} из res/batches674*.json; PARTIAL — только партии, готовые на диске во всех окнах (план + маркеры done)."""
+    if not PARTIAL:
+        return json.load(open(os.path.join(ROOT, "res", "batches674%s-%s.json" % (SUF, side)), encoding="utf-8"))
+    index = {}
+    for kind, cur in batches([c for k, c in cells.items() if k not in found]):
+        nm = batch_name(kind, cur)
+        if all(os.path.exists(os.path.join(ROOT, "done", "%s-%s-%s" % (w.name, side, nm))) for w in st.TRADE_WINDOWS):
+            index[nm] = [c["ckey"] for c in cur]
+    say("== %s: PARTIAL — партий на диске во всех окнах %d, клеток %d из %d плана" % (side, len(index), sum(map(len, index.values())), len(cells)))
+    return index
+
+
 def cmd_ccheck(a):
     """c-проверка Lmax на полных стопах (без записи в БД, без метрик P&L); выход: res/ccheck674.json."""
     st, r5, _, _ = t._srv()
@@ -692,7 +706,7 @@ def cmd_ccheck(a):
     out = {}
     for side in SIDES:
         cells, grids, skipped, bad_pos, found = plan_side(side, store)
-        index = json.load(open(os.path.join(ROOT, "res", "batches674%s-%s.json" % (SUF, side)), encoding="utf-8"))
+        index = batch_index(side, cells, found, st)
         where = {ck: nm for nm, cks in index.items() for ck in cks}
         jobs = [(side, c["cid"], where[k], float(c["patch"].get("s", 5))) for k, c in cells.items() if k in where]
         with mp.Pool(3, initializer=_winit) as pool:
@@ -727,7 +741,7 @@ def cmd_tables(a):
     bad, cmean = [], []
     for side in SIDES:
         cells, grids, skipped, bad_pos, found = plan_side(side, store)
-        index = json.load(open(os.path.join(ROOT, "res", "batches674%s-%s.json" % (SUF, side)), encoding="utf-8"))
+        index = batch_index(side, cells, found, st)
         where = {ck: nm for nm, cks in index.items() for ck in cks}
         todo = [c for k, c in cells.items() if k not in found and k in where]
         say("== %s: в БД есть %d, записываем %d" % (side, len(found), len(todo)))
