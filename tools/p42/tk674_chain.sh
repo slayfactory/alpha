@@ -9,7 +9,8 @@ ENTRY=$1
 PY=/opt/venv/bin/python
 LOG=${TK674_ROOT:-/data/p42-tk674}/log/chain${TK674_REBASE:+b}${TK674_SPLIT:+s}${TK674_X680:+x}${TK674_LEVEL:-}.log
 stage() { echo "== $(date -u +%FT%TZ) $*" >> "$LOG"; "$PY" tk674_run.py "$@" >> "$LOG" 2>&1; }
-if [ -n "${TK674_BIN:-}" ]; then stage spot; fi           # новый бинарь (ось split): выборочная проверка до счёта
+# новый бинарь (ось split): выборочная проверка до счёта — только если md5 бинаря ещё не в eqbins674.json (c539: бинарь прошёл cgate, L-334)
+if [ -n "${TK674_BIN:-}" ] && ! grep -q "$(md5sum "$TK674_BIN" | cut -c1-32)" "${TK674_ROOT:-/data/p42-tk674}/res/eqbins674.json" 2>/dev/null; then stage spot; fi
 if [ "${TK674_LEVEL:-2}" -gt 2 ]; then stage ftab; fi
 if [ -n "${TK674_X680:-}" ]; then stage plan; stage ftab; fi                    # пары с осями единичек: отбор пар (без движка) и таблица фильтров
 stage validate
