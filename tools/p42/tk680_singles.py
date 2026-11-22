@@ -75,8 +75,19 @@ def add_columns(side, st, tabs):
     import pyarrow.parquet as pq
     have = set(pq.ParquetFile(a80.PARQUET % ENGNAME[side]).schema.names)
     if a80.SET == "ctx":
+        crypto = None
+        if os.environ.get("TK674_UNI") == "c539":      # §13.73.18: на c539 «другие монеты» — только крипто-монеты (сигналы TradFi в составе нет)
+            import tk625_run as r5
+            crypto = sorted(r5.Uni("c539").coins())
         for w in st.TRADE_WINDOWS:
-            tabs[w.name]["cosig15"] = cosig15(tabs[w.name]["sym"], tabs[w.name]["ms"])
+            sym, ms = np.asarray(tabs[w.name]["sym"]).astype(str), np.asarray(tabs[w.name]["ms"], dtype=np.int64)
+            if crypto is None:
+                tabs[w.name]["cosig15"] = cosig15(sym, ms)
+                continue
+            keep = np.isin(sym, crypto)
+            v = np.full(len(ms), np.nan)
+            v[keep] = cosig15(sym[keep], ms[keep])
+            tabs[w.name]["cosig15"] = v
     extra = set()
     if a80.SET == "t681":
         have |= set(a80.FAST_NAMES)
@@ -183,7 +194,8 @@ def select_from():
             sel = {w.name: r54.in_scored_range(w, tabs[w.name]["ms"]) & np.isin(np.asarray(tabs[w.name]["sym"]).astype(str), crypto) for w in st.TRADE_WINDOWS}
             for a in out["axes"]:
                 if a["kind"] == "col":
-                    allv = np.concatenate([tabs[w.name][a["axis"].split(".")[0]][sel[w.name]] for w in st.TRADE_WINDOWS])
+                    cn = a["axis"].split(".")[0]
+                    allv = np.concatenate([(np.where(tabs[w.name]["m24"].astype(bool), np.nan, tabs[w.name]["n24"]) if cn == "n24" else tabs[w.name][cn])[sel[w.name]] for w in st.TRADE_WINDOWS])
                     a["n"], a["n_all"] = int(np.isfinite(allv).sum()), int(len(allv))
         found = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(out["cells"]), bins=bins)
         out.update(n_cells=len(out["cells"]), n_have=len(found), n_new=len(out["cells"]) - len(found))
@@ -406,9 +418,10 @@ def cmd_map():
         missing = missing[0]
         if missing:
             raise SystemExit("%s: в БД нет %d клеток единичек" % (side, missing))
-        cnt = store.cells_count()
-        m_c = sum(r["n"] for r in cnt if r["side"] == ENGNAME[side] and r["uni"] == run.UNI and r["win"] == run.WIN)
-        m_h = sum(r["n"] for r in cnt if r["side"] == ENGNAME[side] and r["uni"] == "h775" and r["win"] == run.WIN) if run.UNI != "h775" else 0      # §13.73.17: состав c539 выбран по результату h775 — клетки h775 в счётчике испытаний
+        def m_of(uni):                              # §13.73.18: канонический ключ клетки — один раз (клетки TK-674 и TK-680 на c539 в одном пространстве ключей; база есть в обоих)
+            return store.c.execute("SELECT count(DISTINCT ckey) FROM metric_cur WHERE ckey IS NOT NULL AND side = ? AND uni = ? AND win = ?", (ENGNAME[side], uni, run.WIN)).fetchone()[0]
+        m_c = m_of(run.UNI)
+        m_h = m_of("h775") if run.UNI != "h775" else 0      # §13.73.17: состав c539 выбран по результату h775 — клетки h775 в счётчике испытаний
         m_side = m_c + m_h
         shs = np.array([rows[k]["sharpe"] for k in lv["cells"] if k in rows and rows[k]["sharpe"] is not None])
         sd = float(shs.std()) if len(shs) > 1 else float("nan")
