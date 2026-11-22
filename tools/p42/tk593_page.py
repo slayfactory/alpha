@@ -44,6 +44,8 @@ def check_features(f):
     names = [x["name"] for s in f["sets"] for g in s["groups"] for x in g["features"]]
     dup = sorted({n for n in names if names.count(n) > 1})
     assert not dup, f"features.json: имя признака повторяется: {dup}"
+    ns = sorted(x["n"] for s in f["sets"] for g in s["groups"] for x in g["features"])
+    assert ns == list(range(1, len(ns) + 1)), "features.json: номера признаков n — с повторами или пропусками (должны быть 1…N)"
     bad = sorted({(x["name"], k) for s in f["sets"] for g in s["groups"] for x in g["features"] for k in x["src"] if k not in f["sources"]})
     assert not bad, f"features.json: src не из sources: {bad}"
     assert len({s["id"] for s in f["sets"]}) == len(f["sets"]), "features.json: id набора повторяется"
