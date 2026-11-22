@@ -5952,3 +5952,27 @@ fn candidates_group_equals_separate_passes() {
         );
     }
 }
+
+#[test]
+fn gcd_steps_file_roundtrip() {
+    use super::tick::GcdSteps;
+    let ticks: Vec<Tick> = [100.0, 100.4, 100.6, 100.5, 100.55]
+        .iter()
+        .enumerate()
+        .map(|(i, &p)| tk(3, i as u32, p, false))
+        .collect();
+    let s = GcdSteps::of(&ticks);
+    let b = s.to_bytes();
+    assert_eq!(GcdSteps::from_bytes(&b), Some(s.clone()));
+    assert_eq!(
+        GcdSteps::from_bytes(&b[..b.len() - 1]),
+        None,
+        "усечённый файл"
+    );
+    let mut bad = b.clone();
+    bad[0] ^= 1;
+    assert_eq!(GcdSteps::from_bytes(&bad), None, "чужая метка");
+    assert_ne!(s, GcdSteps::default());
+    let empty = GcdSteps::default();
+    assert_eq!(GcdSteps::from_bytes(&empty.to_bytes()), Some(empty));
+}

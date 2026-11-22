@@ -314,6 +314,9 @@ pub struct ZipSrc {
     pub stat: Mutex<LoadStat>,
     /// TK-607 (L1): склад разобранных суток; без него — прежний путь (`unzip` + CSV).
     store: Option<Arc<TickStore>>,
+    /// TK-683: каталог файлов ступеней НОД суток (`<каталог>/<МОНЕТА>/<день>-<размер>-<mtime zip>.gcd`): тик монеты (`tick_at`) берёт НОД
+    /// прежних суток, не разбирая их сделки. Имя файла несёт отпечаток zip — другой zip даёт другой файл.
+    gcd_dir: Option<PathBuf>,
 }
 
 impl ZipSrc {
@@ -329,12 +332,33 @@ impl ZipSrc {
             gcds: Mutex::new(HashMap::new()),
             stat: Mutex::new(LoadStat::default()),
             store: None,
+            gcd_dir: None,
         }
     }
 
     pub fn with_store(mut self, store: Arc<TickStore>) -> ZipSrc {
         self.store = Some(store);
         self
+    }
+
+    pub fn with_gcd_dir(mut self, dir: PathBuf) -> ZipSrc {
+        self.gcd_dir = Some(dir);
+        self
+    }
+
+    /// Файл ступеней НОД суток; `None` — каталог не задан или zip суток нет.
+    fn gcd_file(&self, name: &str, day: usize) -> Option<PathBuf> {
+        let dir = self.gcd_dir.as_ref()?;
+        let date = day_string(day);
+        let zip = self
+            .dir
+            .join(name)
+            .join(format!("{name}-aggTrades-{date}.zip"));
+        let m = SrcMeta::of(&fs::metadata(zip).ok()?)?;
+        Some(dir.join(name).join(format!(
+            "{date}-{}-{}-{}.gcd",
+            m.size, m.mtime_s, m.mtime_ns
+        )))
     }
 
     /// Сутки монеты со склада или из zip. `full` — вместе с количеством (TK-609, `read_day`); без него — путь движка: со склада
@@ -493,8 +517,29 @@ impl TradeSrc for ZipSrc {
             Ok(mut g) => g.entry((sym.to_string(), day)).or_default().clone(),
             Err(_) => Default::default(),
         };
-        slot.get_or_init(|| self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v))))
-            .clone()
+        slot.get_or_init(|| {
+            let file = self.gcd_file(sym, day);
+            let saved = file
+                .as_ref()
+                .and_then(|p| fs::read(p).ok())
+                .and_then(|b| GcdSteps::from_bytes(&b));
+            if let Some(s) = saved {
+                return Some(Arc::new(s));
+            }
+            let steps = self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v)));
+            // запись — через временный файл и переименование: соседний процесс видит файл целиком или не видит вовсе
+            if let (Some(p), Some(s)) = (&file, &steps) {
+                let tmp = p.with_extension(format!("{}.tmp", std::process::id()));
+                let ok = p.parent().is_some_and(|d| fs::create_dir_all(d).is_ok())
+                    && fs::write(&tmp, s.to_bytes()).is_ok()
+                    && fs::rename(&tmp, p).is_ok();
+                if !ok {
+                    let _ = fs::remove_file(&tmp);
+                }
+            }
+            steps
+        })
+        .clone()
     }
 }
 
@@ -2280,6 +2325,9 @@ impl PxGcd {
 
 /// TK-683: НОД каждого начала суток без повторного прохода по сделкам. НОД разностей к первой цене при добавлении сделок только
 /// делится, поэтому меняется считаные разы: хранятся ступени (число сделок, после которого НОД стал таким; НОД).
+const GCD_MAGIC: [u8; 4] = *b"GC42";
+const GCD_HEAD_LEN: usize = 4 + 8 + 8 + 4;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GcdSteps {
     p0: i64,
@@ -2311,6 +2359,45 @@ impl GcdSteps {
             n: ticks.len(),
             steps,
         }
+    }
+
+    /// Запись в файл ступеней (`ZipSrc::gcd_file`): метка, первая цена, число сделок, ступени; числа — little-endian.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(GCD_HEAD_LEN + 16 * self.steps.len());
+        b.extend_from_slice(&GCD_MAGIC);
+        b.extend_from_slice(&self.p0.to_le_bytes());
+        b.extend_from_slice(&(self.n as u64).to_le_bytes());
+        b.extend_from_slice(&(self.steps.len() as u32).to_le_bytes());
+        for &(k, g) in &self.steps {
+            b.extend_from_slice(&(k as u64).to_le_bytes());
+            b.extend_from_slice(&g.to_le_bytes());
+        }
+        b
+    }
+
+    /// Разбор `to_bytes`; запись другой длины или с чужой меткой — `None` (сутки будут разобраны заново).
+    pub fn from_bytes(b: &[u8]) -> Option<GcdSteps> {
+        let num = |i: usize| -> Option<[u8; 8]> { b.get(i..i + 8)?.try_into().ok() };
+        if b.get(..4)? != GCD_MAGIC {
+            return None;
+        }
+        let k = u32::from_le_bytes(b.get(20..24)?.try_into().ok()?) as usize;
+        if b.len() != GCD_HEAD_LEN + 16 * k {
+            return None;
+        }
+        let mut steps = Vec::with_capacity(k);
+        for i in 0..k {
+            let at = GCD_HEAD_LEN + 16 * i;
+            steps.push((
+                usize::try_from(u64::from_le_bytes(num(at)?)).ok()?,
+                i64::from_le_bytes(num(at + 8)?),
+            ));
+        }
+        Some(GcdSteps {
+            p0: i64::from_le_bytes(num(4)?),
+            n: usize::try_from(u64::from_le_bytes(num(12)?)).ok()?,
+            steps,
+        })
     }
 
     /// То же, что `PxGcd::of(&ticks[..k])`.

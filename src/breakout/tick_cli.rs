@@ -570,6 +570,10 @@ pub fn run(
     if let Some(st) = &store {
         src = src.with_store(Arc::clone(st));
     }
+    // TK-683: ступени НОД суток — рядом с кэшем сигналов (тот же каталог, подкаталог `gcd`)
+    if let Some(o) = &sig_cache {
+        src = src.with_gcd_dir(o.dir.join("gcd"));
+    }
     eprintln!(
         "фаза 1: монет {}, заданий сигналов {}",
         syms.len(),
