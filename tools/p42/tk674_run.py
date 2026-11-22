@@ -631,6 +631,8 @@ def cmd_cells(a):
         for kind, cur in bl:
             nm = batch_name(kind, cur)
             index[nm] = [c["ckey"] for c in cur]
+            if os.environ.get("TK674_SKIP_FILTER") and kind == "f":      # PS-985: партии-фильтры на столбцах TK-681 — после допгейта бинаря (условие критика)
+                continue
             if os.environ.get("TK674_ONLY_CHEAP") and len({c["sig"] for c in cur}) >= 20:      # дешёвые партии обеих сторон — первыми, дорогие — потом (на более быстром бинаре)
                 continue
             for w in st.TRADE_WINDOWS:
