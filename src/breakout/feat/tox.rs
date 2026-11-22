@@ -35,7 +35,7 @@ pub const TOX: [&str; 13] = [
     "mk60_1800",
 ];
 const SAC_MIN_N: usize = 30;
-const MK_MIN_N: usize = 10;
+pub(super) const MK_MIN_N: usize = 10;
 const NAN: f64 = f64::NAN;
 /// Допуск границы корзины VPIN (`tk594_feat.VPIN_TOL`).
 const VPIN_TOL: f64 = 1e-12;
@@ -81,16 +81,16 @@ impl Win {
 
 /// `x > 0` (NaN — ложь): Python `not x > 0`.
 #[inline]
-fn gt0(x: f64) -> bool {
+pub(super) fn gt0(x: f64) -> bool {
     x > 0.0
 }
 
 /// Записи со временем `< σ`.
-struct View<'a> {
-    t: &'a [i64],
-    p: &'a [f64],
-    v: &'a [f64],
-    b: &'a [bool],
+pub(super) struct View<'a> {
+    pub(super) t: &'a [i64],
+    pub(super) p: &'a [f64],
+    pub(super) v: &'a [f64],
+    pub(super) b: &'a [bool],
 }
 
 /// Слагаемые markout по записям окна: `x[i] = v_i · mk_i` для `i ∈ [lo, hi)`, NaN — цена записи или цена через `h` не положительна.
@@ -149,8 +149,8 @@ pub struct Scratch {
     r: Vec<f64>,
     vk: Vec<f64>,
     qk: Vec<f64>,
-    a: Vec<f64>,
-    b: Vec<f64>,
+    pub(super) a: Vec<f64>,
+    pub(super) b: Vec<f64>,
     mk: [MkCache; 2],
 }
 
@@ -209,7 +209,19 @@ pub(super) fn vpin_fused(v: &[f64], b: &[bool], lo: usize, hi: usize) -> f64 {
 /// `(kyle_W, amih_W)` по `W` полным минутам перед σ (§13.25 п. 3.2).
 fn minute_features(w: &View, sig: i64, wm: usize, avail_from: i64, sc: &mut Scratch) -> (f64, f64) {
     let m = sig.div_euclid(MIN_MS);
-    let eb0 = (m - wm as i64) * MIN_MS;
+    bar_features(w, (m - wm as i64) * MIN_MS, MIN_MS, wm, avail_from, sc)
+}
+
+/// `(kyle, amih)` по `wm` барам длины `bar_ms` от `eb0` (бар `j` — записи `[eb0 + j·bar, eb0 + (j + 1)·bar)`); формулы §13.25 п. 3.2.
+/// Минутные признаки TOX13 — `bar_ms` = минута, `eb0` — на границе минуты; короткие окна TK-681 — бары в секундах, последний кончается на σ.
+pub(super) fn bar_features(
+    w: &View,
+    eb0: i64,
+    bar_ms: i64,
+    wm: usize,
+    avail_from: i64,
+    sc: &mut Scratch,
+) -> (f64, f64) {
     if eb0 < avail_from {
         return (NAN, NAN);
     }
@@ -217,7 +229,7 @@ fn minute_features(w: &View, sig: i64, wm: usize, avail_from: i64, sc: &mut Scra
     sc.edges.clear();
     let mut from = 0usize;
     for j in 0..=wm {
-        let x = eb0 + j as i64 * MIN_MS;
+        let x = eb0 + j as i64 * bar_ms;
         from += w.t[from..].partition_point(|&q| q < x);
         sc.edges.push(from);
     }
@@ -278,7 +290,14 @@ fn minute_features(w: &View, sig: i64, wm: usize, avail_from: i64, sc: &mut Scra
     (kyle, np_mean(&sc.b))
 }
 
-fn big_imbalance(w: &View, sig: i64, w_ms: i64, q99: Option<f64>, s: i64, sc: &mut Scratch) -> f64 {
+pub(super) fn big_imbalance(
+    w: &View,
+    sig: i64,
+    w_ms: i64,
+    q99: Option<f64>,
+    s: i64,
+    sc: &mut Scratch,
+) -> f64 {
     let Some(q) = q99 else {
         return NAN;
     };
@@ -300,7 +319,7 @@ fn big_imbalance(w: &View, sig: i64, w_ms: i64, q99: Option<f64>, s: i64, sc: &m
     s as f64 * (2.0 * np_sum(&sc.b) - vt) / vt
 }
 
-fn sign_autocorr(w: &View, sig: i64, w_ms: i64, sc: &mut Scratch) -> f64 {
+pub(super) fn sign_autocorr(w: &View, sig: i64, w_ms: i64, sc: &mut Scratch) -> f64 {
     let lo = w.t.partition_point(|&x| x < sig - w_ms);
     let n = w.b.len() - lo;
     if n < SAC_MIN_N {
@@ -395,9 +414,13 @@ fn hist_add_day_p(h: &mut [i32], d: i64, c: &DayTradesP) {
     }
 }
 
-/// Результат одной монеты.
-pub struct CoinTox {
-    pub rows: Vec<(usize, [f64; 13])>,
+/// Признаки одной строки: `(окно, σ, сторона, q99, первая запись монеты, начало загруженных данных, буферы)` → `N` столбцов.
+pub(super) type RowFn<const N: usize> =
+    dyn Fn(&Win, i64, i64, Option<f64>, Option<i64>, i64, &mut Scratch) -> [f64; N] + Sync;
+
+/// Результат одной монеты (`N` столбцов; TOX13 — 13).
+pub struct CoinTox<const N: usize = 13> {
+    pub rows: Vec<(usize, [f64; N])>,
     pub missing_trade_days: u64,
     /// Строки на сутки без файла (признаки пусты).
     pub rows_on_missing_day: u64,
@@ -406,6 +429,16 @@ pub struct CoinTox {
 
 /// `process_coin` `tk600_feat`: сутки от `dmin − 8` (гистограмма `q99`) до `dmax`; эпизоды `eps` — любого порядка.
 pub fn tox_coin(src: &dyn DaySrc, sym: &str, eps: &[Ep]) -> Result<CoinTox> {
+    coin_rows(src, sym, eps, &tox_features)
+}
+
+/// Проход монеты `tox_coin` с признаками строки `f` (TOX13 или короткие окна TK-681): чтение суток, окно сделок, `q99` — общие.
+pub(super) fn coin_rows<const N: usize>(
+    src: &dyn DaySrc,
+    sym: &str,
+    eps: &[Ep],
+    f: &RowFn<N>,
+) -> Result<CoinTox<N>> {
     let days: Vec<i64> = eps.iter().map(|e| e.sig.div_euclid(DAY_MS)).collect();
     let dmin = *days.iter().min().unwrap_or(&0);
     let dmax = *days.iter().max().unwrap_or(&0);
@@ -468,8 +501,7 @@ pub fn tox_coin(src: &dyn DaySrc, sym: &str, eps: &[Ep]) -> Result<CoinTox> {
                 None => {
                     // сутки строки без файла — признаки пусты (дыра данных)
                     out.rows_on_missing_day += idx.len() as u64;
-                    out.rows
-                        .extend(idx.iter().map(|&e| (eps[e].row, [NAN; 13])));
+                    out.rows.extend(idx.iter().map(|&e| (eps[e].row, [NAN; N])));
                 }
                 Some(c) => {
                     let max_sig = idx.iter().map(|&e| eps[e].sig).max().unwrap_or(0);
@@ -508,9 +540,7 @@ pub fn tox_coin(src: &dyn DaySrc, sym: &str, eps: &[Ep]) -> Result<CoinTox> {
                         };
                         out.rows.push((
                             ep.row,
-                            tox_features(
-                                &win, ep.sig, ep.side, q99, coin_first, avail_from, &mut sc,
-                            ),
+                            f(&win, ep.sig, ep.side, q99, coin_first, avail_from, &mut sc),
                         ));
                     }
                 }
@@ -593,20 +623,22 @@ pub fn first_day(cfg: &ToxCfg, rows: &[Input]) -> Result<i64> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ToxSummary {
+pub struct ToxSummary<const N: usize = 13> {
     pub rows: usize,
     pub coins: usize,
     pub seconds: f64,
     pub missing_trade_days: u64,
     pub rows_on_missing_day: u64,
     pub unsorted_days: u64,
-    /// Доля непустых значений по столбцам `TOX`.
-    pub coverage: [f64; 13],
+    /// Доля непустых значений по столбцам `names`.
+    pub coverage: [f64; N],
+    pub names: [&'static str; N],
 }
 
-impl ToxSummary {
+impl<const N: usize> ToxSummary<N> {
     pub fn json(&self) -> String {
-        let cov: Vec<String> = TOX
+        let cov: Vec<String> = self
+            .names
             .iter()
             .zip(&self.coverage)
             .map(|(k, c)| format!("\"{k}\":{c:.4}"))
@@ -625,6 +657,17 @@ impl ToxSummary {
 }
 
 pub fn run(cfg: &ToxCfg, rows: &[Input], src: &dyn DaySrc) -> Result<ToxSummary> {
+    run_cols(cfg, rows, src, &TOX, &tox_features)
+}
+
+/// `run` для таблицы из `N` столбцов `names` с признаками строки `f`: выход `sym,sig_ms,<names>` в порядке входа.
+pub(super) fn run_cols<const N: usize>(
+    cfg: &ToxCfg,
+    rows: &[Input],
+    src: &dyn DaySrc,
+    names: &[&'static str; N],
+    f: &RowFn<N>,
+) -> Result<ToxSummary<N>> {
     let t0 = Instant::now();
     if rows.is_empty() {
         bail!("пустой вход: {}", cfg.eps.display());
@@ -644,7 +687,7 @@ pub fn run(cfg: &ToxCfg, rows: &[Input], src: &dyn DaySrc) -> Result<ToxSummary>
     eprintln!("строк {}; монет {}", rows.len(), jobs.len());
     let next = AtomicUsize::new(0);
     let finished = AtomicUsize::new(0);
-    let results: Mutex<Vec<CoinTox>> = Mutex::new(Vec::with_capacity(jobs.len()));
+    let results: Mutex<Vec<CoinTox<N>>> = Mutex::new(Vec::with_capacity(jobs.len()));
     let err: Mutex<Option<anyhow::Error>> = Mutex::new(None);
     std::thread::scope(|sc| {
         for _ in 0..cfg.threads.max(1) {
@@ -653,7 +696,7 @@ pub fn run(cfg: &ToxCfg, rows: &[Input], src: &dyn DaySrc) -> Result<ToxSummary>
                 let Some((sym, eps)) = jobs.get(j) else {
                     break;
                 };
-                match tox_coin(src, sym, eps).with_context(|| format!("монета {sym}")) {
+                match coin_rows(src, sym, eps, f).with_context(|| format!("монета {sym}")) {
                     Ok(c) => results
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)
@@ -677,7 +720,7 @@ pub fn run(cfg: &ToxCfg, rows: &[Input], src: &dyn DaySrc) -> Result<ToxSummary>
     if let Some(e) = err.into_inner().unwrap_or_else(PoisonError::into_inner) {
         return Err(e);
     }
-    let mut table = vec![[NAN; 13]; rows.len()];
+    let mut table = vec![[NAN; N]; rows.len()];
     let (mut missing, mut on_missing, mut unsorted) = (0u64, 0u64, 0u64);
     for c in results.into_inner().unwrap_or_else(PoisonError::into_inner) {
         missing += c.missing_trade_days;
@@ -687,8 +730,8 @@ pub fn run(cfg: &ToxCfg, rows: &[Input], src: &dyn DaySrc) -> Result<ToxSummary>
             table[row] = vals;
         }
     }
-    let mut text = format!("sym,sig_ms,{}\n", TOX.join(","));
-    let mut cov = [0usize; 13];
+    let mut text = format!("sym,sig_ms,{}\n", names.join(","));
+    let mut cov = [0usize; N];
     for (r, vals) in rows.iter().zip(&table) {
         let _ = write!(text, "{},{}", r.sym, r.sig_ms);
         for (k, &x) in vals.iter().enumerate() {
@@ -701,7 +744,7 @@ pub fn run(cfg: &ToxCfg, rows: &[Input], src: &dyn DaySrc) -> Result<ToxSummary>
         text.push('\n');
     }
     std::fs::write(&cfg.out, text).with_context(|| cfg.out.display().to_string())?;
-    let mut coverage = [0.0; 13];
+    let mut coverage = [0.0; N];
     for (c, n) in coverage.iter_mut().zip(cov) {
         *c = n as f64 / rows.len() as f64;
     }
@@ -713,5 +756,6 @@ pub fn run(cfg: &ToxCfg, rows: &[Input], src: &dyn DaySrc) -> Result<ToxSummary>
         rows_on_missing_day: on_missing,
         unsorted_days: unsorted,
         coverage,
+        names: *names,
     })
 }

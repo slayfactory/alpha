@@ -59,6 +59,8 @@ const base = url.split('#')[0];
   // ── «Эквити»: три режима, оба графика, наведение, таблицы
   await page.click('#toptabs button[data-tab="equity"]');
   await page.waitForSelector('#eq-view svg');
+  await page.click('#eq-views button[data-view="curve"]');   // TK-684: по умолчанию — вид «Варианты» (tk684_check.js), прежняя кривая — «Кривая»
+  await page.waitForSelector('#eq-view table.eqt[data-eqchart]');
   report.tabs.equity = {state: await state()};
   const eqdom = {};
   for (const side of ['short', 'long', 'both']) {
@@ -155,7 +157,7 @@ const base = url.split('#')[0];
   await page.goto(base + '#equity/long/comp/dep=7000', {waitUntil: 'load'});
   await page.waitForSelector('#eq-view table.cmpt');
   cdom.reload = await grab();
-  await page.goto(base + '#equity/short', {waitUntil: 'load'});
+  await page.goto(base + '#equity/short/curve', {waitUntil: 'load'});
   await page.waitForSelector('#eq-view table.cmpt');
   cdom.defaults = await grab();
   fs.writeFileSync(`${out}/dom_cmp.json`, JSON.stringify(cdom));
@@ -213,7 +215,7 @@ const base = url.split('#')[0];
   await page.waitForSelector('#eq-view table.eqt[data-eqchart]');
   report.shape.back_to_curve = await page.getAttribute('#eq-views button[data-view="curve"]', 'aria-selected');
   // хеш-маршруты
-  for (const h of ['#equity/long', '#equity/both', '#equity/long/shape', '#equity/shape', '#targets', '#short', '#model/long', '#progress']) {
+  for (const h of ['#equity/long/curve', '#equity/both/curve', '#equity/long/shape', '#equity/shape', '#targets', '#short', '#model/long', '#progress']) {
     await page.goto(base + h, {waitUntil: 'load'});
     await page.waitForTimeout(200);
     const st = await state();

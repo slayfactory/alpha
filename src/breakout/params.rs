@@ -73,6 +73,17 @@ pub struct SigCfg {
     /// TK-669 (`fg`, «закол прощаем после отката»): X ×1000 NATR (0 — выкл.): минутные убийцы уровня `pk`, `pb`, `ban` в `tick::candidates` приостанавливают уровень, а не
     /// убивают его; приостановка снимается на первой минуте строго после минуты приостановки, чей low за уровнем ≤ `L − L·NATR[t−1]·X`. Только `breakout tick`.
     pub fg_m: i64,
+    /// TK-681 (`nf`): источник фильтра живости пула — 0 NATR `natr_p` (как раньше); 1–8 — коды `vs` (`Sym::vol_for`: NATR 5 / 15 / 30 / 60,
+    /// реализованная волатильность 5 / 15 / 30 / 60 минут); порог — `natr_min`, проценты цены, закрытая минутка `t−1`. Только `breakout tick`.
+    pub nf: u8,
+    /// TK-681 (`ev`): зона входа от волатильности — источник `V` (коды `vs`; 0 — выкл., зона = `e`): `e = clamp(ea·V[t−1], el, eh)`, затем как раньше
+    /// `min(e, track)`; нет значения `V` — кандидата нет. Только `breakout tick`.
+    pub ev: u8,
+    /// TK-681 (`ea`): коэффициент `k` при `V`, ×1000.
+    pub ea_m: i64,
+    /// TK-681 (`el`, `eh`): зажим зоны входа, тысячные процента (по умолчанию 0,05 % и 1 %).
+    pub el_pm: i64,
+    pub eh_pm: i64,
 }
 
 /// Ручной `Debug`: строка `params` в meta.json при `fg = 0` — та же, что у производного `Debug` до TK-669 (поле печатается только при `fg ≠ 0`).
@@ -98,6 +109,15 @@ impl std::fmt::Debug for SigCfg {
             .field("fr_b_pm", &self.fr_b_pm);
         if self.fg_m != 0 {
             d.field("fg_m", &self.fg_m);
+        }
+        if self.nf != 0 {
+            d.field("nf", &self.nf);
+        }
+        if self.ev != 0 {
+            d.field("ev", &self.ev)
+                .field("ea_m", &self.ea_m)
+                .field("el_pm", &self.el_pm)
+                .field("eh_pm", &self.eh_pm);
         }
         d.finish()
     }
@@ -207,6 +227,8 @@ pub struct ExitCfg {
     /// TK-676 (`vz`, `vr`): режимный множитель `(V_z / V)^ρ` — источник `V_z` (коды `vs`; 0 выкл.) и ρ ×1000.
     pub vz: u8,
     pub vr_m: i64,
+    /// TK-681 (`sm`): нижний зажим стопов от уровня (`sl`, `cw`) и порога `nx` — не ближе `sm` % цены входа; тысячные процента, 0 — выкл.
+    pub sm_pm: i64,
     /// TK-677 (`w2`): доля второго лота (ближнего к уровню), % ставки; первый лот — остаток. 50 — прежние 50/50; только при включённом втором входе.
     pub w2_pct: i64,
     /// TK-677 (`e2t`): второй вход за N тиков до уровня (`p ≥ L − N·тик`, тик — `tick_at` на входе лота 1); 0 — выкл. Вместо `e2`, требует `ew > 0`.
@@ -281,6 +303,9 @@ impl std::fmt::Debug for ExitCfg {
                 .field("e2t", &self.e2t)
                 .field("s2", &self.s2);
         }
+        if self.sm_pm != 0 {
+            d.field("sm_pm", &self.sm_pm);
+        }
         d.finish()
     }
 }
@@ -303,7 +328,7 @@ impl FilterCfg {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct PortCfg {
     pub cool_min: usize,
     pub m_stops: usize,
@@ -320,6 +345,34 @@ pub struct PortCfg {
     /// другого уровня той же монеты входит при открытой позиции (режим сигналов: одна сделка на уровень, лимиты портфеля — `p`, `c`, `m`, `s_glob`,
     /// `ww` — выключаются своими значениями). Только `breakout tick`.
     pub busy: bool,
+    /// TK-679 (`pr`): кто из кандидатов берёт место, когда всех взять нельзя: 0 — как было (расстояние до уровня, монета по алфавиту);
+    /// 1 — выше NATR(30) закрытой минуты `t−1`; 2 — выше оборот за 15 закрытых минут; 3 — за 60. Равенство — прежний порядок. Только `breakout tick`.
+    pub pr: u8,
+    /// TK-679 (`pw`): окно сбора кандидатов, мс. 0 — правило `pr` действует только среди сигналов с одним и тем же временем (мс). `> 0` — кандидат,
+    /// который занял бы последнее свободное место, открывает окно `[t0, t0 + pw]`; прошедшие проверки кандидаты окна собираются, в `T = t0 + pw`
+    /// ранжируются по `pr` и входят по ленте на `T + lat` (кандидат, у которого сделка в `(сигнал, T]` дошла до уровня, снят). При двух и более
+    /// свободных местах вход сразу, как было. Требует `ew > 0`, несовместим с `mk`, `ek`, `xb`. Только `breakout tick`.
+    pub pw_ms: i64,
+}
+
+/// Ручной `Debug`: отпечаток в `meta.json` при `pr = 0`, `pw = 0` — прежний (поля печатаются только при включённом приоритете).
+impl std::fmt::Debug for PortCfg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("PortCfg");
+        d.field("cool_min", &self.cool_min)
+            .field("m_stops", &self.m_stops)
+            .field("mm_min", &self.mm_min)
+            .field("s_glob", &self.s_glob)
+            .field("w_min", &self.w_min)
+            .field("ww_min", &self.ww_min)
+            .field("p", &self.p)
+            .field("reentry", &self.reentry)
+            .field("busy", &self.busy);
+        if self.pr != 0 || self.pw_ms != 0 {
+            d.field("pr", &self.pr).field("pw_ms", &self.pw_ms);
+        }
+        d.finish()
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -368,6 +421,22 @@ impl SigCfg {
     pub fn fresh_on(&self) -> bool {
         self.fr_h_min > 0 || self.fr_share > 0
     }
+
+    /// TK-681 (`ev`): зона входа на минуте с волатильностью `v` (доля цены ×1e8, −1 — нет значения) — доля цены ×1e8, уже с `min(·, track)`;
+    /// `None` — зоны нет (нет значения `V`). При `ev = 0` — прежнее `min(e, track)`.
+    pub fn zone_e8(&self, v: i64) -> Option<i64> {
+        let track = self.track_pm * 1000;
+        if self.ev == 0 {
+            return Some((self.e_pm * 1000).min(track));
+        }
+        if v < 0 {
+            return None;
+        }
+        let e = (i128::from(v) * i128::from(self.ea_m) / 1000)
+            .max(i128::from(self.el_pm) * 1000)
+            .min(i128::from(self.eh_pm) * 1000) as i64;
+        Some(e.min(track))
+    }
 }
 
 impl ExitCfg {
@@ -394,6 +463,7 @@ impl ExitCfg {
             || self.cs_lo_m != 0
             || self.cs_hi_m != 0
             || self.cs_m_m != 0
+            || self.sm_pm != 0
     }
 
     /// Любая опция §13.19 включена (`breakout tick` only).
@@ -464,6 +534,11 @@ impl Params {
                 fr_share: 0,
                 fr_b_pm: pm(0.5),
                 fg_m: 0,
+                nf: 0,
+                ev: 0,
+                ea_m: 0,
+                el_pm: 50,
+                eh_pm: 1000,
             },
             exit: ExitCfg {
                 natr_p: 30,
@@ -516,6 +591,7 @@ impl Params {
                 vm_pm: 500,
                 vz: 0,
                 vr_m: 0,
+                sm_pm: 0,
                 w2_pct: 50,
                 e2t: 0,
                 s2: false,
@@ -530,6 +606,8 @@ impl Params {
                 p: 3,
                 reentry: 0,
                 busy: true,
+                pr: 0,
+                pw_ms: 0,
             },
             filt: FilterCfg::default(),
             mk: 0,
@@ -619,6 +697,7 @@ impl Params {
             "tl" => self.exit.tl = u.min(255) as u8,
             "nx" => self.exit.nx_m = pm(f),
             "sl" => self.exit.sl_m = pm(f),
+            "sm" => self.exit.sm_pm = pm(f),
             "cw" => self.exit.cs_w = f.round() as i64,
             "cl" => self.exit.cs_lo_m = pm(f),
             "ch" => self.exit.cs_hi_m = pm(f),
@@ -639,6 +718,11 @@ impl Params {
             "e2t" => self.exit.e2t = f.round() as i64,
             "s2" => self.exit.s2 = b,
             "fg" => self.sig.fg_m = pm(f),
+            "nf" => self.sig.nf = u.min(255) as u8,
+            "ev" => self.sig.ev = u.min(255) as u8,
+            "ea" => self.sig.ea_m = pm(f),
+            "el" => self.sig.el_pm = pm(f),
+            "eh" => self.sig.eh_pm = pm(f),
             "fv" => self.filt.v = Some(f),
             "c" => self.port.cool_min = u,
             "m" => self.port.m_stops = u,
@@ -649,6 +733,8 @@ impl Params {
             "p" => self.port.p = u,
             "reentry" => self.port.reentry = u.min(255) as u8,
             "busy" => self.port.busy = b,
+            "pr" => self.port.pr = u.min(255) as u8,
+            "pw" => self.port.pw_ms = f.round() as i64,
             "mk" => self.mk = u.min(255) as u8,
             "ek" => self.ek = f.round() as i64,
             "xb" => self.xb = pm(f),
@@ -658,8 +744,11 @@ impl Params {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if !NATR_PERIODS.contains(&self.sig.natr_p) || !NATR_PERIODS.contains(&self.exit.natr_p) {
-            bail!("период NATR должен быть из {NATR_PERIODS:?}");
+        // TK-681: окно 5 — только у фильтра живости (`natr_p`); NATR выхода — прежние периоды
+        if !(NATR_PERIODS.contains(&self.sig.natr_p) || self.sig.natr_p == 5)
+            || !NATR_PERIODS.contains(&self.exit.natr_p)
+        {
+            bail!("период NATR должен быть из {NATR_PERIODS:?} (natr_p — ещё 5)");
         }
         if !super::data::TF_MINUTES.contains(&self.sig.lv.tf_min) {
             bail!("tf должен быть из {:?}", super::data::TF_MINUTES);
@@ -740,9 +829,21 @@ impl Params {
         if self.port.reentry > 2 {
             bail!("reentry ∈ {{0, 1, 2}}");
         }
+        if self.port.pr > 3 {
+            bail!("pr ∈ {{0, 1, 2, 3}}");
+        }
+        if !(0..=60_000).contains(&self.port.pw_ms) {
+            bail!("pw ∈ [0, 60000] мс (признаки кандидата берутся на минуте сигнала)");
+        }
+        if self.port.pw_ms > 0
+            && (!self.exit.tape_entry() || self.mk > 0 || self.ek > 0 || self.xb > 0)
+        {
+            bail!("pw требует ew > 0 (вход по ленте) и несовместим с mk, ek, xb");
+        }
         self.validate_v21()?;
         self.validate_stops()?;
         self.validate_vol()?;
+        self.validate_zone()?;
         if self.exit.n_tp < 2 || self.port.p == 0 || self.sig.lv.k == 0 || self.sig.lv.n == 0 {
             bail!("n_tp ≥ 2, p ≥ 1, k ≥ 1, n_bounce ≥ 1");
         }
@@ -758,6 +859,7 @@ impl Params {
             || e.cs_lo_m < 0
             || e.cs_hi_m < 0
             || e.cs_m_m < 0
+            || e.sm_pm < 0
             || e.tu_min < 0
         {
             bail!("nx, sl, cw, cl, ch, cm, tu ≥ 0");
@@ -767,6 +869,9 @@ impl Params {
         }
         if e.cs_w > 0 && e.cs_lo_m >= e.cs_hi_m {
             bail!("cw требует ch > cl (допустимая ширина проторговки)");
+        }
+        if e.sm_pm > 0 && e.nx_m == 0 && e.sl_m == 0 && e.cs_w == 0 {
+            bail!("sm требует nx, sl или cw (нижний зажим цен от уровня)");
         }
         Ok(())
     }
@@ -837,6 +942,24 @@ impl Params {
         }
         if e.sn_m != 0 {
             bail!("vf несовместим с sn (одно расстояние стопа от волатильности)");
+        }
+        Ok(())
+    }
+
+    /// TK-681: источник фильтра живости (`nf`) и зона входа от волатильности (`ev/ea/el/eh`); ключ без `ev` — опечатка, а не «выкл.».
+    fn validate_zone(&self) -> Result<()> {
+        let s = &self.sig;
+        if s.nf > 8 || s.ev > 8 {
+            bail!("nf, ev ∈ 0…8 (0 — выкл.; NATR 5/15/30/60, реализованная 5/15/30/60)");
+        }
+        if s.ev == 0 {
+            if s.ea_m != 0 || s.el_pm != 50 || s.eh_pm != 1000 {
+                bail!("ea/el/eh требуют ev > 0 (зона входа от волатильности)");
+            }
+            return Ok(());
+        }
+        if s.ea_m <= 0 || s.el_pm <= 0 || s.el_pm > s.eh_pm {
+            bail!("ev требует ea > 0 и 0 < el ≤ eh");
         }
         Ok(())
     }

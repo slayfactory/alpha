@@ -615,7 +615,24 @@ pub fn candidates_fg(
     let Some(natr) = sym.natr_for(cfg.natr_p) else {
         return;
     };
-    let dmax = (cfg.e_pm * 1000).min(cfg.track_pm * 1000);
+    // TK-681 (`nf`): ряд фильтра живости — NATR `natr_p` или источник волатильности; (`ev`): ряд зоны входа
+    let live = if cfg.nf == 0 {
+        natr
+    } else {
+        let Some(v) = sym.vol_for(cfg.nf) else {
+            return;
+        };
+        v
+    };
+    let evol = if cfg.ev == 0 {
+        None
+    } else {
+        let Some(v) = sym.vol_for(cfg.ev) else {
+            return;
+        };
+        Some(v)
+    };
+    let dmax0 = (cfg.e_pm * 1000).min(cfg.track_pm * 1000);
     let natr_min = cfg.natr_min_pm * 1000;
     for (li, lv) in levels.iter().enumerate() {
         let end = (lv.end as usize).min(N_MIN);
@@ -642,9 +659,15 @@ pub fn candidates_fg(
             } else {
                 (-sym.l[t], -sym.h[t])
             };
-            if t >= START_MIN && !forbidden && lo < lp {
+            // зона входа минуты: постоянная или от волатильности закрытой минутки `t−1` (`ev`); нет значения — кандидата нет
+            let dmax = match evol {
+                None => Some(dmax0),
+                Some(v) if t > 0 => cfg.zone_e8(i64::from(v[t - 1])),
+                Some(_) => None,
+            };
+            if let (true, Some(dmax)) = (t >= START_MIN && !forbidden && lo < lp, dmax) {
                 let zone_lo = lp - mul_div(lp.abs(), dmax + 1, SCALE) as i64 - 1;
-                let nv = i64::from(natr[t - 1]);
+                let nv = i64::from(live[t - 1]);
                 if hi >= zone_lo
                     && nv >= 0
                     && nv >= natr_min
@@ -764,6 +787,16 @@ pub fn minute_range(ticks: &[Tick], t: usize) -> (usize, usize) {
     )
 }
 
+/// TK-681: зона входа (доля цены ×1e8) кандидата минуты `t` — `SigCfg::zone_e8` по закрытой минутке `t−1`.
+pub fn zone_at(sym: &Sym, cfg: &SigCfg, t: usize) -> Option<i64> {
+    let v = if cfg.ev == 0 || t == 0 {
+        -1
+    } else {
+        sym.vol_for(cfg.ev).map_or(-1, |v| i64::from(v[t - 1]))
+    };
+    cfg.zone_e8(v)
+}
+
 /// Сигналы одной монеты для всех заданий `(SigCfg, сторона)`: сделки каждых суток читаются один раз.
 pub fn signals_for_coin(
     sym: &Sym,
@@ -796,7 +829,8 @@ pub fn signals_for_coin(
         for (j, c) in list {
             let (cfg, side) = &jobs[j];
             let (from, to) = minute_range(&ticks, c.t as usize);
-            let dmax = (cfg.e_pm * 1000).min(cfg.track_pm * 1000);
+            // TK-681 (`ev`): зона — та же, что дала кандидата (волатильность закрытой минутки `t−1`)
+            let dmax = zone_at(sym, cfg, c.t as usize).unwrap_or(0);
             if let Some((k, dist)) = first_signal(&ticks, from, to, side.s(), c.lp, dmax, cfg.color)
             {
                 let mut ws = false;
@@ -893,6 +927,8 @@ pub struct TickOut {
     pub marks: Vec<(usize, i64)>,
     /// v22 (`tl`): выставленный лимитный приказ трейла — (мс срабатывания, настоящая цена ×1e8); `None` — приказа не было (`tl = 0` или трейл не срабатывал).
     pub tl: Option<(i64, i64)>,
+    /// TK-681 (`sm`): стоп от уровня (`sl`, `cw`) или порог `nx` на входе — [сдвинут нижним зажимом `sm`, прежний зажим `вход − 1e-8` сработал бы].
+    pub floor: [bool; 2],
 }
 
 /// Множитель ступени `i` лестницы тейков в тысячных NATR (§13.12): `t_low + (t_high − t_low)·(i/(n−1))^γ`; γ = 1 — прежняя
@@ -1090,6 +1126,8 @@ struct Pos {
     lim: bool,
     /// TK-669 (`trp`): трейл включается первым исполненным тейком (откат `r_dist` — уже в цене), а не ходом `+a` NATR.
     trp: bool,
+    /// TK-681 (`sm`): см. `TickOut::floor`.
+    floor: [bool; 2],
 }
 
 impl Pos {
@@ -1111,6 +1149,18 @@ impl Pos {
                 as i64
         };
         let n = ex.n_tp as i64;
+        // TK-681 (`sm`): цена от уровня не ближе `sm` % от входа (расстояние округлено от входа); `sm = 0` — прежний зажим `вход − 1e-8`
+        let near = if ex.sm_pm > 0 {
+            e - ((i128::from(ea) * i128::from(ex.sm_pm) + 99_999) / 100_000).max(1) as i64
+        } else {
+            e - 1
+        };
+        let mut floor = [false; 2];
+        let mut lvl_px = |raw: i64| -> i64 {
+            floor[0] |= ex.sm_pm > 0 && raw > near;
+            floor[1] |= raw > e - 1;
+            raw.min(near)
+        };
         let mut stop_base = e - frac(ea, ex.s_pm, 100_000);
         let mut be_lvl = None;
         if let Some(l) = lc {
@@ -1123,13 +1173,13 @@ impl Pos {
                 if let Some((rlo, rhi)) = l.rng {
                     let w = rhi - rlo;
                     if w >= nat(ex.cs_lo_m) && w <= nat(ex.cs_hi_m) {
-                        stop_base = stop_base.max((rlo - nat(ex.cs_m_m)).min(e - 1));
+                        stop_base = stop_base.max(lvl_px(rlo - nat(ex.cs_m_m)));
                         cons_ok = true;
                     }
                 }
             }
             if !cons_ok && ex.sl_m > 0 {
-                stop_base = stop_base.max((l.lp - nat(ex.sl_m)).min(e - 1));
+                stop_base = stop_base.max(lvl_px(l.lp - nat(ex.sl_m)));
             }
             if ex.be_mode == 3 {
                 let kb = if ex.ls_m > 0 { ex.ls_m } else { 500 };
@@ -1144,9 +1194,14 @@ impl Pos {
         if let Some(sp) = stop_px {
             stop_base = sp.min(e - 1);
         }
+        let lp = lc.map_or(0, |l| l.lp);
+        let nx_lvl = if ex.nx_m > 0 {
+            lvl_px(lp - nat(ex.nx_m))
+        } else {
+            i64::MIN
+        };
         let rules =
             lc.is_some() && (ex.tx_min > 0 || ex.rt_f_pm > 0 || ex.nx_m > 0 || ex.tu_min > 0);
-        let lp = lc.map_or(0, |l| l.lp);
         let dist = |x_pm: i64| (i128::from(lp.abs()) * i128::from(x_pm) / 100_000) as i64;
         let unit = i128::from(ea) * i128::from(natr_e8);
         let natr_stop = (ex.sn_m > 0).then(|| NatrStop {
@@ -1205,11 +1260,7 @@ impl Pos {
             touched_ms: NONE_MS,
             broke: false,
             below_since: NONE_MS,
-            nx_lvl: if ex.nx_m > 0 {
-                (lp - nat(ex.nx_m)).min(e - 1)
-            } else {
-                i64::MIN
-            },
+            nx_lvl,
             tu_due: if ex.tu_min > 0 {
                 entry_ms + ex.tu_min * 60_000
             } else {
@@ -1218,6 +1269,7 @@ impl Pos {
             natr_stop,
             step,
             lim: false,
+            floor,
         }
     }
 
@@ -1677,6 +1729,7 @@ fn sim_tail_e(
         takes: pos.next_tp as u32,
         marks,
         tl: tl_info,
+        floor: pos.floor,
     }
 }
 
@@ -2548,6 +2601,11 @@ pub struct TickResult {
     pub ek: [u64; 5],
     /// TK-669 (`xb > 0`): приказы на пробой — исполнено, снято за 60 мин, отказ входа после срабатывания (нет ленты стороны).
     pub xb: [u64; 3],
+    /// TK-681 (`sm`): сделки (по лоту 1) — стоп от уровня или `nx` сдвинут нижним зажимом; прежний зажим `вход − 1e-8` сработал бы.
+    pub floor: [u64; 2],
+    /// TK-679 (`pr`, `pw`): окон сбора; окон с двумя и более кандидатами; окон, где первым по `pr` стал не первый по прежнему порядку;
+    /// входов после окна; отказов входа после окна (уровень достигнут / нет ленты / за уровнем); сигналов, переставленных `pr` внутри одной мс.
+    pub prio: [u64; 6],
 }
 
 impl TickResult {
@@ -2563,8 +2621,44 @@ impl TickResult {
             mk: [0; 3],
             ek: [0; 5],
             xb: [0; 3],
+            floor: [0; 2],
+            prio: [0; 6],
         }
     }
+}
+
+/// TK-679 (`pr`): значение приоритета кандидата по закрытым минутам до минуты сигнала `t` (больше — раньше): 1 — NATR(30) минуты `t−1`,
+/// 2 — оборот за 15 минут `t−15 … t−1`, 3 — за 60; 0 — приоритета нет (прежний порядок).
+pub fn prio_val(sym: &Sym, t: usize, pr: u8) -> i64 {
+    match pr {
+        1 => sym.natr_for(30).map_or(-1, |v| i64::from(v[t - 1])),
+        2 => sym.pq[t] - sym.pq[t - 15],
+        3 => sym.pq[t] - sym.pq[t - 60],
+        _ => 0,
+    }
+}
+
+/// TK-679 (`pw`): вход кандидата после окна сбора — решение в `t_dec` (конец окна). Сделка в `(сигнал, t_dec]` на уровне или за ним — кандидат снят
+/// (`Touched`); иначе вход по ленте на `t_dec + lat` с прежними проверками (`stale`, `beyond`).
+pub fn late_entry(
+    src: &dyn TradeSrc,
+    sym: &Sym,
+    side: Side,
+    sig: &TSig,
+    ex: &ExitCfg,
+    t_dec: i64,
+) -> EntryDec {
+    let mut cur = Cursor::new(src, &sym.name, usize::from(sig.day), sig.idx as usize + 1);
+    while let Some((ms, px, _)) = cur.next_tick() {
+        if ms > t_dec {
+            break;
+        }
+        if side.s() * px >= sig.lp {
+            return EntryDec::Reject(EntryRej::Touched);
+        }
+    }
+    let t = t_dec + ex.lat_ms;
+    entry_at(src, sym, side, (t / DAY_MS) as usize, t, sig.lp, ex)
 }
 
 struct Open {
@@ -2640,6 +2734,8 @@ pub fn run_tick_xb(
         mk: [0; 3],
         ek: [0; 5],
         xb: [0; 3],
+        floor: [0; 2],
+        prio: [0; 6],
     };
     let maker = mk > 0;
     let entry_slip = if maker { 0 } else { ex.slip_bps };
@@ -2653,8 +2749,61 @@ pub fn run_tick_xb(
     let mut consumed: HashSet<u64> = HashSet::new();
     let mut open: Vec<Open> = Vec::new();
     let min = |m: usize| m as i64 * MIN_MS;
-    for sg in sigs {
-        let t = sg.ms;
+    // TK-679 (`pr`): сигналы с одним и тем же временем — по приоритету, затем прежний порядок
+    let by_prio;
+    let sigs: &[TSig] = if pc.pr > 0 {
+        let mut v = sigs.to_vec();
+        v.sort_unstable_by_key(|s| {
+            let pv = prio_val(&syms[s.sym as usize], s.t as usize, pc.pr);
+            (s.ms, std::cmp::Reverse(pv), s.dist, s.sym, s.level)
+        });
+        res.prio[5] = v
+            .iter()
+            .zip(sigs)
+            .filter(|(a, b)| (a.sym, a.level) != (b.sym, b.level))
+            .count() as u64;
+        by_prio = v;
+        &by_prio
+    } else {
+        sigs
+    };
+    // TK-679 (`pw`): окно сбора — номера сигналов, конец открытого окна, момент решения разбираемого окна
+    let mut batch: Vec<u32> = Vec::new();
+    let mut batch_end: Option<i64> = None;
+    let mut flush: Option<i64> = None;
+    let (mut next, mut bi) = (0usize, 0usize);
+    loop {
+        let (sg, t, late) = if let Some(tf) = flush {
+            if bi == batch.len() {
+                flush = None;
+                batch.clear();
+                continue;
+            }
+            bi += 1;
+            (&sigs[batch[bi - 1] as usize], tf, true)
+        } else if let Some(e) = batch_end.filter(|&e| next == sigs.len() || sigs[next].ms > e) {
+            let old = |k: &u32| {
+                let s = &sigs[*k as usize];
+                (s.dist, s.sym, s.level)
+            };
+            let first_old = batch.iter().min_by_key(|&k| old(k)).copied();
+            batch.sort_unstable_by_key(|k| {
+                let s = &sigs[*k as usize];
+                let pv = prio_val(&syms[s.sym as usize], s.t as usize, pc.pr);
+                (std::cmp::Reverse(pv), old(k))
+            });
+            res.prio[1] += u64::from(batch.len() > 1);
+            res.prio[2] += u64::from(first_old != batch.first().copied());
+            batch_end = None;
+            flush = Some(e);
+            bi = 0;
+            continue;
+        } else if next < sigs.len() {
+            next += 1;
+            (&sigs[next - 1], sigs[next - 1].ms, false)
+        } else {
+            break;
+        };
         while !open.is_empty() && open[0].exit_ms <= t {
             let o = open.remove(0);
             busy[o.sym] = false;
@@ -2712,6 +2861,19 @@ pub fn run_tick_xb(
             res.rej[4] += 1;
             continue;
         }
+        if pc.pw_ms > 0 && !late {
+            // идёт окно — кандидат в него; последнее свободное место — кандидат открывает окно
+            if batch_end.is_some() {
+                batch.push((next - 1) as u32);
+                continue;
+            }
+            if open.len() + 1 >= pc.p {
+                batch_end = Some(t + pc.pw_ms);
+                batch.push((next - 1) as u32);
+                res.prio[0] += 1;
+                continue;
+            }
+        }
         let sym = &syms[si];
         let natr = exit_natr(sym, ex, sg.t as usize);
         let mut dec = EntryDec::Next;
@@ -2732,6 +2894,14 @@ pub fn run_tick_xb(
             } else if xb > 0 {
                 let (d, end) = xb_decision(src, sym, side, sg, ex, natr, xb);
                 xb_end = end;
+                d
+            } else if late {
+                let d = late_entry(src, sym, side, sg, ex, t);
+                res.prio[if matches!(d, EntryDec::Fill { .. }) {
+                    3
+                } else {
+                    4
+                }] += 1;
                 d
             } else {
                 entry_decision(src, sym, side, sg, ex)
@@ -2871,6 +3041,8 @@ pub fn run_tick_xb(
             res.rej[5] += 1;
             continue;
         };
+        res.floor[0] += u64::from(tr.floor[0]);
+        res.floor[1] += u64::from(tr.floor[1]);
         if pc.reentry == 0 {
             consumed.insert(key);
         }
