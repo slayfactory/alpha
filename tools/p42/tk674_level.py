@@ -199,6 +199,7 @@ def cmd_map(n):
         for tk in lv["taken"]:
             names = tuple(tk["names"])
             grid, b0 = combo_grid(side, names, thr)
+            gvals = [level_vals(side, ax.axis_map(side)[x], "split" in names) for x in names]
             cand = []
             for pos, k in grid.items():
                 if k is None or k not in rows:
@@ -209,8 +210,8 @@ def cmd_map(n):
                     continue
                 nb = []
                 for d in range(len(pos)):
-                    for st_ in (-1, 1):
-                        x = grid.get(pos[:d] + (pos[d] + st_,) + pos[d + 1:])
+                    for i2 in ax.nb_idx(names[d], gvals[d], pos[d]):
+                        x = grid.get(pos[:d] + (i2,) + pos[d + 1:])
                         if x is not None and x in rows and not run.is_ref5(rows[x]) and rows[x]["sharpe"] == rows[x]["sharpe"]:
                             nb.append(rows[x]["sharpe"])
                 nbm = float(np.mean(nb)) if nb else None

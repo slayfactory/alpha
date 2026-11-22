@@ -679,8 +679,9 @@ def guards(row, base):
     g["c"] = ex["maxdd"] <= 2 * b["maxdd"]
     g["d"] = ex["lmax"]["usd"] <= b["lmax"]["usd"] + 1e-9
     if is_tick_split(row):                                   # §13.73.4: у клеток с частью B «за тик до уровня» охрана (д) — по реальному среднему убытку stop-выхода
-        lm = ex["lmax"]
-        g["d"] = lm["c_stop"] is None or lm["c_stop"] + ms_stake() * lm["s"] / 100.0 <= b["lmax"]["usd"] + 1e-9
+        lm = ex["lmax"]                                      # обе части условия: убыток по цене стопа случая «только часть A» и средний реальный убыток stop-выхода ≤ базы
+        cap = b["lmax"]["usd"] + 1e-9
+        g["d"] = split_losses(ex)["a_only"] <= cap and (lm["c_stop"] is None or lm["c_stop"] + ms_stake() * lm["s"] / 100.0 <= cap)
     return g
 
 
@@ -742,6 +743,14 @@ def ms_stake():
     return 500.0
 
 
+def split_losses(ex):
+    """Убыток по цене стопа клетки с разделённым входом: «только часть A» (доля 100 − w2) и «A + B» (вся ставка), $ с издержками полного стопа."""
+    import tk674_stats as ms
+    lm, w2 = ex["lmax"], float((ex.get("patch") or {}).get("w2", 50))
+    full = ms_stake() * lm["s"] / 100.0
+    return dict(a_only=full * (100.0 - w2) / 100.0 + ms.COST_USD, a_b=full + ms.COST_USD)
+
+
 def is_ref5(row):
     """Поправка §13.73.2: при базе стопа ≤ 4 % клетка со стопом 5 % — только справочная колонка (не кандидат, не якорь, не сосед плато);
     §13.73.4: кроме клеток с частью B «за тик до уровня» (e2t > 0) — там стоп 5 % в переборе (В-171)."""
@@ -797,7 +806,8 @@ def cmd_map(a):
                     r = rows[k]
                     if r["sharpe"] != r["sharpe"] or is_ref5(r):
                         continue
-                    nb = [m[i + di][j + dj] for di, dj in ((-1, 0), (1, 0), (0, -1), (0, 1)) if 0 <= i + di < ni and 0 <= j + dj < nj and m[i + di][j + dj] is not None]
+                    nb = [m[i2][j] for i2 in ax.nb_idx(an, g["vals"][0], i)] + [m[i][j2] for j2 in ax.nb_idx(bn, g["vals"][1], j)]
+                    nb = [x for x in nb if x is not None]
                     nb = [x for x in nb if not is_ref5(rows[x])]
                     nbs = [rows[x]["sharpe"] for x in nb if rows[x]["sharpe"] == rows[x]["sharpe"]]
                     nbm = float(np.mean(nbs)) if nbs else None

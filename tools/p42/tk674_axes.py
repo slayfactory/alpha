@@ -43,6 +43,18 @@ SPLIT_VALS = {                                  # метка → полный н
     "t1w50s2": dict(e2=0, e2t=1, w2=50, s2=1),
 }
 SPLIT_BASE = {"L": "off", "S": "e2w50"}
+SPLIT_NB = {                                    # соседи плато по оси split (§13.73.4): шаг w2 внутри семейства, шаг e2t при w2 = 50, s2 у t1w50, off ↔ середины семейств
+    "off": ("e2w50", "t1w50"), "e2w25": ("e2w50",), "e2w50": ("e2w25", "e2w75", "off"), "e2w75": ("e2w50",),
+    "t1w25": ("t1w50",), "t1w50": ("t1w25", "t1w75", "t2w50", "t1w50s2", "off"), "t1w75": ("t1w50",),
+    "t2w50": ("t1w50", "t3w50"), "t3w50": ("t2w50",), "t1w50s2": ("t1w50",),
+}
+
+
+def nb_idx(name, vals, i):
+    """Индексы соседей значения i оси на шаг (плато (г)): у обычной оси — i ± 1, у составной оси split — по SPLIT_NB."""
+    if name == "split":
+        return [vals.index(x) for x in SPLIT_NB[vals[i]] if x in vals]
+    return [j for j in (i - 1, i + 1) if 0 <= j < len(vals)]
 NOTIONAL_U, MIN_LOT_USD = 500_000_000, 5.0     # `trade.rs` NOTIONAL_U; минимальная стоимость ордера Bybit (§13.50 п. 7 (з))
 
 
