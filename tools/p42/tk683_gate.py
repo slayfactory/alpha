@@ -94,12 +94,14 @@ def main():
     ap.add_argument("--per-batch", type=int, default=4)
     ap.add_argument("--threads", type=int, default=2)
     ap.add_argument("--cells-root", default="/data/p42-tk674")
+    ap.add_argument("--cap-gb", type=int, default=2, help="память движка под сутки сделок (`--cap-gb`; у движка по умолчанию 24 ГБ); на результат не влияет")
     a = ap.parse_args()
     if os.path.realpath(m.ROOT) == os.path.realpath(a.cells_root):
         raise SystemExit("TK674_ROOT гейта должен отличаться от каталога карты (чужие файлы не перезаписываются)")
     st, r5, _, _ = t._srv()
     import tk604_run as r4
     r4.THREADS = a.threads
+    r5.TICK_STORE = list(r5.TICK_STORE) + ["--cap-gb", str(a.cap_gb)]
     m.cmd_gates(a)                              # G-base: при различии — выход с кодом 1
     u = r5.Uni(m.UNI)
     res, bad, n = [], [], 0
