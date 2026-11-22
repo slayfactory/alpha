@@ -414,7 +414,7 @@ def cmd_md(d, out=None):
         for a in m["axes"]:
             note = " — активная" if a["active"] else ""
             if a.get("n_all"):
-                note += "; определён у %d из %d кандидатов базы (%s %%)%s" % (a["n"], a["n_all"], ("%.0f" % (100.0 * a["n"] / a["n_all"])), ", активным не бывает (определён менее чем у половины)" if a.get("low_cover") else "")
+                note += "; определён у %d из %d кандидатов базы (%s %%)%s" % (a["n"], a["n_all"], ("%.0f" % (100.0 * a["n"] / a["n_all"])), ", активным не бывает (определён менее чем у %d %% кандидатов)" % round(100 * a80.COVER_MIN) if a.get("low_cover") else "")
             if "old_active" in a:                      # §13.73.9: вердикт по прежней сетке рядом
                 note += "; по прежней сетке — %s%s" % ("активная (%s)" % a["old_winner"] if a["old_active"] else "не активная",
                                                        ", смена — от новых соседей плато" if a["old_active"] != a["active"] else "")
