@@ -641,7 +641,7 @@ def guards(row, base):
 def rep_cell(c, bsh):
     if c is None:
         return None
-    k, r, gg, nbm = c
+    k, r, gg, nbm = c[:4]
     ex = r["extra"]
     return dict(ckey=k, cid=r["cell"], sharpe=r["sharpe"], usd=r["usd"], n=r["trades"], maxdd=ex["maxdd"], maxdd_pct=ex["maxdd_pct"], gap_longest=ex["kpi"]["gap_longest"],
                 gap_mean=ex["kpi"]["gap_mean"], p90=ex["kpi"]["p90"], tail=ex["kpi"]["gap_tail"], rr=ex["rr"]["rr"], months=ex["months"], plateau=gg["g"], nb_mean=nbm, gain=r["sharpe"] - bsh)
@@ -656,6 +656,31 @@ def pick(lst):
     return near[0]
 
 
+def synergy(rows, m, ia0, jb0, i, j, B=20000, block=5, seed=674):
+    """Синергия клетки пары (i, j) относительно базы пары (ia0, jb0): Σ(a,b) − Σ(a,0) − Σ(0,b) + Σ(0,0), $ с интервалом блочного бутстрепа по суткам (блок 5, 20 000, seed 674)
+    и прибавка Шарпа над лучшей из двух одноосевых клеток; None, если нужных клеток нет."""
+    if ia0 is None or jb0 is None:
+        return None
+    ks = [m[i][j], m[i][jb0], m[ia0][j], m[ia0][jb0]]
+    if any(k is None for k in ks):
+        return None
+    r = [rows[k] for k in ks]
+    d = np.array(r[0]["extra"]["daily"]) - np.array(r[1]["extra"]["daily"]) - np.array(r[2]["extra"]["daily"]) + np.array(r[3]["extra"]["daily"])
+    n = len(d)
+    nb = -(-n // block)
+    rng = np.random.default_rng(seed)
+    idx = (rng.integers(0, n, size=(B, nb))[:, :, None] + np.arange(block)) % n
+    sums = d[idx.reshape(B, -1)[:, :n]].sum(axis=1)
+    single = [x["sharpe"] for x in r[1:3] if x["sharpe"] == x["sharpe"]]
+    return dict(usd=float(d.sum()), lo=float(np.quantile(sums, 0.025)), hi=float(np.quantile(sums, 0.975)), p_le0=float((sums <= 0).mean()),
+                sharpe_gain=(r[0]["sharpe"] - max(single)) if single else None, a_only=float(r[1]["sharpe"]), b_only=float(r[2]["sharpe"]))
+
+
+def base_idx(side, name, vals):
+    b = ax.axis_map(side)[name]["base"]
+    return vals.index(b) if b in vals else None
+
+
 def cmd_map(a):
     store = chron_store(ro=True)
     bins = eq_bins()
@@ -666,6 +691,9 @@ def cmd_map(a):
         brow = store.cells_lookup(SIDENAME[side], UNI, WIN, [base_ck], bins=bins).get(base_ck)
         if brow is None:
             raise SystemExit("нет базы стороны %s в БД (ключ %s)" % (side, base_ck))
+        for r_ in list(rows.values()) + [brow]:
+            if r_["sharpe"] is None:                         # Шарп не определён (нет сделок / нулевой разброс) → NaN: такие клетки не проходят охрану (а)
+                r_["sharpe"] = float("nan")
         miss = [k for k in plan["cells"] if k not in rows]
         if miss:
             raise SystemExit("%s: в БД нет %d клеток плана (первая: %s)" % (side, len(miss), plan["cells"][miss[0]]["cid"]))
@@ -675,6 +703,8 @@ def cmd_map(a):
         for gname, g in plan["grids"].items():
             m = g["m"]
             ni, nj = len(m), len(m[0])
+            an, bn = gname.split("|")
+            ia0, jb0 = base_idx(side, an, g["vals"][0]), base_idx(side, bn, g["vals"][1])
             cand = []
             for i in range(ni):
                 for j in range(nj):
@@ -688,10 +718,18 @@ def cmd_map(a):
                     nbs = [rows[x]["sharpe"] for x in nb if rows[x]["sharpe"] == rows[x]["sharpe"]]
                     nbm = float(np.mean(nbs)) if nbs else None
                     plateau = bool(nbs) and nbm >= 0.8 * r["sharpe"] and nbm >= bsh
-                    cand.append((k, r, dict(gd[k], g=plateau), nbm))
+                    cand.append((k, r, dict(gd[k], g=plateau), nbm, i, j))
             ok3 = [c for c in cand if c[2]["a"] and c[2]["b"] and c[2]["c"] and c[2]["d"]]
             full = [c for c in ok3 if c[2]["g"]]
-            pair_rows.append(dict(pair=gname, cells=len(cand), guarded3=len(ok3), guarded_all=len(full), winner=rep_cell(pick(full), bsh), best_no_plateau=rep_cell(pick(ok3), bsh)))
+            win, both = pick(full), pick([c for c in full if c[4] != ia0 and c[5] != jb0])
+            wr, br = rep_cell(win, bsh), rep_cell(both, bsh)
+            if wr:
+                wr["moved"] = int(win[4] != ia0) + int(win[5] != jb0)
+                wr["syn"] = synergy(rows, m, ia0, jb0, win[4], win[5]) if wr["moved"] == 2 else None
+            if br:
+                br["moved"] = 2
+                br["syn"] = synergy(rows, m, ia0, jb0, both[4], both[5])
+            pair_rows.append(dict(pair=gname, cells=len(cand), guarded3=len(ok3), guarded_all=len(full), winner=wr, both_moved=br, best_no_plateau=rep_cell(pick(ok3), bsh)))
         bx = brow["extra"]
         # счётчик испытаний (§13.73.1 разд. 3): все клетки стороны в БД (карта + прежние), шум σ·√(2 ln m) — верхняя оценка для независимых клеток
         m_side = sum(r["n"] for r in store.cells_count() if r["side"] == SIDENAME[side] and r["uni"] == UNI and r["win"] == WIN)
@@ -711,10 +749,18 @@ def cmd_map(a):
             side, bsh, brow["usd"], bx["maxdd"], bx["maxdd_pct"], bx["kpi"]["gap_longest"], len(pair_rows), sum(1 for p in pair_rows if p["winner"])))
         say("   m (все клетки стороны в БД) %d, σ Шарпа клеток %.2f, ожидаемый максимум шума ≈ %.2f (верхняя оценка: клетки зависимы); G-dup: %d групп / %d клеток с одинаковыми сделками" % (
             m_side, sig_sh, noise, len(dup), sum(len(v) for v in dup)))
+        def line(p, w):
+            sy = w.get("syn")
+            return "   %-18s %-34s Шарп %5.2f (%+.2f)  Σ %+6.0f $  просадка %4.0f $ (%2.0f %%)  перехай %3d  сделок %4d  плато %s  осей сдвинуто %d  синергия %s" % (
+                p["pair"].replace("|", "×"), w["cid"][:34], w["sharpe"], w["gain"], w["usd"], w["maxdd"], w["maxdd_pct"], w["gap_longest"], w["n"], "да" if w["plateau"] else "нет", w["moved"],
+                ("%+.0f $ [%+.0f; %+.0f]" % (sy["usd"], sy["lo"], sy["hi"])) if sy else "—")
+        say("   -- А. победитель пары (как в предрегистрации), top 15 по приросту Шарпа")
         for p in top:
-            w = p["winner"]
-            say("   %-18s %-34s Шарп %5.2f (%+.2f)  Σ %+6.0f $  просадка %4.0f $  перехай %3d  сделок %4d  плато %s" % (
-                p["pair"].replace("|", "×"), w["cid"][:34], w["sharpe"], w["gain"], w["usd"], w["maxdd"], w["gap_longest"], w["n"], "да" if w["plateau"] else "нет"))
+            say(line(p, p["winner"]))
+        topb = sorted([p for p in pair_rows if p["both_moved"]], key=lambda p: -p["both_moved"]["gain"])[:15]
+        say("   -- Б. лучшая охранённая клетка пары с ОБЕИМИ осями сдвинутыми (справка, те же клетки), top 15 по приросту Шарпа")
+        for p in topb:
+            say(line(p, p["both_moved"]))
     say("map готово")
 
 
