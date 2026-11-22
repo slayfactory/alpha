@@ -455,6 +455,10 @@ impl Sym {
     }
 
     pub fn natr_for(&self, period: usize) -> Option<&[i32]> {
+        // TK-681: окно 5 — ряд `vol_for(1)` (вне `NATR_PERIODS`: отпечаток кэша сигналов не меняется)
+        if period == VOL_PERIODS[0] {
+            return self.vol_for(1);
+        }
         NATR_PERIODS.iter().position(|&p| p == period).map(|i| {
             self.natr[i]
                 .get_or_init(|| natr_of(&self.o, &self.h, &self.l, &self.c, NATR_PERIODS[i]))

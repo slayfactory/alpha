@@ -5027,3 +5027,208 @@ fn s2_common_stop_puts_lot2_hard_stop_at_lot1_stop_price() {
     let sp = entry_stop_px(px(99.7), Side::Long, NATR, &w.ex, None, 0);
     assert_eq!(sp, px(99.7) - px(99.7) / 20);
 }
+
+// ───────────── TK-681: окно NATR 5 (`natr_p=5`), источник фильтра живости (`nf`), зона входа от волатильности (`ev/ea/el/eh`) ─────────────
+
+/// Мир TK-681: ход цены +1 % на минуте `a` и возврат на `a + 1` (остальное — 90,0), минута `t1` — у уровня 100,025 (`o, h, l, c` = `q`).
+/// Реализованная волатильность окна с обеими минутами — 1,407 % (1_407_230 e8), с одной минутой возврата — 0,990 %.
+fn z_world(t1: usize, a: usize, q: (f64, f64, f64, f64)) -> Cols {
+    let mut c = level_world();
+    set(&mut c, a, 90.0, 90.9, 90.0, 90.9);
+    set(&mut c, a + 1, 90.9, 90.9, 90.0, 90.0);
+    set(&mut c, t1, q.0, q.1, q.2, q.3);
+    c
+}
+
+const Z_NEAR: (f64, f64, f64, f64) = (99.85, 99.95, 99.84, 99.90);
+const Z_FAR: (f64, f64, f64, f64) = (99.40, 99.50, 99.39, 99.45);
+
+fn z_params(line: &str) -> Params {
+    let (_, mut p) = super::params::parse_variant(&format!("x {line}")).expect("разбор");
+    p.sig.lv.k = 1;
+    p.sig.lv.d_pm = 300;
+    p.sig.t1h_u = 0;
+    p
+}
+
+#[test]
+fn natr_window_5_is_allowed_for_the_pool_filter_only() {
+    let t1 = BORN + 100;
+    let c = z_world(t1, t1 - 3, Z_NEAR);
+    let s = sym(c.clone());
+    assert_eq!(
+        s.natr_for(5).expect("окно 5"),
+        super::data::natr_series(&c, 5).as_slice()
+    );
+    // NATR 5 на `t1 − 1`: (0,9 + 0,9) / 5 / 90 = 0,4 %; NATR 30 — 0,067 %
+    let on = z_params("natr_p=5 natr_min=0.3");
+    assert_eq!(cand_minutes(c.clone(), &on, Side::Long), vec![t1]);
+    let base = z_params("natr_min=0.3");
+    assert!(cand_minutes(c, &base, Side::Long).is_empty());
+    for bad in ["natr_p=7", "natr_p=10", "natr_exit_p=5"] {
+        assert!(
+            super::params::parse_variant(&format!("x {bad}")).is_err(),
+            "{bad}"
+        );
+    }
+}
+
+#[test]
+fn nf_switches_the_liveness_filter_to_a_volatility_series_of_closed_minutes() {
+    let t1 = BORN + 100;
+    let c = z_world(t1, t1 - 3, Z_NEAR);
+    // порог 0,5 %: NATR 30 (0,067 %) не проходит, реализованная 5 минут (1,407 %) проходит
+    assert!(cand_minutes(c.clone(), &z_params("natr_min=0.5"), Side::Long).is_empty());
+    for nf in [5, 6, 7, 8] {
+        let p = z_params(&format!("nf={nf} natr_min=0.5"));
+        assert_eq!(cand_minutes(c.clone(), &p, Side::Long), vec![t1], "nf={nf}");
+    }
+    assert!(cand_minutes(c.clone(), &z_params("nf=5 natr_min=1.5"), Side::Long).is_empty());
+    // коды 1–4 — NATR: `nf=1` — тот же ряд, что `natr_p=5`
+    let a = cand_minutes(c.clone(), &z_params("nf=1 natr_min=0.3"), Side::Long);
+    let b = cand_minutes(c.clone(), &z_params("natr_p=5 natr_min=0.3"), Side::Long);
+    assert_eq!((a, b), (vec![t1], vec![t1]));
+    assert_eq!(
+        cand_minutes(c.clone(), &z_params("nf=3 natr_min=0.05"), Side::Long),
+        cand_minutes(c, &z_params("natr_min=0.05"), Side::Long),
+        "nf=3 — NATR 30, как база"
+    );
+}
+
+#[test]
+fn nf_window_edges_and_no_lookahead() {
+    let t1 = BORN + 100;
+    // окно 5 минут на `t1 − 1` — минуты `t1 − 5 … t1 − 1`: возврат на `t1 − 5` ещё в окне (0,990 %), на `t1 − 6` — уже нет
+    let p5 = z_params("nf=5 natr_min=0.5");
+    let inside = z_world(t1, t1 - 6, Z_NEAR);
+    assert_eq!(cand_minutes(inside, &p5, Side::Long), vec![t1]);
+    let outside = z_world(t1, t1 - 7, Z_NEAR);
+    assert!(cand_minutes(outside.clone(), &p5, Side::Long).is_empty());
+    // тот же мир в окне 15 минут виден
+    let p15 = z_params("nf=6 natr_min=0.5");
+    assert_eq!(cand_minutes(outside.clone(), &p15, Side::Long), vec![t1]);
+    // скачок самой минуты `t1` (90 → 99,9) фильтр не читает: значение — закрытая минутка `t1 − 1`
+    let rv5 = sym(outside).vol_for(5).expect("rv5").to_vec();
+    assert_eq!(rv5[t1 - 1], 0);
+    assert!(rv5[t1] > 5_000_000);
+}
+
+#[test]
+fn zone_from_volatility_formula_clamp_and_track() {
+    let p = z_params("ev=5 ea=0.5").sig;
+    assert_eq!(p.zone_e8(600_000), Some(300_000), "0,5 · 0,6 % = 0,3 %");
+    assert_eq!(p.zone_e8(10_000), Some(50_000), "низ зажима el = 0,05 %");
+    assert_eq!(
+        p.zone_e8(5_000_000),
+        Some(1_000_000),
+        "верх зажима eh = 1 %"
+    );
+    assert_eq!(p.zone_e8(0), Some(50_000));
+    assert_eq!(p.zone_e8(-1), None, "нет значения — зоны нет");
+    let q = z_params("ev=5 ea=0.5 el=0.1 eh=3 track=0.5").sig;
+    assert_eq!(q.zone_e8(20_000), Some(100_000));
+    assert_eq!(
+        q.zone_e8(5_000_000),
+        Some(500_000),
+        "как раньше — не шире track"
+    );
+    // ev = 0: прежняя зона `min(e, track)`, волатильность не читается
+    let b = z_params("").sig;
+    assert_eq!(
+        (b.zone_e8(-1), b.zone_e8(9_000_000)),
+        (Some(300_000), Some(300_000))
+    );
+    assert_eq!(z_params("e=0.2 track=0.1").sig.zone_e8(1), Some(100_000));
+}
+
+#[test]
+fn zone_from_volatility_drives_candidates_and_tick_signals() {
+    let t1 = BORN + 100;
+    let day = t1 / 1440;
+    // минутка в 0,525 % под уровнем: постоянная зона 0,3 % кандидата не даёт
+    let c = z_world(t1, t1 - 3, Z_FAR);
+    assert!(cand_minutes(c.clone(), &z_params("natr_min=0"), Side::Long).is_empty());
+    // V = 1,407 % на `t1 − 1`: зона 0,5·V = 0,7036 % — кандидат есть; 0,2·V = 0,281 % — нет
+    let wide = z_params("natr_min=0 ev=5 ea=0.5");
+    assert_eq!(cand_minutes(c.clone(), &wide, Side::Long), vec![t1]);
+    let narrow = z_params("natr_min=0 ev=5 ea=0.2");
+    assert!(cand_minutes(c.clone(), &narrow, Side::Long).is_empty());
+    // ход вышел из окна 5 минут: V = 0 → зона = el (0,05 %) — кандидата нет; в окне 15 минут — есть
+    let old = z_world(t1, t1 - 7, Z_FAR);
+    assert!(cand_minutes(old.clone(), &wide, Side::Long).is_empty());
+    let wide15 = z_params("natr_min=0 ev=6 ea=0.5");
+    assert_eq!(cand_minutes(old, &wide15, Side::Long), vec![t1]);
+    // сигнал по сделкам — в той же зоне: 99,30 (0,725 %) дальше зоны, 99,45 (0,575 %) — сигнал
+    let ticks = vec![
+        tk(t1, 0, 99.25, false),
+        tk(t1, 5_000, 99.30, false),
+        tk(t1, 10_000, 99.45, false),
+        tk(t1, 20_000, 99.50, false),
+    ];
+    let (sg, ctr) = ap_signals(c.clone(), &wide, Side::Long, vec![(day, ticks.clone())]);
+    assert_eq!(sig_minutes(&sg), vec![t1]);
+    assert_eq!(sg[0].idx, 2);
+    assert!(i64::from(sg[0].dist) <= 703_615 && sg[0].dist > 570_000);
+    assert_eq!(ctr.cands, 1);
+    let (s0, c0) = ap_signals(c, &z_params("natr_min=0"), Side::Long, vec![(day, ticks)]);
+    assert!(
+        s0.is_empty() && c0.cands == 0,
+        "ev = 0: зона 0,3 % — как раньше"
+    );
+}
+
+#[test]
+fn zone_from_volatility_mirrors_for_short() {
+    let t1 = BORN + 100;
+    let c = mirror(&z_world(t1, t1 - 3, Z_FAR), 200.0);
+    let wide = z_params("natr_min=0 ev=5 ea=0.5");
+    let got = cand_minutes(c.clone(), &wide, Side::Short);
+    assert_eq!(got, vec![t1]);
+    assert!(cand_minutes(c, &z_params("natr_min=0"), Side::Short).is_empty());
+}
+
+#[test]
+fn tk681_keys_default_off_validate_and_stay_out_of_fingerprints() {
+    let base = Params::base();
+    assert!(format!("{:?}", base.sig).ends_with("fr_b_pm: 500 }"));
+    assert_eq!((base.sig.nf, base.sig.ev, base.sig.ea_m), (0, 0, 0));
+    let k0 = super::sigcache::cfg_key_text(&base.sig);
+    assert!(!k0.contains("nf=") && !k0.contains("ev="));
+    let p = z_params("nf=5");
+    assert!(format!("{:?}", p.sig).ends_with(", nf: 5 }"));
+    let q = z_params("ev=6 ea=0.5 el=0.1 eh=0.6");
+    assert!(format!("{:?}", q.sig).ends_with(", ev: 6, ea_m: 500, el_pm: 100, eh_pm: 600 }"));
+    let key = |line: &str| super::sigcache::cfg_key_text(&z_params(line).sig);
+    let keys = [
+        key(""),
+        key("nf=5"),
+        key("nf=6"),
+        key("ev=5 ea=0.5"),
+        key("ev=6 ea=0.5"),
+        key("ev=5 ea=0.6"),
+        key("ev=5 ea=0.5 el=0.1"),
+        key("ev=5 ea=0.5 eh=0.9"),
+    ];
+    let distinct: std::collections::HashSet<&String> = keys.iter().collect();
+    assert_eq!(distinct.len(), keys.len());
+    for bad in [
+        "nf=9",
+        "ev=9 ea=1",
+        "ev=5",
+        "ea=1",
+        "el=0.1",
+        "eh=2",
+        "ev=5 ea=1 el=2 eh=1",
+        "ev=5 ea=1 el=0",
+    ] {
+        assert!(
+            super::params::parse_variant(&format!("x {bad}")).is_err(),
+            "{bad}"
+        );
+    }
+    // минутный движок ключи отвергает
+    for line in ["nf=5", "ev=5 ea=1"] {
+        assert!(super::cli::reject_tick_only(&z_params(line), line).is_err());
+    }
+    assert!(super::cli::reject_tick_only(&z_params("natr_p=5"), "").is_ok());
+}

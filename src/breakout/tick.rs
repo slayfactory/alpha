@@ -591,7 +591,24 @@ pub fn candidates_fg(
     let Some(natr) = sym.natr_for(cfg.natr_p) else {
         return;
     };
-    let dmax = (cfg.e_pm * 1000).min(cfg.track_pm * 1000);
+    // TK-681 (`nf`): ряд фильтра живости — NATR `natr_p` или источник волатильности; (`ev`): ряд зоны входа
+    let live = if cfg.nf == 0 {
+        natr
+    } else {
+        let Some(v) = sym.vol_for(cfg.nf) else {
+            return;
+        };
+        v
+    };
+    let evol = if cfg.ev == 0 {
+        None
+    } else {
+        let Some(v) = sym.vol_for(cfg.ev) else {
+            return;
+        };
+        Some(v)
+    };
+    let dmax0 = (cfg.e_pm * 1000).min(cfg.track_pm * 1000);
     let natr_min = cfg.natr_min_pm * 1000;
     for (li, lv) in levels.iter().enumerate() {
         let end = (lv.end as usize).min(N_MIN);
@@ -618,9 +635,15 @@ pub fn candidates_fg(
             } else {
                 (-sym.l[t], -sym.h[t])
             };
-            if t >= START_MIN && !forbidden && lo < lp {
+            // зона входа минуты: постоянная или от волатильности закрытой минутки `t−1` (`ev`); нет значения — кандидата нет
+            let dmax = match evol {
+                None => Some(dmax0),
+                Some(v) if t > 0 => cfg.zone_e8(i64::from(v[t - 1])),
+                Some(_) => None,
+            };
+            if let (true, Some(dmax)) = (t >= START_MIN && !forbidden && lo < lp, dmax) {
                 let zone_lo = lp - mul_div(lp.abs(), dmax + 1, SCALE) as i64 - 1;
-                let nv = i64::from(natr[t - 1]);
+                let nv = i64::from(live[t - 1]);
                 if hi >= zone_lo
                     && nv >= 0
                     && nv >= natr_min
@@ -740,6 +763,16 @@ pub fn minute_range(ticks: &[Tick], t: usize) -> (usize, usize) {
     )
 }
 
+/// TK-681: зона входа (доля цены ×1e8) кандидата минуты `t` — `SigCfg::zone_e8` по закрытой минутке `t−1`.
+pub fn zone_at(sym: &Sym, cfg: &SigCfg, t: usize) -> Option<i64> {
+    let v = if cfg.ev == 0 || t == 0 {
+        -1
+    } else {
+        sym.vol_for(cfg.ev).map_or(-1, |v| i64::from(v[t - 1]))
+    };
+    cfg.zone_e8(v)
+}
+
 /// Сигналы одной монеты для всех заданий `(SigCfg, сторона)`: сделки каждых суток читаются один раз.
 pub fn signals_for_coin(
     sym: &Sym,
@@ -772,7 +805,8 @@ pub fn signals_for_coin(
         for (j, c) in list {
             let (cfg, side) = &jobs[j];
             let (from, to) = minute_range(&ticks, c.t as usize);
-            let dmax = (cfg.e_pm * 1000).min(cfg.track_pm * 1000);
+            // TK-681 (`ev`): зона — та же, что дала кандидата (волатильность закрытой минутки `t−1`)
+            let dmax = zone_at(sym, cfg, c.t as usize).unwrap_or(0);
             if let Some((k, dist)) = first_signal(&ticks, from, to, side.s(), c.lp, dmax, cfg.color)
             {
                 let mut ws = false;
