@@ -36,13 +36,13 @@ const base = url.split('#')[0];
     title: document.querySelector('#features .prog-h h2').innerText, meta: document.querySelector('#features .prog-h .muted').innerText,
     navs: [...document.querySelectorAll('.ft-bar button')].map(b => b.dataset.go + '|' + b.innerText),
     // всё, что не заголовок, не навигация и не таблица
-    prose: [...document.querySelectorAll('#features p, #features ul, #features ol, #features li, #features .badge, #features .lbl, #features .nums, #features a, #features [data-f=foot], #features [data-f=status], #features [data-f=mark], #features [data-f=src]')].length,
+    prose: [...document.querySelectorAll('#features p, #features ul, #features ol, #features li, #features .badge, #features .lbl, #features .nums, #features a:not([data-rel]), #features [data-f=foot], #features [data-f=status], #features [data-f=mark], #features [data-f=src]')].length,
     kids: [...document.getElementById('features').children].map(e => e.tagName + '.' + e.className),
     sets: [...document.querySelectorAll('section.ft-set')].map(s => ({
       id: s.dataset.set, title: s.querySelector('.card-h').innerText, body: [...s.querySelector('.card-b').children].map(e => e.className), wrap: [...s.querySelector('.ft-tw').children].map(e => e.tagName),
       head: [...s.querySelectorAll('table.ft thead th')].map(t => t.textContent), ncell: [...new Set([...s.querySelectorAll('tr[data-feature]')].map(r => r.children.length))], groups: [...s.querySelectorAll('tr.grp')].map(g => g.innerText),
       rows: [...s.querySelectorAll('tr[data-feature]')].map(r => ({name: r.dataset.feature, id: r.id, cells: [...r.children].map(c => c.dataset.f), n: r.querySelector('[data-f=n]').textContent, code: r.querySelector('[data-f=name]').textContent, what: r.querySelector('[data-f=what]').textContent,
-        base: r.querySelector('[data-f=base]') ? r.querySelector('[data-f=base]').textContent : null, search: r.querySelector('[data-f=search]') ? r.querySelector('[data-f=search]').textContent : null, text: r.innerText}))}))}));
+        base: r.querySelector('[data-f=base]') ? r.querySelector('[data-f=base]').textContent : null, search: r.querySelector('[data-f=search]') ? r.querySelector('[data-f=search]').textContent : null, rel: r.querySelector('[data-f=rel]') ? [...r.querySelectorAll('[data-f=rel] a')].map(a => +a.dataset.rel) : null, relText: r.querySelector('[data-f=rel]') ? r.querySelector('[data-f=rel]').textContent : null, st: r.querySelector('[data-f=st]') ? r.querySelector('[data-f=st]').textContent : null, text: r.innerText}))}))}));
   const total = J.sets.reduce((s, x) => s + x.groups.reduce((a, g) => a + g.features.length, 0), 0);
   let nChecks = 0;
   const eq = (a, b, m) => { nChecks++; if (JSON.stringify(a) !== JSON.stringify(b)) fail(m + ': ' + JSON.stringify(a).slice(0, 160) + ' ≠ ' + JSON.stringify(b).slice(0, 160)); };
@@ -53,17 +53,20 @@ const base = url.split('#')[0];
   eq(dom.sets.flatMap(s => s.rows.map(r => +r.n)), Array.from({length: total}, (_, i) => i + 1), 'сквозная нумерация 1…N в порядке страницы');
   J.sets.forEach((s, i) => {
     const d = dom.sets[i]; if (!d) return;
-    const feats = s.groups.flatMap(g => g.features), hasB = feats.some(f => f.base !== '—'), hasS = feats.some(f => f.search !== 'нет');
+    const feats = s.groups.flatMap(g => g.features), hasB = feats.some(f => f.base !== '—'), hasS = feats.some(f => f.search !== 'нет'), hasR = feats.some(f => f.rel), hasT = feats.some(f => f.st);
     eq(d.title, s.title, s.id + ' заголовок'); eq(d.body, ['ft-tw'], s.id + ' в карточке только таблица'); eq(d.wrap, ['TABLE'], s.id + ' обёртка таблицы');
-    eq(d.head, ['№', 'Признак', 'Что значит', ...(hasB ? ['База'] : []), ...(hasS ? ['Перебор'] : [])], s.id + ' шапка'); eq(d.ncell, [3 + hasB + hasS], s.id + ' ячеек в строке');
+    eq(d.head, ['№', 'Признак', 'Что значит', ...(hasB ? ['База'] : []), ...(hasS ? ['Перебор'] : []), ...(hasR ? ['Связан с №'] : []), ...(hasT ? ['Статус'] : [])], s.id + ' шапка'); eq(d.ncell, [3 + hasB + hasS + hasR + hasT], s.id + ' ячеек в строке');
     eq(d.groups, s.groups.filter(g => g.title).map(g => g.title), s.id + ' группы');
     eq(d.rows.map(r => r.name), feats.map(f => f.name), s.id + ' имена'); eq(d.rows.map(r => r.code), feats.map(f => f.name.replace(/_bp$/, '')), s.id + ' код');
     eq(d.rows.map(r => +r.n), feats.map(f => f.n), s.id + ' номера'); eq(d.rows.map(r => r.id), feats.map(f => 'ft-n-' + f.n), s.id + ' якоря строк');
     eq(d.rows.map(r => r.what), feats.map(f => f.what), s.id + ' что значит');
     eq(d.rows.map(r => r.base), feats.map(f => hasB ? (f.base === '—' ? '' : f.base) : null), s.id + ' база');
     eq(d.rows.map(r => r.search), feats.map(f => hasS ? (f.search === 'нет' ? '' : f.search) : null), s.id + ' перебор');
+    // TK-682: «Связан с №» — номера-ссылки, «Статус» — короткая пометка
+    eq(d.rows.map(r => r.rel), feats.map(f => hasR ? (f.rel || []) : null), s.id + ' связан с №'); eq(d.rows.map(r => r.relText), feats.map(f => hasR ? (f.rel || []).join(', ') : null), s.id + ' связан с № текст');
+    eq(d.rows.map(r => r.st), feats.map(f => hasT ? (f.st || '') : null), s.id + ' статус');
     // копирование: на широком экране строка — ячейки через табуляцию
-    if (W > 820) eq(d.rows.map(r => r.text.replace(/\t+$/, '')), feats.map(f => [f.n, f.name.replace(/_bp$/, ''), f.what, ...(hasB ? [f.base === '—' ? '' : f.base] : []), ...(hasS ? [f.search === 'нет' ? '' : f.search] : [])].join('\t').replace(/\t+$/, '')), s.id + ' текст строки');
+    if (W > 820) eq(d.rows.map(r => r.text.replace(/\t+$/, '')), feats.map(f => [f.n, f.name.replace(/_bp$/, ''), f.what, ...(hasB ? [f.base === '—' ? '' : f.base] : []), ...(hasS ? [f.search === 'нет' ? '' : f.search] : []), ...(hasR ? [(f.rel || []).join(', ')] : []), ...(hasT ? [f.st || ''] : [])].join('\t').replace(/\t+$/, '')), s.id + ' текст строки');
   });
   eq(JSON.stringify(dom.sets).includes('—"') || dom.sets.some(s => s.rows.some(r => r.base === '—' || r.search === 'нет')), false, 'пустышки «—» / «нет» в ячейках');
   C.nChecks = nChecks; C.total = total; C.rowCounts = dom.sets.map(s => s.id + ':' + s.rows.length);
@@ -108,6 +111,22 @@ const base = url.split('#')[0];
   await page.click(`#ft-n-${cn} [data-f=n]`);
   C.noClick = await page.evaluate(() => ({hash: location.hash, hit: [...document.querySelectorAll('#features tr.hit')].map(x => x.dataset.n)}));
   if (C.noClick.hash !== `#features/${cs}/${cn}` || C.noClick.hit.join() !== String(cn)) fail('клик по номеру ' + JSON.stringify(C.noClick));
+  // TK-682: клик по номеру в «Связан с №» ведёт на строку этого номера (и в другом наборе): хеш, подсветка, строка в окне
+  const allF = J.sets.flatMap(s => s.groups.flatMap(g => g.features.map(f => ({sid: s.id, f}))));
+  const sidOf = n => allF.find(x => x.f.n === n).sid;
+  const far = allF.filter(x => x.f.rel && x.f.rel.some(k => sidOf(k) !== x.sid)), near = allF.filter(x => x.f.rel && x.f.rel.some(k => sidOf(k) === x.sid));
+  C.relClicks = [];
+  for (const [x, other] of [[far[0], true], [far[far.length - 1], true], [near[0], false]]) {
+    if (!x) { fail('нет строки со связью для клика'); continue; }
+    const k = x.f.rel.find(k => (sidOf(k) !== x.sid) === other);
+    await page.goto(base + `#features/${x.sid}/${x.f.n}`, {waitUntil: 'load'}); await page.reload({waitUntil: 'load'}); await settle();
+    await page.click(`#ft-n-${x.f.n} a[data-rel="${k}"]`); await settle();
+    const r = await page.evaluate(k => { const e = document.getElementById('ft-n-' + k).getBoundingClientRect(); const bar = document.querySelector('.ft-bar').getBoundingClientRect(); return {hash: location.hash, hit: [...document.querySelectorAll('#features tr.hit')].map(x => x.dataset.n), top: Math.round(e.top), barBottom: Math.round(bar.bottom), vh: innerHeight}; }, k);
+    r.from = x.f.n; r.to = k; r.ok = r.hash === `#features/${sidOf(k)}/${k}` && r.hit.join() === String(k) && r.top >= r.barBottom - 2 && r.top < r.vh;
+    if (!r.ok) fail('клик по связи ' + JSON.stringify(r));
+    C.relClicks.push(r);
+  }
+  await page.screenshot({path: `${out}/features_rel_${W}.png`});
   await page.evaluate(() => window.scrollTo(0, 0)); await page.waitForTimeout(250);
   await page.click(`button[data-go="${J.sets[1].id}"]`); await settle();
   C.navAfterNo = await page.evaluate(() => ({hash: location.hash, hit: document.querySelectorAll('#features tr.hit').length}));
@@ -123,6 +142,6 @@ const base = url.split('#')[0];
   }
   await page.screenshot({path: `${out}/features_deeplink_${W}.png`});
   fs.writeFileSync(`${out}/features_report_${W}.json`, JSON.stringify(rep, null, 1));
-  console.log(JSON.stringify({errors: errs, fails: rep.fails, nChecks, total, overflow: C.overflow, cellOverflow: C.cellOverflow, nav: C.nav.map(n => n.id + ':' + n.ok).join(' '), rowLinks: C.rowLinks.map(r => r.want + ':' + r.ok).join(' '), noClick: C.noClick, others: C.others, rows: C.rowCounts.join(' '), tabs: C.tabs}, null, 1));
+  console.log(JSON.stringify({errors: errs, fails: rep.fails, nChecks, total, overflow: C.overflow, cellOverflow: C.cellOverflow, nav: C.nav.map(n => n.id + ':' + n.ok).join(' '), relClicks: C.relClicks.map(r => r.from + '>' + r.to + ':' + r.ok), rowLinks: C.rowLinks.map(r => r.want + ':' + r.ok).join(' '), noClick: C.noClick, others: C.others, rows: C.rowCounts.join(' '), tabs: C.tabs}, null, 1));
   await browser.close();
 })();

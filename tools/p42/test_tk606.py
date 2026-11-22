@@ -68,6 +68,8 @@ def test_semantic_checks_catch_bad_data():
         (lambda d: d["sets"][-1]["groups"][-1]["features"][-1].update(n=999), "номера признаков"),
         (lambda d: d["sets"][10]["groups"][0]["features"][0].update(name="mk"), "повторяется"),
         (lambda d: d["sets"][0]["groups"][0]["features"][0].update(src=["нет-такого"]), "не из sources"),
+        (lambda d: d["sets"][0]["groups"][0]["features"][0].update(rel=[999]), "rel ведёт"),
+        (lambda d: d["sets"][0]["groups"][0]["features"][0].update(rel=[1]), "rel ведёт"),
         (lambda d: d["sets"][13].update(status="running", numbers=["+0,5"]), "цифр быть не должно"),
     ]:
         d = json.loads(json.dumps(f))
@@ -78,3 +80,14 @@ def test_semantic_checks_catch_bad_data():
             assert msg in str(e), (msg, str(e))
         else:
             raise AssertionError("проверка не поймала: " + msg)
+
+
+def test_tk682_links_and_statuses():
+    """TK-682: «Связан с №» и статус — из описи tk682_audit.py; номера строк не сдвинуты."""
+    import subprocess, sys
+    assert subprocess.run([sys.executable, os.path.join(HERE, "tk682_audit.py"), "--check"], capture_output=True).returncode == 0
+    f = load("ml_features.json")
+    feats = {x["n"]: x for s in f["sets"] for g in s["groups"] for x in g["features"]}
+    assert len(feats) >= 251 and feats[251]["name"] == "turn24h" and feats[23]["name"] == "ban"
+    assert 251 in feats[103]["rel"] and feats[103]["st"] == "дубль № 251" and feats[150]["st"] == "всегда 0"
+    assert all(n in feats[k].get("rel", []) for n, x in feats.items() if x.get("st", "").startswith("дубль №") for k in [int(x["st"].split("№")[1])])

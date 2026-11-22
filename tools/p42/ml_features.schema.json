@@ -29,7 +29,9 @@
         "src": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "ключи из sources"},
         "base": {"type": "string", "minLength": 1, "description": "TK-678: значение в замороженных линиях (Л — лонг, Ш — шорт); «—» — у столбца таблицы признаков базы нет"},
         "search": {"type": "string", "minLength": 1, "description": "TK-678: значения в совместном переборе TK-674; «нет» — в перебор не входит"},
-        "mark": {"type": "string", "minLength": 1, "description": "необязательно: короткая пометка из отчёта, например «топ-5 шорта · z 3,79»"}
+        "mark": {"type": "string", "minLength": 1, "description": "необязательно: короткая пометка из отчёта, например «топ-5 шорта · z 3,79»"},
+        "rel": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "integer", "minimum": 1}, "description": "TK-682: колонка «Связан с №» — номера связанных признаков (дубли, входы сводных, зависимые ключи); пишет tk682_audit.py, существование номеров проверяет tk593_page.py"},
+        "st": {"type": "string", "minLength": 1, "description": "TK-682: необязательно: короткий статус строки — «дубль № …», «всегда 0», «заменён № …»; номер строки при этом не меняется"}
       }
     },
     "group": {
