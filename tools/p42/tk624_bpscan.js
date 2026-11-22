@@ -6,8 +6,9 @@ const fs = require('fs');
 const [url, out, widthArg] = process.argv.slice(2);
 const base = url.split('#')[0];
 const RE = /(?:^|[^\wа-яё])(?:бп|bps?|базисн\w*)(?![\wа-яё])|\w+_bp(?![a-z])/gi;
-const ROUTES = ['#progress', '#targets', '#features', '#model/long', '#model/short'];
-for (const s of ['short', 'long', 'both']) for (const v of ['', '/shape', '/bases', '/where', '/comp']) ROUTES.push('#equity/' + s + v);
+const ROUTES = ['#targets', '#features'];
+for (const s of ['short', 'long', 'both']) ROUTES.push('#equity/' + s);
+for (const s of ['short', 'long']) ROUTES.push('#equity/fan/' + s);      // веер (TK-684): пакеты грузятся по сети; подсказки — наведением мыши на холст
 
 (async () => {
   const browser = await chromium.launch({executablePath: process.env.CHROME, args: ['--no-sandbox']});
@@ -23,7 +24,13 @@ for (const s of ['short', 'long', 'both']) for (const v of ['', '/shape', '/base
   for (const r of nav) {
     await page.goto(base + r, {waitUntil: 'load'});
     await page.waitForTimeout(400);
-    // «Признаки» и «Модель»: пройти по всем вложенным ссылкам/наборам нельзя перебором — берём весь отрисованный DOM маршрута
+    if (r.includes('/fan/')) {
+      await page.waitForFunction(() => { const c = document.querySelector('canvas[data-fan="base"]'); return c && c.dataset.n != null && !document.querySelector('[data-fanload]'); }, null, {timeout: 60000});
+      await page.evaluate(() => document.querySelector('canvas[data-fan="over"]').scrollIntoView({block: 'center'}));
+      const bb = await page.evaluate(() => { const b = document.querySelector('canvas[data-fan="over"]').getBoundingClientRect(); return {x: b.x, y: b.y, w: b.width, h: b.height}; });
+      for (const fx of [0.2, 0.5, 0.8]) for (const fy of [0.3, 0.5, 0.7]) await page.mouse.move(bb.x + bb.w * fx, bb.y + bb.h * fy);
+    }
+    // «Признаки»: пройти по всем вложенным ссылкам/наборам нельзя перебором — берём весь отрисованный DOM маршрута
     const info = await page.evaluate(async () => {
       const c = document.body.cloneNode(true);
       c.querySelectorAll('script,style').forEach(x => x.remove());

@@ -8,11 +8,12 @@
 
 use alpha::breakout::feat::deriv::DerivDirs;
 use alpha::breakout::feat::f12::{self, F12Cfg, StorePxSrc, ZipPxSrc};
+use alpha::breakout::feat::fast;
 use alpha::breakout::feat::io::{run, Cfg, Mode, StoreCfg};
 use alpha::breakout::feat::pdcompat::parse_date;
 use alpha::breakout::feat::tcount::{self, TcCfg};
 use alpha::breakout::feat::tox::{self, ToxCfg};
-use alpha::breakout::feat::trades::{StoreDaySrc, ZipDaySrc};
+use alpha::breakout::feat::trades::{DaySrc, StoreDaySrc, ZipDaySrc};
 use alpha::breakout::feat::tsize::{self, TsCfg};
 use alpha::breakout::store::{StoreOpts, TickStore};
 use anyhow::Result;
@@ -44,6 +45,8 @@ enum Cmd {
     Tsize(TcOpts),
     /// токсичный поток TOX13 по aggTrades до σ (TK-671; порт `tk600_feat.py tox`)
     Tox(ToxOpts),
+    /// короткие окна токсичного потока и ускорение ленты в секундах до σ (TK-681; вход и флаги — как у `tox`)
+    Fast(ToxOpts),
 }
 
 #[derive(Args)]
@@ -313,7 +316,7 @@ fn run_tsize(o: TcOpts) -> Result<()> {
     Ok(())
 }
 
-fn run_tox(o: ToxOpts) -> Result<()> {
+fn run_tox(o: ToxOpts, fast_cols: bool) -> Result<()> {
     let roots: Vec<PathBuf> = o
         .trades
         .unwrap_or_else(|| env_or("SIGFEAT_TRADES", "/data/aggtrades/binance"))
@@ -332,9 +335,16 @@ fn run_tox(o: ToxOpts) -> Result<()> {
         side: if o.side == "long" { 1 } else { -1 },
     };
     let rows = tox::read_input(&cfg)?;
+    let go = |src: &dyn DaySrc| -> Result<String> {
+        Ok(if fast_cols {
+            fast::run(&cfg, &rows, src)?.json()
+        } else {
+            tox::run(&cfg, &rows, src)?.json()
+        })
+    };
     let Some(dir) = o.store else {
         let src = ZipDaySrc { roots };
-        println!("{}", tox::run(&cfg, &rows, &src)?.json());
+        println!("{}", go(&src)?);
         return Ok(());
     };
     let st = Arc::new(TickStore::open(&StoreOpts {
@@ -343,13 +353,13 @@ fn run_tox(o: ToxOpts) -> Result<()> {
         min_free_gb: 0,
     })?);
     let src = StoreDaySrc::new(&roots, &st, tox::first_day(&cfg, &rows)?, false)?;
-    let sum = tox::run(&cfg, &rows, &src)?;
+    let sum = go(&src)?;
     eprintln!(
         "склад: {} суток из zip по отступлениям; {}",
         src.fallback.load(Ordering::Relaxed),
         st.summary()
     );
-    println!("{}", sum.json());
+    println!("{sum}");
     Ok(())
 }
 
@@ -361,7 +371,8 @@ fn main() -> Result<()> {
         Cmd::F12(o) => return run_f12(o),
         Cmd::Tcount(o) => return run_tcount(o),
         Cmd::Tsize(o) => return run_tsize(o),
-        Cmd::Tox(o) => return run_tox(o),
+        Cmd::Tox(o) => return run_tox(o, false),
+        Cmd::Fast(o) => return run_tox(o, true),
     };
     let trades = o
         .trades
