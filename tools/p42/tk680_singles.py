@@ -143,8 +143,33 @@ def cmd_select():
         print("== %s: осей %d (ключи %d, столбцы %d), клеток %d (ключи %d, столбцы %d), в БД есть %d, считаем %d; проходов сигналов %d; столбцов без оси %d" % (
             side, len(axes), sum(1 for a in axes if a["kind"] == "key"), sum(1 for a in axes if a["kind"] == "col"), len(cells), nk, len(cells) - nk, len(found),
             len(cells) - len(found), len(sigs), len(skipped)), flush=True)
-    json.dump(thr_out, open(os.path.join(run.ROOT, "res", "thr680.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    print("select готово")
+    tp = os.path.join(run.ROOT, "res", "thr680.json")
+    json.dump(thr_out, open(tp, "w", encoding="utf-8"), ensure_ascii=False, indent=1, sort_keys=True)
+    print("select готово; пороги %s sha256 %s" % (tp, _sha(tp)))
+
+
+def _sha(path):
+    import hashlib
+    return hashlib.sha256(open(path, "rb").read()).hexdigest()
+
+
+MARGIN_POS, ACCOUNT = 250.0, 2500.0            # маржа позиции (ставка 500 $, плечо 2) и счёт, $ (В-89…В-91)
+
+
+def _concurrency(row):
+    """Наибольшее число одновременно открытых позиций клетки по файлам сделок окон (вход … выход), максимум по окнам."""
+    import numpy as np
+    import tk604_stats as st
+    best = 0
+    for d in row["extra"]["dirs"].values():
+        f = os.path.join(d, "%s-trades.csv" % row["side_name"])
+        tb = st.read_trades_csv(f)
+        if not len(tb.entry_ms):
+            continue
+        ev = np.concatenate([np.stack([tb.entry_ms, np.ones(len(tb.entry_ms))], 1), np.stack([tb.exit_ms, -np.ones(len(tb.exit_ms))], 1)])
+        ev = ev[np.lexsort((ev[:, 1], ev[:, 0]))]      # при равном времени выход раньше входа
+        best = max(best, int(np.cumsum(ev[:, 1]).max()))
+    return best
 
 
 def _prefix(label):
@@ -186,6 +211,9 @@ def cmd_map():
                 rep.update(label=lab, is_base=ck == base_ck, guards={k: bool(v) for k, v in g.items()})
                 if len(a["vals"][i]) > 2:
                     rep.update(thr=a["vals"][i][2], cut=a["vals"][i][3])
+                if a["axis"] == "p":                   # число позиций меняет капитал под риском: маржа в работе и просадка — в долях счёта
+                    nc = _concurrency(dict(r, side_name=ENGNAME[side]))
+                    rep.update(conc=nc, conc_margin=nc * MARGIN_POS, conc_margin_pct=nc * MARGIN_POS / ACCOUNT * 100.0, maxdd_acct_pct=r["extra"]["maxdd"] / ACCOUNT * 100.0)
                 cells.append(rep)
                 if ck != base_ck and sh == sh:
                     cand.append((ck, dict(r, sharpe=sh), g, nbm))
@@ -208,7 +236,8 @@ def cmd_map():
         out = dict(side=side, level=1, base=dict(ckey=base_ck, sharpe=bsh, usd=busd, n=brow["trades"], mean_usd=bx["mean_usd"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"],
                                                  **run.loss_fields(bx)),
                    axes=out_axes, n_cells=len(shs), m=m_side, sharpe_sd=sd, noise_max=sd * float(np.sqrt(2 * np.log(max(m_side, 2)))),
-                   same_as_base=sorted(by_sig.get(bsig, [])), skipped=lv["skipped"], invalid=inv)
+                   same_as_base=sorted(by_sig.get(bsig, [])), skipped=lv["skipped"], invalid=inv,
+                   thr_sha256=_sha(os.path.join(run.ROOT, "res", "thr680.json")))
         json.dump(out, open(os.path.join(run.ROOT, "res", "map674b1-%s.json" % side), "w", encoding="utf-8"), ensure_ascii=False)
         print("== %s: осей %d, клеток %d, m %d, шум ≈ %.2f; активных осей %d (ключи %d, столбцы %d); клеток со сделками базы %d" % (
             side, len(out_axes), len(shs), m_side, out["noise_max"], sum(a["active"] for a in out_axes), sum(a["active"] for a in out_axes if a["kind"] == "key"),
@@ -259,6 +288,9 @@ def cmd_md(d, out=None):
                 elif not c.get("is_base"):
                     lab = c["label"] + ((" (порог %s, убрано %d)" % (ax.num(c["thr"]).replace(".", ","), c["cut"])) if "thr" in c else "")
                     L.append(_line(lab, c, b["sharpe"]))
+            if a["axis"] == "p":
+                L.append("\nМаржа в работе (позиция 250 $, счёт 2 500 $): " + "; ".join("p = %s — одновременно до %d позиций, %d $ (%d %% счёта), просадка %s %% счёта" % (
+                    c["label"], c["conc"], c["conc_margin"], c["conc_margin_pct"], ("%.1f" % c["maxdd_acct_pct"]).replace(".", ",")) for c in a["cells"] if "conc" in c) + ".")
             L.append("")
         if m["skipped"]:
             L.append("Столбцы без оси (%s): %s.\n" % (sname.lower(), "; ".join("`%s` — %s" % (c, w) for c, w in m["skipped"])))
