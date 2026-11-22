@@ -24,6 +24,8 @@ pub const COUNT_DAYS: usize = 60;
 pub const HALF_DAYS: usize = 30;
 pub const SCALE: i64 = 100_000_000;
 pub const NATR_PERIODS: [usize; 3] = [15, 30, 60];
+/// TK-676 (`vs`, `vz`): окна источников волатильности стопа, минуты: коды 1–4 — NATR этих периодов, 5–8 — реализованная волатильность этих окон.
+pub const VOL_PERIODS: [usize; 4] = [5, 15, 30, 60];
 pub const TF_MINUTES: [usize; 3] = [30, 60, 240];
 const MAGIC: [u8; 4] = *b"B42\x01";
 
@@ -379,6 +381,37 @@ fn natr_of(co: &[i64], ch: &[i64], cl: &[i64], cc: &[i64], p: usize) -> Vec<i32>
     out
 }
 
+/// TK-676 (§13.74): реализованная волатильность `RV_p[t] = √Σ r²` по `p` последним закрытым минуткам `t−p+1 … t`, `r = (c_j − c_{j−1}) / c_{j−1}` —
+/// доля цены ×`SCALE`, целочисленно (усечение к нулю); нужна минутка `t` и ≥ ⌈p/2⌉ доходностей с обеими минутками (иначе −1, как у NATR).
+fn rv_of(co: &[i64], cc: &[i64], p: usize) -> Vec<i32> {
+    let n = N_MIN;
+    let mut sq = vec![0u128; n + 1];
+    let mut cnt = vec![0u32; n + 1];
+    for t in 0..n {
+        let mut r2 = 0u128;
+        let mut c = 0;
+        if t > 0 && co[t] != 0 && co[t - 1] != 0 {
+            let r = i128::from(cc[t] - cc[t - 1]) * i128::from(SCALE) / i128::from(cc[t - 1]);
+            r2 = (r * r) as u128;
+            c = 1;
+        }
+        sq[t + 1] = sq[t] + r2;
+        cnt[t + 1] = cnt[t] + c;
+    }
+    let mut out = vec![-1i32; n];
+    for t in p..n {
+        if co[t] == 0 {
+            continue;
+        }
+        let k = cnt[t + 1] - cnt[t + 1 - p];
+        if (k as usize) * 2 < p {
+            continue;
+        }
+        out[t] = (sq[t + 1] - sq[t + 1 - p]).isqrt().min(i32::MAX as u128) as i32;
+    }
+    out
+}
+
 pub struct Sym {
     pub name: String,
     pub o: Vec<i64>,
@@ -391,6 +424,8 @@ pub struct Sym {
     /// L4 (TK-607): NATR и бары считаются при первом обращении (сетки берут один период и один таймфрейм).
     natr: [OnceLock<Vec<i32>>; 3],
     bars: [OnceLock<Bars>; 3],
+    /// TK-676: NATR 5 баров (код 1) и реализованная волатильность 5 / 15 / 30 / 60 минут (коды 5–8); считаются при первом обращении.
+    vol: [OnceLock<Vec<i32>>; 5],
     pub fund: Vec<Fund>,
 }
 
@@ -410,6 +445,7 @@ impl Sym {
             pq,
             natr: Default::default(),
             bars: Default::default(),
+            vol: Default::default(),
             fund,
         }
     }
@@ -424,6 +460,27 @@ impl Sym {
                 .get_or_init(|| natr_of(&self.o, &self.h, &self.l, &self.c, NATR_PERIODS[i]))
                 .as_slice()
         })
+    }
+
+    /// TK-676: ряд источника волатильности стопа по коду `vs` (1–4 NATR 5/15/30/60, 5–8 реализованная 5/15/30/60), доля цены ×`SCALE`, −1 — нет значения.
+    pub fn vol_for(&self, src: u8) -> Option<&[i32]> {
+        match src {
+            1 => Some(
+                self.vol[0]
+                    .get_or_init(|| natr_of(&self.o, &self.h, &self.l, &self.c, VOL_PERIODS[0]))
+                    .as_slice(),
+            ),
+            2..=4 => self.natr_for(VOL_PERIODS[usize::from(src) - 1]),
+            5..=8 => {
+                let i = usize::from(src) - 5;
+                Some(
+                    self.vol[i + 1]
+                        .get_or_init(|| rv_of(&self.o, &self.c, VOL_PERIODS[i]))
+                        .as_slice(),
+                )
+            }
+            _ => None,
+        }
     }
 
     pub fn bars_for(&self, tf: usize) -> Option<&Bars> {

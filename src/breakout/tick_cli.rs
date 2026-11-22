@@ -57,6 +57,35 @@ fn write_outputs(dir: &Path, syms: &[Sym], side: Side, r: &TickResult) -> Result
         );
     }
     fs::write(dir.join(format!("{}-trades.csv", side.name())), t)?;
+    // TK-677: лоты сделок при включённом втором входе — строки в порядке trades.csv; `lot2 = 0` — вошёл только лот 1
+    if r.trades.iter().any(|x| x.net1.is_some()) {
+        let mut l = String::from(
+            "sym,level,sig_ms,lot2,kind1,kind2,net1,net2,entry2_ms,entry2_px_e8
+",
+        );
+        for x in &r.trades {
+            let n1 = x.net1.unwrap_or(x.net);
+            let (k2, ms2, px2) = x
+                .lot2
+                .as_ref()
+                .map_or(("", 0, 0), |t2| (t2.kind.name(), t2.entry_ms, t2.entry_px));
+            let _ = writeln!(
+                l,
+                "{},{},{},{},{},{},{:.6},{:.6},{},{}",
+                syms[x.sym as usize].name,
+                x.level,
+                x.sig_ms,
+                u8::from(x.lot2.is_some()),
+                x.kind1.name(),
+                k2,
+                n1,
+                x.net - n1,
+                ms2,
+                px2
+            );
+        }
+        fs::write(dir.join(format!("{}-lots.csv", side.name())), l)?;
+    }
     let mut d = String::from("day,pnl\n");
     for (i, v) in r.daily.iter().enumerate() {
         let _ = writeln!(d, "{i},{v:.6}");
@@ -85,6 +114,21 @@ fn write_entry_rej(dir: &Path, syms: &[Sym], side: Side, r: &TickResult) -> Resu
         let _ = writeln!(t, "{},{level},{ms},{w}", syms[*si as usize].name);
     }
     fs::write(dir.join(format!("{}-entryrej.csv", side.name())), t)?;
+    Ok(())
+}
+
+/// TK-676 (`vf > 0`): расстояние стопа от волатильности по сделкам — `<side>-vstop.csv`: `vd_pm` — тысячные процента цены входа (−1 — нет значения источника,
+/// остался жёсткий `s`), `natr_e8` — NATR выхода на сигнале (для отношения стоп / тейк).
+fn write_vstop(dir: &Path, syms: &[Sym], side: Side, r: &TickResult) -> Result<()> {
+    let mut t = String::from("sym,level,sig_ms,vd_pm,natr_e8\n");
+    for x in &r.trades {
+        let _ = writeln!(
+            t,
+            "{},{},{},{},{}",
+            syms[x.sym as usize].name, x.level, x.sig_ms, x.vd_pm, x.natr_e8
+        );
+    }
+    fs::write(dir.join(format!("{}-vstop.csv", side.name())), t)?;
     Ok(())
 }
 
@@ -649,6 +693,9 @@ pub fn run(
             if p.mk > 0 {
                 write_maker(&dir, side, &r)?;
             }
+            if p.exit.vf > 0 {
+                write_vstop(&dir, &syms, side, &r)?;
+            }
             if let Some(v) = std::env::var_os("P42_SIGS") {
                 let v = v.to_string_lossy().into_owned();
                 let (a, b) = v.split_once(':').context("P42_SIGS=<от>:<до>")?;
@@ -713,7 +760,7 @@ pub fn run(
                 meta["filter_[cands,dropped,no_key,no_value]"] =
                     serde_json::json!([st.cands, st.dropped, st.no_key, st.no_value]);
             }
-            if p.exit.e2_pm > 0 {
+            if p.exit.split() {
                 meta["lot2_[now,later,cancelled,rejected]"] = serde_json::json!(r.lot2);
             }
             if p.ek > 0 {

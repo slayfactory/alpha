@@ -189,6 +189,30 @@ pub struct ExitCfg {
     pub tpp: bool,
     /// TK-669 (`trp`): трейл v11 — откат `rr` в процентах цены входа, включается первым исполненным тейком (а не ходом `+a` NATR). Только `breakout tick`.
     pub trp: bool,
+    /// TK-676 (`vf`): стоп от волатильности — форма расстояния `d` (проценты цены входа), заморожена на входе: 0 выкл.; 1 `a·V`; 2 `b + a·V`; 3 `a·V^p`;
+    /// 4 `a·ln(1 + V/v0)`, `V` — в процентах цены; итог зажат в `[vm, s]` и работает «самым плотным» вместе с `s`, `ls`, `sl`. Только `breakout tick`.
+    pub vf: u8,
+    /// TK-676 (`vs`): источник `V` (закрытая минутка `t−1`): 1–4 NATR 5 / 15 / 30 / 60 баров, 5–8 реализованная волатильность 5 / 15 / 30 / 60 минут.
+    pub vs: u8,
+    /// TK-676 (`va`): коэффициент `a` ×1000.
+    pub va_m: i64,
+    /// TK-676 (`vb`): сдвиг `b`, тысячные процента (форма 2).
+    pub vb_pm: i64,
+    /// TK-676 (`vp`): степень `p` ×1000 (форма 3).
+    pub vp_m: i64,
+    /// TK-676 (`v0`): масштаб `v0`, тысячные процента (форма 4).
+    pub v0_pm: i64,
+    /// TK-676 (`vm`): нижний зажим расстояния, тысячные процента (по умолчанию 500 = 0,5 %); верхний — `s`.
+    pub vm_pm: i64,
+    /// TK-676 (`vz`, `vr`): режимный множитель `(V_z / V)^ρ` — источник `V_z` (коды `vs`; 0 выкл.) и ρ ×1000.
+    pub vz: u8,
+    pub vr_m: i64,
+    /// TK-677 (`w2`): доля второго лота (ближнего к уровню), % ставки; первый лот — остаток. 50 — прежние 50/50; только при включённом втором входе.
+    pub w2_pct: i64,
+    /// TK-677 (`e2t`): второй вход за N тиков до уровня (`p ≥ L − N·тик`, тик — `tick_at` на входе лота 1); 0 — выкл. Вместо `e2`, требует `ew > 0`.
+    pub e2t: i64,
+    /// TK-677 (`s2`): 1 — общий стоп позиции: жёсткий стоп лота 2 стоит на цене стопа лота 1; 0 — у каждого лота свой стоп от своей цены входа.
+    pub s2: bool,
 }
 
 /// Ручной `Debug`: при выключенных ключах §13.31 строка `params` в meta.json — та же, что у производного `Debug` до §13.31.
@@ -240,6 +264,22 @@ impl std::fmt::Debug for ExitCfg {
         }
         if self.tpp || self.trp {
             d.field("tpp", &self.tpp).field("trp", &self.trp);
+        }
+        if self.vf != 0 {
+            d.field("vf", &self.vf)
+                .field("vs", &self.vs)
+                .field("va_m", &self.va_m)
+                .field("vb_pm", &self.vb_pm)
+                .field("vp_m", &self.vp_m)
+                .field("v0_pm", &self.v0_pm)
+                .field("vm_pm", &self.vm_pm)
+                .field("vz", &self.vz)
+                .field("vr_m", &self.vr_m);
+        }
+        if self.w2_pct != 50 || self.e2t != 0 || self.s2 {
+            d.field("w2_pct", &self.w2_pct)
+                .field("e2t", &self.e2t)
+                .field("s2", &self.s2);
         }
         d.finish()
     }
@@ -358,7 +398,21 @@ impl ExitCfg {
 
     /// Любая опция §13.19 включена (`breakout tick` only).
     pub fn lvl_exit_opts(&self) -> bool {
-        self.level_opts() || self.be_mode != 0 || self.e2_pm > 0
+        self.level_opts() || self.be_mode != 0 || self.split()
+    }
+
+    /// Позиция из двух лотов: второй вход включён (`e2` или `e2t`).
+    pub fn split(&self) -> bool {
+        self.e2_pm > 0 || self.e2t > 0
+    }
+
+    /// Размеры лотов 1 и 2 (мкУЕ) при ставке `notional`: без второго входа — вся ставка в лоте 1.
+    pub fn lots(&self, notional: i64) -> (i64, i64) {
+        if !self.split() {
+            return (notional, 0);
+        }
+        let b = notional * self.w2_pct / 100;
+        (notional - b, b)
     }
 
     /// Опции §13.21 (NATR-стоп `sn/sg/sb/sr/sd`, шаг тейков `tj`) включены — `breakout tick` only.
@@ -453,6 +507,18 @@ impl Params {
                 tu_min: 0,
                 tpp: false,
                 trp: false,
+                vf: 0,
+                vs: 0,
+                va_m: 0,
+                vb_pm: 0,
+                vp_m: 0,
+                v0_pm: 0,
+                vm_pm: 500,
+                vz: 0,
+                vr_m: 0,
+                w2_pct: 50,
+                e2t: 0,
+                s2: false,
             },
             port: PortCfg {
                 cool_min: 5,
@@ -560,6 +626,18 @@ impl Params {
             "tu" => self.exit.tu_min = f.round() as i64,
             "tpp" => self.exit.tpp = b,
             "trp" => self.exit.trp = b,
+            "vf" => self.exit.vf = u.min(255) as u8,
+            "vs" => self.exit.vs = u.min(255) as u8,
+            "va" => self.exit.va_m = pm(f),
+            "vb" => self.exit.vb_pm = pm(f),
+            "vp" => self.exit.vp_m = pm(f),
+            "v0" => self.exit.v0_pm = pm(f),
+            "vm" => self.exit.vm_pm = pm(f),
+            "vz" => self.exit.vz = u.min(255) as u8,
+            "vr" => self.exit.vr_m = pm(f),
+            "w2" => self.exit.w2_pct = f.round() as i64,
+            "e2t" => self.exit.e2t = f.round() as i64,
+            "s2" => self.exit.s2 = b,
             "fg" => self.sig.fg_m = pm(f),
             "fv" => self.filt.v = Some(f),
             "c" => self.port.cool_min = u,
@@ -652,9 +730,10 @@ impl Params {
         if self.xb > 0 && (self.mk > 0 || self.ek > 0) {
             bail!("xb несовместим с mk и ek");
         }
-        if self.xb > 0 && self.exit.e2_pm > 0 {
-            bail!("xb несовместим с e2 (вся ставка одним входом на срабатывании)");
+        if self.xb > 0 && self.exit.split() {
+            bail!("xb несовместим с e2 / e2t (вся ставка одним входом на срабатывании)");
         }
+        self.validate_split()?;
         if self.exit.tpp && self.exit.tj_m > 0 {
             bail!("tpp (тейки в процентах) несовместим с tj (шаг лестницы в NATR)");
         }
@@ -663,6 +742,7 @@ impl Params {
         }
         self.validate_v21()?;
         self.validate_stops()?;
+        self.validate_vol()?;
         if self.exit.n_tp < 2 || self.port.p == 0 || self.sig.lv.k == 0 || self.sig.lv.n == 0 {
             bail!("n_tp ≥ 2, p ≥ 1, k ≥ 1, n_bounce ≥ 1");
         }
@@ -687,6 +767,76 @@ impl Params {
         }
         if e.cs_w > 0 && e.cs_lo_m >= e.cs_hi_m {
             bail!("cw требует ch > cl (допустимая ширина проторговки)");
+        }
+        Ok(())
+    }
+
+    /// TK-677: `e2t` — вместо `e2`, по ленте; `w2`, `s2` — только при включённом втором входе (ключ без него — опечатка, а не «выкл.»).
+    fn validate_split(&self) -> Result<()> {
+        let e = &self.exit;
+        if e.e2t < 0 {
+            bail!("e2t ≥ 0");
+        }
+        if e.e2t > 0 && e.e2_pm > 0 {
+            bail!("e2t несовместим с e2 (одно правило второго входа)");
+        }
+        if e.e2t > 0 && !e.tape_entry() {
+            bail!("e2t требует ew > 0 (вход по ленте)");
+        }
+        if !e.split() && (e.w2_pct != 50 || e.s2) {
+            bail!("w2, s2 требуют второй вход (e2 > 0 или e2t > 0)");
+        }
+        if !(5..=95).contains(&e.w2_pct) {
+            bail!("w2 ∈ [5, 95] (% ставки во втором лоте)");
+        }
+        if e.s2 && e.sn_m != 0 {
+            bail!("s2 (общий стоп позиции) несовместим с sn (NATR-стоп лота)");
+        }
+        Ok(())
+    }
+
+    /// TK-676: стоп от волатильности (`vf/vs/va/vb/vp/v0/vm/vz/vr`) — параметр задан ровно для своей формы; ключ без `vf` — опечатка, а не «выкл.».
+    fn validate_vol(&self) -> Result<()> {
+        let e = &self.exit;
+        if e.vf == 0 {
+            if e.vs != 0
+                || e.va_m != 0
+                || e.vb_pm != 0
+                || e.vp_m != 0
+                || e.v0_pm != 0
+                || e.vm_pm != 500
+                || e.vz != 0
+                || e.vr_m != 0
+            {
+                bail!("vs/va/vb/vp/v0/vm/vz/vr требуют vf > 0 (стоп от волатильности)");
+            }
+            return Ok(());
+        }
+        if e.vf > 4 {
+            bail!("vf ∈ {{0, 1, 2, 3, 4}}");
+        }
+        if !(1..=8).contains(&e.vs) {
+            bail!("vs ∈ 1…8 (NATR 5/15/30/60, реализованная 5/15/30/60)");
+        }
+        if e.va_m <= 0 || e.vm_pm < 0 || e.vr_m < 0 {
+            bail!("va > 0, vm ≥ 0, vr ≥ 0");
+        }
+        for (f, v, name) in [(2u8, e.vb_pm, "vb"), (3, e.vp_m, "vp"), (4, e.v0_pm, "v0")] {
+            if e.vf == f && v <= 0 {
+                bail!("vf={f} требует {name} > 0");
+            }
+            if e.vf != f && v != 0 {
+                bail!("{name} задан при vf={}", e.vf);
+            }
+        }
+        if (e.vz != 0) != (e.vr_m != 0) {
+            bail!("vz и vr задаются вместе");
+        }
+        if e.vz != 0 && (!(1..=8).contains(&e.vz) || e.vz == e.vs) {
+            bail!("vz ∈ 1…8 и ≠ vs");
+        }
+        if e.sn_m != 0 {
+            bail!("vf несовместим с sn (одно расстояние стопа от волатильности)");
         }
         Ok(())
     }

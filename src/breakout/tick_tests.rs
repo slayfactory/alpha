@@ -1597,6 +1597,8 @@ fn run_lc(
         lp: s * px(lp),
         far: s * px(far),
         rng: None,
+        vol: -1,
+        volz: -1,
     };
     sim_fill_lc(
         &mut stream(ticks),
@@ -3691,6 +3693,8 @@ fn run_rng(
         lp: s * px(lp),
         far: s * px(lp),
         rng,
+        vol: -1,
+        volz: -1,
     };
     sim_fill_lc(
         &mut stream(ticks),
@@ -4851,4 +4855,175 @@ fn tpp_trp_keys_parse_validate_and_show_in_debug_only_when_on() {
         "tpp несовместим с tj"
     );
     assert!(super::cli::reject_tick_only(&p, "x").is_err());
+}
+
+// ───────────────────────── TK-677: доля второго лота (`w2`), вход за N тиков (`e2t`), общий стоп (`s2`) ─────────────────────────
+
+/// Сценарий §13.19: лот 1 по 99,70 на сигнале, подход к 99,95 → лот 2, затем обвал до 85.
+const SPLIT_SCEN: [(i64, f64, bool); 5] = [
+    (0, 99.6, false),
+    (10_000, 99.7, false),
+    (20_000, 99.85, false),
+    (30_000, 99.95, false),
+    (40_000, 85.0, true),
+];
+
+#[test]
+fn split_keys_parse_validate_and_default_params_string_unchanged() {
+    use super::params::parse_variant;
+    let base = Params::base();
+    let s0 = format!("{base:?}");
+    assert!(
+        !s0.contains("w2_pct") && !s0.contains("e2t") && !s0.contains("s2"),
+        "ключи выключены — строка params прежняя"
+    );
+    let (_, p0) = parse_variant("x ew=100 e2=0.05").expect("разбор");
+    assert!(
+        !format!("{p0:?}").contains("w2_pct"),
+        "прежние 50/50 — строка params прежняя"
+    );
+    assert_eq!(
+        p0.exit.lots(NOTIONAL_U),
+        (NOTIONAL_U / 2, NOTIONAL_U / 2),
+        "умолчание — прежние половины"
+    );
+    assert_eq!(base.exit.lots(NOTIONAL_U), (NOTIONAL_U, 0));
+    let (_, p) = parse_variant("x ew=100 e2t=1 w2=25 s2=1").expect("разбор");
+    let e = &p.exit;
+    assert_eq!((e.e2t, e.w2_pct, e.s2, e.split()), (1, 25, true, true));
+    assert_eq!(e.lots(NOTIONAL_U), (375_000_000, 125_000_000));
+    assert!(format!("{e:?}").ends_with("w2_pct: 25, e2t: 1, s2: true }"));
+    assert!(super::cli::reject_tick_only(&p, "x").is_err());
+    for bad in [
+        "w2=25",                  // доля без второго входа
+        "s2=1",                   // общий стоп без второго входа
+        "e2t=1",                  // без входа по ленте
+        "ew=100 e2t=1 e2=0.05",   // два правила второго входа
+        "ew=100 e2t=-1",          // отрицательные тики
+        "ew=100 e2=0.05 w2=0",    // доля вне [5, 95]
+        "ew=100 e2=0.05 w2=100",  // вся ставка во втором лоте — не две части
+        "ew=100 e2t=1 s2=1 sn=2", // общий стоп с NATR-стопом лота
+        "ew=100 e2t=1 xb=1",      // вход на пробой — одной ставкой
+    ] {
+        assert!(parse_variant(&format!("x {bad}")).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn split_default_share_and_stop_keys_equal_legacy_e2_run() {
+    let w = e2_world();
+    let a = w.run(&SPLIT_SCEN);
+    let mut w2 = e2_world();
+    w2.ex.w2_pct = 50;
+    w2.ex.s2 = false;
+    w2.ex.e2t = 0;
+    let b = w2.run(&SPLIT_SCEN);
+    assert_eq!(a.lot2, b.lot2);
+    let (x, y) = (&a.trades[0], &b.trades[0]);
+    assert_eq!(
+        (
+            x.gross.to_bits(),
+            x.fees.to_bits(),
+            x.net.to_bits(),
+            x.exit_ms
+        ),
+        (
+            y.gross.to_bits(),
+            y.fees.to_bits(),
+            y.net.to_bits(),
+            y.exit_ms
+        )
+    );
+}
+
+#[test]
+fn w2_share_sizes_both_lots_and_lot1_alone_is_counted_at_its_share() {
+    let mut w = e2_world();
+    w.ex.w2_pct = 25;
+    let r = w.run(&SPLIT_SCEN);
+    assert_eq!(r.lot2, [0, 1, 0, 0]);
+    let t = &r.trades[0];
+    let l2 = t.lot2.as_ref().expect("второй лот");
+    assert_eq!(t.legs.last().map(|l| l.u), Some(375_000_000));
+    assert_eq!(l2.legs.last().map(|l| l.u), Some(125_000_000));
+    let n1 = t.net1.expect("P&L лота 1");
+    assert!(n1 < 0.0 && t.net < n1, "лот 2 — net − net1");
+    let want = 375.0 * (85.0 - 99.7) / 99.7 + 125.0 * (85.0 - 99.95) / 99.95;
+    assert!((t.gross - want).abs() < 0.01, "брутто {}", t.gross);
+    let fee = crate::lob::costs::leg_fee_bps(true) / 1e4;
+    let want_fees = 500.0 * fee + 375.0 * (85.0 / 99.7) * fee + 125.0 * (85.0 / 99.95) * fee;
+    assert!((t.fees - want_fees).abs() < 0.01, "комиссии {}", t.fees);
+    // уровень не достигнут (лот 1 закрыт стопом до подхода): сделка остаётся в счёте размером лота 1 — 375 $
+    let r = w.run(&[
+        (0, 99.6, false),
+        (10_000, 99.7, false),
+        (20_000, 85.0, true),
+        (30_000, 99.95, false),
+    ]);
+    assert_eq!((r.trades.len(), r.lot2), (1, [0, 0, 1, 0]));
+    let t = &r.trades[0];
+    assert!(t.lot2.is_none());
+    assert_eq!(t.kind, ExitKind::HardStop);
+    let want = 375.0 * (85.0 - 99.7) / 99.7;
+    assert!((t.gross - want).abs() < 0.01, "брутто {}", t.gross);
+}
+
+#[test]
+fn e2t_second_lot_enters_n_ticks_before_level_and_is_rejected_without_tick() {
+    let mut w = e2_world();
+    w.ex.e2_pm = 0;
+    w.ex.e2t = 2; // тик 0,01 → L − d = 99,98
+    let scen = [
+        (0, 99.60, false),
+        (10_000, 99.70, false), // сигнал, лот 1
+        (20_000, 99.97, false), // 3 тика до уровня — рано
+        (30_000, 99.98, false), // 2 тика → лот 2
+        (40_000, 85.0, true),
+    ];
+    let ex = w.ex.clone();
+    let r = w.run_mk(&ex, &scen, 0);
+    assert_eq!(r.lot2, [0, 1, 0, 0]);
+    let l2 = r.trades[0].lot2.as_ref().expect("второй лот");
+    assert_eq!((l2.entry_ms, l2.entry_px), (w.abs(30_004), px(99.98)));
+    // на 1 тике та же лента лот 2 не даёт: 99,98 < L − 0,01
+    let mut ex1 = ex.clone();
+    ex1.e2t = 1;
+    let r = w.run_mk(&ex1, &scen, 0);
+    assert_eq!(r.lot2, [0, 0, 1, 0]);
+    assert!(r.trades[0].lot2.is_none());
+    // сделок до входа лота 1 меньше окна — тика нет: лот 2 — отказ, лот 1 остаётся в счёте
+    let r = w.run(&scen);
+    assert_eq!((r.trades.len(), r.lot2), (1, [0, 0, 0, 1]));
+}
+
+#[test]
+fn s2_common_stop_puts_lot2_hard_stop_at_lot1_stop_price() {
+    use super::tick::entry_stop_px;
+    let scen = [
+        (0, 99.6, false),
+        (10_000, 99.7, false),
+        (30_000, 99.95, false), // лот 2 по 99,95: свой стоп 5 % — 94,9525; стоп лота 1 — 94,715
+        (40_000, 94.9, true),
+        (50_000, 94.6, true),
+    ];
+    let mut w = e2_world();
+    let r = w.run(&scen);
+    let t = &r.trades[0];
+    let l2 = t.lot2.as_ref().expect("второй лот");
+    assert_eq!(
+        (l2.exit_ms, l2.kind, t.exit_ms),
+        (w.abs(40_000), ExitKind::HardStop, w.abs(50_000)),
+        "s2 = 0: у лота 2 свой стоп от своей цены входа"
+    );
+    w.ex.s2 = true;
+    let r = w.run(&scen);
+    let t = &r.trades[0];
+    let l2 = t.lot2.as_ref().expect("второй лот");
+    assert_eq!(
+        (l2.exit_ms, l2.kind, t.exit_ms),
+        (w.abs(50_000), ExitKind::HardStop, w.abs(50_000)),
+        "s2 = 1: оба лота закрыты на стопе лота 1"
+    );
+    let sp = entry_stop_px(px(99.7), Side::Long, NATR, &w.ex, None, 0);
+    assert_eq!(sp, px(99.7) - px(99.7) / 20);
 }
