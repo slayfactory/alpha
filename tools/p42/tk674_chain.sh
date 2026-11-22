@@ -5,8 +5,9 @@
 set -euo pipefail
 ENTRY=$1
 PY=/opt/venv/bin/python
-LOG=/data/p42-tk674/log/chain${TK674_REBASE:+b}${TK674_LEVEL:-}.log
+LOG=/data/p42-tk674/log/chain${TK674_REBASE:+b}${TK674_SPLIT:+s}${TK674_LEVEL:-}.log
 stage() { echo "== $(date -u +%FT%TZ) $*" >> "$LOG"; "$PY" tk674_run.py "$@" >> "$LOG" 2>&1; }
+if [ -n "${TK674_BIN:-}" ]; then stage spot; fi           # новый бинарь (ось split): выборочная проверка до счёта
 if [ "${TK674_LEVEL:-2}" -gt 2 ]; then stage ftab; fi
 stage validate
 if [ "${TK674_LEVEL:-2}" -gt 2 ]; then                  # уровни: стороны двумя процессами (движок по 2 потока)
