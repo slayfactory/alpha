@@ -625,11 +625,14 @@ def cmd_cells(a):
         cells, grids, skipped, bad, found = plan_side(side, store)
         todo = [c for k, c in cells.items() if k not in found]
         bl = batches(todo)
+        bl.sort(key=lambda kc: len({c["sig"] for c in kc[1]}) >= 20)     # дешёвые партии (< 20 проходов сигнала) — первыми; набор клеток и результат не меняются
         index = {}
         cols = json.load(open(os.path.join(ROOT, "res", "ftabcols674%s-%s.json" % (FSUF, side)), encoding="utf-8")) if any(k == "f" for k, _ in bl) else {}
         for kind, cur in bl:
             nm = batch_name(kind, cur)
             index[nm] = [c["ckey"] for c in cur]
+            if os.environ.get("TK674_ONLY_CHEAP") and len({c["sig"] for c in cur}) >= 20:      # дешёвые партии обеих сторон — первыми, дорогие — потом (на более быстром бинаре)
+                continue
             for w in st.TRADE_WINDOWS:
                 out = os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm)
                 done = os.path.join(ROOT, "done", "%s-%s-%s" % (w.name, side, nm))
