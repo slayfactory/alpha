@@ -49,6 +49,14 @@ SPLIT_NB = {                                    # соседи плато по �
     "t2w50": ("t1w50", "t3w50"), "t3w50": ("t2w50",), "t1w50s2": ("t1w50",),
 }
 
+if os.environ.get("TK674_SPLITW") == "1":       # поправка §13.73.10 (В-173 № 34 «добавляй 80 и 90 процентов»): доля части B 80 и 90 % в обоих семействах
+    for fam, kw in (("e2", dict(e2=0.05, e2t=0)), ("t1", dict(e2=0, e2t=1))):
+        for w in (80, 90):
+            SPLIT_VALS["%sw%d" % (fam, w)] = dict(kw, w2=w, s2=0)
+        SPLIT_NB[fam + "w75"] = SPLIT_NB[fam + "w75"] + (fam + "w80",)
+        SPLIT_NB[fam + "w80"] = (fam + "w75", fam + "w90")
+        SPLIT_NB[fam + "w90"] = (fam + "w80",)
+
 
 def nb_idx(name, vals, i):
     """Индексы соседей значения i оси на шаг (плато (г)): у обычной оси — i ± 1, у составной оси split — по SPLIT_NB."""
