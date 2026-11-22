@@ -10,6 +10,8 @@ TK-606: вкладка «Признаки» — данные из features.json 
 плюс проверки: ссылки src ∈ sources, имена признаков не повторяются, у набора «идёт» нет цифр), вшиваются так же.
 TK-624: блок «Где мы» (progress.json → where) и вид «Базы» вкладки «Эквити» — данные из bases.json (по умолчанию <каталог>/data/bases.json; строит tk624_table.py:
 суточные ряды L_base / S_base (TK-599) и S_mk1 (TK-616), $ при ставке 500 $); итоги ряда сверяются с принятыми отчётами, вшиваются так же.
+TK-684: вид «Варианты» вкладки «Эквити» — данные из variants.json (по умолчанию <каталог>/data/variants.json; строит tk684_equity.py: сделки вариантов лонга и шорта,
+сверка с летописью — там же), вшиваются так же.
 """
 from __future__ import annotations
 
@@ -27,6 +29,7 @@ shape_path = sys.argv[8] if len(sys.argv) > 8 else f"{out_dir}/data/shape.json"
 features_path = sys.argv[9] if len(sys.argv) > 9 else f"{out_dir}/data/features.json"
 bases_path = sys.argv[10] if len(sys.argv) > 10 else f"{out_dir}/data/bases.json"
 universe_path = sys.argv[11] if len(sys.argv) > 11 else f"{out_dir}/data/universe.json"
+variants_path = sys.argv[12] if len(sys.argv) > 12 else f"{out_dir}/data/variants.json"
 # итоги баз по принятым отчётам: (Σ $, сделок) — p42-maker-entry-2026-11-19.md (L_base, S_base, S_mk1) и p42-retitration-full-2026-11-19.md
 ACCEPTED_BASES = {"L_base": (7.06, 621), "S_base": (259.14, 431), "S_mk1": (248.05, 372),
                   # TK-645 (tk645_best.py): 775 монет — базы U2 TK-621, L_n24 TK-638, NC360_q20 TK-639
@@ -54,6 +57,17 @@ def check_features(f):
     for s in f["sets"]:
         assert s["status"] == "done" or not s["numbers"], f"features.json: у набора {s['id']} со статусом «идёт» цифр быть не должно"
         assert s["numbers"] == [] or s["reports"], f"features.json: у набора {s['id']} есть цифры, но нет отчёта"
+
+
+def check_variants(v):
+    """Смысловые проверки variants.json (TK-684); равенство принятым числам проверяет tk684_equity.py при построении файла."""
+    ids = [x["id"] for x in v["variants"]]
+    assert len(ids) == len(set(ids)) and v["days"] == 136, "variants.json: id варианта повторяется или окно не 136 суток"
+    for s in ("long", "short"):
+        assert v["default"][s] in [x["id"] for x in v["variants"] if x["side"] == s], f"variants.json: default {s}"
+    for x in v["variants"]:
+        assert x["group"] in [g["id"] for g in v["groups"]] and x["t"] and len(x["t"]) == len(x["d"]) == len(x["v"]), f"variants.json: {x['id']}"
+        assert x["t"] == sorted(x["t"]) and min(x["d"]) >= 0 and max(x["d"]) < v["days"], f"variants.json: {x['id']} — порядок закрытий или сутки вне окна"
 
 
 def check_bases(b, progress):
@@ -147,10 +161,13 @@ def main():
     for side, base in (("long", "L_base"), ("short", "S_base")):   # U0 = базы TK-599
         assert abs(sum(uni["sides"][side]["U0"]["daily_sum"]) - ACCEPTED_BASES[base][0]) < 0.006, f"universe.json: U0 {side} != база TK-599"
     ublob = json.dumps(uni, ensure_ascii=False, allow_nan=False, separators=(",", ":")).replace("</", "<\\/")
+    variants = json.load(open(variants_path, encoding="utf-8"))
+    check_variants(variants)
+    vblob = json.dumps(variants, ensure_ascii=False, allow_nan=False, separators=(",", ":")).replace("</", "<\\/")
     pblob = json.dumps(progress, ensure_ascii=False, allow_nan=False, separators=(",", ":")).replace("</", "<\\/")
-    assert "/*__DATA__*/" in tpl and "/*__PROGRESS__*/" in tpl and "/*__EQUITY__*/" in tpl and "/*__SHAPE__*/" in tpl and "/*__FEATURES__*/" in tpl and "/*__BASES__*/" in tpl and "/*__UNIVERSE__*/" in tpl
+    assert "/*__DATA__*/" in tpl and "/*__PROGRESS__*/" in tpl and "/*__EQUITY__*/" in tpl and "/*__SHAPE__*/" in tpl and "/*__FEATURES__*/" in tpl and "/*__BASES__*/" in tpl and "/*__UNIVERSE__*/" in tpl and "/*__VARIANTS__*/" in tpl
     os.makedirs(f"{out_dir}/data", exist_ok=True)
-    open(f"{out_dir}/index.html", "w", encoding="utf-8").write(tpl.replace("/*__DATA__*/", blob).replace("/*__PROGRESS__*/", pblob).replace("/*__EQUITY__*/", eblob).replace("/*__SHAPE__*/", sblob).replace("/*__FEATURES__*/", fblob).replace("/*__BASES__*/", bblob).replace("/*__UNIVERSE__*/", ublob))
+    open(f"{out_dir}/index.html", "w", encoding="utf-8").write(tpl.replace("/*__DATA__*/", blob).replace("/*__PROGRESS__*/", pblob).replace("/*__EQUITY__*/", eblob).replace("/*__SHAPE__*/", sblob).replace("/*__FEATURES__*/", fblob).replace("/*__BASES__*/", bblob).replace("/*__UNIVERSE__*/", ublob).replace("/*__VARIANTS__*/", vblob))
     json.dump(data, open(f"{out_dir}/data/page_data.json", "w", encoding="utf-8"), ensure_ascii=False)
     print("index.html", len(tpl) + len(blob) + len(pblob) + len(eblob) + len(sblob) + len(fblob), "байт; ход работ", progress["updated"], f"({len(progress['stages'])} этапов); признаки", features["updated"], f"({len(features['sets'])} наборов); (а)", {s: data["sides"][s]["verdict"]["a"]["ok"] for s in data["sides"]}, flush=True)
 

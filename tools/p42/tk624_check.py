@@ -455,7 +455,7 @@ eq("возврат в «Базы»", R["bases"]["toBases"]["view"], "bases")
 H = R["hash"]
 eq("хеш #equity/both/bases", (H["#equity/both/bases"]["view"], H["#equity/both/bases"]["side"], H["#equity/both/bases"]["bases"]), ("bases", "both", "both"))
 eq("хеш #equity/long/bases", (H["#equity/long/bases"]["view"], H["#equity/long/bases"]["side"], H["#equity/long/bases"]["bases"]), ("bases", "long", "long"))
-eq("хеш #equity/short — прежняя кривая", (H["#equity/short"]["view"], H["#equity/short"]["bases"]), ("curve", None))
+eq("хеш #equity/short/curve — прежняя кривая", (H["#equity/short/curve"]["view"], H["#equity/short/curve"]["bases"]), ("curve", None))
 eq("хеш #progress", (H["#progress"]["selected"], H["#progress"]["where"]), (["progress"], False))
 eq("хеш #equity/short/where", (H["#equity/short/where"]["view"], H["#equity/short/where"]["side"], H["#equity/short/where"]["where"] is False), ("where", "short", True))
 
