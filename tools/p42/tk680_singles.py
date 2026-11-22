@@ -315,7 +315,7 @@ def cmd_map():
                 by_sig.setdefault(rows[k]["extra"].get("trades_sig"), []).append(rows[k]["cell"])
         bsig = brow["extra"].get("trades_sig")
         bx = brow["extra"]
-        out = dict(side=side, level=1, base=dict(ckey=base_ck, sharpe=bsh, usd=busd, n=brow["trades"], mean_usd=bx["mean_usd"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"],
+        out = dict(side=side, level=1, base=dict(ckey=base_ck, sharpe=bsh, usd=busd, n=brow["trades"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"],
                                                  **run.loss_fields(bx)),
                    axes=out_axes, n_cells=len(shs), m=m_side, sharpe_sd=sd, noise_max=sd * float(np.sqrt(2 * np.log(max(m_side, 2)))),
                    same_as_base=sorted(by_sig.get(bsig, [])), skipped=lv["skipped"], invalid=inv,
