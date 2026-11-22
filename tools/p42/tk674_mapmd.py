@@ -112,7 +112,7 @@ def table(rows, rebase, n=TOP):
     return out
 
 
-def side_md(d):
+def side_md(d, axis=None):
     side, b, rebase, level = d["side"], d["base"], d.get("rebase", False), d.get("level", 2)
     unit = {2: "пар", 3: "троек", 4: "четвёрок"}[level]
     pairs = d["pairs"]
@@ -139,6 +139,11 @@ def side_md(d):
             unit, q["active_subs"], q["subs"], q["eligible"], q["taken"], q["cap"], q["left_out"]), ""]
     out += ["### А. Победители %s (правило предрегистрации): %d разных наборов сделок с наибольшим приростом Шарпа" % (unit, min(TOP, len(A))), ""] + table(A, rebase) + [""]
     out += ["### Б. Лучшая охранённая клетка со всеми сдвинутыми осями (справка, те же клетки): %d разных наборов сделок" % min(TOP, len(B)), ""] + table(B, rebase) + [""]
+    if axis:                                        # все комбинации с осью (ось split, §13.73.4): лучшая клетка со всеми сдвинутыми осями, одна строка на набор сделок
+        ap_ = [p for p in pairs if axis in p["pair"].split("|")]
+        rows = dedupe(ap_, "both_moved")
+        out += ["### Ось `%s`: все комбинации с осью — %d, с победителем %d, с клеткой со всеми сдвинутыми осями %d (разных наборов сделок %d)" % (
+            axis, len(ap_), sum(1 for p in ap_ if p["winner"]), sum(1 for p in ap_ if p["both_moved"]), len(rows)), ""] + table(rows, rebase, n=len(rows)) + [""]
     if level > 2:
         up = [r for r in B if r["c"].get("gain_sub", 0) > 0]
         out += ["Клеток со всеми сдвинутыми осями, которые лучше планки нижних уровней (лучшая охранённая клетка любой подкомбинации): **%d** наборов сделок из %d. Найдено на этих данных." % (len(up), len(B)), ""]
@@ -162,12 +167,13 @@ def main():
     ap.add_argument("dir")
     ap.add_argument("--suf", default="", help="b — база стопа ≤ 4 %; b3, b4 — тройки, четвёрки")
     ap.add_argument("--out")
+    ap.add_argument("--axis", help="добавить раздел: все комбинации с этой осью (например split)")
     a = ap.parse_args()
     ds = [json.load(open(os.path.join(a.dir, "map674%s-%s.json" % (a.suf, s)), encoding="utf-8")) for s in "LS"]
     rebase = ds[0].get("rebase", False)
     level = ds[0].get("level", 2)
     name = {2: "всех совместимых пар", 3: "отобранных троек", 4: "отобранных четвёрок"}[level]
-    out = ["# П-42 §13.73.%s — карта %s осей линии%s (TK-674)" % ({2: "2" if rebase else "1", 3: "3", 4: "4"}[level], name, ", база стопа ≤ 4 %" if rebase else ""), ""]
+    out = ["# П-42 §13.73.%s — карта %s осей линии%s (TK-674)" % ({2: ("4" if a.axis == "split" else "2") if rebase else "1", 3: "3", 4: "5"}[level], name + (" с осью `%s`" % a.axis if a.axis else ""), ", база стопа ≤ 4 %" if rebase else ""), ""]
     out.append("Окно 01.07–13.11 (136 суток), h775, ставка 500 $, маржа 250 $. Шарп — годовой по суточному ряду Σ $; перехай — сутки между новыми максимумами P&L. "
                "«Убыток по цене стопа» = 500 $ × стоп + 0,415 $ издержек — это не предел убытка: при пробое стопа сделка закрывается хуже, худшая сделка клетки напечатана рядом. "
                "**Найдено на этих данных; ждёт января–июня 2026.** Охраны (а)–(д) и плато (г) — §13.73 (PS-950, PS-951)%s. Торгуется одна линия — строки не складываются. "
@@ -175,7 +181,7 @@ def main():
                    "; база стопа и справочная колонка 5 % — поправка §13.73.2" if rebase else "", a.suf, a.suf))
     out.append("")
     for d in ds:
-        out += side_md(d)
+        out += side_md(d, a.axis)
     text = "\n".join(out).rstrip() + "\n"
     path = a.out or os.path.join(a.dir, "pair-map%s.md" % a.suf)
     open(path, "w", encoding="utf-8", newline="\n").write(text)
