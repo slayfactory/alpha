@@ -106,3 +106,15 @@ def test_fast_join_key_checks(tmp_path):
     bad = pd.DataFrame(dict(win=["wa"], row_id=[5], sym=["ZZZ"], meta_sig_ms=[100]))
     with pytest.raises(SystemExit):
         s.fast_join("L", bad)
+
+
+def test_reroot_level_adds_base_and_keeps_cells():
+    """§13.73.15: набор PS-974 на вселенной c539 — те же клетки плюс база; anchors — только база, оси пусты."""
+    r = run("""
+        import tk680_singles as s
+        src = dict(side="L", axes=[dict(axis="natr_p", vals=[["5", "k5"]])], skipped=[["x", "y"]], eligible=3, cells={"k5": dict(cid="a", patch={}, filt=[], sig=[])})
+        base = dict(cid="s3", patch={"s": 3}, filt=[], sig=[])
+        full, anc = s.reroot_level(src, "kb", base, False), s.reroot_level(src, "kb", base, True)
+        print(json.dumps(dict(full=sorted(full["cells"]), first=next(iter(full["cells"])), axes=len(full["axes"]), anc=sorted(anc["cells"]), anc_axes=len(anc["axes"]), src=sorted(src["cells"]))))
+    """, TK680_SET="t681")
+    assert r["full"] == ["k5", "kb"] and r["first"] == "kb" and r["axes"] == 1 and r["anc"] == ["kb"] and r["anc_axes"] == 0 and r["src"] == ["k5"]

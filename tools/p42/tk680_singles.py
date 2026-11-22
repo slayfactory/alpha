@@ -148,7 +148,56 @@ def _thresholds(v, cname=None):
     return out, list(out)
 
 
+def reroot_level(src, base_ck, base_cell, anchors):
+    """§13.73.15: набор PS-974 на новой вселенной — те же клетки (ключи, пороги, фильтры, оси без изменений), плюс клетка базы (на h775 она была в БД); anchors — только база."""
+    out = dict(src)
+    if anchors:
+        out.update(axes=[], skipped=[], cells={base_ck: base_cell}, eligible=0)
+    else:
+        out["cells"] = dict({base_ck: base_cell}, **src["cells"])
+    return out
+
+
+def select_from():
+    """TK680_FROM=<каталог счёта PS-974>: уровень и пороги берутся из него без пересчёта (решений отбора нет); TK680_ANCHORS=1 — только база стороны."""
+    import shutil
+    import tk674_run as run
+    assert run.LEVEL == 1 and ax.REBASE and run.UNI != "h775", "TK674_LEVEL=1 TK674_REBASE=1 TK674_UNI=c539"
+    src_root, anchors = os.environ["TK680_FROM"], os.environ.get("TK680_ANCHORS") == "1"
+    store, bins = run.chron_store(ro=True), run.eq_bins()
+    os.makedirs(os.path.join(run.ROOT, "res"), exist_ok=True)
+    if not anchors:
+        import numpy as np
+        import tk643_run as t
+        import tk654_run as r54
+        st, r5, _, _ = t._srv()
+        u = r5.Uni(run.UNI)
+        crypto, eps = sorted(u.coins()), r54.episodes_h775()
+    for side in ax.SIDES:
+        src = json.load(open(os.path.join(src_root, "res", os.path.basename(run.level_path(side))), encoding="utf-8"))
+        base = a80.make_cell(side, "base", "base", {})
+        assert base["ckey"] == ax.base_ckey(side)
+        out = reroot_level(src, base["ckey"], dict(cid=base["cid"], patch=base["patch"], filt=base["filt"], sig=base["sig"]), anchors)
+        if not anchors:                             # покрытие столбцов — по кандидатам базы только крипто-монет (охрана 70 % PS-974 п. 3 читает n / n_all)
+            tabs = run.feat_tabs(side, st, u, eps)
+            sel = {w.name: r54.in_scored_range(w, tabs[w.name]["ms"]) & np.isin(np.asarray(tabs[w.name]["sym"]).astype(str), crypto) for w in st.TRADE_WINDOWS}
+            for a in out["axes"]:
+                if a["kind"] == "col":
+                    allv = np.concatenate([tabs[w.name][a["axis"].split(".")[0]][sel[w.name]] for w in st.TRADE_WINDOWS])
+                    a["n"], a["n_all"] = int(np.isfinite(allv).sum()), int(len(allv))
+        found = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(out["cells"]), bins=bins)
+        out.update(n_cells=len(out["cells"]), n_have=len(found), n_new=len(out["cells"]) - len(found))
+        json.dump(out, open(run.level_path(side), "w", encoding="utf-8"), ensure_ascii=False)
+        sigs = {tuple(tuple(x) for x in c["sig"]) for k, c in out["cells"].items() if k not in found and c["sig"]}
+        print("== %s (%s): клеток %d, в БД есть %d, считаем %d; проходов сигналов %d" % (side, run.UNI, out["n_cells"], out["n_have"], out["n_new"], len(sigs)), flush=True)
+    tp = os.path.join(run.ROOT, "res", THR_NAME)
+    shutil.copyfile(os.path.join(src_root, "res", THR_NAME), tp)
+    print("select_from готово; пороги %s sha256 %s" % (tp, _sha(tp)))
+
+
 def cmd_select():
+    if os.environ.get("TK680_FROM"):
+        return select_from()
     import numpy as np
     import tk643_run as t
     import tk654_run as r54
