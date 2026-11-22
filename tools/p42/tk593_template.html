@@ -11,9 +11,6 @@
 html{scroll-behavior:smooth}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
 .wrap{max-width:1180px;margin:0 auto;padding:0 24px 96px}
-.top{padding:36px 0 18px}
-h1{margin:0;font-size:22px;font-weight:650;letter-spacing:-.02em}
-.sub{margin:6px 0 0;color:var(--mfg);font-size:13px}
 .bar{position:sticky;top:0;z-index:5;background:rgba(250,250,250,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);margin:0 -24px;padding:10px 24px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
 .tabs{display:inline-flex;background:var(--muted);padding:4px;border-radius:9px}
 .tabs button{border:0;background:transparent;padding:6px 18px;border-radius:6px;font:500 13px inherit;color:var(--mfg);cursor:pointer}
@@ -22,18 +19,12 @@ h1{margin:0;font-size:22px;font-weight:650;letter-spacing:-.02em}
 .nav button{border:0;background:transparent;padding:5px 10px;border-radius:6px;font:500 12.5px inherit;color:var(--mfg);cursor:pointer}
 .nav button:hover{background:var(--muted);color:var(--fg)}
 section{margin-top:44px;scroll-margin-top:70px}
-section.first{margin-top:28px}
 h2{margin:0;font-size:16px;font-weight:600;letter-spacing:-.01em}
-.desc{margin:3px 0 14px;color:var(--mfg);font-size:13px;max-width:78ch}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media(max-width:940px){.grid2{grid-template-columns:1fr}}
 .card{background:#fff;border:1px solid var(--border);border-radius:var(--r);box-shadow:0 1px 2px rgba(0,0,0,.04);min-width:0}
 .card-h{padding:14px 20px 0;display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .card-h b{font-size:14px;font-weight:600}
 .card-h span{color:var(--mfg);font-size:12px}
 .card-b{padding:10px 20px 18px}
-.cap{color:var(--mfg);font-size:12px;margin:10px 0 2px}
-.cap:first-child{margin-top:0}
 table{width:100%;border-collapse:collapse}
 th{font-weight:500;color:var(--mfg);text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px;white-space:nowrap}
 td:first-child{min-width:250px}
@@ -43,11 +34,8 @@ tr:last-child td{border-bottom:0}
 th.num{text-align:right}
 .muted{color:var(--mfg)}
 .small{font-size:12px}
-.strong{font-weight:600}
 .badge{display:inline-flex;align-items:center;border-radius:6px;padding:2px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--muted);color:var(--z700);white-space:nowrap}
 .badge.ok{background:var(--accent);border-color:var(--accent);color:#fff}
-.verd{display:flex;gap:12px;align-items:baseline;padding:12px 20px;border-top:1px solid var(--border)}
-.verd .small{flex:1}
 .legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--z600);margin:0 0 4px}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 svg{display:block;overflow:visible}
@@ -56,7 +44,6 @@ svg text.k{fill:var(--fg)}
 #tip{position:fixed;display:none;pointer-events:none;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.1);padding:8px 10px;font-size:12px;z-index:50;max-width:280px;line-height:1.45}
 #tip .t{font-weight:600;margin-bottom:2px}
 #tip .r{display:flex;justify-content:space-between;gap:14px}
-.grey{opacity:.4}
 .toptabs{position:sticky;top:0;z-index:8;height:54px;background:rgba(250,250,250,.96);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
 .toptabs-in{max-width:1180px;margin:0 auto;padding:0 24px;height:100%;display:flex;align-items:center;gap:16px}
 .brand{font-weight:650;font-size:14px;white-space:nowrap;color:var(--z700)}
@@ -69,21 +56,42 @@ section{scroll-margin-top:130px}
 .eq-h h2{font-size:20px;font-weight:650;letter-spacing:-.02em}
 .eq-ctls{display:flex;flex-wrap:wrap;gap:0 16px}
 .eq-ctl{margin:12px 0 4px}
-.eq-cmp[hidden]{display:none}
-.eq-cmp{display:flex;flex-wrap:wrap;align-items:center;gap:0 16px}
-.eq-dep{font-size:13px;color:var(--mfg);display:inline-flex;align-items:center;gap:8px}
-.eq-dep input{width:96px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font:500 13px inherit;color:var(--fg);background:#fff}
-.eq-dep input[aria-invalid=true]{border-color:#eb6834}
-.cmpt{margin-top:14px}
+.vr-pick{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:10px 0 0}
+.vr-pick>b{font-size:13px;font-weight:600;min-width:42px}
+.vr-pick .tabs{flex-wrap:wrap}
+.vr-pick .tabs button{padding:6px 12px}
+.vr-g{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-width:0}
+.vr-grp{color:var(--mfg);font-size:12px}
+.fan-ctl,.fan-sl,.fan-pin{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:10px 0 0}
+.fan-ctl .tabs{flex-wrap:wrap}
+.fan-ctl .tabs button{padding:6px 12px}
+.fan-ctl select,.fan-pin button{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font:500 13px inherit;color:var(--fg);background:#fff;cursor:pointer}
+.fan-pin button[aria-pressed=true]{background:var(--fg);border-color:var(--fg);color:#fff}
+.fan-pin b{font-weight:600;font-size:13px;overflow-wrap:anywhere}
+.fan-pin .sw{display:inline-block;width:18px;border-top:3px solid}
+.fan-s1{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;font-size:12.5px;color:var(--z600);flex:1 1 200px;min-width:0}
+.fan-s1 input{min-width:0;width:100%;accent-color:var(--fg)}
+.fan-s1 output{min-width:38px;text-align:right;color:var(--fg);font-variant-numeric:tabular-nums}
+.fan-row{margin:8px 0 0}
+.fan-cnt,.fan-msg{font-size:13px;color:var(--z600);font-variant-numeric:tabular-nums}
+.fan-msg{margin:16px 0}
+.fan-cv{position:relative;margin-top:6px}
+.fan-cv canvas{position:absolute;left:0;top:0;width:100%}
+.fan-cv canvas[data-fan=over]{cursor:crosshair}
+.fan-t tbody tr{cursor:pointer}
+.fan-t tr.pin{background:#fdf2f6}
+.fan-nm{display:inline-block;vertical-align:middle;max-width:calc(100% - 26px);overflow-wrap:anywhere}
+.fan-t td[data-f=name]{white-space:normal;overflow-wrap:anywhere;min-width:150px}
+.fan-star{border:0;background:transparent;font-size:16px;line-height:1;cursor:pointer;color:var(--z400);padding:0 2px}
+.fan-star[aria-pressed=true]{color:#b8860b}
+.eqt td.vst{white-space:normal;color:var(--mfg);font-size:12px;min-width:96px;max-width:150px}
 .eq-card{margin-top:20px}
 .eq-card .card-b{padding:12px 20px 18px}
-.eq-note{margin:10px 0 0;color:var(--mfg);font-size:12px;max-width:110ch}
 .eqt{margin-top:12px}
 .eqt th,.eqt td{padding:8px 10px;white-space:nowrap}
 .eqt td:first-child{min-width:0}
 .eqt[data-wtable] td:first-child{white-space:normal;min-width:190px}
 .eqt th{white-space:normal;vertical-align:bottom;max-width:120px}
-.shp th,.shp td{padding:8px 7px}
 .eqt .sw{display:inline-block;width:18px;height:0;border-top:3px solid;vertical-align:middle;margin-right:8px}
 .eqt tr.base td:first-child{font-weight:600}
 @media(max-width:640px){.eq-card .card-b{padding:10px 10px 14px}
@@ -92,34 +100,17 @@ section{scroll-margin-top:130px}
 .eqt tr{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 0;border-bottom:1px solid var(--border)}
 .eqt tr:last-child{border-bottom:0}
 .eqt td,.eqt td:first-child{padding:0;border:0;min-width:0;text-align:left;white-space:normal}
-.eqt td:first-child{grid-column:1/-1}
+.eqt td:first-child,.eqt td.vst,.fan-t td[data-f=name]{grid-column:1/-1}
+.fan-t tr{position:relative}
+.fan-t td.fan-s{position:absolute;right:0;top:2px;z-index:1}
+.fan-t td.fan-s .fan-star{padding:8px 10px;font-size:18px}
+.fan-t td[data-f=name]{padding-right:40px}
+.eqt td.vst{max-width:none}
+.eqt td.vst:empty{display:none}
 .eqt td[data-lab]::before{content:attr(data-lab);display:block;margin-bottom:1px;color:var(--mfg);font-size:11.5px;font-weight:400}}
 .prog{padding:28px 0 8px}
 .prog-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .prog-h h2{font-size:20px;font-weight:650;letter-spacing:-.02em}
-.prog-head{margin:6px 0 16px;color:var(--z700);font-size:14px;max-width:90ch}
-.stages{display:grid;grid-template-columns:repeat(var(--n,4),minmax(0,1fr));gap:20px}
-@media(max-width:1100px){.stages{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}
-@media(max-width:640px){.stages{grid-template-columns:1fr}}
-.stage{position:relative;background:#fff;border:1px solid var(--border);border-top:4px solid var(--z300);border-radius:var(--r);box-shadow:0 1px 2px rgba(0,0,0,.04);padding:14px 16px 16px;min-width:0;display:flex;flex-direction:column;gap:8px}
-.stage.st-done{border-top-color:var(--accent)}
-.stage.st-running{border-top-color:var(--accent);border-top-style:dashed}
-@media(min-width:1101px){.stage+.stage::before{content:"\203A";position:absolute;left:-17px;top:14px;color:var(--z400);font-size:20px;line-height:1}}
-.stage-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.stage-id{font-weight:650;font-size:13px;color:var(--z700)}
-.stage-title{font-weight:600;font-size:14.5px;line-height:1.35}
-.stage-q{color:var(--z600);font-size:13px}
-.lbl{margin-top:4px;color:var(--mfg);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
-.steps,.nums{margin:0;padding:0;list-style:none;font-size:13px}
-.steps li{display:flex;gap:8px;padding:1.5px 0}
-.steps li i{font-style:normal;flex:none;width:14px;text-align:center;color:var(--z400)}
-.steps li.s-done i{color:var(--accent);font-weight:700}
-.steps li.s-running i{color:var(--accent)}
-.steps li.s-waiting{color:var(--mfg)}
-.nums li{padding:3px 0}
-.nums li+li{border-top:1px solid var(--muted)}
-.badge.run{background:#fff;border-color:var(--accent);color:var(--accent)}
-.stage-next{font-size:13px}
 .tg-card{margin-top:24px}
 .tg-card .card-b{padding:12px 20px 18px}
 .tg-note{margin:0 0 10px;color:var(--mfg);font-size:12.5px;max-width:100ch}
@@ -133,7 +124,6 @@ section{scroll-margin-top:130px}
 .tg td,.tg th{padding:9px 12px}
 .tg .cellnote{display:block;margin-top:3px;color:var(--mfg);font-size:11.5px;max-width:230px}
 .tg tfoot td{border-top:1px solid var(--border);border-bottom:0;color:var(--mfg);font-size:12.5px}
-@media(max-width:640px){#sec-over .card-b{overflow-x:auto}}
 .tg-card .card-h{flex-wrap:wrap}
 @media(max-width:640px){
 .tg,.tg tbody,.tg tfoot{display:block}
@@ -151,7 +141,6 @@ section{scroll-margin-top:130px}
 .tg tfoot td:nth-child(2){grid-column:1/-1}
 .tg tfoot td.res{display:none}
 }
-.prog-foot{margin:22px 0 0;padding-bottom:6px;border-bottom:1px solid var(--border);color:var(--mfg);font-size:13px}
 /* TK-606: вкладка «Признаки» */
 .ft-bar .nav{flex-wrap:wrap}
 section.ft-set{margin-top:22px}
@@ -199,103 +188,30 @@ section.ft-set{margin-top:22px}
 .ft tr.grp{display:block;padding:0;border:0;margin-top:6px}
 .ft tr.grp td{padding:6px 10px;border-radius:6px}
 }
-.lv-meta{color:var(--mfg);font-size:12.5px;margin:4px 0 14px}
-.lv-hl{display:flex;flex-wrap:wrap;gap:2px 18px}
-.lv-warn{margin:0 0 12px;padding:8px 12px;border:1px solid var(--fg);border-radius:8px;font-size:13px;font-weight:600}
-.lv-h3{margin:20px 0 8px;font-size:15px;font-weight:650}
-.lv-head,.lv-row{display:grid;grid-template-columns:minmax(220px,2fr) 92px minmax(170px,1.4fr) 112px 112px;gap:6px 18px;align-items:start}
-.lv-head{padding:0 16px 8px;color:var(--mfg);font-size:12px;font-weight:500}
-.lv-row{background:#fff;border:1px solid var(--border);border-radius:var(--r);box-shadow:0 1px 2px rgba(0,0,0,.04);padding:12px 16px;margin-bottom:8px}
-.lv-name b{display:block;font-size:13px;color:var(--z600)}
-.lv-name span{display:block;font-size:14.5px;font-weight:600;line-height:1.35}
-.lv-c small{display:block;color:var(--mfg);font-size:11.5px}
-.lv-c.warn small{color:var(--fg);font-weight:600}
-.lv-empty{color:var(--mfg);font-size:13.5px;padding:2px 0 6px}
 .badge.fail{background:var(--fg);border-color:var(--fg);color:#fff}
-.lv-foot{margin:14px 0 0;color:var(--mfg);font-size:12.5px}
-@media(max-width:900px){
-.lv-head{display:none}
-.lv-row{grid-template-columns:1fr 1fr;gap:10px 14px}
-.lv-name{grid-column:1/-1}
-.lv-c[data-l]::before{content:attr(data-l);display:block;color:var(--mfg);font-size:11px}
-}
-/* TK-624: блок «Где мы» и вид «Базы» вкладки «Эквити» */
 .tabs[hidden]{display:none}
-.where-card{margin:0 0 28px}
-.where-card .card-b{padding:12px 20px 18px}
-.wh-lead{margin:0 0 6px;font-size:15px;max-width:100ch}
-.wh-tt{margin:16px 0 0;font-size:13px;font-weight:600}
-.wh-tn{margin:2px 0 0;color:var(--mfg);font-size:12px;max-width:110ch}
-.where-card .eqt td:first-child{min-width:190px}
-.wh-chart{margin-top:16px}
-.wh-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px}
-@media(max-width:940px){.wh-grid{grid-template-columns:1fr}}
-.wh-box{border:1px solid var(--border);border-radius:var(--r);padding:12px 16px;min-width:0}
-.wh-box.wide{grid-column:1/-1}
-.wh-box h3{margin:0 0 6px;font-size:14px;font-weight:600}
-.wh-box ul{margin:0;padding-left:18px;font-size:13px}
-.wh-box li{padding:3px 0}
-.wh-box li b{font-weight:600}
-.wh-link{margin:12px 0 0;font-size:13px}
-.wh-link a{color:var(--accent);text-decoration:none;font-weight:600}
-.wh-link a:hover{text-decoration:underline}
-.uni td:first-child{white-space:normal;min-width:230px;max-width:300px}
-.ft-card{margin:0 0 28px}
-.ft-card .card-b{padding:12px 20px 18px}
-.ft-st{margin:6px 0 0;font-size:13px}
-.ft-tbl{margin-top:10px}
-.eqt td.wrapc{white-space:normal;min-width:120px}
-.ft-notes{margin:8px 0 0;padding-left:18px;font-size:13px}.ft-notes li{margin:4px 0}
-.ft-sec{margin-top:22px}.ft-fold{margin-top:22px}.ft-fold summary{cursor:pointer;font-weight:650;font-size:14px}
-.stage-group{margin:26px 0 10px;font-size:14px;font-weight:650;color:var(--z700)}
-.stage-group:first-of-type{margin-top:14px}
-@media(max-width:640px){.where-card .card-b{padding:10px 12px 14px}.wh-box{padding:10px 12px}}
 </style>
 </head>
 <body>
 <div class="toptabs"><div class="toptabs-in"><span class="brand">П-42 · CatBoost</span><div class="tabs" id="toptabs" role="tablist"></div></div></div>
 <div class="wrap">
-  <div class="pane" id="pane-live" hidden><div class="prog" id="live"></div></div>
-  <div class="pane" id="pane-progress" hidden><div class="prog" id="progress"></div></div>
   <div class="pane" id="pane-targets" hidden><div class="prog" id="targets-box"></div></div>
   <div class="pane" id="pane-equity" hidden>
     <div class="prog" id="equity">
-      <div class="eq-h"><h2>Эквити</h2><span class="muted small" id="eq-sub">прибыль сделок без фандинга, $ · по времени закрытия, UTC</span></div>
-      <div class="eq-ctls"><div class="tabs eq-ctl" id="eq-tabs" role="tablist"></div><div class="tabs eq-ctl" id="eq-views" role="tablist"></div>
-        <div class="eq-cmp" id="eq-cmp"><div class="tabs eq-ctl" id="eq-modes" role="tablist"></div><label class="eq-dep eq-ctl">Стартовый депозит, $ <input id="eq-dep" type="number" min="100" step="500" inputmode="decimal"></label></div></div>
-      <p class="prog-head" id="eq-desc"></p>
+      <div class="eq-h"><h2>Эквити</h2><span class="muted small" id="eq-sub">после комиссий, без фандинга · 500 $ на сделку · 01.07–13.11.2026</span></div>
+      <div class="eq-ctls"><div class="tabs eq-ctl" id="eq-views" role="tablist"></div><div class="tabs eq-ctl" id="eq-tabs" role="tablist"></div></div>
       <div id="eq-view"></div>
     </div>
   </div>
   <div class="pane" id="pane-features" hidden><div class="prog" id="features"></div></div>
-  <div class="pane" id="pane-model" hidden>
-    <div class="top">
-      <h1>П-42 · CatBoost на признаках уровня</h1>
-      <p class="sub" id="sub"></p>
-    </div>
-    <div class="bar"><div class="tabs" id="tabs" role="tablist"></div><div class="nav" id="nav"></div></div>
-    <div id="view"></div>
-  </div>
 </div>
 <div id="tip"></div>
-<script id="data" type="application/json">/*__DATA__*/</script>
 <script id="progress-data" type="application/json">/*__PROGRESS__*/</script>
-<script id="equity-data" type="application/json">/*__EQUITY__*/</script>
-<script id="shape-data" type="application/json">/*__SHAPE__*/</script>
 <script id="features-data" type="application/json">/*__FEATURES__*/</script>
-<script id="bases-data" type="application/json">/*__BASES__*/</script>
-<script id="universe-data" type="application/json">/*__UNIVERSE__*/</script>
+<script id="variants-data" type="application/json">/*__VARIANTS__*/</script>
 <script>
-const D = JSON.parse(document.getElementById('data').textContent);
 const NS = 'http://www.w3.org/2000/svg';
 const MINUS = '−';
-const ACC = '#2563eb';
-const MODELS = [['CB3', 'CB3 · глубина 3'], ['LOGIT', 'Логистика'], ['CB1', 'CB1 · глубина 1'], ['TURN', 'Только оборот']];
-const STY = {CB3: {c: ACC, w: 2.25, d: null}, LOGIT: {c: '#52525b', w: 1.5, d: null}, CB1: {c: '#a1a1aa', w: 1.5, d: '5 3'}, TURN: {c: '#c4c4cc', w: 1.5, d: '1.5 3'}};
-const SHORT = {CB3: 'CB3', LOGIT: 'логистика', CB1: 'CB1', TURN: 'оборот'};
-const SIDE = {long: 'Лонг', short: 'Шорт'};
-const FNAME = {lturn24: 'turn24h (lg)'};
-const fn = f => FNAME[f] || f.replace(/_bp$/, '');   // имя признака на экране без суффикса единицы; ключ данных остаётся прежним
 
 const el = (t, a = {}, kids = []) => {
   const e = document.createElementNS(NS, t);
@@ -316,7 +232,6 @@ function num(v, d = 3, sign = false) {
   const z = +s.replace(',', '.') === 0;
   return (v < 0 && !z ? MINUS : (sign && !z ? '+' : '')) + s;
 }
-const pct = (v, d = 1) => num(v * 100, d) + ' %';
 const ints = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 function ticks(lo, hi, n = 5) {
   const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), nm = raw / mag;
@@ -336,12 +251,6 @@ function moveTip(ev) {
   x = Math.max(8, x); y = Math.max(8, y);
   tip.style.left = x + 'px'; tip.style.top = y + 'px';
 }
-function hover(node, fn_) {
-  node.addEventListener('mouseenter', e => { tip.innerHTML = typeof fn_ === 'function' ? fn_(e) : fn_; tip.style.display = 'block'; moveTip(e); });
-  node.addEventListener('mousemove', e => { if (typeof fn_ === 'function') tip.innerHTML = fn_(e); moveTip(e); });
-  node.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
-}
-const trow = (k, v) => `<div class="r"><span class="muted">${k}</span><span>${v}</span></div>`;
 
 // ── plot frame
 function plot(o) {
@@ -358,317 +267,13 @@ function plot(o) {
   if (o.xlab) svg.append(el('text', {x: w - m.r, y: hh - 2, 'text-anchor': 'end'}, o.xlab));
   return {svg, X, Y, w, h: hh, m};
 }
-function overlay(p, nIdx, xOf, tipFn) {
-  const {svg, w, h: hh, m} = p;
-  const vl = el('line', {y1: m.t, y2: hh - m.b, stroke: '#a1a1aa', 'stroke-dasharray': '3 3', visibility: 'hidden'});
-  const r = el('rect', {x: m.l, y: m.t, width: w - m.l - m.r, height: hh - m.t - m.b, fill: 'transparent'});
-  svg.append(vl, r);
-  const idxOf = ev => {
-    const b = svg.getBoundingClientRect(), x = (ev.clientX - b.left) / b.width * w;
-    return Math.max(0, Math.min(nIdx - 1, Math.round(((x - m.l) / (w - m.l - m.r)) * (nIdx - 1))));
-  };
-  r.addEventListener('mouseenter', e => { vl.setAttribute('visibility', 'visible'); tip.style.display = 'block'; });
-  r.addEventListener('mousemove', e => { const i = idxOf(e); vl.setAttribute('x1', p.X(xOf(i))); vl.setAttribute('x2', p.X(xOf(i))); tip.innerHTML = tipFn(i); moveTip(e); });
-  r.addEventListener('mouseleave', () => { vl.setAttribute('visibility', 'hidden'); tip.style.display = 'none'; });
-}
-function dot(p, g, id, i, x, y, o = {}) {
-  const c = el('circle', {cx: p.X(x), cy: p.Y(y), r: o.r || 4, fill: o.fill || ACC, stroke: o.stroke || '#fff', 'stroke-width': o.sw == null ? 2 : o.sw, 'data-chart': id, 'data-i': i, 'data-x': +x.toPrecision(7), 'data-y': y == null ? null : +y.toPrecision(7)});
-  g.append(c);
-  if (o.tip) { const t = el('circle', {cx: p.X(x), cy: p.Y(y), r: 11, fill: 'transparent'}); hover(t, o.tip); g.append(t); }
-  return c;
-}
 function legend(items) {
   return h('div', {class: 'legend'}, items.map(([sw, label]) => h('span', {}, [sw, label])));
 }
 function swLine(c, w = 2, d = null) { return el('svg', {width: 22, height: 10, viewBox: '0 0 22 10'}, [el('line', {x1: 0, x2: 22, y1: 5, y2: 5, stroke: c, 'stroke-width': w, 'stroke-dasharray': d})]); }
-function swBox(c) { return el('svg', {width: 10, height: 10, viewBox: '0 0 10 10'}, [el('rect', {width: 10, height: 10, rx: 2, fill: c})]); }
-function swDot(c, hollow) { return el('svg', {width: 10, height: 10, viewBox: '0 0 10 10'}, [el('circle', {cx: 5, cy: 5, r: 4, fill: hollow ? '#fff' : c, stroke: c, 'stroke-width': 1.5})]); }
 
-// ── ROC
-function rocChart(c) {
-  const id = 'roc';
-  const p = plot({id, w: 540, h: 300, xd: [0, 1], yd: [0, 1], xf: v => num(v, 1), yf: v => num(v, 1), ylab: 'доля пойманных пробоев (TPR)', xlab: 'доля ложных (FPR)', m: {t: 20}});
-  p.svg.append(el('line', {x1: p.X(0), y1: p.Y(0), x2: p.X(1), y2: p.Y(1), stroke: '#d4d4d8', 'stroke-dasharray': '3 3'}));
-  const f = D.roc_fpr;
-  [...MODELS].reverse().forEach(([k]) => {
-    const s = STY[k], t = c.roc[k].tpr;
-    p.svg.append(el('path', {d: t.map((v, i) => (i ? 'L' : 'M') + p.X(f[i]).toFixed(1) + ' ' + p.Y(v).toFixed(1)).join(''), fill: 'none', stroke: s.c, 'stroke-width': s.w, 'stroke-dasharray': s.d, 'stroke-linejoin': 'round', 'data-chart': id + '.' + k, 'data-ys': t.join(',')}));
-  });
-  overlay(p, f.length, i => f[i], i => `<div class="t">FPR ${num(f[i], 2)}</div>` + MODELS.map(([k, n]) => trow(n, 'TPR ' + num(c.roc[k].tpr[i], 3))).join(''));
-  const wrap = h('div', {});
-  wrap.append(legend(MODELS.map(([k, n]) => [swLine(STY[k].c, STY[k].w, STY[k].d), `${n} · AUC ${num(c.roc[k].auc, 3)}`])), p.svg);
-  return wrap;
-}
-
-// ── децили: доля пробоев и контроль
-function decileChart(c) {
-  const id = 'decile', dc = c.deciles;
-  const top = Math.max(...dc.map(d => Math.max(d.y_hi, d.c)), c.base_y) * 1.08;
-  const p = plot({id, w: 540, h: 290, xd: [0, 10], yd: [0, top], xt: [], yf: v => num(v * 100, 0) + ' %', ylab: 'доля пробоев', m: {t: 20, b: 34}});
-  dc.forEach((d, i) => p.svg.append(el('text', {x: p.X(i + .5), y: p.h - p.m.b + 15, 'text-anchor': 'middle'}, i + 1)));
-  p.svg.append(el('text', {x: p.X(5), y: p.h - 3, 'text-anchor': 'middle'}, 'дециль оценки CB3 (1 — низкая, 10 — высокая)'));
-  p.svg.append(el('line', {x1: p.X(0), x2: p.X(10), y1: p.Y(c.base_y), y2: p.Y(c.base_y), stroke: '#a1a1aa', 'stroke-dasharray': '4 3'}));
-  const g = el('g');
-  dc.forEach((d, i) => {
-    const x0 = p.X(i + .15), x1 = p.X(i + .85), y0 = p.Y(0), y1 = p.Y(d.y);
-    const r = el('rect', {x: x0, y: y1, width: x1 - x0, height: y0 - y1, rx: 3, fill: ACC, 'fill-opacity': .88, 'data-chart': id + '.y', 'data-i': i, 'data-y': +d.y.toPrecision(7), 'data-n': d.n, 'data-k': d.k});
-    g.append(r);
-    g.append(el('line', {x1: p.X(i + .5), x2: p.X(i + .5), y1: p.Y(d.y_lo), y2: p.Y(d.y_hi), stroke: '#52525b', 'stroke-width': 1}));
-    g.append(el('line', {x1: x0 - 2, x2: x1 + 2, y1: p.Y(d.c), y2: p.Y(d.c), stroke: '#09090b', 'stroke-width': 2.25, 'data-chart': id + '.c', 'data-i': i, 'data-y': +d.c.toPrecision(7)}));
-    const hit = el('rect', {x: p.X(i), y: p.m.t, width: p.X(1) - p.X(0), height: p.h - p.m.t - p.m.b, fill: 'transparent'});
-    hover(hit, `<div class="t">Дециль ${i + 1} · n ${ints(d.n)}</div>` + trow('пробоев', `${ints(d.k)} (${pct(d.y, 1)})`) + trow('95 % Уилсон', `${pct(d.y_lo, 1)} … ${pct(d.y_hi, 1)}`) + trow('контроль', pct(d.c, 1)) + trow('оценка CB3, среднее', pct(d.pred, 1)));
-    g.append(hit);
-  });
-  p.svg.append(g);
-  c.tertile_cut_q.forEach((q, j) => {
-    p.svg.append(el('line', {x1: p.X(q * 10), x2: p.X(q * 10), y1: p.m.t, y2: p.h - p.m.b, stroke: '#52525b', 'stroke-width': 1, 'stroke-dasharray': '2 3', 'data-chart': id + '.cut', 'data-i': j, 'data-x': +(q * 10).toPrecision(7)}));
-    p.svg.append(el('text', {x: p.X(q * 10) + 4, y: p.m.t + 8, class: 'k'}, j ? '2/3' : '1/3'));
-  });
-  const wrap = h('div', {});
-  wrap.append(legend([[swBox(ACC), 'доля пробоев'], [swLine('#09090b', 2.25), 'доля в контроле у тех же эпизодов'], [swLine('#a1a1aa', 1.5, '4 3'), `все эпизоды · ${pct(c.base_y, 1)}`], [swLine('#52525b', 1, '2 3'), 'границы терцилей обучающей половины']]), p.svg);
-  return wrap;
-}
-
-// ── калибровка
-function calibChart(c) {
-  const id = 'calib', dc = c.deciles;
-  const top = Math.max(...dc.map(d => Math.max(d.y_hi, d.pred))) * 1.08;
-  const p = plot({id, w: 540, h: 300, xd: [0, top], yd: [0, top], xf: v => num(v * 100, 0) + ' %', yf: v => num(v * 100, 0) + ' %', ylab: 'наблюдаемая доля пробоев', xlab: 'предсказанная вероятность (среднее в дециле)', m: {t: 20, b: 34}});
-  p.svg.append(el('line', {x1: p.X(0), y1: p.Y(0), x2: p.X(top), y2: p.Y(top), stroke: '#a1a1aa', 'stroke-dasharray': '4 3'}));
-  const g = el('g');
-  dc.forEach((d, i) => {
-    g.append(el('line', {x1: p.X(d.pred), x2: p.X(d.pred), y1: p.Y(d.y_lo), y2: p.Y(d.y_hi), stroke: '#a1a1aa', 'stroke-width': 1}));
-    dot(p, g, id, i, d.pred, d.y, {tip: `<div class="t">Дециль ${i + 1} · n ${ints(d.n)}</div>` + trow('предсказано', pct(d.pred, 2)) + trow('наблюдено', `${pct(d.y, 2)} (${ints(d.k)} пробоев)`) + trow('95 % Уилсон', `${pct(d.y_lo, 1)} … ${pct(d.y_hi, 1)}`)});
-  });
-  p.svg.append(g);
-  const wrap = h('div', {});
-  wrap.append(legend([[swDot(ACC), 'децили оценки CB3 на проверочной половине'], [swLine('#a1a1aa', 1.5, '4 3'), 'идеальная калибровка']]), p.svg);
-  return wrap;
-}
-
-// ── горизонтальные столбцы (важность, SHAP)
-function hbars(id, rows, o) {
-  const rh = 22, w = 540, lw = o.lw || 150, m = {l: lw, r: 60, t: 4, b: 22}, hh = rows.length * rh + m.t + m.b;
-  const vals = rows.map(r => r.v), lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
-  const X = sc(lo, hi, m.l, w - m.r), svg = el('svg', {viewBox: `0 0 ${w} ${hh}`, width: '100%', role: 'img', 'data-chart': id});
-  svg.append(el('line', {x1: X(0), x2: X(0), y1: m.t, y2: hh - m.b, stroke: '#d4d4d8'}));
-  rows.forEach((r, i) => {
-    const y = m.t + i * rh, x0 = X(0), x1 = X(r.v);
-    svg.append(el('text', {x: m.l - 8, y: y + rh / 2 + 4, 'text-anchor': 'end', class: 'k'}, r.label));
-    svg.append(el('rect', {x: Math.min(x0, x1), y: y + 4, width: Math.max(1, Math.abs(x1 - x0)), height: rh - 8, rx: 3, fill: o.color || ACC, 'fill-opacity': r.v < 0 ? .35 : .88, 'data-chart': id, 'data-i': i, 'data-label': r.key, 'data-y': +r.v.toPrecision(7)}));
-    svg.append(el('text', {x: (r.v < 0 ? x0 : x1) + 6, y: y + rh / 2 + 4}, o.fmt(r.v)));
-    const hit = el('rect', {x: 0, y, width: w, height: rh, fill: 'transparent'});
-    hover(hit, `<div class="t">${r.label}</div>` + trow(o.metric, o.fmt(r.v)));
-    svg.append(hit);
-  });
-  svg.append(el('text', {x: m.l, y: hh - 5}, o.axis));
-  return svg;
-}
-function importance(c, cell) {
-  const perm = cell.perm.slice().sort((a, b) => b.auc_drop - a.auc_drop);
-  const shap = cell.shap;
-  const wrap = h('div', {});
-  wrap.append(h('div', {class: 'cap'}, 'Падение AUC при перемешивании признака · проверочная половина, среднее 5 перемешиваний; порядок найден на ней же'));
-  wrap.append(hbars('perm', perm.map(r => ({key: r.feature, label: fn(r.feature), v: r.auc_drop})), {fmt: v => num(v, 4, true), metric: 'падение AUC', axis: 'вправо — признак важнее; влево — после перемешивания AUC не упал'}));
-  wrap.append(h('div', {class: 'cap'}, 'Топ-10 пар по взаимодействию SHAP из 66 · проверочная половина, 2·среднее |φ|, ×10⁻³; отобраны на ней же'));
-  wrap.append(hbars('shap', shap.map(r => ({key: r.f1 + '|' + r.f2, label: fn(r.f1) + ' × ' + fn(r.f2), v: r.mean_abs * 1e3})), {fmt: v => num(v, 2), metric: 'взаимодействие, ×10⁻³', axis: '×10⁻³ в логите', lw: 200, color: '#52525b'}));
-  return wrap;
-}
-
-// ── кривая обучения
-function lcChart(c) {
-  const id = 'lc', L = c.lc, n = L.train.length;
-  const tail = [...L.train.slice(19), ...L.val.slice(19)];
-  const p = plot({id, w: 540, h: 290, xd: [0, n], yd: rng(tail, .12), yf: v => num(v, 3), xf: v => String(v), ylab: 'logloss (шкала с 20-й итерации)', xlab: 'итерация', m: {t: 20, l: 50}});
-  const mk = (a, col, w, key) => p.svg.append(el('path', {d: a.map((v, i) => (i ? 'L' : 'M') + p.X(i + 1).toFixed(1) + ' ' + p.Y(v).toFixed(1)).join(''), fill: 'none', stroke: col, 'stroke-width': w, 'stroke-linejoin': 'round', 'data-chart': id + '.' + key, 'data-ys': a.join(',')}));
-  const cid = 'clip' + Math.random().toString(36).slice(2, 8);
-  p.svg.append(el('clipPath', {id: cid}, [el('rect', {x: p.m.l, y: p.m.t, width: p.w - p.m.l - p.m.r, height: p.h - p.m.t - p.m.b})]));
-  mk(L.train, '#a1a1aa', 1.75, 'train'); mk(L.val, ACC, 2.25, 'val');
-  p.svg.querySelectorAll('path[data-chart^="lc."]').forEach(x => x.setAttribute('clip-path', `url(#${cid})`));
-  p.svg.append(el('line', {x1: p.X(L.stop), x2: p.X(L.stop), y1: p.m.t, y2: p.h - p.m.b, stroke: '#09090b', 'stroke-dasharray': '3 3', 'data-chart': id + '.stop', 'data-x': L.stop}));
-  p.svg.append(el('text', {x: p.X(L.stop) + 5, y: p.m.t + 9, class: 'k'}, 'остановка ' + L.stop));
-  overlay(p, n, i => i + 1, i => `<div class="t">Итерация ${i + 1}</div>` + trow('обучение', num(L.train[i], 4)) + trow('проверка', num(L.val[i], 4)));
-  const wrap = h('div', {});
-  wrap.append(legend([[swLine('#a1a1aa', 1.75), 'обучающая половина'], [swLine(ACC, 2.25), 'проверочная половина'], [swLine('#09090b', 1, '3 3'), `число итераций CB3 (${L.stop}) — по 5 блокам обучающей половины`]]), p.svg);
-  return wrap;
-}
-
-// ── переобучение
-function overfitChart(c) {
-  const id = 'overfit', o = c.overfit, f = o.folds;
-  const cats = [{l: 'в выборке', v: o.models.CB3.train, k: 'train'}, ...f.map((x, i) => ({l: 'блок ' + (i + 1), v: x.auc, k: 'fold', f: x})), {l: 'проверка', v: o.models.CB3.val, k: 'val'}];
-  const lo = 0.5, hi = Math.max(...cats.map(x => x.v)) + 0.02;
-  const p = plot({id, w: 540, h: 250, xd: [-.5, cats.length - .5], yd: [lo, hi], xt: [], yf: v => num(v, 2), ylab: 'AUC CB3', m: {t: 20, b: 28}});
-  cats.forEach((x, i) => p.svg.append(el('text', {x: p.X(i), y: p.h - p.m.b + 15, 'text-anchor': 'middle'}, x.l)));
-  p.svg.append(el('line', {x1: p.m.l, x2: p.w - p.m.r, y1: p.Y(.5), y2: p.Y(.5), stroke: '#a1a1aa', 'stroke-dasharray': '4 3'}));
-  const g = el('g');
-  cats.forEach((x, i) => {
-    g.append(el('line', {x1: p.X(i), x2: p.X(i), y1: p.Y(.5), y2: p.Y(x.v), stroke: x.k === 'fold' ? '#a1a1aa' : x.k === 'train' ? '#52525b' : ACC, 'stroke-width': 1.5}));
-    const t = x.k === 'fold' ? `<div class="t">Блок ${cats.indexOf(x)} · сутки ${x.f.days[0]}…${x.f.days[1]}</div>` + trow('AUC', num(x.v, 3)) + trow('эпизодов / пробоев', `${ints(x.f.n)} / ${ints(x.f.k)}`) + trow('итерация остановки', x.f.iters) : `<div class="t">${x.k === 'train' ? 'Обучающая половина (в выборке)' : 'Проверочная половина'}</div>` + trow('AUC', num(x.v, 3));
-    dot(p, g, id, i, i, x.v, {fill: x.k === 'fold' ? '#fff' : x.k === 'train' ? '#52525b' : ACC, stroke: x.k === 'fold' ? '#71717a' : '#fff', sw: x.k === 'fold' ? 1.75 : 2, r: 5, tip: t});
-  });
-  p.svg.append(g);
-  const wrap = h('div', {});
-  wrap.append(legend([[swDot('#52525b'), 'обучающая половина, в выборке'], [swDot('#71717a', true), 'блок ранней остановки: итерация выбрана на самом блоке'], [swDot(ACC), 'проверочная половина']]), p.svg);
-  const tb = h('table', {style: 'margin-top:6px'});
-  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, 'AUC'), h('th', {class: 'num'}, 'в выборке'), h('th', {class: 'num'}, 'проверка'), h('th', {class: 'num'}, 'разрыв')])));
-  const tbody = h('tbody');
-  MODELS.slice(0, 3).forEach(([k, n]) => {
-    const m = o.models[k];
-    tbody.append(h('tr', {'data-model': k}, [h('td', {class: k === 'CB3' ? 'strong' : ''}, n), h('td', {class: 'num', 'data-f': 'train'}, num(m.train, 3)), h('td', {class: 'num', 'data-f': 'val'}, num(m.val, 3)), h('td', {class: 'num', 'data-f': 'gap'}, num(m.train - m.val, 3, true))]));
-  });
-  tb.append(tbody);
-  wrap.append(tb);
-  return wrap;
-}
-
-// ── страты
-function strataChart(items, kind, cell) {
-  const id = 'strata.' + kind, nI = items.length, w = 540;
-  const pw = {l: 46, r: 12};
-  const panels = [{k: 'auc', h: 140, t: 20}, {k: 'delta', h: 140, t: 26}, {k: 'n', h: 58, t: 24}];
-  const gap = 14, axisH = kind === 'day' ? 24 : 46;
-  const H = panels.reduce((s, p) => s + p.h + p.t + gap, 0) + axisH - gap;
-  const svg = el('svg', {viewBox: `0 0 ${w} ${H}`, width: '100%', role: 'img', 'data-chart': id});
-  const X = sc(-.5, nI - .5, pw.l, w - pw.r);
-  const vals = k => items.flatMap(s => k === 'auc' ? [s.auc_cb3, s.auc_cb3_lo, s.auc_cb3_hi, s.auc_logit] : [s.delta, s.delta_lo, s.delta_hi]).filter(v => v != null);
-  let y0 = 0;
-  const ybase = {};
-  panels.forEach(pn => {
-    const top = y0 + pn.t, bot = top + pn.h;
-    ybase[pn.k] = [top, bot];
-    let lo, hi;
-    if (pn.k === 'auc') { const v = vals('auc'); lo = Math.min(.5, ...v); hi = Math.max(.5, ...v); }
-    else if (pn.k === 'delta') { const v = vals('delta'); lo = Math.min(0, ...v); hi = Math.max(0.02, ...v); }
-    else { lo = 0; hi = Math.max(...items.map(s => s.n), 300); }
-    const pad = (hi - lo) * .06; if (pn.k !== 'n') { lo -= pad; hi += pad; } else hi *= 1.08;
-    const Y = sc(lo, hi, bot, top);
-    pn.Y = Y;
-    const fm = pn.k === 'n' ? (v => ints(Math.round(v))) : (v => num(v, pn.k === 'auc' ? 2 : 2, pn.k === 'delta'));
-    (pn.k === 'n' ? ticks(0, hi, 2) : ticks(lo, hi, 4)).forEach(t => {
-      svg.append(el('line', {x1: pw.l, x2: w - pw.r, y1: Y(t), y2: Y(t), stroke: '#efeff1'}));
-      svg.append(el('text', {x: pw.l - 7, y: Y(t) + 3.5, 'text-anchor': 'end'}, fm(t)));
-    });
-    svg.append(el('text', {x: 0, y: top - 12}, pn.k === 'auc' ? 'AUC на проверке · точка — CB3 (95 % по монетам), кольцо — логистика' : pn.k === 'delta' ? 'ΔAUC = CB3 − логистика · 95 % по монетам · пунктир — порог +0,02' : 'эпизодов в страте · пунктир — 300'));
-    svg.append(el('line', {x1: pw.l, x2: w - pw.r, y1: bot, y2: bot, stroke: '#d4d4d8'}));
-    y0 = bot + gap;
-  });
-  const [, nBot] = ybase.n;
-  // опорные линии
-  const pa = panels[0], pd = panels[1], pn_ = panels[2];
-  svg.append(el('line', {x1: pw.l, x2: w - pw.r, y1: pa.Y(.5), y2: pa.Y(.5), stroke: '#a1a1aa', 'stroke-dasharray': '4 3'}));
-  svg.append(el('line', {x1: pw.l, x2: w - pw.r, y1: pd.Y(0), y2: pd.Y(0), stroke: '#a1a1aa', 'stroke-dasharray': '4 3'}));
-  svg.append(el('line', {x1: pw.l, x2: w - pw.r, y1: pd.Y(.02), y2: pd.Y(.02), stroke: ACC, 'stroke-dasharray': '4 3'}));
-  svg.append(el('line', {x1: pw.l, x2: w - pw.r, y1: pn_.Y(300), y2: pn_.Y(300), stroke: '#71717a', 'stroke-dasharray': '4 3'}));
-  const g = el('g');
-  items.forEach((s, i) => {
-    const gc = s.small ? 'grey' : '';
-    const x = X(i), bw = Math.min(26, (w - pw.l - pw.r) / nI * .62);
-    const grp = el('g', {class: gc});
-    if (s.auc_cb3_lo != null) grp.append(el('line', {x1: x, x2: x, y1: pa.Y(s.auc_cb3_lo), y2: pa.Y(s.auc_cb3_hi), stroke: '#71717a', 'stroke-width': 1.25}));
-    if (s.auc_logit != null) grp.append(el('circle', {cx: x, cy: pa.Y(s.auc_logit), r: kind === 'day' ? 3.2 : 4.5, fill: '#fff', stroke: '#52525b', 'stroke-width': 1.5, 'data-chart': id + '.auc_logit', 'data-i': i, 'data-y': +s.auc_logit.toPrecision(7)}));
-    if (s.auc_cb3 != null) grp.append(el('circle', {cx: x, cy: pa.Y(s.auc_cb3), r: kind === 'day' ? 2.6 : 4, fill: s.small ? '#71717a' : ACC, 'data-chart': id + '.auc_cb3', 'data-i': i, 'data-n': s.n, 'data-k': s.k, 'data-y': +s.auc_cb3.toPrecision(7)}));
-    if (s.delta_lo != null) grp.append(el('line', {x1: x, x2: x, y1: pd.Y(s.delta_lo), y2: pd.Y(s.delta_hi), stroke: '#71717a', 'stroke-width': 1.25}));
-    if (s.delta != null) grp.append(el('circle', {cx: x, cy: pd.Y(s.delta), r: kind === 'day' ? 2.6 : 4, fill: s.small ? '#71717a' : ACC, 'data-chart': id + '.delta', 'data-i': i, 'data-y': +s.delta.toPrecision(7), 'data-lo': s.delta_lo == null ? null : +s.delta_lo.toPrecision(7), 'data-hi': s.delta_hi == null ? null : +s.delta_hi.toPrecision(7)}));
-    grp.append(el('rect', {x: x - bw / 2, y: pn_.Y(s.n), width: bw, height: pn_.Y(0) - pn_.Y(s.n), rx: 2, fill: s.small ? '#a1a1aa' : '#d4d4d8', 'data-chart': id + '.n', 'data-i': i, 'data-y': s.n}));
-    g.append(grp);
-    const hit = el('rect', {x: x - (w - pw.l - pw.r) / nI / 2, y: ybase.auc[0], width: (w - pw.l - pw.r) / nI, height: nBot - ybase.auc[0], fill: 'transparent'});
-    const ttl = kind === 'day' ? `сутки ${s.day} · ${s.date.slice(8)}.${s.date.slice(5, 7)}` : `${strataName(kind)} · ${s.label} (${s.rangeLabel})`;
-    hover(hit, `<div class="t">${ttl}</div>` + trow('эпизодов / пробоев', `${ints(s.n)} / ${ints(s.k)}`) + (s.small ? '<div class="muted">меньше 300 эпизодов</div>' : '') + trow('AUC CB3', `${num(s.auc_cb3, 3)}` + (s.auc_cb3_lo == null ? '' : ` [${num(s.auc_cb3_lo, 3)}; ${num(s.auc_cb3_hi, 3)}]`)) + trow('AUC логистика', num(s.auc_logit, 3)) + trow('ΔAUC', num(s.delta, 3, true) + (s.delta_lo == null ? '' : ` [${num(s.delta_lo, 3, true)}; ${num(s.delta_hi, 3, true)}]`)));
-    g.append(hit);
-    // подписи оси
-    if (kind === 'day') { if (i % 5 === 0 || i === nI - 1) svg.append(el('text', {x, y: nBot + 15, 'text-anchor': 'middle'}, s.date.slice(8) + '.' + s.date.slice(5, 7))); }
-    else {
-      svg.append(el('text', {x, y: nBot + 15, 'text-anchor': 'middle', class: 'k'}, {L: 'низкий', M: 'средний', H: 'высокий'}[s.label]));
-      svg.append(el('text', {x, y: nBot + 28, 'text-anchor': 'middle'}, s.rangeLabel));
-      svg.append(el('text', {x, y: nBot + 41, 'text-anchor': 'middle'}, `n ${ints(s.n)} · k ${ints(s.k)}`));
-    }
-  });
-  svg.append(g);
-  return svg;
-}
-const strataName = k => ({lturn24: 'оборот за сутки', natr_bp: 'NATR', age_h: 'возраст уровня'}[k] || k);
-function strataFor(cell, kind) {
-  const items = cell.strata[kind].map(s => Object.assign({}, s));
-  if (kind !== 'day') {
-    const q = v => (Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2)).replace('.', ',');
-    const money = v => { const x = Math.pow(10, v); return x >= 1e9 ? q(x / 1e9) + ' млрд' : x >= 1e6 ? q(x / 1e6) + ' млн' : q(x / 1e3) + ' тыс'; };
-    const f = {lturn24: money, natr_bp: v => (v / 100).toFixed(3).replace('.', ',') + ' %', age_h: v => q(v) + ' ч'}[kind];
-    items.forEach(s => { s.rangeLabel = s.label === 'L' ? '≤ ' + f(s.cut_lo) : s.label === 'M' ? f(s.cut_lo) + '…' + f(s.cut_hi) : '> ' + f(s.cut_hi); });
-  }
-  const wrap = h('div', {});
-  wrap.append(strataChart(items, kind, cell));
-  return wrap;
-}
-
-// ── сводка
-function strip(lo, hi, d) {
-  const w = 170, a = -0.03, b = 0.045, X = sc(a, b, 6, w - 6);
-  const svg = el('svg', {viewBox: `0 0 ${w} 30`, width: w, height: 30, role: 'img'});
-  svg.append(el('line', {x1: X(0), x2: X(0), y1: 3, y2: 19, stroke: '#a1a1aa'}));
-  svg.append(el('line', {x1: X(.02), x2: X(.02), y1: 3, y2: 19, stroke: ACC, 'stroke-dasharray': '3 2', 'stroke-width': 1.5}));
-  svg.append(el('line', {x1: X(Math.max(a, lo)), x2: X(Math.min(b, hi)), y1: 11, y2: 11, stroke: '#3f3f46', 'stroke-width': 1.75}));
-  svg.append(el('circle', {cx: X(d), cy: 11, r: 3.8, fill: '#09090b'}));
-  svg.append(el('text', {x: X(0), y: 29, 'text-anchor': 'middle'}, '0'));
-  svg.append(el('text', {x: X(.02), y: 29, 'text-anchor': 'middle', fill: ACC, style: 'fill:' + ACC}, '+0,02'));
-  return svg;
-}
-function summary(side) {
-  const S = D.sides[side], card = h('div', {class: 'card'});
-  const tb = h('table');
-  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, 'Направление'), ...MODELS.map(([k, n]) => h('th', {class: 'num'}, 'AUC ' + SHORT[k])), h('th', {}, 'ΔAUC CB3 − логистика · 95 % по монетам · порог +0,02')])));
-  const body = h('tbody');
-  ['A->B', 'B->A'].forEach(dk => {
-    const c = S.dirs[dk], dl = c.delta;
-    body.append(h('tr', {'data-dir': dk}, [
-      h('td', {}, [h('div', {class: 'strong'}, dk.replace('->', ' → ')), h('div', {class: 'muted small'}, `обучение ${c.train_half} · проверка ${c.val_half} · ${ints(c.n_T)} эпизодов, ${ints(c.k_T)} пробоев`)]),
-      ...MODELS.map(([k]) => h('td', {class: 'num' + (k === 'CB3' ? ' strong' : ''), 'data-f': 'auc_' + k}, num(c.auc[k], 3))),
-      h('td', {}, h('div', {style: 'display:flex;align-items:center;gap:12px'}, [strip(dl.lo, dl.hi, dl.delta), h('div', {}, [h('div', {class: 'strong', 'data-f': 'delta'}, num(dl.delta, 3, true)), h('div', {class: 'muted small', 'data-f': 'ci'}, `[${num(dl.lo, 3, true)}; ${num(dl.hi, 3, true)}]`)])]))
-    ]));
-  });
-  tb.append(body);
-  card.append(h('div', {style: 'padding:6px 8px 4px;overflow-x:auto'}, tb));
-  const V = S.verdict;
-  const badge = (ok, t) => h('span', {class: 'badge' + (ok ? ' ok' : '')}, t);
-  card.append(h('div', {class: 'verd'}, [badge(V.a.ok, '(а) ' + (V.a.ok ? 'выполнено' : 'не выполнено')), h('div', {class: 'small muted'}, `Модель: дерево глубины 3 лучше логистики на ≥ +0,02 AUC с нижней границей > 0 в обоих направлениях. A → B ${num(V.a.d[0].delta, 3, true)} [${num(V.a.d[0].lo, 3, true)}; ${num(V.a.d[0].hi, 3, true)}], B → A ${num(V.a.d[1].delta, 3, true)} [${num(V.a.d[1].lo, 3, true)}; ${num(V.a.d[1].hi, 3, true)}].`)]));
-  card.append(h('div', {class: 'verd'}, [badge(V.b.ok, '(б) ' + (V.b.ok ? 'выполнено' : 'не выполнено')), h('div', {class: 'small muted'}, `Правило: подтверждённых клеток пар — A → B ${V.b.confirmed[0]}, B → A ${V.b.confirmed[1]}; ядро признаков — ${D.meta.core_n} из ${D.meta.core_n}${D.meta.core_fallback ? ' (пары ядра не дали)' : ''}.`)]));
-  return card;
-}
-
-// ── U1r
-function u1rCard(side) {
-  const S = D.sides[side], card = h('div', {class: 'card'});
-  const tb = h('table');
-  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, 'Направление'), h('th', {class: 'num'}, 'эпизодов'), h('th', {class: 'num'}, 'пробоев'), ...MODELS.map(([k, n]) => h('th', {class: 'num'}, 'AUC ' + SHORT[k]))])));
-  const body = h('tbody');
-  ['A->B', 'B->A'].forEach(dk => {
-    const u = S.dirs[dk].u1r;
-    body.append(h('tr', {'data-dir': dk}, [h('td', {class: 'strong'}, dk.replace('->', ' → ')), h('td', {class: 'num', 'data-f': 'n'}, ints(u.n)), h('td', {class: 'num', 'data-f': 'k'}, ints(u.k)), ...MODELS.map(([k]) => h('td', {class: 'num' + (k === 'CB3' ? ' strong' : ''), 'data-f': 'auc_' + k}, num(u[k], 3)))]));
-  });
-  tb.append(body);
-  card.append(h('div', {style: 'padding:6px 8px 4px;overflow-x:auto'}, tb));
-  return card;
-}
-
-// ── ход работ (TK-601): данные — progress.json, вшиты при сборке
+// ── цели TK-598: данные — progress.json (targets), вшиты при сборке
 const P = JSON.parse(document.getElementById('progress-data').textContent);
-const STAT = {done: 'готово', running: 'идёт', waiting: 'ждёт'};
-const MARK = {done: '✓', running: '●', waiting: '○'};
-function stageCard(s) {
-  const c = h('div', {class: 'stage st-' + s.status, 'data-stage': s.id, 'data-status': s.status});
-  c.append(h('div', {class: 'stage-top'}, [h('span', {class: 'stage-id'}, s.id), h('span', {class: 'badge' + (s.status === 'done' ? ' ok' : s.status === 'running' ? ' run' : ''), 'data-f': 'status'}, STAT[s.status])]));
-  c.append(h('div', {class: 'stage-title'}, s.title));
-  c.append(h('div', {class: 'stage-q'}, s.answers));
-  if (s.steps && s.steps.length) {
-    c.append(h('div', {class: 'lbl'}, 'Шаги'));
-    c.append(h('ul', {class: 'steps'}, s.steps.map(t => h('li', {class: 's-' + t.s, 'data-status': t.s}, [h('i', {}, MARK[t.s]), h('span', {}, t.t)]))));
-  }
-  c.append(h('div', {class: 'lbl'}, 'Цифры'));
-  c.append(s.numbers.length ? h('ul', {class: 'nums'}, s.numbers.map(n => h('li', {}, n))) : h('div', {class: 'muted small'}, 'Цифр пока нет.'));
-  c.append(h('div', {class: 'lbl'}, 'Дальше'));
-  c.append(h('div', {class: 'stage-next'}, s.next));
-  return c;
-}
 function targetsCard(T) {
   const card = h('div', {class: 'card tg-card', id: 'targets'});
   card.append(h('div', {class: 'card-h'}, [h('b', {}, T.title), h('span', {}, 'первый фильтр: прошла / не прошла')]));
@@ -689,427 +294,139 @@ function targetsCard(T) {
   card.append(body);
   return card;
 }
-function renderProgress() {
-  const root = document.getElementById('progress');
-  root.append(h('div', {class: 'prog-h'}, [h('h2', {}, 'Ход работ'), h('span', {class: 'muted small'}, 'обновлено ' + P.updated)]));
-  root.append(h('p', {class: 'prog-head'}, P.headline));
-  root.append(h('p', {class: 'wh-link', 'data-wlink-box': '1'}, [h('a', {href: '#equity/short/where', 'data-wlink': 'where'}, 'Деньги, шарп и кривые — вкладка «Эквити», вид «Где мы»')]));
-  const grouped = P.stages.some(s => s.group);
-  let cur = null, box = null;
-  P.stages.forEach(s => {
-    if (box === null || (grouped && (s.group || '') !== cur)) {
-      cur = s.group || '';
-      if (cur) root.append(h('h3', {class: 'stage-group', 'data-group': cur}, cur));
-      box = h('div', {class: 'stages', style: '--n:' + (grouped ? 4 : Math.min(P.stages.length, 5))});
-      root.append(box);
-    }
-    box.append(stageCard(s));
-  });
-  document.getElementById('targets-box').append(targetsCard(P.targets));
-  root.append(h('p', {class: 'prog-foot'}, 'Подробности — на вкладках: цели TK-598 (что предсказывает каждая и итог чтения), эквити (кривые накопленной прибыли; вид «Базы» — текущие базы за 136 суток в $), модель TK-592 (ROC, децили, калибровка, важность признаков, переобучение, устойчивость по суткам).'));
-}
+function renderTargets() { document.getElementById('targets-box').append(targetsCard(P.targets)); }
 
-// ── эквити (TK-601): сделки баз U1 и «трети» целей TK-598; данные — equity.json (tk601_equity.py), вшиты при сборке
-const E = JSON.parse(document.getElementById('equity-data').textContent);
-const EQ_COL = {base: '#71717a', T1: '#2a78d6', T2: '#eb6834', T4: '#1baf7a', T5: '#6250d6', T6: '#008300', short: '#2a78d6', long: '#eb6834',
-  S_mk775: '#1baf7a', S_nc360: '#0e7490', S_rf0: '#6250d6', S_an1: '#c0265b', L_n24: '#a3369c', L_mk2: '#b8860b', L_sharp: '#008300', L_dense: '#0e7490'};
-// TK-662: вид «Кривая» — график «775» (tk662_equity.py): сделки всех линий стороны на 775 контрактах, sel.base — база стороны; прежние графики TK-598 (ja / fit) остаются только для вида «Форма»
-const EQ_CHARTS = ['775'], EQ7_BASE = {short: 'S_b775', long: 'L_b775'};
-const EQ_NAME = {T1: 'T1 · прибыль, $', T2: 'T2 · прибыль, % от номинала', T4: 'T4 · без жёсткого стопа', T5: 'T5 · MFE − MAE', T6: 'T6 · ранжирование', short: 'Шорт', long: 'Лонг'};
-const EQ_BASE = {short: 'Шорт: все сделки базы', long: 'Лонг: все сделки базы', both: 'Шорт + лонг: все сделки'};
+// ── эквити
 const EQ_SIDES = [['short', 'Шорт'], ['long', 'Лонг'], ['both', 'Шорт + лонг']];
-const EQ_DESC = {
-  short: 'Накопленная прибыль шорта за 136 суток (01.07–13.11) на всех 775 контрактах, $ при 500 $ на сделку, после комиссий, по времени закрытия сделки. Серая толстая — вход по рынку (S_base); цветные — варианты шорта. S_base и S_mk1 заморожены для проверки вперёд; остальные найдены на этих данных — отбор на прошлом, не доказательство. R:R — средний выигрыш ÷ средний проигрыш.',
-  long: 'Накопленная прибыль лонга за 136 суток (01.07–13.11) на всех 775 контрактах, $ при 500 $ на сделку, после комиссий, по времени закрытия сделки. Серая толстая — вход по рынку (L_base); цветные — варианты лонга. L_base, L_n24 и L_mk2 заморожены для проверки вперёд; SHARP и DENSE найдены на этих данных — отбор на прошлом, не доказательство. R:R — средний выигрыш ÷ средний проигрыш.',
-  both: 'Базы шорта и лонга (S_base и L_base, 775 контрактов) на одних осях и их сумма: видно, откуда рост и что забирает другая сторона.'
-};
 const pad2 = n => String(n).padStart(2, '0');
 const fdt = ms => { const d = new Date(ms); return `${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth() + 1)} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`; };
 const fday = ms => { const d = new Date(ms); return `${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth() + 1)}`; };
 const money = (v, d = 2) => num(v, d, true);
 
-function eqData(chartId, side) {
-  const C = E.charts[chartId];
-  if (side !== 'both') return C.sides[side];
-  const a = C.sides.short, b = C.sides.long, rows = [];
-  [[a, 'short'], [b, 'long']].forEach(([S, k]) => (S.sel.base || S.t.map((_, i) => i)).forEach(i => rows.push({t: S.t[i], en: S.en[i], net: S.net[i], sym: S.sym[i], day: S.day[i], w: S.w[i], k})));
-  rows.sort((x, y) => x.t - y.t || x.en - y.en || (x.sym < y.sym ? -1 : x.sym > y.sym ? 1 : 0));
-  const out = {t: rows.map(r => r.t), en: rows.map(r => r.en), net: rows.map(r => r.net), sym: rows.map(r => r.sym), day: rows.map(r => r.day), w: rows.map(r => r.w), sel: {short: [], long: []}};
-  rows.forEach((r, i) => out.sel[r.k].push(i));
-  return out;
-}
-// компаундинг (TK-605) — только вид кривой; тесты и вердикты — всегда фикс 500 $ (NOTIONAL_U в движке не тронут).
-// Объём сделки = 500 $ × E(вход) / депозит, E(вход) = депозит + реализованная прибыль сделок линии, закрытых строго до входа этой сделки; прибыль = прибыль при 500 $ × тот же коэффициент.
-// Сделки S отсортированы по закрытию; сделка, закрытая до входа i, вошла раньше i, поэтому её прибыль уже посчитана при обходе по времени входа. Коэффициент не уходит ниже 0 (счёт не уходит в минус).
-const EQ_DEP0 = 5000, NOTIONAL_VIEW = 500;
-function eqCompound(S, mask, dep) {
-  const n = S.t.length, pnl = new Array(n).fill(0), mult = new Array(n).fill(0), ix = [];
-  for (let i = 0; i < n; i++) if (!mask || mask[i]) ix.push(i);
-  const byEn = ix.slice().sort((a, b) => S.en[a] - S.en[b] || a - b);
-  let k = 0, real = 0;
-  for (const i of byEn) {
-    while (k < ix.length && S.t[ix[k]] < S.en[i]) { real += pnl[ix[k]]; k++; }
-    mult[i] = Math.max(0, (dep + real) / dep); pnl[i] = S.net[i] * mult[i];
-  }
-  return {pnl, mult};
-}
-function eqLines(S, side, cmp = false, dep = EQ_DEP0, chartId = null) {
-  const n = S.t.length, out = [];
-  const mk = (k, mask) => {
-    const cp = cmp ? eqCompound(S, mask, dep) : null, net = cp ? cp.pnl : S.net;
-    let c = 0; const y = new Array(n); for (let i = 0; i < n; i++) { if (!mask || mask[i]) c += net[i]; y[i] = c; }
-    return {k, mask, y, net, mult: cp && cp.mult, name: k === 'base' ? (chartId === '775' && side !== 'both' ? bsName(EQ7_BASE[side]) : EQ_BASE[side]) : EQ_NAME[k] || bsName(k)};
-  };
-  if (!S.sel.base) out.push(mk('base', null));
-  Object.keys(S.sel).forEach(k => { const m = new Array(n).fill(false); S.sel[k].forEach(i => { m[i] = true; }); out.push(mk(k, m)); });
-  return out;
-}
-function eqStats(S, mask, pn = S.net, dep = EQ_DEP0) {
-  const ix = []; for (let i = 0; i < S.t.length; i++) if (!mask || mask[i]) ix.push(i);
-  const net = ix.map(i => pn[i]), n = net.length, sum = net.reduce((a, b) => a + b, 0);
-  const best = Math.max(...net), srt = [...net].sort((a, b) => b - a);
-  const g = {}; ix.forEach(i => { g[S.day[i]] = (g[S.day[i]] || 0) + pn[i]; });
-  const dv = Object.values(g).sort((a, b) => b - a);
-  let c = 0, pk = 0, dd = 0, ddp = 0; net.forEach(v => { c += v; pk = Math.max(pk, c); dd = Math.max(dd, pk - c); ddp = Math.max(ddp, (pk - c) / (dep + pk)); });
-  return {n, sum, mean: sum / n, best, share: sum > 0 ? best / sum : null, nodays: sum - (dv[0] || 0) - (dv[1] || 0), notrades: sum - (srt[0] || 0) - (srt[1] || 0), dd, ddp};
-}
-// фикс 500 $ против компаундинга: итог и макс. просадка ($ и % от пика эквити = депозит + накопленная прибыль) для каждой линии — всегда обе
-function cmpTable(chartId, side, S, fx, cp, dep) {
-  const cols = [['sf', 'Сумма · фикс 500 $, $'], ['sc', 'Сумма · компаундинг, $'], ['df', 'Макс. просадка · фикс, $'], ['dfp', 'Макс. просадка · фикс, %'], ['dc', 'Макс. просадка · компаундинг, $'], ['dcp', 'Макс. просадка · компаундинг, %']];
-  const tb = h('table', {class: 'eqt cmpt', 'data-cmpchart': chartId, 'data-cmpside': side, 'data-dep': dep});
-  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, 'Линия'), ...cols.map(([, t]) => h('th', {class: 'num'}, t))])));
-  const body = h('tbody');
-  fx.forEach((l, j) => {
-    const a = eqStats(S, l.mask, l.net, dep), b = eqStats(S, cp[j].mask, cp[j].net, dep);
-    const f = {sf: money(a.sum), sc: money(b.sum), df: num(a.dd, 2), dfp: pct(a.ddp, 2), dc: num(b.dd, 2), dcp: pct(b.ddp, 2)};
-    body.append(h('tr', {'data-line': l.k, class: l.k === 'base' ? 'base' : ''}, [h('td', {}, [h('span', {class: 'sw', style: `border-color:${EQ_COL[l.k]};border-top-width:${l.k === 'base' ? 4 : 3}px`}), l.name]), ...cols.map(([k, lab]) => h('td', {class: 'num', 'data-f': k, 'data-lab': lab}, f[k]))]));
-  });
-  tb.append(body);
-  return h('div', {style: 'overflow-x:auto'}, tb);
-}
-function eqTable(chartId, side, S, lines) {
-  const cols = [['n', 'Сделок'], ['sum', 'Сумма, $'], ['mean', 'В среднем на сделку, $'], ['best', 'Лучшая сделка, $'], ['share', 'Доля лучшей в сумме'], ['nodays', 'Сумма без 2 лучших суток, $'], ['notrades', 'Сумма без 2 лучших сделок, $'], ['dd', 'Макс. просадка, $']];
-  const tb = h('table', {class: 'eqt', 'data-eqchart': chartId, 'data-eqside': side});
-  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, 'Линия'), ...cols.map(([, t]) => h('th', {class: 'num'}, t))])));
-  const body = h('tbody');
-  lines.forEach(l => {
-    const st = eqStats(S, l.mask, l.net, ST.dep), f = {n: ints(st.n), sum: money(st.sum), mean: money(st.mean), best: money(st.best), share: st.share == null ? '—' : pct(st.share, 1), nodays: money(st.nodays), notrades: money(st.notrades), dd: num(st.dd, 2)};
-    body.append(h('tr', {'data-line': l.k, class: l.k === 'base' ? 'base' : ''}, [h('td', {}, [h('span', {class: 'sw', style: `border-color:${EQ_COL[l.k]};border-top-width:${l.k === 'base' ? 4 : 3}px`}), l.name]), ...cols.map(([k]) => h('td', {class: 'num', 'data-f': k, 'data-lab': cols.find(c => c[0] === k)[1]}, f[k]))]));
-  });
-  tb.append(body);
-  return h('div', {style: 'overflow-x:auto'}, tb);
-}
-function eqChart(chartId, side, width) {
-  const C = E.charts[chartId], S = eqData(chartId, side), dep = ST.dep, cmp = ST.cmp, linesFx = eqLines(S, side, false, dep, chartId), linesCp = eqLines(S, side, true, dep, chartId), lines = cmp ? linesCp : linesFx, n = S.t.length;
-  const w = width, hh = w < 520 ? 300 : 360, x0 = C.start_ms, x1 = C.end_ms + 3600e3, DAYMS = 86400e3;
-  const [ylo, yhi] = rng(lines.flatMap(l => l.y).concat([0]), .08);
-  const stepD = w < 560 ? 14 : 7, xt = []; for (let t = x0; t <= x1; t += stepD * DAYMS) xt.push(t);
-  const p = plot({id: 'eq.' + chartId, w, h: hh, xd: [x0, x1], yd: [ylo, yhi], xt, xf: fday, yf: v => num(v, 0), ylab: 'накопленная прибыль, $', m: {l: 50, r: 14, t: C.split_ms ? 36 : 22, b: 30}});
-  const {X, Y} = p;
-  p.svg.append(el('line', {x1: X(x0), x2: X(x1), y1: Y(0), y2: Y(0), stroke: '#a1a1aa', 'stroke-dasharray': '3 3'}));
-  if (C.split_ms) {
-    p.svg.append(el('line', {x1: X(C.split_ms), x2: X(C.split_ms), y1: p.m.t, y2: hh - p.m.b, stroke: '#d4d4d8', 'stroke-dasharray': '2 3'}));
-    p.svg.append(el('text', {x: (X(x0) + X(C.split_ms)) / 2, y: p.m.t - 6, 'text-anchor': 'middle'}, 'июль'));
-    p.svg.append(el('text', {x: (X(C.split_ms) + X(x1)) / 2, y: p.m.t - 6, 'text-anchor': 'middle'}, 'август'));
-  }
-  const path = y => { let d = `M${X(x0).toFixed(1)} ${Y(0).toFixed(1)}`, prev = 0; for (let i = 0; i < n; i++) { const xx = X(S.t[i]).toFixed(1); d += `L${xx} ${Y(prev).toFixed(1)}L${xx} ${Y(y[i]).toFixed(1)}`; prev = y[i]; } return d + `L${X(x1).toFixed(1)} ${Y(prev).toFixed(1)}`; };
-  lines.forEach(l => p.svg.append(el('path', {d: path(l.y), fill: 'none', stroke: EQ_COL[l.k], 'stroke-width': l.k === 'base' ? 3.6 : 2, 'stroke-linejoin': 'round', 'stroke-opacity': l.k === 'base' ? .85 : 1, 'data-chart': `eq.${chartId}.${l.k}`, 'data-final': l.y[n - 1]})));
-  // наведение: ближайшая по времени сделка
-  const vl = el('line', {y1: p.m.t, y2: hh - p.m.b, stroke: '#a1a1aa', 'stroke-dasharray': '3 3', visibility: 'hidden'});
-  const dots = lines.map(l => el('circle', {r: 4, fill: EQ_COL[l.k], stroke: '#fff', 'stroke-width': 1.5, visibility: 'hidden'}));
-  const r = el('rect', {x: p.m.l, y: p.m.t, width: w - p.m.l - p.m.r, height: hh - p.m.t - p.m.b, fill: 'transparent', 'data-chart': `eq.${chartId}.hover`});
-  p.svg.append(vl, ...dots, r);
-  const near = ev => {
-    const b = p.svg.getBoundingClientRect(), x = (ev.clientX - b.left) / b.width * w, tx = x0 + (x - p.m.l) / (w - p.m.l - p.m.r) * (x1 - x0);
-    let lo = 0, hi = n - 1; while (lo < hi) { const mid = (lo + hi) >> 1; if (S.t[mid] < tx) lo = mid + 1; else hi = mid; }
-    return lo > 0 && Math.abs(S.t[lo - 1] - tx) < Math.abs(S.t[lo] - tx) ? lo - 1 : lo;
-  };
-  const show = (ev) => {
-    const i = near(ev), xx = X(S.t[i]);
-    vl.setAttribute('x1', xx); vl.setAttribute('x2', xx); vl.setAttribute('visibility', 'visible');
-    dots.forEach((d, k) => { d.setAttribute('cx', xx); d.setAttribute('cy', Y(lines[k].y[i])); d.setAttribute('visibility', 'visible'); });
-    tip.innerHTML = `<div class="t">${S.sym[i]}</div>` + trow('Вход', fdt(S.en[i]) + ' UTC') + trow('Закрытие', fdt(S.t[i]) + ' UTC') + trow('Прибыль сделки', '<b>' + money(S.net[i]) + ' $</b>') +
-      (cmp ? (lc => trow(lc ? 'Объём · линия сделки, компаундинг' : 'Объём · база, компаундинг', money(NOTIONAL_VIEW * linesCp[lc].mult[i], 0) + ' $') + trow('Прибыль при этом объёме', '<b>' + money(linesCp[lc].net[i]) + ' $</b>'))(Math.max(0, linesCp.findIndex(l => !l.mask || l.mask[i]))) : '') +
-      '<div class="muted" style="margin:6px 0 2px">Накоплено на этот момент</div>' +
-      lines.map(l => `<div class="r"><span><span style="display:inline-block;width:12px;border-top:${l.k === 'base' ? 4 : 3}px solid ${EQ_COL[l.k]};vertical-align:middle;margin-right:6px"></span>${l.name}${l.mask && l.mask[i] ? ' ✓' : ''}</span><span>${money(l.y[i])}</span></div>`).join('') +
-      '<div class="muted" style="margin-top:4px">✓ — эта сделка входит в линию</div>';
-    tip.style.display = 'block'; moveTip(ev);
-  };
-  r.addEventListener('mouseenter', show); r.addEventListener('mousemove', show);
-  r.addEventListener('mouseleave', () => { vl.setAttribute('visibility', 'hidden'); dots.forEach(d => d.setAttribute('visibility', 'hidden')); tip.style.display = 'none'; });
-  const card = h('div', {class: 'card eq-card', 'data-eqchart': chartId, 'data-eqmode': cmp ? 'cmp' : 'fix'});
-  card.append(h('div', {class: 'card-h'}, [h('b', {}, C.title), h('span', {}, `${fday(x0)} — ${fday(C.end_ms)} · сделок в базе ${ints(lines[0].mask ? lines[0].mask.filter(Boolean).length : n)} · ${cmp ? 'компаундинг, депозит ' + ints(Math.round(dep)) + ' $' : 'фикс 500 $ на сделку'}`)]));
-  const b = h('div', {class: 'card-b'});
-  b.append(legend(lines.map(l => [swLine(EQ_COL[l.k], l.k === 'base' ? 4 : 2.25), l.name])), p.svg, eqTable(chartId, side, S, lines),
-    h('p', {class: 'eq-note cmp-h'}, `Фикс 500 $ и компаундинг, депозит ${ints(Math.round(dep))} $ — итог и макс. просадка каждой линии (обе кривые, независимо от переключателя):`), cmpTable(chartId, side, S, linesFx, linesCp, dep));
-  b.append(h('p', {class: 'eq-note'}, chartId === '775'
-    ? 'Все линии — 775 контрактов (честная вселенная TK-621), сделки с входом 01.07–13.11 по времени закрытия, прибыль после комиссий без фандинга, те же сделки, что в виде «Базы». Источники: S_base и L_base — TK-621, S_mk1 и L_mk2 — TK-626 / TK-641, L_n24 — TK-638, NC360_q20 — TK-639, «без выхода rt» — TK-643, A_n_1 — TK-657, SHARP и DENSE — TK-654. «Сутки» — по дню входа.'
-    : chartId === 'ja'
-    ? 'Окна чтения: замороженные модели, выбор — по сохранённым оценкам при чтении, граница «трети» — замороженная. Июль и август — одна непрерывная серия. «Сутки» — по дню сигнала, как в проверке TK-598.'
-    : 'Окно подбора: выбор по внефолдовым оценкам (модель каждой сделки не видела). Модели подбирались на этих сутках — это отбор, не доказательство.'));
-  card.append(b);
-  return card;
-}
 function renderEquity() {
-  const shape = ST.view === 'shape', bases = ST.view === 'bases', where = ST.view === 'where';
-  if (shape && ST.eq === 'both') ST.eq = 'short';
-  const side = ST.eq, view = document.getElementById('eq-view');
-  document.querySelectorAll('#eq-tabs button').forEach(b => { b.setAttribute('aria-selected', b.dataset.side === side); b.hidden = shape && b.dataset.side === 'both'; });
+  const view = document.getElementById('eq-view'), fan = ST.view === 'fan';
+  if (fan && ST.eq === 'both') ST.eq = 'short';
   document.querySelectorAll('#eq-views button').forEach(b => b.setAttribute('aria-selected', b.dataset.view === ST.view));
-  document.querySelectorAll('#eq-modes button').forEach(b => b.setAttribute('aria-selected', (b.dataset.mode === 'cmp') === ST.cmp));
-  document.getElementById('eq-cmp').hidden = shape || bases || where;
-  document.getElementById('eq-tabs').hidden = where;
-  document.getElementById('eq-sub').textContent = bases || where ? 'прибыль сделок без фандинга, $ · по дню входа, UTC' : 'прибыль сделок без фандинга, $ · по времени закрытия, UTC';
-  document.getElementById('eq-dep').value = ST.dep;
-  document.getElementById('eq-desc').textContent = shape ? SH_DESC[side] : bases ? BS_DESC[side] : where ? WH_DESC : EQ_DESC[side];
-  view.replaceChildren();
+  document.querySelectorAll('#eq-tabs button').forEach(b => { b.setAttribute('aria-selected', b.dataset.side === ST.eq); b.hidden = fan && b.dataset.side === 'both'; });
+  tip.style.display = 'none';
   const width = Math.max(300, Math.floor(view.clientWidth - (view.clientWidth < 520 ? 22 : 42)));
-  if (bases) { view.append(basesView(side, width)); return; }
-  if (where) { const wb = h('div', {id: 'where-box'}); view.append(wb); renderWhere(wb); return; }
-  (shape ? ['ja', 'fit'] : EQ_CHARTS).forEach(id => view.append(shape ? shapeCard(id, side, width) : eqChart(id, side, width)));
-  if (!shape) view.append(h('p', {class: 'eq-note', id: 'eq-cmp-note'}, 'Компаундинг — только вид кривой: тесты, вердикты и все числа протоколов считаются при фиксированных 500 $ на сделку. Объём сделки = 500 $ × E / депозит, где E — депозит плюс реализованная прибыль сделок линии, закрытых до входа этой сделки (пересекающиеся сделки берут эквити на своём входе); прибыль сделки = прибыль при 500 $ × тот же коэффициент. Каждая линия — отдельный счёт с тем же депозитом («шорт + лонг: все сделки» — один счёт на обе стороны). Макс. просадка в % — от пика эквити (депозит + накопленная прибыль). Депозит влияет и на % просадки при фиксе.'));
+  view.replaceChildren(fan ? fanView(ST.eq, width) : variantsView(ST.eq, width));
 }
 function initEquity() {
+  const vs = document.getElementById('eq-views');
+  [['var', 'Варианты'], ['fan', 'Веер']].forEach(([k, t]) => { const b = h('button', {role: 'tab', 'data-view': k, 'aria-selected': 'false'}, t); b.onclick = () => { ST.view = k; setHash(); renderEquity(); }; vs.append(b); });
   const tabs = document.getElementById('eq-tabs');
   EQ_SIDES.forEach(([k, t]) => { const b = h('button', {role: 'tab', 'data-side': k, 'aria-selected': 'false'}, t); b.onclick = () => { ST.eq = k; setHash(); renderEquity(); }; tabs.append(b); });
-  const vs = document.getElementById('eq-views');
-  [['where', 'Где мы'], ['curve', 'Кривая'], ['shape', 'Форма'], ['bases', 'Базы 01.07–13.11']].forEach(([k, t]) => { const b = h('button', {role: 'tab', 'data-view': k, 'aria-selected': 'false'}, t); b.onclick = () => { ST.view = k; setHash(); renderEquity(); }; vs.append(b); });
-  const ms = document.getElementById('eq-modes');
-  [['fix', 'Фикс 500 $'], ['cmp', 'Компаундинг']].forEach(([k, t]) => { const b = h('button', {role: 'tab', 'data-mode': k, 'aria-selected': 'false'}, t); b.onclick = () => { ST.cmp = k === 'cmp'; setHash(); renderEquity(); }; ms.append(b); });
-  const inp = document.getElementById('eq-dep');
-  inp.addEventListener('change', () => { const v = Number(inp.value); if (inp.value.trim() !== '' && Number.isFinite(v) && v >= 100 && v <= 1e9) { ST.dep = v; inp.removeAttribute('aria-invalid'); setHash(); renderEquity(); } else { inp.setAttribute('aria-invalid', 'true'); } });
 }
 
-// ── форма эквити (TK-602): сутки, рывки и спады; данные — shape.json (tk602_shape.py)
-const SH = JSON.parse(document.getElementById('shape-data').textContent);
-const SH_COL = {up: '#2a78d6', dn: '#eb6834', other: '#c4c4cc'};
-const SH_DESC = {
-  short: 'Те же сделки базы U1 шорта, сложенные по суткам (UTC, по закрытию). Синие полосы — 5 лучших суток окна, оранжевые — 5 худших; столбцы — прибыль суток.',
-  long: 'Те же сделки базы U1 лонга, сложенные по суткам (UTC, по закрытию). Синие полосы — 5 лучших суток окна, оранжевые — 5 худших; столбцы — прибыль суток.'
-};
-const shShare = v => v == null ? '—' : pct(v, 0);
-function shapeTable(wid, side, s) {
-  const cols = [['n', 'Сделок', m => ints(m.n)], ['sum', 'Сумма, $', m => money(m.total)], ['s5', 'Сумма 5 лучших суток, $', m => money(m.top5d_sum)],
-    ['t1', 'Доля суммы · 1 лучшие сутки', m => shShare(m.top1d_share)], ['t3', 'Доля суммы · 3 лучшие', m => shShare(m.top3d_share)], ['t5', 'Доля суммы · 5 лучших', m => shShare(m.top5d_share)],
-    ['u10', 'Доля суммы · 10 лучших сделок', m => shShare(m.top10t_share)], ['r2', 'R² к прямой', m => num(m.r2, 2)],
-    ['pl', 'Самое длинное плато, сут.', m => ints(m.longest_plateau)], ['dd', 'Макс. просадка по концу суток, $', m => num(m.maxdd, 1)]];
-  const tb = h('table', {class: 'eqt shp', 'data-shchart': wid, 'data-shside': side});
-  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, 'Линия'), ...cols.map(([, t]) => h('th', {class: 'num'}, t))])));
-  const body = h('tbody');
-  Object.keys(s.measures).forEach(k => {
-    const m = s.measures[k];
-    body.append(h('tr', {'data-line': k, class: k === 'base' ? 'base' : ''}, [h('td', {}, [h('span', {class: 'sw', style: `border-color:${EQ_COL[k]};border-top-width:${k === 'base' ? 4 : 3}px`}), k === 'base' ? EQ_BASE[side] : EQ_NAME[k]]),
-      ...cols.map(([f, lab, fn_]) => h('td', {class: 'num', 'data-f': f, 'data-lab': lab}, fn_(m)))]));
-  });
-  tb.append(body);
-  return h('div', {style: 'overflow-x:auto'}, tb);
+// ── варианты (TK-684): выбор линии лонга и шорта и их сумма «шорт + лонг»; данные — variants.json (tk684_equity.py: готовые сделки, сверка с летописью), вшиты при сборке.
+// Кривая — по времени закрытия сделки; метрики таблицы — как tk684_metrics.py (суточный ряд по дню входа, маржа 250 $ на линию, у суммы — 500 $).
+const V = JSON.parse(document.getElementById('variants-data').textContent);
+const V_BY = new Map(V.variants.map(v => [v.id, v]));
+const V_COL = {long: '#eb6834', short: '#2a78d6', both: '#18181b'};
+const V_SIDE = {long: 'Лонг', short: 'Шорт', both: 'Шорт + лонг'};
+const V_COLS = [['n', 'Сделок'], ['sum', 'Сумма, $'], ['mean', 'На сделку, $'], ['sharpe', 'Шарп (год)'], ['dd', 'Просадка, $'], ['ddp', 'Просадка, % маржи'], ['gap', 'Перехай, сут.'], ['rr', 'R:R'], ['worst', 'Худшая сделка, $']];
+const V_FMT = {n: ints, sum: v => ints(money(v, 0)), mean: v => money(v, 2), sharpe: v => num(v, 2), dd: v => num(v, 0), ddp: v => num(v, 0) + ' %', gap: String, rr: v => num(v, 2), worst: v => money(v, 2)};
+const vPick = s => { const id = s === 'long' ? ST.vl : ST.vs; return V_BY.get(id) || (id && FAN_TOK.test(id) ? fanVariant(id) : null); };      // клетка веера — по токену, когда её пакет загружен
+// сводка сделок линии: у варианта — из сделок, у клетки веера — готовая из летописи
+function vAgg(p) {
+  if (p.agg) return p.agg;
+  const w = p.v.filter(x => x > 0), l = p.v.filter(x => x < 0), s = a => a.reduce((x, y) => x + y, 0);
+  return {n: p.v.length, sum: s(p.v), nw: w.length, sw: s(w), nl: l.length, sl: s(l), worst: p.v.length ? p.v.reduce((a, b) => Math.min(a, b)) : null};
 }
-function shapeCard(wid, side, width) {
-  const s = SH.sides[side][wid], C = E.charts[wid], S = eqData(wid, side), n = s.n_days, st = s.start_ms, DAYMS = 86400e3, x1 = st + n * DAYMS;
-  const up = new Set(s.jump), dn = new Set(s.drop), w = width, mob = w < 520;
-  const cum = []; { let c = 0; for (let i = 0; i < S.t.length; i++) { c += S.net[i]; cum.push(c); } }
-  const colOf = i => up.has(i) ? SH_COL.up : dn.has(i) ? SH_COL.dn : SH_COL.other;
-  const tipDay = i => {
-    const x = s.marked[String(i)], tag = up.has(i) ? 'рывок' : dn.has(i) ? 'спад' : '';
-    let t = `<div class="t">${fday(st + i * DAYMS)}${tag ? ' · ' + tag : ''}</div>` + trow('Прибыль суток', '<b>' + money(s.daily[i]) + ' $</b>') + trow('Сделок', ints(s.trades_day[i])) + trow('Монет', ints(s.coins_day[i])) +
-      trow('BTC за сутки', num(s.btc_day[i], 2, true) + ' %');
-    if (x && x.n) t += trow('Главная монета', `${x.top_coin} ${money(x.top_coin_pnl, 1)} $`) + trow('Выходы', Object.entries(x.kinds).map(([k, v]) => k + ' ' + v).join(', ')) + trow('Удержание, мин (медиана)', num(x.hold_med, 1));
-    return t;
+function vStats(parts) {
+  if (parts.length === 1 && parts[0].m) return parts[0].m;
+  const S = new Array(V.days).fill(0), A = parts.map(vAgg), tot = k => A.reduce((a, x) => a + x[k], 0);
+  parts.forEach(p => p.d.forEach((d, i) => { S[d] += p.v[i]; }));
+  const n = tot('n'), sum = tot('sum'), nw = tot('nw'), nl = tot('nl'), mean = S.reduce((a, b) => a + b, 0) / V.days;
+  let ss = 0; S.forEach(x => { ss += (x - mean) * (x - mean); });
+  const sd = Math.sqrt(ss / (V.days - 1));
+  let c = 0, pk = 0, dd = 0, hi = 0, last = -1, gap = 0;
+  S.forEach((x, i) => { c += x; pk = Math.max(pk, c); dd = Math.max(dd, pk - c); if (c > hi + 1e-9) { gap = Math.max(gap, i - last); last = i; hi = c; } });
+  gap = Math.max(gap, V.days - 1 - last);
+  const worst = A.map(x => x.worst).filter(x => x != null && !Number.isNaN(x));
+  return {n, sum, mean: n ? sum / n : null, sharpe: sd > 0 ? mean / sd * Math.sqrt(365) : null, dd, ddp: dd / (V.margin * parts.length) * 100, gap,
+    rr: nw && nl ? (tot('sw') / nw) / Math.abs(tot('sl') / nl) : null, worst: worst.length ? Math.min(...worst) : null};
+}
+function vLines(side) {
+  const L = vPick('long'), S = vPick('short'), out = [];
+  const mk = (k, parts, name, main) => {
+    const ev = parts.flatMap(p => p.t.map((t, i) => [t, p.v[i]])); if (parts.length > 1) ev.sort((a, b) => a[0] - b[0]);
+    let c = 0; return {k, name, main, parts, t: ev.map(e => e[0]), y: ev.map(e => (c += e[1]))};
   };
-  const dayAt = (p, ev) => { const b = p.svg.getBoundingClientRect(), xx = (ev.clientX - b.left) / b.width * p.w; return Math.max(0, Math.min(n - 1, Math.floor((st + (xx - p.m.l) / (p.w - p.m.l - p.m.r) * (x1 - st) - st) / DAYMS))); };
-  const xt = []; for (let t = st; t <= x1; t += (mob ? 14 : 7) * DAYMS) xt.push(t);
-  // эквити
-  const [ylo, yhi] = rng(cum.concat([0]), .08);
-  const p1 = plot({id: `sh.${wid}.eq`, w, h: mob ? 240 : 290, xd: [st, x1], yd: [ylo, yhi], xt, xf: fday, yf: v => num(v, 0), ylab: 'накопленная прибыль, $', m: {l: 50, r: 14, t: 22, b: 30}});
-  const bands = p => { for (let i = 0; i < n; i++) if (up.has(i) || dn.has(i)) p.svg.append(el('rect', {x: p.X(st + i * DAYMS), y: p.m.t, width: p.X(st + (i + 1) * DAYMS) - p.X(st + i * DAYMS), height: p.h - p.m.b - p.m.t, fill: colOf(i), 'fill-opacity': .17, 'data-chart': `sh.${wid}.band`, 'data-i': i, 'data-kind': up.has(i) ? 'up' : 'dn'})); };
-  bands(p1);
-  p1.svg.append(el('line', {x1: p1.X(st), x2: p1.X(x1), y1: p1.Y(0), y2: p1.Y(0), stroke: '#a1a1aa', 'stroke-dasharray': '3 3'}));
-  { let d = `M${p1.X(st).toFixed(1)} ${p1.Y(0).toFixed(1)}`, prev = 0; for (let i = 0; i < S.t.length; i++) { const xx = p1.X(S.t[i]).toFixed(1); d += `L${xx} ${p1.Y(prev).toFixed(1)}L${xx} ${p1.Y(cum[i]).toFixed(1)}`; prev = cum[i]; } d += `L${p1.X(x1).toFixed(1)} ${p1.Y(prev).toFixed(1)}`;
-    p1.svg.append(el('path', {d, fill: 'none', stroke: '#27272a', 'stroke-width': 2, 'stroke-linejoin': 'round', 'data-chart': `sh.${wid}.eqline`, 'data-final': cum[cum.length - 1]})); }
-  // столбцы суток
-  const [blo, bhi] = rng(s.daily.concat([0]), .1);
-  const p2 = plot({id: `sh.${wid}.bars`, w, h: mob ? 170 : 200, xd: [st, x1], yd: [blo, bhi], xt, xf: fday, yf: v => num(v, 0), ylab: 'прибыль суток, $', m: {l: 50, r: 14, t: 22, b: 30}});
-  bands(p2);
-  p2.svg.append(el('line', {x1: p2.X(st), x2: p2.X(x1), y1: p2.Y(0), y2: p2.Y(0), stroke: '#a1a1aa'}));
-  s.daily.forEach((v, i) => { const xa = p2.X(st + i * DAYMS), xb = p2.X(st + (i + 1) * DAYMS), y0 = p2.Y(0), y1 = p2.Y(v); p2.svg.append(el('rect', {x: xa + 1, y: Math.min(y0, y1), width: Math.max(1, xb - xa - 2), height: Math.max(v === 0 ? 0 : 1, Math.abs(y1 - y0)), rx: 1.5, fill: colOf(i), 'data-chart': `sh.${wid}.bar`, 'data-i': i, 'data-y': +v.toPrecision(7), 'data-kind': up.has(i) ? 'up' : dn.has(i) ? 'dn' : 'other'})); });
-  // наведение: сутки
-  [p1, p2].forEach((p, k) => {
-    const hl = el('rect', {y: p.m.t, height: p.h - p.m.b - p.m.t, fill: '#71717a', 'fill-opacity': .12, visibility: 'hidden'});
-    const r = el('rect', {x: p.m.l, y: p.m.t, width: p.w - p.m.l - p.m.r, height: p.h - p.m.t - p.m.b, fill: 'transparent', 'data-chart': `sh.${wid}.${k ? 'bars' : 'eq'}.hover`});
-    p.svg.append(hl, r);
-    const show = ev => { const i = dayAt(p, ev); hl.setAttribute('x', p.X(st + i * DAYMS)); hl.setAttribute('width', p.X(st + (i + 1) * DAYMS) - p.X(st + i * DAYMS)); hl.setAttribute('visibility', 'visible'); tip.innerHTML = tipDay(i); tip.style.display = 'block'; moveTip(ev); };
-    r.addEventListener('mouseenter', show); r.addEventListener('mousemove', show);
-    r.addEventListener('mouseleave', () => { hl.setAttribute('visibility', 'hidden'); tip.style.display = 'none'; });
-  });
-  const card = h('div', {class: 'card eq-card', 'data-shchart': wid});
-  card.append(h('div', {class: 'card-h'}, [h('b', {}, C.title), h('span', {}, `${fday(st)} — ${fday(st + (n - 1) * DAYMS)} · ${n} суток · сделок ${ints(S.t.length)}`)]));
-  const b = h('div', {class: 'card-b'});
-  b.append(legend([[swLine('#27272a', 2.25), 'эквити базы'], [swBox(SH_COL.up), '5 лучших суток'], [swBox(SH_COL.dn), '5 худших суток'], [swBox(SH_COL.other), 'остальные сутки']]), p1.svg, p2.svg, shapeTable(wid, side, s));
-  card.append(b);
-  return card;
+  if (L && S && side === 'both') out.push(mk('both', [L, S], V_SIDE.both, true));
+  if (L && side !== 'short') out.push(mk('long', [L], 'Лонг · ' + L.label, !(S && side === 'both')));
+  if (S && side !== 'long') out.push(mk('short', [S], 'Шорт · ' + S.label, !(L && side === 'both')));
+  return out;
 }
-
-// ── базы 01.07–13.11 (TK-624): суточная прибыль L_base / S_base (TK-599) и S_mk1 (TK-616) в $; данные — bases.json (tk624_table.py), вшиты при сборке
-// TK-645: лучшие варианты на 775 монетах — L_n24 (TK-638, заморожен) и S_nc360 (TK-639, найдено на этих данных) рядом с базами той же вселенной L_b775 / S_b775 (U2, TK-621); дописывает tk645_best.py
-const B = JSON.parse(document.getElementById('bases-data').textContent);
-// TK-645: показываются ряды 775 контрактов; прежние базы 566 монет (L_base / S_base / S_mk1) остаются в bases.json для сверки, на странице не рисуются
-const BS_COL = {L_base: '#eb6834', S_base: '#2a78d6', S_mk1: '#1baf7a', S_b775: '#2a78d6', S_mk775: '#1baf7a', L_b775: '#eb6834', L_n24: '#a3369c', L_mk2: '#b8860b', S_nc360: '#0e7490', S_rf0: '#6250d6', S_an1: '#c0265b', L_sharp: '#008300', L_dense: '#0e7490', SL: '#52525b'};
-const BS_DASH = {};
-const BS_NAME = {L_base: 'Лонг · вход по рынку (L_base, 566 монет)', S_base: 'Шорт · вход по рынку (S_base, 566 монет)', S_mk1: 'Шорт · вход лимиткой (S_mk1, 566 монет)', S_b775: 'Шорт · вход по рынку (S_base, заморожен — проверка вперёд)', S_mk775: 'Шорт · вход лимиткой (S_mk1, заморожен — проверка вперёд)', L_b775: 'Лонг · вход по рынку (L_base, заморожен — проверка вперёд)', L_n24: 'Лонг · сделок за 24 ч ≥ 220 000 (L_n24, заморожен — проверка вперёд)', L_mk2: 'Лонг · вход лимиткой на цене уровня (L_mk2, заморожен — проверка вперёд)', S_nc360: 'Шорт · сделок за 6 ч ≥ 26 000 (NC360_q20, найдено на этих данных)',
-  S_rf0: 'Шорт · без выхода rt (B_off_tt20_tb0.1, TK-643, найдено на этих данных)', S_an1: 'Шорт · больше сделок: n_bounce = 1 (A_n_1, TK-657, найдено на этих данных)', L_sharp: 'Лонг · резкий подход без проторговки (SHARP, TK-654, найдено на этих данных)', L_dense: 'Лонг · без пустых минут за 6 ч (DENSE, TK-654, найдено на этих данных)', SL: 'Шорт + лонг (S_base + L_base)'};
-// TK-662: R:R линии (средний выигрыш ÷ |средний проигрыш|, bases.json → rr, tk662_equity.py) — рядом с названием
-const bsName = k => BS_NAME[k] + (B.rr && B.rr[k] && B.rr[k].rr != null ? ' · R:R ' + num(B.rr[k].rr, 2) : '');
-const BS_LINES = {short: ['S_b775', 'S_mk775', 'S_nc360', 'S_rf0', 'S_an1'], long: ['L_b775', 'L_n24', 'L_mk2', 'L_sharp', 'L_dense'], both: ['L_b775', 'S_b775', 'SL']};
-const BS_MSHORT = ['июл', 'авг', 'сен', 'окт', 'ноя'];
-const BS_DESC = {
-  short: 'Накопленная прибыль шорта за 136 суток (01.07–13.11) на всех 775 контрактах (честная вселенная), $ при ставке 500 $ на сделку, после комиссий. Синяя — вход по рынку (S_base), зелёная — вход лимиткой на лучшей цене (S_mk1): обе заморожены для проверки вперёд. Найдены на этих данных (отбор на прошлом, не доказательство): бирюзовая — число сделок монеты за 6 ч ≥ 26 000 (NC360_q20), фиолетовая — без выхода rt (TK-643), малиновая — n_bounce = 1, больше сделок худшего качества (A_n_1, TK-657). R:R — средний выигрыш ÷ средний проигрыш. Ряд суточный, сделка считается днём входа.',
-  long: 'Накопленная прибыль лонга за 136 суток (01.07–13.11) на всех 775 контрактах, $ при ставке 500 $ на сделку, после комиссий. Оранжевая — лонг-база (L_base), лиловая — лонг при числе сделок монеты за 24 ч ≥ 220 000 (L_n24), золотая — вход лимиткой на цене уровня (L_mk2): все три заморожены для проверки вперёд. Найдены на этих данных (отбор на прошлом, не доказательство): зелёная — резкий подход к уровню без проторговки (SHARP, TK-654), бирюзовая — без пустых минут за 6 ч (DENSE, TK-654). R:R — средний выигрыш ÷ средний проигрыш.',
-  both: 'Обе базы на 775 контрактах на одних осях и их сумма: видно, откуда рост и что забирает лонг. Ряд суточный, сделка считается днём входа; ставка 500 $ на сделку, после комиссий.'
-};
-const WH_DESC = 'Где мы сейчас по деньгам: единственный кандидат, таблицы $ и шарпа по базам и по наборам монет (честная вселенная TK-621), что нашли сломанным и что дальше. Ставка 500 $ на сделку, после комиссий, 01.07–13.11.';
-const BS_D0 = Date.parse(B.d0 + 'T00:00:00Z');
-const bsDate = i => fday(BS_D0 + i * 86400e3);
-const bsStarts = () => { const a = [0]; B.month_len.forEach(n => a.push(a[a.length - 1] + n)); return a; };
-function bsSeries(k) {
-  if (k === 'SL') { const a = B.cells.S_b775, b = B.cells.L_b775; return {S: a.daily_sum.map((v, i) => v + b.daily_sum[i]), N: a.daily_n.map((v, i) => v + b.daily_n[i])}; }
-  return {S: B.cells[k].daily_sum, N: B.cells[k].daily_n};
-}
-// шарп = среднее / станд. откл. (n−1) суточной прибыли, ВКЛЮЧАЯ дни без сделок, × √365; просадка — от пика накопленной суточной прибыли периода (старт = 0)
-function bsStats(S, N, lo, hi) {
-  const s = S.slice(lo, hi), nn = N.slice(lo, hi), n = s.length, sum = s.reduce((a, b) => a + b, 0), tr = nn.reduce((a, b) => a + b, 0), mean = sum / n;
-  let ss = 0; s.forEach(v => { ss += (v - mean) * (v - mean); });
-  const sd = n > 1 ? Math.sqrt(ss / (n - 1)) : 0;
-  let c = 0, pk = 0, dd = 0; s.forEach(v => { c += v; pk = Math.max(pk, c); dd = Math.max(dd, pk - c); });
-  return {days: n, sum, trades: tr, mean: tr ? sum / tr : 0, sharpe: sd > 0 ? mean / sd * Math.sqrt(365) : 0, maxdd: dd, pos: s.filter(v => v > 0).length, tdays: nn.filter(v => v > 0).length};
-}
-const bsMonth = (k, m) => { const st = bsStarts(), q = bsSeries(k); return bsStats(q.S, q.N, st[m], st[m + 1]); };
-const bsTotal = k => { const q = bsSeries(k); return bsStats(q.S, q.N, 0, B.days); };
-function bsChart(keys, w, id) {
-  const n = B.days, st = bsStarts(), Q = keys.map(bsSeries), cum = Q.map(q => { let c = 0; return [0].concat(q.S.map(v => (c += v))); });
-  const [ylo, yhi] = rng(cum.flat().concat([0]), .08), mob = w < 520;
-  const p = plot({id, w, h: mob ? 260 : 330, xd: [0, n], yd: [ylo, yhi], xt: st, xf: bsDate, yf: v => num(v, 0), ylab: 'накопленная прибыль, $', m: {l: 50, r: 14, t: 24, b: 30}});
+function vChart(lines, w) {
+  const hh = w < 520 ? 300 : 360, DAYMS = 86400e3, x0 = V.start_ms, x1 = Math.max(V.end_ms, x0 + V.days * DAYMS);
+  const [ylo, yhi] = rng(lines.flatMap(l => l.y).concat([0]), .08);
+  const stepD = w < 560 ? 28 : 7, xt = []; for (let t = x0; t <= x1; t += stepD * DAYMS) xt.push(t);
+  const p = plot({id: 'var', w, h: hh, xd: [x0, x1], yd: [ylo, yhi], xt, xf: fday, yf: v => num(v, 0), ylab: 'накопленная прибыль, $', m: {l: 50, r: 14, t: 22, b: 30}});
   const {X, Y} = p;
-  for (let m = 0; m < B.month_len.length; m++) {
-    if (m) p.svg.append(el('line', {x1: X(st[m]), x2: X(st[m]), y1: p.m.t, y2: p.h - p.m.b, stroke: '#d4d4d8', 'stroke-dasharray': '2 3'}));
-    p.svg.append(el('text', {x: (X(st[m]) + X(st[m + 1])) / 2, y: p.m.t - 8, 'text-anchor': 'middle'}, mob ? BS_MSHORT[m] : B.month_names[m]));
-  }
-  p.svg.append(el('line', {x1: X(0), x2: X(n), y1: Y(0), y2: Y(0), stroke: '#a1a1aa', 'stroke-dasharray': '3 3'}));
-  keys.forEach((k, j) => p.svg.append(el('path', {d: cum[j].map((v, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1)).join(''), fill: 'none', stroke: BS_COL[k], 'stroke-width': 2.4, 'stroke-dasharray': BS_DASH[k] || null, 'stroke-linejoin': 'round', 'data-chart': `${id}.${k}`, 'data-final': cum[j][n]})));
-  const vl = el('line', {y1: p.m.t, y2: p.h - p.m.b, stroke: '#a1a1aa', 'stroke-dasharray': '3 3', visibility: 'hidden'});
-  const dots = keys.map(k => el('circle', {r: 4, fill: BS_COL[k], stroke: '#fff', 'stroke-width': 1.5, visibility: 'hidden'}));
-  const r = el('rect', {x: p.m.l, y: p.m.t, width: w - p.m.l - p.m.r, height: p.h - p.m.t - p.m.b, fill: 'transparent', 'data-chart': `${id}.hover`});
+  p.svg.append(el('line', {x1: X(x0), x2: X(x1), y1: Y(0), y2: Y(0), stroke: '#a1a1aa', 'stroke-dasharray': '3 3'}));
+  const path = l => { let d = `M${X(x0).toFixed(1)} ${Y(0).toFixed(1)}`, prev = 0; for (let i = 0; i < l.t.length; i++) { const xx = X(l.t[i]).toFixed(1); d += `L${xx} ${Y(prev).toFixed(1)}L${xx} ${Y(l.y[i]).toFixed(1)}`; prev = l.y[i]; } return d + `L${X(x1).toFixed(1)} ${Y(prev).toFixed(1)}`; };
+  lines.slice().reverse().forEach(l => p.svg.append(el('path', {d: path(l), fill: 'none', stroke: V_COL[l.k], 'stroke-width': l.main ? 2.6 : 1.3, 'stroke-linejoin': 'round', 'data-chart': 'var.' + l.k, 'data-final': l.y.length ? l.y[l.y.length - 1] : 0})));
+  const at = (l, tx) => { let lo = 0, hi = l.t.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (l.t[mid] <= tx) lo = mid + 1; else hi = mid; } return lo ? l.y[lo - 1] : 0; };
+  const vl = el('line', {y1: p.m.t, y2: hh - p.m.b, stroke: '#a1a1aa', 'stroke-dasharray': '3 3', visibility: 'hidden'});
+  const dots = lines.map(l => el('circle', {r: 4, fill: V_COL[l.k], stroke: '#fff', 'stroke-width': 1.5, visibility: 'hidden'}));
+  const r = el('rect', {x: p.m.l, y: p.m.t, width: w - p.m.l - p.m.r, height: hh - p.m.t - p.m.b, fill: 'transparent', 'data-chart': 'var.hover'});
   p.svg.append(vl, ...dots, r);
-  const dayAt = ev => { const b = p.svg.getBoundingClientRect(), x = (ev.clientX - b.left) / b.width * w; return Math.max(0, Math.min(n - 1, Math.floor((x - p.m.l) / (w - p.m.l - p.m.r) * n))); };
   const show = ev => {
-    const i = dayAt(ev), xx = X(i + 1);
+    const b = p.svg.getBoundingClientRect(), x = (ev.clientX - b.left) / b.width * w, tx = Math.max(x0, Math.min(x1, x0 + (x - p.m.l) / (w - p.m.l - p.m.r) * (x1 - x0))), xx = X(tx);
     vl.setAttribute('x1', xx); vl.setAttribute('x2', xx); vl.setAttribute('visibility', 'visible');
-    dots.forEach((d, j) => { d.setAttribute('cx', xx); d.setAttribute('cy', Y(cum[j][i + 1])); d.setAttribute('visibility', 'visible'); });
-    tip.innerHTML = `<div class="t">${bsDate(i)}</div>` + keys.map((k, j) => `<div class="r"><span><span style="display:inline-block;width:12px;border-top:3px ${BS_DASH[k] ? 'dashed' : 'solid'} ${BS_COL[k]};vertical-align:middle;margin-right:6px"></span>${bsName(k)}</span></div>` +
-      trow('Прибыль суток · сделок', `<b>${money(Q[j].S[i])} $</b> · ${ints(Q[j].N[i])}`) + trow('Накоплено', `<b>${money(cum[j][i + 1])} $</b>`)).join('');
+    dots.forEach((d, k) => { d.setAttribute('cx', xx); d.setAttribute('cy', Y(at(lines[k], tx))); d.setAttribute('visibility', 'visible'); });
+    tip.innerHTML = `<div class="t">${fdt(tx)} UTC</div>` + lines.map(l => `<div class="r"><span><span style="display:inline-block;width:12px;border-top:${l.main ? 4 : 2}px solid ${V_COL[l.k]};vertical-align:middle;margin-right:6px"></span>${l.name}</span><span>${money(at(l, tx))} $</span></div>`).join('');
     tip.style.display = 'block'; moveTip(ev);
   };
   r.addEventListener('mouseenter', show); r.addEventListener('mousemove', show);
   r.addEventListener('mouseleave', () => { vl.setAttribute('visibility', 'hidden'); dots.forEach(d => d.setAttribute('visibility', 'hidden')); tip.style.display = 'none'; });
-  return h('div', {}, [legend(keys.map(k => [swLine(BS_COL[k], 2.4, BS_DASH[k] || null), bsName(k)])), p.svg]);
+  return p.svg;
 }
-function bsTable(k) {
-  const cols = [['sum', 'Сумма, $'], ['trades', 'Сделок'], ['mean', 'В среднем на сделку, $'], ['sharpe', 'Шарп (год)'], ['maxdd', 'Макс. просадка, $'], ['pos', 'Дней в плюсе из дней со сделками']];
-  const tb = h('table', {class: 'eqt', 'data-bsline': k});
-  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, 'Период'), ...cols.map(([, t]) => h('th', {class: 'num'}, t))])));
-  const body = h('tbody'), rows = B.month_names.map((nm, m) => [nm, bsMonth(k, m), m]).concat([['всего · ' + B.days + ' суток', bsTotal(k), 'all']]);
-  rows.forEach(([nm, st, m]) => {
-    const f = {sum: money(st.sum), trades: ints(st.trades), mean: money(st.mean, 3), sharpe: num(st.sharpe, 2, true), maxdd: num(st.maxdd, 2), pos: `${st.pos} из ${st.tdays}`};
-    body.append(h('tr', {'data-bsrow': m, class: m === 'all' ? 'base' : ''}, [h('td', {}, nm), ...cols.map(([c, lab]) => h('td', {class: 'num', 'data-f': c, 'data-lab': lab}, f[c]))]));
-  });
-  tb.append(body);
-  return h('div', {style: 'overflow-x:auto;margin-top:22px'}, [h('div', {class: 'cap'}, [h('span', {class: 'sw', style: `display:inline-block;width:18px;border-top:3px ${BS_DASH[k] ? 'dashed' : 'solid'} ${BS_COL[k]};vertical-align:middle;margin-right:8px`}), bsName(k)]), tb]);
-}
-function basesView(side, width) {
-  const keys = BS_LINES[side], card = h('div', {class: 'card eq-card', 'data-bases': side});
-  card.append(h('div', {class: 'card-h'}, [h('b', {}, 'Базы за 136 суток: ' + bsDate(0) + ' — ' + bsDate(B.days - 1)), h('span', {}, 'ставка 500 $ на сделку · по дню входа · после комиссий')]));
-  const b = h('div', {class: 'card-b'});
-  b.append(bsChart(keys, width, 'bs'));
-  keys.forEach(k => b.append(bsTable(k)));
-  b.append(h('p', {class: 'eq-note'}, 'Шарп = среднесуточная прибыль ÷ разброс суточной прибыли (дни без сделок — ноль) × √365. Просадка — наибольшее падение накопленной прибыли от пика внутри периода, $. Ряд — сделки по дню входа; фандинг не учтён. Источники (775 контрактов): L_base и S_base — принятые выходы TK-621, S_mk1 и L_mk2 — TK-626 / TK-641, L_n24 — TK-638, NC360_q20 — TK-639, «без выхода rt» — TK-643, A_n_1 — TK-657, SHARP и DENSE — TK-654; итоги совпадают с отчётами (' + keys.filter(k => B.cells[k]).map(k => BS_NAME[k] + ' ' + money(bsTotal(k).sum) + ' $').join(', ') + ').'));
-  card.append(b);
-  return card;
-}
-const UNI = JSON.parse(document.getElementById('universe-data').textContent);
-function uniTable(side) {
-  const cols = [['sum', 'Итог, $'], ['trades', 'Сделок'], ['mean', 'На сделку, $'], ['sharpe', 'Шарп (год)'], ['maxdd', 'Макс. просадка, $']];
-  const tb = h('table', {class: 'eqt uni', 'data-utable': side});
-  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, 'Набор монет'), ...cols.map(([, t]) => h('th', {class: 'num'}, t)), ...UNI.month_names.map(m => h('th', {class: 'num'}, 'Сумма, $ · ' + m))])));
+function vTable() {
+  const L = vPick('long'), S = vPick('short'), rows = [];
+  if (L) rows.push(['long', 'Лонг · ' + L.label, [L]]);
+  if (S) rows.push(['short', 'Шорт · ' + S.label, [S]]);
+  if (L && S) rows.push(['both', V_SIDE.both, [L, S]]);
+  const tb = h('table', {class: 'eqt', 'data-vtable': '1'});
+  const stOf = parts => [...new Set(parts.map(p => p.status).filter(Boolean))].join(' · ');
+  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, 'Линия'), h('th', {}, 'Статус'), ...V_COLS.map(([, t]) => h('th', {class: 'num'}, t))])));
   const body = h('tbody');
-  UNI.universes.forEach(u => {
-    const rows = UNI.sides[side][u.id].rows, t = rows[rows.length - 1], f = {sum: money(t.sum), trades: ints(t.trades), mean: money(t.mean, 3), sharpe: num(t.sharpe, 2, true), maxdd: num(t.maxdd, 2)};
-    body.append(h('tr', {'data-uni': u.id}, [h('td', {}, u.id + ' · ' + u.name), ...cols.map(([c, lab]) => h('td', {class: 'num', 'data-f': c, 'data-lab': lab}, f[c])),
-      ...UNI.month_names.map((m, i) => h('td', {class: 'num', 'data-f': 'm' + i, 'data-lab': 'Сумма, $ · ' + m}, money(rows[i].sum)))]));
+  rows.forEach(([k, name, parts]) => {
+    const st = vStats(parts);
+    body.append(h('tr', {'data-line': k, 'data-ids': parts.map(p => p.id).join('|'), class: k === 'both' ? 'base' : ''}, [h('td', {'data-f': 'name', title: parts.map(p => p.key).join(' + ')}, [h('span', {class: 'sw', style: `border-color:${V_COL[k]}`}), name]), h('td', {class: 'vst', 'data-f': 'status'}, stOf(parts)),
+      ...V_COLS.map(([c, lab]) => h('td', {class: 'num', 'data-f': c, 'data-lab': lab, 'data-v': st[c] == null ? '' : st[c]}, st[c] == null ? '—' : V_FMT[c](st[c])))]));
   });
   tb.append(body);
-  return h('div', {style: 'overflow-x:auto;margin-top:12px'}, [h('div', {class: 'cap'}, side === 'short' ? 'Шорт (S_base)' : 'Лонг (L_base)'), tb]);
+  return h('div', {style: 'overflow-x:auto'}, tb);
 }
-function ftTable(T, key) {
-  const tb = h('table', {class: 'eqt ft-tbl', 'data-ftable': key});
-  tb.append(h('thead', {}, h('tr', {}, T.cols.map((c, i) => h('th', {class: (T.wrap || []).includes(i) ? 'wrapc' : i ? 'num' : ''}, c)))));
-  const shade = (ri, i) => { const v = T.shade && T.shade[ri] ? T.shade[ri][i] : null; if (v == null) return null; const a = (0.06 + 0.34 * Math.min(1, Math.abs(v))).toFixed(2); return 'background:' + (v >= 0 ? 'rgba(37,99,235,' : 'rgba(113,113,122,') + a + ')'; };
-  tb.append(h('tbody', {}, T.rows.map((r, ri) => h('tr', {class: (T.bold || []).includes(ri) ? 'base' : ''}, r.map((c, i) => h('td', {class: (T.wrap || []).includes(i) ? 'wrapc' : i ? 'num' : '', 'data-lab': T.cols[i], style: shade(ri, i)}, c))))));
-  return h('div', {style: 'overflow-x:auto;margin-top:12px'}, [h('div', {class: 'cap'}, T.title), tb]);
-}
-function featureCard(F) {
-  const C = F.current, card = h('div', {class: 'card ft-card', id: 'feature'});
-  card.append(h('div', {class: 'card-h'}, [h('b', {}, F.title), h('span', {class: 'badge' + (C.status === 'done' ? ' ok' : ' run'), 'data-f': 'fstatus'}, C.status === 'done' ? 'готово' : 'считается')]));
-  const b = h('div', {class: 'card-b'});
-  b.append(h('p', {class: 'wh-lead'}, F.lead));
-  // TK-633: следующие раунды признака — новее первыми, над итогом TK-625; свои атрибуты (data-fround / data-rsec), чтобы не мешать current
-  (F.rounds || []).forEach((R2, ri) => {
-    b.append(h('div', {class: 'wh-box wide ft-round', 'data-fround': ri}, [h('h3', {}, R2.title), h('p', {class: 'ft-st', 'data-f': 'rtext'}, R2.text), ...(R2.notes ? [h('ul', {class: 'ft-notes'}, R2.notes.map(t => h('li', {}, t)))] : [])]));
-    (R2.sections || []).forEach((S, si) => {
-      const body = [...(S.note ? [h('p', {class: 'wh-tn'}, S.note)] : []), ...S.tables.map((T, ti) => ftTable(T, 'r' + ri + '.' + si + '.' + ti))];
-      b.append(S.fold ? h('details', {class: 'ft-fold', 'data-rsec': ri + '.' + si}, [h('summary', {}, S.title), ...body]) : h('div', {class: 'ft-sec', 'data-rsec': ri + '.' + si}, [h('div', {class: 'wh-tt'}, S.title), ...body]));
+function variantsView(side, width) {
+  const box = h('div', {'data-varview': side});
+  fanNeed([ST.vl, ST.vs, ...ST.fav]);
+  [['long', 'Лонг'], ['short', 'Шорт']].forEach(([s, t]) => {
+    const row = h('div', {class: 'vr-pick', 'data-pick': s}, h('b', {}, t)), cur = (s === 'long' ? ST.vl : ST.vs) || '-';
+    const btn = (id, label, key) => {
+      const b = h('button', {role: 'tab', 'data-var': id, 'aria-selected': String(cur === id), title: key}, label);
+      b.onclick = () => { ST[s === 'long' ? 'vl' : 'vs'] = id === '-' ? null : id; if (id !== '-' && ST.eq !== s) ST.eq = 'both'; setHash(); renderEquity(); };
+      return b;
+    };
+    V.groups.forEach((g, gi) => {
+      const vs = V.variants.filter(v => v.side === s && v.group === g.id); if (!vs.length) return;
+      const tabs = h('div', {class: 'tabs', role: 'tablist'});
+      if (!gi) tabs.append(btn('-', 'нет', null));
+      vs.forEach(v => tabs.append(btn(v.id, v.label, v.key)));
+      row.append(h('div', {class: 'vr-g'}, [g.label ? h('span', {class: 'vr-grp'}, g.label) : null, tabs]));
     });
+    // клетки веера: избранное и выбранная
+    const ft = [...new Set(fanFavs(s).concat(cur !== '-' && FAN_TOK.test(cur) ? [cur] : []))];
+    if (ft.length) row.append(h('div', {class: 'vr-g'}, [h('span', {class: 'vr-grp'}, 'из веера'), h('div', {class: 'tabs', role: 'tablist'}, ft.map(tok => { const c = fanCell(tok); return btn(tok, c ? c.P.keys[c.i] : '…', null); }))]));
+    box.append(row);
   });
-  const cur = h('div', {class: 'wh-box wide', 'data-fbox': 'current'}, [h('h3', {}, C.title), h('p', {class: 'ft-st'}, C.text)]);
-  if (C.notes) cur.append(h('ul', {class: 'ft-notes'}, C.notes.map(t => h('li', {}, t))));
-  b.append(cur);
-  (C.sections || []).forEach((S, si) => {
-    const body = [...(S.note ? [h('p', {class: 'wh-tn'}, S.note)] : []), ...S.tables.map((T, ti) => ftTable(T, si + '.' + ti))];
-    b.append(S.fold ? h('details', {class: 'ft-fold', 'data-fsec': si}, [h('summary', {}, S.title), ...body]) : h('div', {class: 'ft-sec', 'data-fsec': si}, [h('div', {class: 'wh-tt'}, S.title), ...body]));
-  });
-  card.append(b);
-  return card;
-}
-function whereList(items) {
-  return h('ul', {}, items.map(it => typeof it === 'string' ? h('li', {}, it) : h('li', {}, [h('b', {}, it.t + ' '), it.s])));
-}
-function renderWhere(box) {
-  const W = P.where;
-  const width = Math.max(300, Math.floor(box.clientWidth - (box.clientWidth < 520 ? 26 : 42)));
-  const card = h('div', {class: 'card where-card', id: 'where'});
-  card.append(h('div', {class: 'card-h'}, [h('b', {}, W.title), h('span', {}, 'ставка 500 $ на сделку · ' + bsDate(0) + ' — ' + bsDate(B.days - 1) + ' · ' + B.days + ' суток')]));
-  const b = h('div', {class: 'card-b'});
-  b.append(h('p', {class: 'wh-lead'}, W.lead));
-  b.append(h('div', {class: 'wh-tt'}, W.table_title), h('p', {class: 'wh-tn'}, W.table_note));
-  const cols = [['sum', 'Итог, $'], ['trades', 'Сделок'], ['mean', 'На сделку, $'], ['sharpe', 'Шарп (год)'], ['maxdd', 'Макс. просадка, $'], ['rr', 'R:R']];
-  const tb = h('table', {class: 'eqt', 'data-wtable': '1'});
-  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, 'Вариант'), ...cols.map(([, t]) => h('th', {class: 'num'}, t)), ...B.month_names.map(m => h('th', {class: 'num'}, 'Сумма, $ · ' + m))])));
-  const body = h('tbody');
-  W.rows.forEach(r => {
-    const t = bsTotal(r.id), q = B.rr && B.rr[r.id], f = {sum: money(t.sum), trades: ints(t.trades), mean: money(t.mean, 3), sharpe: num(t.sharpe, 2, true), maxdd: num(t.maxdd, 2), rr: q && q.rr != null ? num(q.rr, 2) : '—'};
-    body.append(h('tr', {'data-wline': r.id}, [h('td', {}, [h('span', {class: 'sw', style: `border-color:${BS_COL[r.id]};border-top-width:3px;border-top-style:${BS_DASH[r.id] ? 'dashed' : 'solid'}`}), r.name]),
-      ...cols.map(([c, lab]) => h('td', {class: 'num', 'data-f': c, 'data-lab': lab}, f[c])),
-      ...B.month_names.map((m, i) => h('td', {class: 'num', 'data-f': 'm' + i, 'data-lab': 'Сумма, $ · ' + m}, money(bsMonth(r.id, i).sum)))]));
-  });
-  tb.append(body);
-  b.append(h('div', {style: 'overflow-x:auto'}, tb));
-  b.append(h('div', {class: 'wh-chart'}, bsChart(W.rows.map(r => r.id), width, 'wh')));
-  if (W.universe) { b.append(h('div', {class: 'wh-tt', style: 'margin-top:22px'}, W.universe.title), h('p', {class: 'wh-tn'}, W.universe.note), uniTable('short'), uniTable('long')); }
-  const grid = h('div', {class: 'wh-grid'});
-  [['candidate', W.candidate], ['next', W.next], ['broken', W.broken]].forEach(([k, X]) => grid.append(h('div', {class: 'wh-box' + (k === 'broken' ? ' wide' : ''), 'data-wbox': k}, [h('h3', {}, X.title), whereList(X.items)])));
-  b.append(grid);
-  b.append(h('p', {class: 'wh-link'}, [h('a', {href: '#equity/short/bases', 'data-wlink': 'bases'}, 'Кривые баз и таблицы по месяцам → вкладка «Эквити», вид «Базы»')]));
-  card.append(b);
-  box.append(card);
-  if (P.feature) box.append(featureCard(P.feature));
+  const lines = vLines(side), card = h('div', {class: 'card eq-card', 'data-varcard': side}), b = h('div', {class: 'card-b'});
+  b.append(legend(lines.map(l => [swLine(V_COL[l.k], l.main ? 3 : 1.5), l.name])), vChart(lines, width), vTable());
+  card.append(b); box.append(card);
+  return box;
 }
 
 // ── признаки (TK-606, TK-678): данные — features.json (ml_features.json в репозитории, схема ml_features.schema.json), вшиты при сборке.
@@ -1164,121 +481,32 @@ function renderFeatures() {
   FEAT.sets.forEach(s => root.append(ftCard(s)));
 }
 
-// ── вкладка «Прогресс» (TK-613, TK-631): что идёт сейчас. data/tasks.json пишет tk613_collect.py (таймер tk613-progress, раз в 60 с; треды — из now.json от ПК), страница перечитывает его раз в 60 с
-const LV = {timer: null, busy: false, data: null, okAt: 0, tryAt: 0, err: null};
-const LV_MS = 60000;
-const p2 = v => String(v).padStart(2, '0');
-function g4(ts) {   // epoch, с → «ЧЧ:ММ» по GMT+4 (с датой, если не сегодня)
-  const d = new Date(ts * 1000 + 4 * 3600e3), n = new Date(Date.now() + 4 * 3600e3);
-  const same = d.getUTCFullYear() === n.getUTCFullYear() && d.getUTCMonth() === n.getUTCMonth() && d.getUTCDate() === n.getUTCDate();
-  return (same ? '' : p2(d.getUTCDate()) + '.' + p2(d.getUTCMonth() + 1) + ' ') + p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes());
-}
-function dur(sec) {
-  sec = Math.max(0, Math.round(sec));
-  const N = ' ';   // неразрывный пробел: «2 ч 12 мин» не рвётся по строкам
-  if (sec < 90) return sec + N + 'с';
-  const m = Math.round(sec / 60);
-  if (m < 90) return m + N + 'мин';
-  const hh = Math.floor(m / 60);
-  return hh < 48 ? hh + N + 'ч' + N + p2(m % 60) + N + 'мин' : Math.round(hh / 24) + N + 'сут';
-}
-const LV_BADGE = {run: 'run', done: 'ok', fail: 'fail'};
-const LV_TXT = {run: 'идёт', done: 'готово', fail: 'ошибка'};
-const lvAge = (ts, now) => ts ? [g4(ts), h('small', {}, dur(now - ts) + ' назад')] : '—';
-function nowRow(t, now) {
-  const run = t.state === 'run';
-  return h('div', {class: 'lv-row', 'data-task': t.tk || t.id, 'data-state': t.state}, [
-    h('div', {class: 'lv-c lv-name'}, [h('b', {}, t.tk || 'без номера'), h('span', {title: t.named ? null : 'русского названия в таблице нет — тема треда'}, t.name)]),
-    h('div', {class: 'lv-c', 'data-l': 'Состояние'}, h('span', {class: 'badge ' + LV_BADGE[t.state], 'data-f': 'state'}, LV_TXT[t.state])),
-    h('div', {class: 'lv-c', 'data-l': 'Кто', 'data-f': 'role'}, t.chain.length ? t.chain.join(' → ') : '—'),
-    h('div', {class: 'lv-c', 'data-l': 'Начато', 'data-f': 'start'}, t.started_ts ? [g4(t.started_ts), h('small', {}, run ? 'идёт ' + dur(now - t.started_ts) : dur(now - t.started_ts) + ' назад')] : '—'),
-    h('div', {class: 'lv-c', 'data-l': 'Закончено', 'data-f': 'end'}, !run && t.end_ts ? lvAge(t.end_ts, now) : '—')]);
-}
-function unitRow(u, now) {
-  return h('div', {class: 'lv-row', 'data-unit': u.name, 'data-state': u.state}, [
-    h('div', {class: 'lv-c lv-name'}, h('span', {}, u.name)),
-    h('div', {class: 'lv-c', 'data-l': 'Состояние'}, h('span', {class: 'badge ' + LV_BADGE[u.state], 'data-f': 'state'}, u.state === 'done' ? 'завершён' : LV_TXT[u.state])),
-    h('div', {class: 'lv-c', 'data-l': 'Запущен', 'data-f': 'since'}, u.since_ts ? [g4(u.since_ts), h('small', {}, u.state === 'run' ? 'идёт ' + dur(now - u.since_ts) : dur(now - u.since_ts) + ' назад')] : '—'),
-    h('div', {class: 'lv-c', 'data-l': 'Завершён', 'data-f': 'end'}, u.end_ts ? lvAge(u.end_ts, now) : '—'),
-    h('div', {class: 'lv-c', 'data-l': 'Код возврата', 'data-f': 'rc'}, u.rc == null ? '—' : String(u.rc))]);
-}
-function lvHead(cols) { return h('div', {class: 'lv-head'}, cols.map(x => h('span', {}, x))); }
-function renderLive() {
-  const root = document.getElementById('live');
-  if (!root.childElementCount) {
-    root.append(h('div', {class: 'prog-h'}, [h('h2', {}, 'Прогресс'), h('span', {class: 'muted small', id: 'lv-sub'})]),
-      h('div', {class: 'lv-meta', id: 'lv-meta'}), h('div', {id: 'lv-warn'}),
-      h('h3', {class: 'lv-h3'}, 'Сейчас идёт'), lvHead(['Задача', 'Состояние', 'Кто', 'Начато', 'Закончено']), h('div', {id: 'lv-now'}),
-      h('h3', {class: 'lv-h3'}, 'Расчёты на сервере'), lvHead(['Юнит', 'Состояние', 'Запущен', 'Завершён', 'Код возврата']), h('div', {id: 'lv-units'}),
-      h('p', {class: 'lv-foot'}, 'Задачи — треды координатора, по строке на задачу (передаёт ПК раз в минуту), расчёты — юниты tk6* на srv. Страница перечитывает данные сама. Время — GMT+4.'));
-  }
-  const d = LV.data, now = Date.now() / 1000;
-  const warn = [], nw = d && d.now;
-  if (LV.err) warn.push(`Нет связи с сервером (попытка в ${g4(LV.tryAt / 1000)}): ${LV.err}.` + (d ? ` Показаны данные от ${g4(d.generated_ts)}.` : ''));
-  if (d && now - d.generated_ts > 180) warn.push(`Сборщик не обновлял данные ${dur(now - d.generated_ts)} — цифры ниже устарели.`);
-  if (nw && !nw.ok) warn.push('Список задач ещё не получен: ПК не передал файл.');
-  else if (nw && now - nw.pushed_ts > 300) warn.push(`Список задач не обновлялся ${dur(now - nw.pushed_ts)} (последняя передача в ${g4(nw.pushed_ts)}) — ПК не передаёт данные.`);
-  if (d && d.units_ok === false) warn.push('Сборщик не смог прочитать список юнитов (systemctl) — расчёты на сервере показаны неполно.');
-  document.getElementById('lv-warn').replaceChildren(...warn.map(w => h('div', {class: 'lv-warn'}, w)));
-  document.getElementById('lv-sub').textContent = d ? `данные от ${g4(d.generated_ts)} GMT+4 · ${dur(now - d.generated_ts)} назад · обновление раз в 60 с` : 'загрузка…';
-  const meta = document.getElementById('lv-meta'), ho = d && d.host, so = ho && ho.sofia;
-  const hostLine = (lbl, x, f) => !x ? [] : [
-    x.load ? h('span', {'data-f': f + '-load'}, `${lbl}: загрузка ${x.load.map(v => num(v, 1)).join(' / ')} (ядер ${x.cpus})`) : null,
-    x.disk ? h('span', {'data-f': f + '-disk'}, `на / свободно ${num(x.disk.free_gb, 1)} ГБ из ${num(x.disk.total_gb, 0)} (занято ${num(x.disk.used_pct, 0)} %)`) : null].filter(Boolean);
-  meta.replaceChildren(...(ho ? [h('div', {class: 'lv-hl'}, hostLine('srv', ho, 'srv')),
-    h('div', {class: 'lv-hl'}, so && so.ok ? hostLine('София', so, 'sofia') : [h('span', {'data-f': 'sofia-load'}, 'София: нет данных' + (so && so.err ? ' (' + so.err + ')' : ''))]),
-    ho.builds ? h('div', {class: 'lv-hl'}, h('span', {'data-f': 'builds'}, 'Сборки: ' + ho.builds.text)) : null].filter(Boolean) : []));
-  const empty = txt => h('div', {class: 'lv-empty', 'data-f': 'empty'}, txt);
-  const th = nw ? nw.tasks : [];
-  document.getElementById('lv-now').replaceChildren(...(!d ? [] : th.length ? th.map(t => nowRow(t, now)) : [empty(nw && nw.ok ? 'Сейчас никто не работает.' : 'Нет данных.')]));
-  const un = d ? d.units : [];
-  document.getElementById('lv-units').replaceChildren(...(!d ? [] : un.length ? un.map(u => unitRow(u, now)) : [empty('Расчётов (юнитов tk6*) на сервере сейчас нет.')]));
-}
-async function loadLive() {
-  if (LV.busy) return;
-  LV.busy = true; LV.tryAt = Date.now();
-  try {
-    const r = await fetch('data/tasks.json?_=' + Date.now(), {cache: 'no-store'});
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    LV.data = await r.json(); LV.err = null; LV.okAt = Date.now();
-  } catch (e) { LV.err = String(e.message || e); }
-  LV.busy = false;
-  if (ST.tab === 'live') renderLive();
-}
-function liveStart() {
-  renderLive();
-  if (!LV.okAt || Date.now() - LV.okAt > 5000) loadLive();
-  if (!LV.timer) LV.timer = setInterval(() => { if (!document.hidden) loadLive(); }, LV_MS);
-}
-function liveStop() { clearInterval(LV.timer); LV.timer = null; }
-document.addEventListener('visibilitychange', () => { if (!document.hidden && ST.tab === 'live' && Date.now() - LV.tryAt > 50000) loadLive(); });
-
-// ── вкладки верхнего уровня: хеш #live | #progress | #targets | #equity[/short|long|both][/shape | /comp][/dep=N] | #features[/<набор>[/<№>]] | #model[/long|short]
-const TABS = [['live', 'Прогресс'], ['progress', 'Ход работ'], ['targets', 'Цели TK-598'], ['equity', 'Эквити'], ['features', 'Признаки'], ['model', 'Модель TK-592']];
-const ST = {tab: 'live', ft: null, fn: null, eq: 'short', view: 'curve', model: 'long', cmp: false, dep: EQ_DEP0};
+/*__FANJS__*/
+// ── вкладки верхнего уровня: хеш #targets | #equity[/short|long|both[/<лонг>/<шорт>]] (TK-684: id варианта, токен клетки веера или «-») | #equity/fan/<short|long>/<параметры веера> (+ /f=<избранное через точку>) | #features[/<набор>[/<№>]]; всё прочее — «Эквити»
+const TABS = [['targets', 'Цели TK-598'], ['equity', 'Эквити'], ['features', 'Признаки']];
+const ST = {tab: 'equity', ft: null, fn: null, eq: 'short', view: 'var', vl: V.default.long, vs: V.default.short, fan: FAN_DEF(), fav: []};
 function parseHash() {
   const [a, b, c, d] = location.hash.replace(/^#/, '').split('/');
-  if (a === 'long' || a === 'short') { ST.tab = 'model'; ST.model = a; return; }
-  if (TABS.some(t => t[0] === a)) ST.tab = a;
+  ST.tab = TABS.some(t => t[0] === a) ? a : 'equity';
   ST.ft = a === 'features' && FEAT.sets.some(s => s.id === b) ? b : null;
   ST.fn = ST.ft && FT_BY_N.get(+c) === ST.ft ? +c : null;      // TK-678: #features/<набор>/<№> — строка признака
-  if (a === 'equity') {
-    if (EQ_SIDES.some(s => s[0] === b)) ST.eq = b;
-    const rest = [b, c, d];
-    ST.view = rest.includes('shape') ? 'shape' : rest.includes('bases') ? 'bases' : rest.includes('where') ? 'where' : 'curve';
-    ST.cmp = rest.includes('comp');
-    const dm = rest.map(x => /^dep=(\d+(?:\.\d+)?)$/.exec(x || '')).find(Boolean);
-    ST.dep = dm && +dm[1] >= 100 && +dm[1] <= 1e9 ? +dm[1] : EQ_DEP0;
-  }
-  if (a === 'model' && (b === 'long' || b === 'short')) ST.model = b;
+  // TK-684: прежние ссылки (#equity/<сторона>/where|bases|shape|curve|comp, #live, #progress, #model) открывают «Варианты» с базами
+  const eqv = a === 'equity', seg = location.hash.split('/'), fv = eqv && seg.find(x => x.startsWith('f='));
+  if (eqv) ST.fav = fv ? [...new Set(fv.slice(2).split('.').filter(x => FAN_TOK.test(x)))] : [];
+  ST.view = eqv && b === 'fan' ? 'fan' : 'var';
+  if (ST.view === 'fan') { ST.eq = c === 'long' ? 'long' : 'short'; ST.fan = fanParse(d && !d.startsWith('f=') ? d : ''); return; }
+  const pick = (x, s) => x === '-' ? null : (V_BY.has(x) && V_BY.get(x).side === s) || (FAN_TOK.test(x || '') && x[0] === (s === 'long' ? 'L' : 'S')) ? x : V.default[s];
+  ST.eq = eqv && EQ_SIDES.some(s => s[0] === b) ? b : 'short';
+  ST.vl = pick(eqv ? c : null, 'long'); ST.vs = pick(eqv ? d : null, 'short');
 }
-function setHash() { history.replaceState(null, '', '#' + ST.tab + (ST.tab === 'equity' ? '/' + ST.eq + (ST.view === 'shape' ? '/shape' : ST.view === 'bases' ? '/bases' : ST.view === 'where' ? '/where' : (ST.cmp ? '/comp' : '') + (ST.dep !== EQ_DEP0 ? '/dep=' + ST.dep : '')) : ST.tab === 'model' ? '/' + ST.model : ST.tab === 'features' && ST.ft ? '/' + ST.ft + (ST.fn ? '/' + ST.fn : '') : '')); }
+function setHash() {
+  const eq = ST.view === 'fan' ? '/fan/' + ST.eq + '/' + fanHash() : '/' + ST.eq + '/' + (ST.vl || '-') + '/' + (ST.vs || '-');
+  history.replaceState(null, '', '#' + ST.tab + (ST.tab === 'equity' ? eq + (ST.fav.length ? '/f=' + ST.fav.join('.') : '') : ST.tab === 'features' && ST.ft ? '/' + ST.ft + (ST.fn ? '/' + ST.fn : '') : ''));
+}
 function route() {
   TABS.forEach(([k]) => { document.getElementById('pane-' + k).hidden = k !== ST.tab; });
   document.querySelectorAll('#toptabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === ST.tab));
-  if (ST.tab === 'live') liveStart(); else liveStop();
   if (ST.tab === 'equity') renderEquity();
-  if (ST.tab === 'model') select(ST.model);
   if (ST.tab === 'features') { renderFeatures(); if (ST.ft) setTimeout(ftGo, 0); }
   setHash();
 }
@@ -1292,67 +520,10 @@ function initTabs() {
   let rt, lastW = innerWidth; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (innerWidth !== lastW) { lastW = innerWidth; if (ST.tab === 'equity') renderEquity(); } }, 150); });
 }
 
-// ── сборка страницы
-const SECTIONS = [
-  ['roc', 'ROC-кривые', 'Как хорошо оценка отделяет эпизоды с пробоем от остальных на проверочной половине: чем выше кривая над диагональю, тем лучше.', (c) => rocChart(c)],
-  ['lift', 'Доля пробоев по децилям оценки', 'Проверочная половина, поделённая по оценке CB3 на 10 равных групп: столбец — доля пробоев в группе, чёрточка — доля в контроле у тех же эпизодов.', (c) => decileChart(c)],
-  ['calib', 'Калибровка', 'Совпадает ли предсказанная вероятность с наблюдаемой долей пробоев: точки на пунктире — совпадает.', (c) => calibChart(c)],
-  ['imp', 'Важность признаков и взаимодействия', 'Какие из 12 признаков держат оценку CB3 и какие пары признаков дают ей взаимодействие.', (c, cell) => importance(c, cell)],
-  ['lc', 'Кривая обучения', 'Logloss CB3 на обучающей и на проверочной половине по числу деревьев; вертикаль — выбранное число итераций.', (c) => lcChart(c)],
-  ['over', 'Переобучение', 'AUC CB3 на обучающей половине (в выборке), на пяти блоках суток ранней остановки и на проверочной половине; разрыв «в выборке − проверка» по трём моделям.', (c) => overfitChart(c)],
-  ['strata-day', 'Устойчивость по суткам', 'AUC на проверке и ΔAUC (CB3 − логистика) по каждым суткам проверочной половины; серые — меньше 300 эпизодов.', (c) => strataFor(c, 'day')],
-  ['strata-turn', 'Страты по обороту', 'AUC и ΔAUC по трети суточного оборота в USDT (границы терцилей — с обучающей половины); серые — меньше 300 эпизодов.', (c) => strataFor(c, 'lturn24')],
-  ['strata-natr', 'Страты по NATR', 'AUC и ΔAUC по трети NATR (границы терцилей — с обучающей половины); серые — меньше 300 эпизодов.', (c) => strataFor(c, 'natr_bp')],
-  ['strata-age', 'Страты по возрасту уровня', 'AUC и ΔAUC по трети возраста уровня (границы терцилей — с обучающей половины); серые — меньше 300 эпизодов.', (c) => strataFor(c, 'age_h')]
-];
-const NAV = [['sum', 'Сводка'], ['roc', 'ROC'], ['lift', 'Децили'], ['calib', 'Калибровка'], ['imp', 'Важность'], ['lc', 'Кривая обучения'], ['over', 'Переобучение'], ['strata-day', 'Страты'], ['u1r', 'Пул U1r']];
-
-function section(id, title, desc, first) {
-  return h('section', {id: 'sec-' + id, class: first ? 'first' : ''}, [h('h2', {}, title), h('p', {class: 'desc'}, desc)]);
-}
-function render(side) {
-  const view = document.getElementById('view');
-  view.replaceChildren();
-  const sum = section('sum', 'Сводка', 'AUC четырёх моделей на проверочной половине, разница CB3 − логистика с интервалом по монетам против порога +0,02 и итог по критериям (а) и (б).', true);
-  sum.append(summary(side));
-  view.append(sum);
-  SECTIONS.forEach(([id, title, desc, fn_]) => {
-    const s = section(id, title, desc);
-    const grid = h('div', {class: 'grid2'});
-    ['A->B', 'B->A'].forEach(dk => {
-      const cell = D.sides[side].dirs[dk];
-      const card = h('div', {class: 'card', 'data-dir': dk});
-      card.append(h('div', {class: 'card-h'}, [h('b', {}, dk.replace('->', ' → ')), h('span', {}, `обучение ${cell.train_half} · проверка ${cell.val_half}`)]));
-      card.append(h('div', {class: 'card-b'}, fn_(cell, cell)));
-      grid.append(card);
-    });
-    s.append(grid);
-    view.append(s);
-  });
-  const u = section('u1r', 'Пул U1r', 'Тот же ряд AUC на эпизодах проверочной половины, где включён пул (U1r); число эпизодов и пробоев — рядом.');
-  u.append(u1rCard(side));
-  view.append(u);
-}
 function init() {
-  renderProgress();
-  const m = D.meta;
-  document.getElementById('sub').textContent = `Пул U0, метка «пробой» (O3, 60 мин). Половины: A — сутки ${m.halfA[0]}…${m.halfA[1]}, B — сутки ${m.halfB[0]}…${m.halfB[1]}; сутки ${m.embargo_day} исключены. Признаков ${m.core_n}. Каждое направление — обучение на одной половине, проверка на другой.`;
-  const tabs = document.getElementById('tabs');
-  Object.keys(D.sides).forEach(side => {
-    const b = h('button', {role: 'tab', 'data-side': side, 'aria-selected': 'false'}, SIDE[side]);
-    b.onclick = () => select(side);
-    tabs.append(b);
-  });
-  const nav = document.getElementById('nav');
-  NAV.forEach(([id, t]) => { const b = h('button', {}, t); b.onclick = () => document.getElementById('sec-' + id).scrollIntoView(); nav.append(b); });
+  renderTargets();
   initEquity();
   initTabs();
-}
-function select(side) {
-  document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.side === side));
-  ST.model = side;
-  render(side);
-  setHash();
 }
 init();
 </script>
