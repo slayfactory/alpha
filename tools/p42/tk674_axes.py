@@ -66,6 +66,24 @@ if os.environ.get("TK674_SPLITW") == "1":       # поправка §13.73.10 (�
         SPLIT_NB[fam + "w90"] = (fam + "w80",)
 
 
+if os.environ.get("TK674_SPLIT67") == "1":      # поправка §13.73.19 (PS-977, В-177): доля части B 67 % (первая заявка — треть объёма) в обоих семействах; соседи плато по w2: 25 · 50 · 67 · 75 [· 80 · 90]
+    _fam = (("e2", dict(e2=0.05, e2t=0)), ("t1", dict(e2=0, e2t=1)))
+    for fam, kw in _fam:
+        SPLIT_VALS["%sw67" % fam] = dict(kw, w2=67, s2=0)
+    _extra = {k: SPLIT_NB[k] for k in ("off", "t2w50", "t3w50", "t1w50s2")}
+    _ord = ["off"]
+    for fam, _ in _fam:
+        _chain = sorted((v for v in SPLIT_VALS if v.startswith(fam + "w") and v != fam + "w50s2"), key=lambda v: int(v[len(fam) + 1:]))
+        _ord += _chain
+        for i, v in enumerate(_chain):
+            SPLIT_NB[v] = tuple(_chain[j] for j in (i - 1, i + 1) if 0 <= j < len(_chain))
+        _mid = fam + "w50"
+        SPLIT_NB[_mid] = SPLIT_NB[_mid] + (("off",) if fam == "e2" else ("t2w50", "t1w50s2", "off"))
+    _ord += ["t2w50", "t3w50", "t1w50s2"]
+    SPLIT_VALS = {k: SPLIT_VALS[k] for k in _ord}
+    SPLIT_NB.update(_extra)
+
+
 def nb_idx(name, vals, i):
     """Индексы соседей значения i оси на шаг (плато (г)): у обычной оси — i ± 1, у составной оси split — по SPLIT_NB."""
     if name == "split":
