@@ -928,7 +928,7 @@ def cmd_spot(a):
         os.makedirs(out, exist_ok=True)
         r5.tick(u, w, [(c["cid"], line)], out, one_side_env(side), t.q("log", "spot677-%s.log" % kind), ftab=t.q("ftab674", "%s-%s.csv" % (w.name, side)) if c["filt"] else None)
         old = os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm, c["cid"])
-        diff = [f for f in CMP_FILES if not filecmp.cmp(os.path.join(old, f), os.path.join(out, c["cid"], f), shallow=False)]
+        diff = [f for f in CMP_FILES if not filecmp.cmp(os.path.join(old, "%s-%s" % (SIDENAME[side], f)), os.path.join(out, c["cid"], "%s-%s" % (SIDENAME[side], f)), shallow=False)]
         say("spot %s %s: %s" % (kind, c["cid"], "байт в байт" if not diff else "РАЗЛИЧИЯ " + ", ".join(diff)))
         bad += diff
     if bad or len(picks) < 3:
