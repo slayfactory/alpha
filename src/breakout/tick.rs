@@ -65,6 +65,11 @@ pub struct Tick {
 /// Источник сделок: сутки монеты (0 = 01.09) по времени; `None` — файла нет.
 pub trait TradeSrc: Sync {
     fn day(&self, sym: &str, day: usize) -> Option<Arc<Vec<Tick>>>;
+
+    /// TK-683: ступени НОД цен суток (для `tick_at`); источник с памятью считает их один раз на сутки за запуск.
+    fn gcd_steps(&self, sym: &str, day: usize) -> Option<Arc<GcdSteps>> {
+        self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v)))
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -281,6 +286,8 @@ fn parse_rows(
     Ok(v)
 }
 
+type GcdMap = HashMap<(String, usize), Option<Arc<GcdSteps>>>;
+
 struct Lru {
     map: HashMap<(String, usize), Option<Arc<Vec<Tick>>>>,
     order: VecDeque<(String, usize)>,
@@ -299,6 +306,8 @@ pub struct ZipSrc {
     dir: PathBuf,
     cap_bytes: usize,
     lru: Mutex<Lru>,
+    /// TK-683: ступени НОД суток — на весь запуск (десятки байт на сутки), вытеснение суток из `lru` их не трогает.
+    gcds: Mutex<GcdMap>,
     pub stat: Mutex<LoadStat>,
     /// TK-607 (L1): склад разобранных суток; без него — прежний путь (`unzip` + CSV).
     store: Option<Arc<TickStore>>,
@@ -314,6 +323,7 @@ impl ZipSrc {
                 order: VecDeque::new(),
                 bytes: 0,
             }),
+            gcds: Mutex::new(HashMap::new()),
             stat: Mutex::new(LoadStat::default()),
             store: None,
         }
@@ -458,6 +468,20 @@ impl TradeSrc for ZipSrc {
             }
         }
         loaded
+    }
+
+    fn gcd_steps(&self, sym: &str, day: usize) -> Option<Arc<GcdSteps>> {
+        let key = (sym.to_string(), day);
+        if let Ok(g) = self.gcds.lock() {
+            if let Some(v) = g.get(&key) {
+                return v.clone();
+            }
+        }
+        let steps = self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v)));
+        if let Ok(mut g) = self.gcds.lock() {
+            g.insert(key, steps.clone());
+        }
+        steps
     }
 }
 
@@ -2119,6 +2143,61 @@ impl PxGcd {
     }
 }
 
+/// TK-683: НОД каждого начала суток без повторного прохода по сделкам. НОД разностей к первой цене при добавлении сделок только
+/// делится, поэтому меняется считаные разы: хранятся ступени (число сделок, после которого НОД стал таким; НОД).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GcdSteps {
+    p0: i64,
+    n: usize,
+    steps: Vec<(usize, i64)>,
+}
+
+impl GcdSteps {
+    pub fn of(ticks: &[Tick]) -> GcdSteps {
+        let Some(first) = ticks.first() else {
+            return GcdSteps::default();
+        };
+        let mut g = 0;
+        let mut steps = Vec::new();
+        for (i, t) in ticks.iter().enumerate() {
+            if g != 1 {
+                let d = (t.px - first.px).abs();
+                // d кратно g — НОД прежний (частый случай: одно деление вместо цикла)
+                if g == 0 || d % g != 0 {
+                    g = gcd(g, d);
+                    if g != 0 {
+                        steps.push((i + 1, g));
+                    }
+                }
+            }
+        }
+        GcdSteps {
+            p0: first.px,
+            n: ticks.len(),
+            steps,
+        }
+    }
+
+    /// То же, что `PxGcd::of(&ticks[..k])`.
+    pub fn prefix(&self, k: usize) -> PxGcd {
+        let k = k.min(self.n);
+        if k == 0 {
+            return PxGcd::default();
+        }
+        let i = self.steps.partition_point(|s| s.0 <= k);
+        PxGcd {
+            g: if i == 0 { 0 } else { self.steps[i - 1].1 },
+            p0: self.p0,
+            n: k,
+        }
+    }
+
+    /// То же, что `PxGcd::of(ticks)`.
+    pub fn full(&self) -> PxGcd {
+        self.prefix(self.n)
+    }
+}
+
 /// §13.28: тик монеты на момент `t` — НОД разностей цен сделок строго до `t` за предыдущие `MK_TICK_DAYS` суток и сутки `t` до `t`;
 /// окно меньше `MK_MIN_TRADES` сделок — последнее более раннее окно (то же правило, закончившееся сутками раньше), в котором тик определён.
 /// Сделок позже `t` не читает. `cache` — НОД полных суток монеты (ключ — номер монеты и сутки).
@@ -2131,13 +2210,16 @@ pub fn tick_at(
 ) -> Option<i64> {
     let day = t.div_euclid(DAY_MS) as usize;
     let mut full = |d: usize| -> PxGcd {
-        *cache
-            .entry((sym_i, d))
-            .or_insert_with(|| src.day(name, d).map_or(PxGcd::default(), |v| PxGcd::of(&v)))
+        *cache.entry((sym_i, d)).or_insert_with(|| {
+            src.gcd_steps(name, d)
+                .map_or(PxGcd::default(), |s| s.full())
+        })
     };
     let part = src.day(name, day).map_or(PxGcd::default(), |v| {
         let off = t - day as i64 * DAY_MS;
-        PxGcd::of(&v[..v.partition_point(|x| i64::from(x.off) < off)])
+        let k = v.partition_point(|x| i64::from(x.off) < off);
+        src.gcd_steps(name, day)
+            .map_or(PxGcd::default(), |s| s.prefix(k))
     });
     let mut w = part;
     for d in day.saturating_sub(MK_TICK_DAYS)..day {
@@ -2344,6 +2426,65 @@ pub fn lot2_decision_mk_d(
         }
     }
     Lot2Dec::Cancel
+}
+
+/// TK-688 (`e1t`): вся ставка одной лимитной заявкой в `|ticks|` тиков от уровня; `ticks` со знаком: > 0 — со стороны подхода (лимит `L − ticks·тик`
+/// в раме), < 0 — за уровнем (лимит `L + |ticks|·тик`). Заявка встаёт в `сигнал + lat` и живёт до конца минуты этого момента (как `mk`); допуск по
+/// ленте и тик — как у `mk_order` (`Stale` / `Beyond` / `NoTick`). Цена — уровень, округлённый вниз на сетку заменителя (как mk2), минус `ticks·тик`.
+/// В книге заявка стоит, только пока рынок не ниже лимита (зона как у `e2t`: `p ≥ L − N·тик`; лимитная покупка выше рынка исполнилась бы сразу
+/// как тейкер — мейкером она не была бы): последняя сделка стороны ≥ лимита — со времени постановки, иначе — с первой сделки `p ≥ лимит` плюс `lat`.
+/// Заполняет первая сделка строго позже этого момента строго ниже лимита (сделка на цене лимита — очередь впереди — не заполняет), по цене лимита.
+/// Со стороны подхода сделка `p ≥ L` до заполнения снимает заявку (`Touched`; последняя сделка стороны ≥ L при постановке — тоже); за уровнем снятия
+/// касанием нет: заявка встаёт после пробоя на `|ticks|` тиков и заполняется возвратом цены ниже лимита (ретест), как mk2 со сдвигом.
+pub fn e1_decision(
+    src: &dyn TradeSrc,
+    sym: &Sym,
+    side: Side,
+    sig: &TSig,
+    ex: &ExitCfg,
+    ticks: i64,
+    tick_of: &mut dyn FnMut(i64) -> Option<i64>,
+) -> EntryDec {
+    let t = sig.ms + ex.lat_ms;
+    let day = usize::from(sig.day);
+    let p_sur = match entry_at(src, sym, side, day, t, sig.lp, ex) {
+        EntryDec::Fill { p0, .. } => p0,
+        other => return other,
+    };
+    let Some(tick) = tick_of(t) else {
+        return EntryDec::Reject(EntryRej::NoTick);
+    };
+    let approach = ticks > 0;
+    if approach && p_sur >= sig.lp {
+        return EntryDec::Reject(EntryRej::Touched);
+    }
+    let limit = p_sur + (sig.lp - p_sur).div_euclid(tick) * tick - ticks * tick;
+    let until = minute_end(t);
+    let mut live_from = if p_sur >= limit { t } else { NONE_MS };
+    let s = side.s();
+    let mut cur = Cursor::new(src, &sym.name, day, sig.idx as usize + 1);
+    while let Some((ms, px, _)) = cur.next_tick() {
+        if ms <= t {
+            continue;
+        }
+        if ms >= until {
+            break;
+        }
+        let p = s * px;
+        if approach && p >= sig.lp {
+            return EntryDec::Reject(EntryRej::Touched);
+        }
+        if live_from == NONE_MS {
+            if p >= limit {
+                live_from = ms + ex.lat_ms;
+            }
+            continue;
+        }
+        if ms > live_from && p < limit {
+            return EntryDec::Fill { ms, p0: limit };
+        }
+    }
+    EntryDec::Reject(EntryRej::Unfilled)
 }
 
 /// Вход прежней модели для сигнала (§13.2 п. 2): (время, цена ×1e8 без проскальзывания) первой сделки стороны со временем
@@ -2655,7 +2796,8 @@ pub fn run_tick_xb(
         floor: [0; 2],
         prio: [0; 6],
     };
-    let maker = mk > 0;
+    // TK-688 (`e1t`): вход одной лимитной заявкой — мейкер (комиссия, проскальзывание 0, счётчики заявок), как у `mk`
+    let maker = mk > 0 || ex.e1t != 0;
     let entry_slip = if maker { 0 } else { ex.slip_bps };
     let mut tick_cache: HashMap<(u16, usize), PxGcd> = HashMap::new();
     let mut busy = vec![false; ns];
@@ -2802,7 +2944,10 @@ pub fn run_tick_xb(
         let mut ek_end: Option<i64> = None;
         let mut xb_end: Option<i64> = None;
         let tr = if natr > 0 {
-            dec = if maker {
+            dec = if ex.e1t != 0 {
+                let mut tick_of = |t: i64| tick_at(src, &sym.name, sg.sym, t, &mut tick_cache);
+                e1_decision(src, sym, side, sg, ex, ex.e1t, &mut tick_of)
+            } else if maker {
                 let mut tick_of = |t: i64| tick_at(src, &sym.name, sg.sym, t, &mut tick_cache);
                 mk_decision(src, sym, side, sg, ex, mk, &mut tick_of)
             } else if ek > 0 {
