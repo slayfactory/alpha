@@ -88,6 +88,21 @@ fn write_entry_rej(dir: &Path, syms: &[Sym], side: Side, r: &TickResult) -> Resu
     Ok(())
 }
 
+/// TK-676 (`vf > 0`): расстояние стопа от волатильности по сделкам — `<side>-vstop.csv`: `vd_pm` — тысячные процента цены входа (−1 — нет значения источника,
+/// остался жёсткий `s`), `natr_e8` — NATR выхода на сигнале (для отношения стоп / тейк).
+fn write_vstop(dir: &Path, syms: &[Sym], side: Side, r: &TickResult) -> Result<()> {
+    let mut t = String::from("sym,level,sig_ms,vd_pm,natr_e8\n");
+    for x in &r.trades {
+        let _ = writeln!(
+            t,
+            "{},{},{},{},{}",
+            syms[x.sym as usize].name, x.level, x.sig_ms, x.vd_pm, x.natr_e8
+        );
+    }
+    fs::write(dir.join(format!("{}-vstop.csv", side.name())), t)?;
+    Ok(())
+}
+
 /// §13.28 (`mk > 0`): счётчики заявок мейкера — `<side>-maker.json`: лот 1 (заполнено, не заполнено, снято уровнем, заявок = сумма), число отказов
 /// `notick` и лот 2 (`e2`: сразу, позже, отменён, отказ — как `lot2_[…]` в `meta.json`).
 fn write_maker(dir: &Path, side: Side, r: &TickResult) -> Result<()> {
@@ -648,6 +663,9 @@ pub fn run(
             }
             if p.mk > 0 {
                 write_maker(&dir, side, &r)?;
+            }
+            if p.exit.vf > 0 {
+                write_vstop(&dir, &syms, side, &r)?;
             }
             if let Some(v) = std::env::var_os("P42_SIGS") {
                 let v = v.to_string_lossy().into_owned();

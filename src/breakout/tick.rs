@@ -18,6 +18,7 @@ use super::params::{ExitCfg, LevelCfg, PortCfg, SigCfg};
 use super::portfolio::Settled;
 use super::store::{DayHead, DayTrades, QtyRaw, SrcMeta, TickStore};
 use super::trade::{frac, ExitKind, NOTIONAL_U};
+use super::volstop;
 use super::Side;
 use crate::lob::costs::leg_fee_bps;
 use anyhow::{bail, Context, Result};
@@ -921,6 +922,14 @@ pub struct LevelCtx {
     pub far: i64,
     /// §13.31 (`cw`): диапазон (минимум low, максимум high; длинная рама) закрытых минут `t−W … t−1` до сигнальной; `None` — не включено или данных меньше половины окна.
     pub rng: Option<(i64, i64)>,
+    /// TK-676 (`vf`): волатильность стопа `V` и режимная `V_z` на закрытой минутке `t−1` (доля цены ×1e8, −1 — нет значения или `vf = 0`).
+    pub vol: i64,
+    pub volz: i64,
+}
+
+/// TK-676: значение источника волатильности `src` (коды `vs`) на закрытой минутке `t−1` сигнала в минуту `t`; −1 — нет значения.
+fn vol_at(sym: &Sym, src: u8, t: usize) -> i64 {
+    sym.vol_for(src).map_or(-1, |v| i64::from(v[t - 1]))
 }
 
 /// §13.31: диапазон проторговки — минимум low и максимум high (длинная рама, `s` — сторона) закрытых минут `t−w … t−1` с данными; минуты без данных пропускаются;
@@ -952,6 +961,16 @@ pub fn level_ctx(sym: &Sym, side: Side, sg: &TSig, ex: &ExitCfg) -> LevelCtx {
         lp: sg.lp,
         far: sg.far,
         rng: cons_range(sym, side.s(), sg.t as usize, ex.cs_w as usize),
+        vol: if ex.vf != 0 {
+            vol_at(sym, ex.vs, sg.t as usize)
+        } else {
+            -1
+        },
+        volz: if ex.vz != 0 {
+            vol_at(sym, ex.vz, sg.t as usize)
+        } else {
+            -1
+        },
     }
 }
 
@@ -1090,6 +1109,10 @@ impl Pos {
             if ex.be_mode == 3 {
                 let kb = if ex.ls_m > 0 { ex.ls_m } else { 500 };
                 be_lvl = Some(e.min(l.far) - nat(kb));
+            }
+            // TK-676 (`vf`): стоп от волатильности — расстояние заморожено на входе; «самый плотный» вместе с `s`, `ls`, `sl`, `cw`
+            if let Some(d_pm) = volstop::stop_pm(ex, l.vol, l.volz) {
+                stop_base = stop_base.max(e - frac(ea, d_pm, 100_000));
             }
         }
         let rules =
@@ -2321,6 +2344,8 @@ pub struct TickTrade {
     pub kind1: ExitKind,
     /// v22 (`tl`): приказ трейла лота 1 — (мс срабатывания, настоящая цена ×1e8); `None` — приказа не было.
     pub tl: Option<(i64, i64)>,
+    /// TK-676 (`vf`): расстояние стопа от волатильности, тысячные процента цены входа; −1 — стопа нет или нет значения источника (остался жёсткий `s`).
+    pub vd_pm: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -2712,6 +2737,7 @@ pub fn run_tick_xb(
             kind1: tr.kind,
             tl: tr.tl,
             lot2: tr2,
+            vd_pm: volstop::stop_pm(ex, lc.vol, lc.volz).unwrap_or(-1),
         });
     }
     res

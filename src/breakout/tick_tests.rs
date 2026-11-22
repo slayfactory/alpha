@@ -1597,6 +1597,8 @@ fn run_lc(
         lp: s * px(lp),
         far: s * px(far),
         rng: None,
+        vol: -1,
+        volz: -1,
     };
     sim_fill_lc(
         &mut stream(ticks),
@@ -3691,6 +3693,8 @@ fn run_rng(
         lp: s * px(lp),
         far: s * px(lp),
         rng,
+        vol: -1,
+        volz: -1,
     };
     sim_fill_lc(
         &mut stream(ticks),

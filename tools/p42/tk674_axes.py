@@ -17,7 +17,8 @@ DEFAULTS = {"tf": 60, "k": 2, "d": 0.5, "n_bounce": 2, "tau": 0.2, "l_days": 7, 
             "natr_exit_p": 30, "n_tp": 8, "t_low": 1, "t_high": 5, "q": 50, "be": 1, "a": 2, "rr": 2, "s": 5, "slip": 1, "best": 0, "lat": 0, "latx": 0,
             "tpg": 1, "tpk": 0, "ns": 0, "ew": 0, "ex": 0, "ls": 0, "tt": 0, "tb": 0, "rf": 0, "rs": 0, "bm": 0, "e2": 0, "sn": 0, "sg": 0, "sb": 0,
             "sr": 0, "sd": 0, "tj": 0, "tl": 0, "nx": 0, "sl": 0, "cw": 0, "cl": 0, "ch": 0, "cm": 0, "tu": 0, "tpp": 0, "trp": 0, "c": 5, "m": 3,
-            "mm": 60, "s_glob": 4, "w": 10, "ww": 60, "p": 3, "reentry": 0, "busy": 1, "mk": 0, "ek": 0}
+            "mm": 60, "s_glob": 4, "w": 10, "ww": 60, "p": 3, "reentry": 0, "busy": 1, "mk": 0, "ek": 0,
+            "vf": 0, "vs": 0, "va": 0, "vb": 0, "vp": 0, "v0": 0, "vm": 0.5, "vz": 0, "vr": 0}
 FILT_KEYS = ("fa", "fo", "fv")
 # ключи, меняющие проход сигналов (SigCfg); остальные — только выход / портфель, клетка идёт на готовом проходе
 SIG_KEYS = ("k", "tf", "n_bounce", "d", "l_days", "lx", "natr_min", "t1h", "t24", "e")
