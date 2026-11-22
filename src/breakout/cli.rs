@@ -336,6 +336,9 @@ pub(super) fn reject_tick_only(p: &Params, line: &str) -> Result<()> {
     if p.exit.natr_stop_opts() {
         bail!("sn/sg/sb/sr/sd/tj (§13.21) считает только `breakout tick`: {line}");
     }
+    if p.exit.vf != 0 {
+        bail!("vf/vs/va/vb/vp/v0/vm/vz/vr (TK-676, стоп от волатильности) считает только `breakout tick`: {line}");
+    }
     if p.exit.tl != 0 {
         bail!("tl (v22, трейл лимиткой) считает только `breakout tick`: {line}");
     }
@@ -353,6 +356,9 @@ pub(super) fn reject_tick_only(p: &Params, line: &str) -> Result<()> {
     }
     if p.xb != 0 || p.sig.fg_m != 0 || p.exit.tpp || p.exit.trp {
         bail!("xb/fg/tpp/trp (TK-669) считает только `breakout tick`: {line}");
+    }
+    if p.sig.nf != 0 || p.sig.ev != 0 {
+        bail!("nf/ev/ea/el/eh (TK-681) считает только `breakout tick`: {line}");
     }
     Ok(())
 }

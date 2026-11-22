@@ -18,6 +18,7 @@ use super::params::{ExitCfg, LevelCfg, PortCfg, SigCfg};
 use super::portfolio::Settled;
 use super::store::{DayHead, DayTrades, QtyRaw, SrcMeta, TickStore};
 use super::trade::{frac, ExitKind, NOTIONAL_U};
+use super::volstop;
 use super::Side;
 use crate::lob::costs::leg_fee_bps;
 use anyhow::{bail, Context, Result};
@@ -590,7 +591,24 @@ pub fn candidates_fg(
     let Some(natr) = sym.natr_for(cfg.natr_p) else {
         return;
     };
-    let dmax = (cfg.e_pm * 1000).min(cfg.track_pm * 1000);
+    // TK-681 (`nf`): ряд фильтра живости — NATR `natr_p` или источник волатильности; (`ev`): ряд зоны входа
+    let live = if cfg.nf == 0 {
+        natr
+    } else {
+        let Some(v) = sym.vol_for(cfg.nf) else {
+            return;
+        };
+        v
+    };
+    let evol = if cfg.ev == 0 {
+        None
+    } else {
+        let Some(v) = sym.vol_for(cfg.ev) else {
+            return;
+        };
+        Some(v)
+    };
+    let dmax0 = (cfg.e_pm * 1000).min(cfg.track_pm * 1000);
     let natr_min = cfg.natr_min_pm * 1000;
     for (li, lv) in levels.iter().enumerate() {
         let end = (lv.end as usize).min(N_MIN);
@@ -617,9 +635,15 @@ pub fn candidates_fg(
             } else {
                 (-sym.l[t], -sym.h[t])
             };
-            if t >= START_MIN && !forbidden && lo < lp {
+            // зона входа минуты: постоянная или от волатильности закрытой минутки `t−1` (`ev`); нет значения — кандидата нет
+            let dmax = match evol {
+                None => Some(dmax0),
+                Some(v) if t > 0 => cfg.zone_e8(i64::from(v[t - 1])),
+                Some(_) => None,
+            };
+            if let (true, Some(dmax)) = (t >= START_MIN && !forbidden && lo < lp, dmax) {
                 let zone_lo = lp - mul_div(lp.abs(), dmax + 1, SCALE) as i64 - 1;
-                let nv = i64::from(natr[t - 1]);
+                let nv = i64::from(live[t - 1]);
                 if hi >= zone_lo
                     && nv >= 0
                     && nv >= natr_min
@@ -739,6 +763,16 @@ pub fn minute_range(ticks: &[Tick], t: usize) -> (usize, usize) {
     )
 }
 
+/// TK-681: зона входа (доля цены ×1e8) кандидата минуты `t` — `SigCfg::zone_e8` по закрытой минутке `t−1`.
+pub fn zone_at(sym: &Sym, cfg: &SigCfg, t: usize) -> Option<i64> {
+    let v = if cfg.ev == 0 || t == 0 {
+        -1
+    } else {
+        sym.vol_for(cfg.ev).map_or(-1, |v| i64::from(v[t - 1]))
+    };
+    cfg.zone_e8(v)
+}
+
 /// Сигналы одной монеты для всех заданий `(SigCfg, сторона)`: сделки каждых суток читаются один раз.
 pub fn signals_for_coin(
     sym: &Sym,
@@ -771,7 +805,8 @@ pub fn signals_for_coin(
         for (j, c) in list {
             let (cfg, side) = &jobs[j];
             let (from, to) = minute_range(&ticks, c.t as usize);
-            let dmax = (cfg.e_pm * 1000).min(cfg.track_pm * 1000);
+            // TK-681 (`ev`): зона — та же, что дала кандидата (волатильность закрытой минутки `t−1`)
+            let dmax = zone_at(sym, cfg, c.t as usize).unwrap_or(0);
             if let Some((k, dist)) = first_signal(&ticks, from, to, side.s(), c.lp, dmax, cfg.color)
             {
                 let mut ws = false;
@@ -868,6 +903,8 @@ pub struct TickOut {
     pub marks: Vec<(usize, i64)>,
     /// v22 (`tl`): выставленный лимитный приказ трейла — (мс срабатывания, настоящая цена ×1e8); `None` — приказа не было (`tl = 0` или трейл не срабатывал).
     pub tl: Option<(i64, i64)>,
+    /// TK-681 (`sm`): стоп от уровня (`sl`, `cw`) или порог `nx` на входе — [сдвинут нижним зажимом `sm`, прежний зажим `вход − 1e-8` сработал бы].
+    pub floor: [bool; 2],
 }
 
 /// Множитель ступени `i` лестницы тейков в тысячных NATR (§13.12): `t_low + (t_high − t_low)·(i/(n−1))^γ`; γ = 1 — прежняя
@@ -921,6 +958,14 @@ pub struct LevelCtx {
     pub far: i64,
     /// §13.31 (`cw`): диапазон (минимум low, максимум high; длинная рама) закрытых минут `t−W … t−1` до сигнальной; `None` — не включено или данных меньше половины окна.
     pub rng: Option<(i64, i64)>,
+    /// TK-676 (`vf`): волатильность стопа `V` и режимная `V_z` на закрытой минутке `t−1` (доля цены ×1e8, −1 — нет значения или `vf = 0`).
+    pub vol: i64,
+    pub volz: i64,
+}
+
+/// TK-676: значение источника волатильности `src` (коды `vs`) на закрытой минутке `t−1` сигнала в минуту `t`; −1 — нет значения.
+fn vol_at(sym: &Sym, src: u8, t: usize) -> i64 {
+    sym.vol_for(src).map_or(-1, |v| i64::from(v[t - 1]))
 }
 
 /// §13.31: диапазон проторговки — минимум low и максимум high (длинная рама, `s` — сторона) закрытых минут `t−w … t−1` с данными; минуты без данных пропускаются;
@@ -952,6 +997,16 @@ pub fn level_ctx(sym: &Sym, side: Side, sg: &TSig, ex: &ExitCfg) -> LevelCtx {
         lp: sg.lp,
         far: sg.far,
         rng: cons_range(sym, side.s(), sg.t as usize, ex.cs_w as usize),
+        vol: if ex.vf != 0 {
+            vol_at(sym, ex.vs, sg.t as usize)
+        } else {
+            -1
+        },
+        volz: if ex.vz != 0 {
+            vol_at(sym, ex.vz, sg.t as usize)
+        } else {
+            -1
+        },
     }
 }
 
@@ -1047,6 +1102,8 @@ struct Pos {
     lim: bool,
     /// TK-669 (`trp`): трейл включается первым исполненным тейком (откат `r_dist` — уже в цене), а не ходом `+a` NATR.
     trp: bool,
+    /// TK-681 (`sm`): см. `TickOut::floor`.
+    floor: [bool; 2],
 }
 
 impl Pos {
@@ -1060,6 +1117,7 @@ impl Pos {
         ex: &ExitCfg,
         lc: Option<LevelCtx>,
         notional: i64,
+        stop_px: Option<i64>,
     ) -> Pos {
         let ea = e.abs();
         let nat = |x_m: i64| -> i64 {
@@ -1067,6 +1125,18 @@ impl Pos {
                 as i64
         };
         let n = ex.n_tp as i64;
+        // TK-681 (`sm`): цена от уровня не ближе `sm` % от входа (расстояние округлено от входа); `sm = 0` — прежний зажим `вход − 1e-8`
+        let near = if ex.sm_pm > 0 {
+            e - ((i128::from(ea) * i128::from(ex.sm_pm) + 99_999) / 100_000).max(1) as i64
+        } else {
+            e - 1
+        };
+        let mut floor = [false; 2];
+        let mut lvl_px = |raw: i64| -> i64 {
+            floor[0] |= ex.sm_pm > 0 && raw > near;
+            floor[1] |= raw > e - 1;
+            raw.min(near)
+        };
         let mut stop_base = e - frac(ea, ex.s_pm, 100_000);
         let mut be_lvl = None;
         if let Some(l) = lc {
@@ -1079,22 +1149,35 @@ impl Pos {
                 if let Some((rlo, rhi)) = l.rng {
                     let w = rhi - rlo;
                     if w >= nat(ex.cs_lo_m) && w <= nat(ex.cs_hi_m) {
-                        stop_base = stop_base.max((rlo - nat(ex.cs_m_m)).min(e - 1));
+                        stop_base = stop_base.max(lvl_px(rlo - nat(ex.cs_m_m)));
                         cons_ok = true;
                     }
                 }
             }
             if !cons_ok && ex.sl_m > 0 {
-                stop_base = stop_base.max((l.lp - nat(ex.sl_m)).min(e - 1));
+                stop_base = stop_base.max(lvl_px(l.lp - nat(ex.sl_m)));
             }
             if ex.be_mode == 3 {
                 let kb = if ex.ls_m > 0 { ex.ls_m } else { 500 };
                 be_lvl = Some(e.min(l.far) - nat(kb));
             }
+            // TK-676 (`vf`): стоп от волатильности — расстояние заморожено на входе; «самый плотный» вместе с `s`, `ls`, `sl`, `cw`
+            if let Some(d_pm) = volstop::stop_pm(ex, l.vol, l.volz) {
+                stop_base = stop_base.max(e - frac(ea, d_pm, 100_000));
+            }
         }
+        // TK-677 (`s2`): общий стоп позиции — жёсткий стоп лота стоит на заданной цене (стоп лота 1), а не от своей цены входа
+        if let Some(sp) = stop_px {
+            stop_base = sp.min(e - 1);
+        }
+        let lp = lc.map_or(0, |l| l.lp);
+        let nx_lvl = if ex.nx_m > 0 {
+            lvl_px(lp - nat(ex.nx_m))
+        } else {
+            i64::MIN
+        };
         let rules =
             lc.is_some() && (ex.tx_min > 0 || ex.rt_f_pm > 0 || ex.nx_m > 0 || ex.tu_min > 0);
-        let lp = lc.map_or(0, |l| l.lp);
         let dist = |x_pm: i64| (i128::from(lp.abs()) * i128::from(x_pm) / 100_000) as i64;
         let unit = i128::from(ea) * i128::from(natr_e8);
         let natr_stop = (ex.sn_m > 0).then(|| NatrStop {
@@ -1153,11 +1236,7 @@ impl Pos {
             touched_ms: NONE_MS,
             broke: false,
             below_since: NONE_MS,
-            nx_lvl: if ex.nx_m > 0 {
-                (lp - nat(ex.nx_m)).min(e - 1)
-            } else {
-                i64::MIN
-            },
+            nx_lvl,
             tu_due: if ex.tu_min > 0 {
                 entry_ms + ex.tu_min * 60_000
             } else {
@@ -1166,6 +1245,7 @@ impl Pos {
             natr_stop,
             step,
             lim: false,
+            floor,
         }
     }
 
@@ -1415,6 +1495,48 @@ pub fn sim_fill_lc_e(
     notional: i64,
     entry_slip_bps: i64,
 ) -> TickOut {
+    sim_fill_lc_s(
+        next,
+        entry_ms,
+        p0,
+        side,
+        natr_e8,
+        ex,
+        lc,
+        notional,
+        entry_slip_bps,
+        None,
+    )
+}
+
+/// TK-677: цена жёсткого стопа лота (рама) на входе по `p0` с проскальзыванием `entry_slip_bps` — та, с которой стартует `sim_fill_lc_e`
+/// («самый плотный» из `s`, `ls`, `sl`, `cw`, `vf`); для общего стопа позиции (`s2`).
+pub fn entry_stop_px(
+    p0: i64,
+    side: Side,
+    natr_e8: i64,
+    ex: &ExitCfg,
+    lc: Option<LevelCtx>,
+    entry_slip_bps: i64,
+) -> i64 {
+    let e = p0 + frac(p0.abs(), entry_slip_bps, 10_000);
+    Pos::new(side.s(), e, p0, 0, natr_e8, ex, lc, NOTIONAL_U, None).stop_base
+}
+
+/// `sim_fill_lc_e` с заданной ценой жёсткого стопа `stop_px` (рама; TK-677 `s2` — стоп лота 1); `None` — стоп от своей цены входа.
+#[allow(clippy::too_many_arguments)]
+pub fn sim_fill_lc_s(
+    next: &mut dyn FnMut() -> Option<(i64, i64, bool)>,
+    entry_ms: i64,
+    p0: i64,
+    side: Side,
+    natr_e8: i64,
+    ex: &ExitCfg,
+    lc: Option<LevelCtx>,
+    notional: i64,
+    entry_slip_bps: i64,
+    stop_px: Option<i64>,
+) -> TickOut {
     let mut after = || -> Option<(i64, i64, bool)> {
         loop {
             let t = next()?;
@@ -1433,6 +1555,7 @@ pub fn sim_fill_lc_e(
         lc,
         notional,
         entry_slip_bps,
+        stop_px,
     )
 }
 
@@ -1458,6 +1581,7 @@ fn sim_tail(
         lc,
         notional,
         ex.slip_bps,
+        None,
     )
 }
 
@@ -1473,10 +1597,11 @@ fn sim_tail_e(
     lc: Option<LevelCtx>,
     notional: i64,
     entry_slip_bps: i64,
+    stop_px: Option<i64>,
 ) -> TickOut {
     let s = side.s();
     let e = p0 + frac(p0.abs(), entry_slip_bps, 10_000);
-    let mut pos = Pos::new(s, e, p0, entry_ms, natr_e8, ex, lc, notional);
+    let mut pos = Pos::new(s, e, p0, entry_ms, natr_e8, ex, lc, notional, stop_px);
     let mut cur_day = (entry_ms / DAY_MS) as usize;
     let mut marks: Vec<(usize, i64)> = Vec::new();
     let mut last = (entry_ms, p0);
@@ -1580,6 +1705,7 @@ fn sim_tail_e(
         takes: pos.next_tp as u32,
         marks,
         tl: tl_info,
+        floor: pos.floor,
     }
 }
 
@@ -1771,7 +1897,27 @@ pub fn lot2_decision(
     lot1: (i64, i64),
     lot1_exit_ms: i64,
 ) -> Lot2Dec {
-    let d = (i128::from(sig.lp.abs()) * i128::from(ex.e2_pm) / 100_000) as i64;
+    let d = lot2_dist(sig.lp, ex.e2_pm);
+    lot2_decision_d(src, sym, side, sig, ex, lot1, lot1_exit_ms, d)
+}
+
+/// Расстояние второго входа `e2` от уровня `lp` в единицах цены.
+pub fn lot2_dist(lp: i64, e2_pm: i64) -> i64 {
+    (i128::from(lp.abs()) * i128::from(e2_pm) / 100_000) as i64
+}
+
+/// `lot2_decision` с расстоянием `d` в единицах цены (TK-677 `e2t`: `d = N·тик`).
+#[allow(clippy::too_many_arguments)]
+pub fn lot2_decision_d(
+    src: &dyn TradeSrc,
+    sym: &Sym,
+    side: Side,
+    sig: &TSig,
+    ex: &ExitCfg,
+    lot1: (i64, i64),
+    lot1_exit_ms: i64,
+    d: i64,
+) -> Lot2Dec {
     let (ms1, p1) = lot1;
     if p1 >= sig.lp - d {
         return Lot2Dec::Fill {
@@ -2117,8 +2263,36 @@ pub fn lot2_decision_mk(
     mode: u8,
     tick_of: &mut dyn FnMut(i64) -> Option<i64>,
 ) -> Lot2Dec {
+    let d = lot2_dist(sig.lp, ex.e2_pm);
+    lot2_decision_mk_d(
+        src,
+        sym,
+        side,
+        sig,
+        ex,
+        lot1,
+        lot1_exit_ms,
+        mode,
+        tick_of,
+        d,
+    )
+}
+
+/// `lot2_decision_mk` с расстоянием `d` в единицах цены (TK-677 `e2t`).
+#[allow(clippy::too_many_arguments)]
+pub fn lot2_decision_mk_d(
+    src: &dyn TradeSrc,
+    sym: &Sym,
+    side: Side,
+    sig: &TSig,
+    ex: &ExitCfg,
+    lot1: (i64, i64),
+    lot1_exit_ms: i64,
+    mode: u8,
+    tick_of: &mut dyn FnMut(i64) -> Option<i64>,
+    d: i64,
+) -> Lot2Dec {
     let (ms1, p1) = lot1;
-    let d = (i128::from(sig.lp.abs()) * i128::from(ex.e2_pm) / 100_000) as i64;
     if mode == 2 || p1 >= sig.lp - d {
         return Lot2Dec::Fill {
             ms: ms1,
@@ -2321,6 +2495,10 @@ pub struct TickTrade {
     pub kind1: ExitKind,
     /// v22 (`tl`): приказ трейла лота 1 — (мс срабатывания, настоящая цена ×1e8); `None` — приказа не было.
     pub tl: Option<(i64, i64)>,
+    /// TK-676 (`vf`): расстояние стопа от волатильности, тысячные процента цены входа; −1 — стопа нет или нет значения источника (остался жёсткий `s`).
+    pub vd_pm: i64,
+    /// TK-677: чистый P&L лота 1 при включённом втором входе (лот 2 — `net − net1`); `None` — позиция одним лотом.
+    pub net1: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -2341,6 +2519,8 @@ pub struct TickResult {
     pub ek: [u64; 5],
     /// TK-669 (`xb > 0`): приказы на пробой — исполнено, снято за 60 мин, отказ входа после срабатывания (нет ленты стороны).
     pub xb: [u64; 3],
+    /// TK-681 (`sm`): сделки (по лоту 1) — стоп от уровня или `nx` сдвинут нижним зажимом; прежний зажим `вход − 1e-8` сработал бы.
+    pub floor: [u64; 2],
 }
 
 impl TickResult {
@@ -2356,6 +2536,7 @@ impl TickResult {
             mk: [0; 3],
             ek: [0; 5],
             xb: [0; 3],
+            floor: [0; 2],
         }
     }
 }
@@ -2433,6 +2614,7 @@ pub fn run_tick_xb(
         mk: [0; 3],
         ek: [0; 5],
         xb: [0; 3],
+        floor: [0; 2],
     };
     let maker = mk > 0;
     let entry_slip = if maker { 0 } else { ex.slip_bps };
@@ -2510,8 +2692,8 @@ pub fn run_tick_xb(
         let mut dec = EntryDec::Next;
         let mut tr2: Option<TickOut> = None;
         let lc = level_ctx(sym, side, sg, ex);
-        let split = ex.e2_pm > 0;
-        let lot_n = if split { NOTIONAL_U / 2 } else { NOTIONAL_U };
+        let split = ex.split();
+        let (lot_n, lot2_n) = ex.lots(NOTIONAL_U);
         let mut ek_end: Option<i64> = None;
         let mut xb_end: Option<i64> = None;
         let tr = if natr > 0 {
@@ -2555,23 +2737,39 @@ pub fn run_tick_xb(
                         res.xb[0] += 1;
                     }
                     if split {
-                        let l2 = if maker {
-                            let mut tick_of =
-                                |t: i64| tick_at(src, &sym.name, sg.sym, t, &mut tick_cache);
-                            lot2_decision_mk(
-                                src,
-                                sym,
-                                side,
-                                sg,
-                                ex,
-                                (ms, p0),
-                                t1.exit_ms,
-                                mk,
-                                &mut tick_of,
-                            )
+                        // TK-677 (`e2t`): расстояние второго входа — N тиков; тик — по сделкам строго до входа лота 1 (нет тика — отказ лота 2)
+                        let d2 = if ex.e2t > 0 {
+                            tick_at(src, &sym.name, sg.sym, ms, &mut tick_cache)
+                                .map(|tk| ex.e2t * tk)
                         } else {
-                            lot2_decision(src, sym, side, sg, ex, (ms, p0), t1.exit_ms)
+                            Some(lot2_dist(sg.lp, ex.e2_pm))
                         };
+                        let l2 = match d2 {
+                            None => Lot2Dec::Reject,
+                            Some(d2) if maker => {
+                                let mut tick_of =
+                                    |t: i64| tick_at(src, &sym.name, sg.sym, t, &mut tick_cache);
+                                lot2_decision_mk_d(
+                                    src,
+                                    sym,
+                                    side,
+                                    sg,
+                                    ex,
+                                    (ms, p0),
+                                    t1.exit_ms,
+                                    mk,
+                                    &mut tick_of,
+                                    d2,
+                                )
+                            }
+                            Some(d2) => {
+                                lot2_decision_d(src, sym, side, sg, ex, (ms, p0), t1.exit_ms, d2)
+                            }
+                        };
+                        // TK-677 (`s2`): общий стоп позиции — лот 2 наследует цену жёсткого стопа лота 1
+                        let stop2 = ex
+                            .s2
+                            .then(|| entry_stop_px(p0, side, natr, ex, Some(lc), entry_slip));
                         match l2 {
                             Lot2Dec::Fill {
                                 ms: m2,
@@ -2585,7 +2783,7 @@ pub fn run_tick_xb(
                                     usize::from(sg.day),
                                     sg.idx as usize + 1,
                                 );
-                                tr2 = Some(sim_fill_lc_e(
+                                tr2 = Some(sim_fill_lc_s(
                                     &mut || cur2.next_tick(),
                                     m2,
                                     q0,
@@ -2593,8 +2791,9 @@ pub fn run_tick_xb(
                                     natr,
                                     ex,
                                     Some(lc),
-                                    lot_n,
+                                    lot2_n,
                                     entry_slip,
+                                    stop2,
                                 ));
                             }
                             Lot2Dec::Cancel => res.lot2[2] += 1,
@@ -2647,6 +2846,8 @@ pub fn run_tick_xb(
             res.rej[5] += 1;
             continue;
         };
+        res.floor[0] += u64::from(tr.floor[0]);
+        res.floor[1] += u64::from(tr.floor[1]);
         if pc.reentry == 0 {
             consumed.insert(key);
         }
@@ -2674,8 +2875,9 @@ pub fn run_tick_xb(
         });
         open.sort_by_key(|o| o.exit_ms);
         let mut st = settle_tick_mk(sym, side, &tr, lot_n, !maker);
+        let net1 = split.then_some(st.gross - st.fees + st.funding);
         if let Some(t2) = &tr2 {
-            let s2 = settle_tick_mk(sym, side, t2, lot_n, !maker);
+            let s2 = settle_tick_mk(sym, side, t2, lot2_n, !maker);
             st.gross += s2.gross;
             st.fees += s2.fees;
             st.funding += s2.funding;
@@ -2712,6 +2914,8 @@ pub fn run_tick_xb(
             kind1: tr.kind,
             tl: tr.tl,
             lot2: tr2,
+            vd_pm: volstop::stop_pm(ex, lc.vol, lc.volz).unwrap_or(-1),
+            net1,
         });
     }
     res
