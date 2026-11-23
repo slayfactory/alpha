@@ -288,7 +288,8 @@ def cmd_plan(a):
         kind, s, per, size, etag = line.rstrip("\n").split("\t")
         if kind in ("aggTrades", "klines1m"):
             files[(kind, s)][per] = (int(size), etag)
-    uni = sorted(s for (k, s), v in files.items() if k == "aggTrades" and any(a.score0 <= d <= a.d1 for d in v))
+    skip = set(open(a.exclude, encoding="utf-8").read().split()) if a.exclude else set()
+    uni = sorted(s for (k, s), v in files.items() if k == "aggTrades" and s not in skip and any(a.score0 <= d <= a.d1 for d in v))
     os.makedirs(a.plan, exist_ok=True)
     rows, tot = [], defaultdict(lambda: [0, 0, 0, 0])  # kind -> [нужно файлов, байт, лежит файлов, байт лежит]
     for s in uni:
@@ -346,6 +347,7 @@ def main():
             q.add_argument("--score0", required=True)
             q.add_argument("--tree", default="/data/p42-tk621/wa")
             q.add_argument("--plan", required=True)
+            q.add_argument("--exclude", help="файл со списком монет (по одной в слове), которых во вселенной нет (TradFi, В-175)")
             q.add_argument("--store-ratio", type=float, default=0.2141)
             q.add_argument("--csv-ratio", type=float, default=3.318)
         if name == "report":
