@@ -79,6 +79,10 @@ def add_columns(side, st, tabs, cl=None, ctx=None, hist=None):
     hist = (a80.SET == "hist") if hist is None else hist
     have = set(pq.ParquetFile(a80.PARQUET % ENGNAME[side]).schema.names)
     if ctx:
+        crypto = None
+        if os.environ.get("TK674_UNI") == "c539":      # §13.73.18: на c539 «другие монеты» — только крипто-монеты (сигналов TradFi в составе нет)
+            import tk625_run as r5
+            crypto = sorted(r5.Uni("c539").coins())
         for w in st.TRADE_WINDOWS:
             sym, ms = np.asarray(tabs[w.name]["sym"]).astype(str), np.asarray(tabs[w.name]["ms"], dtype=np.int64)
             if crypto is None:
@@ -89,11 +93,7 @@ def add_columns(side, st, tabs, cl=None, ctx=None, hist=None):
             v[keep] = cosig15(sym[keep], ms[keep])
             tabs[w.name]["cosig15"] = v
     extra = set()
-    if ctx:
-        crypto = None
-        if os.environ.get("TK674_UNI") == "c539":      # §13.73.18: на c539 «другие монеты» — только крипто-монеты (сигналов TradFi в составе нет)
-            import tk625_run as r5
-            crypto = sorted(r5.Uni("c539").coins())
+    if hist:
         extra = set(pq.ParquetFile(a80.HIST_EXTRA % ENGNAME[side]).schema.names) - have
         have |= extra
         rid = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["row_id"])["row_id"].to_numpy()
