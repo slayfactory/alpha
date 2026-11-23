@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """П-42 TK-697: ворота семейства `m697` (`tk697_cols`) на srv, без P&L.
-  python3 tk697_gate.py --rows <rows.parquet> --data <side>.parquet --win wa --side long --out <gate.json> [--procs 2] [--k-brute 1500] [--k-causal 600] [--k-file 20]
+  python3 tk697_gate.py --rows <rows.parquet> --win wa --side long --out <gate.json> [--procs 2] [--k-brute 1500] [--k-causal 600] [--k-file 20]
 
 G-brute   `compute` (боевой путь: пул по монетам, ядра numba) = независимый построчный счёт на чистом Python (`brute_row`: свои циклы, свой NATR по определению
           «истинный диапазон от последней минутки с данными», без префиксных сумм) на k строках реального файла (случайные + самые «молодые» по истории монеты):
@@ -93,8 +93,21 @@ def round_py(L):
     return best
 
 
-def brute_row(a, ab, t, dur, s, level):
-    """16 значений строки (порядок `fam.COLUMNS`) по сырым минуткам монеты `a` и BTC `ab` (None — нет), минуте сигнала `t`, знаку `s`, approach_dur_min, цене уровня."""
+def approach_start_py(o, h, l, t, s, r8):
+    """a0 — минута после последней «ушедшей» минуты < t (в длинной раме low ≤ R − |R|·(E + 1) или high ≥ R; R = s·|level_e8|), `None` — «ухода» нет за всю историю."""
+    rs = s * r8
+    plo = rs - r8 * (fam.E_E8 + 1) / fam.SCALE
+    for x in range(t - 1, -1, -1):
+        if o[x] != 0:
+            lo_f, hi_f = (l[x], h[x]) if s > 0 else (-h[x], -l[x])
+            if lo_f <= plo or hi_f >= rs:
+                return x + 1
+    return None
+
+
+def brute_row(a, ab, t, s, level_e8):
+    """16 значений строки (порядок `fam.COLUMNS`) по сырым минуткам монеты `a` и BTC `ab` (None — нет), минуте сигнала `t`, знаку `s`, |level_px_e8|."""
+    level = level_e8 / 1e8
     o, h, l, c, cf = lists_of(a)
     b = t - 1
     nat = natr_at(o, h, l, c, b)
@@ -129,7 +142,8 @@ def brute_row(a, ab, t, dur, s, level):
             return NAN
         return c1 / c0 - 1.0
 
-    e = -1 if math.isnan(dur) else int(round(t - dur)) - 1
+    a0 = approach_start_py(o, h, l, t, s, level_e8) if t - 1 < len(o) else None
+    e = -1 if a0 is None else a0 - 1
     rr = {hh: ret(e, 60 * hh) for hh in fam.PM_H}
     out += [100.0 * s * rr[hh] for hh in fam.PM_H]
     out += [s * rr[hh] / (nat * math.sqrt(1440.0)) for hh in fam.PM_H]
@@ -193,7 +207,6 @@ def pick(rows, k, rng):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--rows", required=True)
-    ap.add_argument("--data", required=True)
     ap.add_argument("--win", required=True, choices=["wa", "wb", "wc"])
     ap.add_argument("--side", required=True, choices=["long", "short"])
     ap.add_argument("--out", required=True)
@@ -207,7 +220,7 @@ def main():
     os.makedirs(a.tmp, exist_ok=True)
     rng = np.random.default_rng(SEED)
     cache_dir = a.cache_dir or os.path.join(fam.CACHE_ROOT, a.win, "cache")
-    rows = fam.attach_dur(pd.read_parquet(a.rows), a.data, a.win).reset_index(drop=True)
+    rows = pd.read_parquet(a.rows).reset_index(drop=True)
     s = fam.SIGN[a.side]
     res = {"win": a.win, "side": a.side, "rows": int(len(rows))}
     store = {}
@@ -219,8 +232,8 @@ def main():
     ix = ix[np.argsort(rows["sym"].to_numpy(dtype=object).astype(str)[ix], kind="stable")]
     got = full.iloc[ix].to_numpy()
     ref = np.array([brute_row(load_arr(cache_dir, rows["sym"].iat[i], store) if load_arr(cache_dir, rows["sym"].iat[i], store) is not None else None, abt,
-                              int(rows["sig_ms"].iat[i] // ft.MIN_MS), float(rows["approach_dur_min"].iat[i]), s,
-                              abs(int(rows["level_px_e8"].iat[i])) / 1e8) if load_arr(cache_dir, rows["sym"].iat[i], store) is not None
+                              int(rows["sig_ms"].iat[i] // ft.MIN_MS), s,
+                              abs(int(rows["level_px_e8"].iat[i]))) if load_arr(cache_dir, rows["sym"].iat[i], store) is not None
                     else [NAN] * len(fam.COLUMNS) for i in ix])
     bad, dmax = compare(got, ref)
     res["g_brute"] = dict(k=int(len(ix)), bad_by_col={c: int(x) for c, x in zip(fam.COLUMNS, bad) if x}, max_abs_diff=dmax, ok=bool(bad.sum() == 0),

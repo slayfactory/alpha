@@ -159,7 +159,7 @@ def test_compute_vs_brute_both_sides_and_causal():
             assert bad.sum() == 0, (side, dict(zip(fam.COLUMNS, bad)), dmax)
             share = np.isfinite(df.to_numpy()).mean(axis=0)
             assert share.min() > 0.0, dict(zip(fam.COLUMNS, share))
-            assert (df["ls_c3p"] >= df["ls_c1p"]).all() and (df["ls_c8n"] >= df["ls_c2n"]).all()
+            assert ((df["ls_c3p"] >= df["ls_c1p"]) | df["ls_c1p"].isna()).all() and ((df["ls_c8n"] >= df["ls_c2n"]) | df["ls_c2n"].isna()).all()
             for i in (3, 40, 77):
                 one = rows.iloc[[i]]
                 t = int(one["sig_ms"].iat[0] // 60_000)
@@ -181,7 +181,7 @@ def test_missing_files_do_not_drop_rows():
         dumps2 = fam.Dumps({"long": dumps.dirs["long"], "short": os.path.join(tmp, "none")})
         df = fam.compute(rows, "wa", "long", 1, cache_dir=cache, dumps=dumps2, info=info)
         assert len(df) == 12 and "NOPEUSDT" in info["missing_cache"]
-        assert df.iloc[:3].isna().all().all()                          # нет кэша монеты: NATR нет → все столбцы пусты (в т. ч. № 7 по NATR ориентира — он берёт свой кэш, но уровни монеты нет)
+        assert df.iloc[:3][fam.COLUMNS[:6]].isna().all().all()         # нет кэша монеты: NATR монеты нет → № 2 пуст; № 7 считается по кэшу и дампам ориентиров, монета нужна ему только ради знака
         assert np.isfinite(df.iloc[3:, 0]).any()
 
 

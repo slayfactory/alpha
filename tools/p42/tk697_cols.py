@@ -2,10 +2,9 @@
 """П-42 TK-697, семейство `m697`: столбцы из разбора сделок трейдера пробоев, считаемые по минуткам `.b42` (тики не читаются), 16 штук.
 
   compute(rows, win, side, procs=3, cache_dir=None, info=None) -> DataFrame (индекс row_id, float64, NaN = не определено, строки не выбрасываются)
-  python3 tk697_cols.py --rows <rows.parquet> --data <side>.parquet --win wa --side long --out <out.parquet> --procs 2 [--cache-dir <каталог .b42 окна>]
+  python3 tk697_cols.py --rows <rows.parquet> --win wa --side long --out <out.parquet> --procs 2 [--cache-dir <каталог .b42 окна>]
 
-`rows` — строки `prod/lvl-<окно>-<side>/rows.parquet` TK-671 (row_id, sym, sig_ms, level_px_e8, abs_ms, win, side) + столбец `approach_dur_min` (из таблицы
-признаков TK-671, ключ окно + row_id; `main` присоединяет и сверяет sym / sig_ms). Минута сигнала `t = sig_ms // 60000`, последняя ЗАКРЫТАЯ минута `b = t − 1`;
+`rows` — строки `prod/lvl-<окно>-<side>/rows.parquet` TK-671 (row_id, sym, sig_ms, level_px_e8, abs_ms, win, side). Минута сигнала `t = sig_ms // 60000`, последняя ЗАКРЫТАЯ минута `b = t − 1`;
 все окна — минуты ≤ b (как `tk671_mkt`). Знак стороны `s` = +1 лонг, −1 шорт. Ряд закрытий — `ffill_close` (до листинга NaN), «минутка с данными» — `o ≠ 0`.
 NATR — NATR 60 (период 60, как `sigfeat_lib.natr_series(p=60)`, доля цены, на минуте b): окно 60 назначено критиком TK-697.
 
@@ -13,7 +12,9 @@ NATR — NATR 60 (период 60, как `sigfeat_lib.natr_series(p=60)`, до�
       Вынос есть, если lowA < lowB И закрытие минуты b ≥ lowB (возврат за минимум предыдущего окна); у шорта — зеркало (high, возврат ≤ максимума B).
       sw_d{W} = (lowB − lowA) / close[b] / NATR60[b] (0, если выноса нет; NaN — нет данных в A или B, окно не помещается, нет NATR / закрытия);
       sw_a{W} = t − m, где m — последняя минута из A с lowA (давность в минутах, ≥ 1); NaN, если выноса нет или sw_d = NaN.
-  № 4 ход до начала подхода (7). Начало подхода a0 = t − approach_dur_min (определение `sigfeat_lib.fresh_prior_features`), e = a0 − 1 (последняя минута до подхода),
+  № 4 ход до начала подхода (7). Начало подхода a0 — минута после последней «ушедшей» минуты с данными среди минут < t (low ≤ R − |R|·(E + 1) или high ≥ R в длинной раме,
+      E = 0,3 % — `sigfeat_lib.E_E8`, то же определение «ухода», что `fresh_prior_features`), но поиск идёт назад по всей истории кэша, а не до `first_bar` уровня:
+      `approach_dur_min` таблицы TK-671 у ~68 % строк отрицателен (first_bar позже t; age_h тоже), брать его нельзя. «Ухода» нет за всю историю — NaN. e = a0 − 1 (последняя минута до подхода),
       r_H = cf[e] / cf[e − 60·H] − 1, H ∈ {24, 48, 72} ч; нет e − 60·H ≥ 0 или закрытия — NaN.
       pm_p{H} = 100 · s · r_H (% к пробою); pm_n{H} = s · r_H / (NATR60[b] · √1440) (суточные NATR: NATR минутный, масштаб суток — √1440, назначено решением);
       pm_sharp = |r_6ч| / |r_72ч| (6 ч = 360 минут, тот же e; NaN при r_72ч = 0). Знак стороны в резкости не нужен — это доля хода, а не его направление.
@@ -49,6 +50,8 @@ CACHE_ROOT = "/data/p42-tk621"
 BTC = "BTCUSDT"
 NAN = float("nan")
 ROUND_M = (1.0, 2.0, 5.0)
+SCALE = 100_000_000
+E_E8 = 300_000  # зона входа E = 0,3 % — как `sigfeat_lib.E_E8`
 
 COLUMNS = ([f"sw_d{w}" for w in SW_W] + [f"sw_a{w}" for w in SW_W] + [f"pm_p{h}" for h in PM_H] + [f"pm_n{h}" for h in PM_H] + ["pm_sharp"]
            + ["mk_rel_sd", "rn_p", "rn_n"])
@@ -123,6 +126,21 @@ def sweep_kernel(lw, cfs, nat, b, w, out_d, out_a):
 
 
 @njit(cache=True)
+def approach_start_kernel(lw, hw, b, rs, plo, out):
+    """a0 — минута после последней «ушедшей» минуты ≤ b[i] (lw ≤ plo или hw ≥ rs; lw = +inf / hw = −inf без данных); нет такой минуты — NaN."""
+    n = len(lw)
+    for i in range(len(b)):
+        out[i] = np.nan
+        bi = b[i]
+        if bi < 0 or bi >= n:
+            continue
+        for x in range(bi, -1, -1):
+            if lw[x] <= plo[i] or hw[x] >= rs[i]:
+                out[i] = x + 1
+                break
+
+
+@njit(cache=True)
 def ret_at_kernel(cf, e, h, out):
     """r = cf[e] / cf[e − h] − 1; NaN при e < h, e ≥ N, неопределённом закрытии или cf[e − h] = 0."""
     n = len(cf)
@@ -184,6 +202,7 @@ def warm_up():
     sweep_kernel(x, x, x, b, 1, o, o.copy())
     ret_at_kernel(x, b, 1, o)
     since_open_kernel(z, x, b, o)
+    approach_start_kernel(x, x, b, x, x, o)
 
 
 # ---- блоки -----------------------------------------------------------------------------------------------------------------------------
@@ -201,8 +220,14 @@ def frames(a, s):
     return lw, cfs, cf
 
 
-def own_block(a, b, dur, s, sod_btc, level):
-    """(len(b), 16) столбцов `COLUMNS` для строк одной монеты по её минуткам `a`: `b` — последние закрытые минуты, `dur` — approach_dur_min, `sod_btc` — ход BTC с 00:00 UTC в этих минутах, `level` — |цена уровня|."""
+def high_frame(a, s):
+    """high монеты в длинной раме стороны `s` (шорт: −low), −inf без данных."""
+    valid = a["o"] != 0
+    return np.where(valid, (a["h"] if s > 0 else -a["l"]).astype(np.float64), -np.inf)
+
+
+def own_block(a, b, s, sod_btc, level):
+    """(len(b), 16) столбцов `COLUMNS` для строк одной монеты по её минуткам `a`: `b` — последние закрытые минуты, `sod_btc` — ход BTC с 00:00 UTC в этих минутах, `level` — |цена уровня|."""
     n = len(b)
     lw, cfs, cf = frames(a, s)
     nat = natr_kernel(a["o"], a["h"], a["l"], a["c"], NATR_P)
@@ -215,9 +240,12 @@ def own_block(a, b, dur, s, sod_btc, level):
         out[:, k] = d
         out[:, len(SW_W) + k] = ag
     t = b + 1
-    with np.errstate(invalid="ignore"):
-        a0 = t - dur
-        e = np.where(np.isfinite(a0), np.rint(np.where(np.isfinite(a0), a0, 0.0)).astype(np.int64) - 1, -1)
+    r8 = np.rint(level * SCALE)  # |level_px_e8| (целое)
+    rs = s * r8
+    plo = rs - r8 * (E_E8 + 1) / SCALE
+    a0 = np.empty(n)
+    approach_start_kernel(lw, high_frame(a, s), b, rs, plo, a0)
+    e = np.where(np.isfinite(a0), np.where(np.isfinite(a0), a0, 0.0).astype(np.int64) - 1, -1)
     col = np.empty(n)
     base = 2 * len(SW_W)
     rr = {}
@@ -254,7 +282,7 @@ def _coin_task(sym):
     if not os.path.exists(path):
         return idx, None
     a = ft.load_b42_full(path)
-    return idx, own_block(a, c["b"][idx], c["dur"][idx], c["s"], c["sod_btc"][idx], c["level"][idx])
+    return idx, own_block(a, c["b"][idx], c["s"], c["sod_btc"][idx], c["level"][idx])
 
 
 def _run(tasks, fn, procs):
@@ -276,7 +304,7 @@ def sod_btc_for(cache_dir, b):
 
 
 def compute(rows, win, side, procs=3, cache_dir=None, info=None):
-    """Столбцы `m697` на строках одного окна и одной стороны. `rows` — row_id, sym, sig_ms, level_px_e8, approach_dur_min (+ abs_ms, win, side — проверяются, если есть)."""
+    """Столбцы `m697` на строках одного окна и одной стороны. `rows` — row_id, sym, sig_ms, level_px_e8 (+ abs_ms, win, side — проверяются, если есть)."""
     import pandas as pd
     t_start = time.time()
     if side not in SIGN:
@@ -293,7 +321,6 @@ def compute(rows, win, side, procs=3, cache_dir=None, info=None):
     n = len(rows)
     s = SIGN[side]
     b = rows["sig_ms"].to_numpy(np.int64) // ft.MIN_MS - 1
-    dur = rows["approach_dur_min"].to_numpy(np.float64)
     level = np.abs(rows["level_px_e8"].to_numpy(np.int64)).astype(np.float64) / 1e8
     syms, sym_code = np.unique(rows["sym"].to_numpy(dtype=object).astype(str), return_inverse=True)
     stat = dict(win=win, side=side, rows=int(n), coins=int(len(syms)), missing_ref=[], missing_cache=[])
@@ -306,7 +333,7 @@ def compute(rows, win, side, procs=3, cache_dir=None, info=None):
     cuts = np.flatnonzero(np.diff(sym_code[order])) + 1
     groups = {syms[sym_code[g[0]]]: g for g in np.split(order, cuts) if len(g)}
     _CTX.clear()
-    _CTX.update(cache_dir=cache_dir, groups=groups, b=b, dur=dur, s=s, sod_btc=sod_btc, level=level)
+    _CTX.update(cache_dir=cache_dir, groups=groups, b=b, s=s, sod_btc=sod_btc, level=level)
     out = np.full((n, len(COLUMNS)), np.nan)
     for idx, blk in _run(sorted(groups, key=lambda x: -len(groups[x])), _coin_task, procs):
         if blk is not None:
@@ -322,34 +349,17 @@ def compute(rows, win, side, procs=3, cache_dir=None, info=None):
     return df
 
 
-def attach_dur(rows, data_path, win):
-    """Присоединить `approach_dur_min` из таблицы TK-671 (ключ окно + row_id) с проверкой sym / sig_ms."""
-    import pandas as pd
-    d = pd.read_parquet(data_path, columns=["win", "row_id", "sym", "meta_sig_ms", "approach_dur_min"])
-    d = d[d["win"] == win].set_index("row_id")
-    j = d.reindex(rows["row_id"].to_numpy())
-    if j["approach_dur_min"].isna().all() and len(rows):
-        raise ValueError("таблица TK-671: нет строк окна %s" % win)
-    if not (j["sym"].to_numpy(dtype=object) == rows["sym"].to_numpy(dtype=object)).all() or not (
-            j["meta_sig_ms"].to_numpy() == rows["sig_ms"].to_numpy()).all():
-        raise ValueError("таблица TK-671 и rows.parquet: sym / sig_ms не совпали по row_id")
-    rows = rows.copy()
-    rows["approach_dur_min"] = j["approach_dur_min"].to_numpy()
-    return rows
-
-
 def main():
     import pandas as pd
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--rows", required=True)
-    ap.add_argument("--data", required=True, help="таблица TK-671 <side>.parquet (approach_dur_min)")
     ap.add_argument("--win", required=True, choices=["wa", "wb", "wc"])
     ap.add_argument("--side", required=True, choices=["long", "short"])
     ap.add_argument("--out", required=True)
     ap.add_argument("--procs", type=int, default=2)
     ap.add_argument("--cache-dir")
     a = ap.parse_args()
-    rows = attach_dur(pd.read_parquet(a.rows), a.data, a.win)
+    rows = pd.read_parquet(a.rows)
     info = {}
     df = compute(rows, a.win, a.side, a.procs, cache_dir=a.cache_dir, info=info)
     df.to_parquet(a.out)

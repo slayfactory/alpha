@@ -129,8 +129,19 @@ def make_cache(tmp, rng, syms, n=11520):
 def synth_rows(rng, syms, k, n=11520):
     t = rng.integers(5000, n - 5, k)
     return pd.DataFrame(dict(row_id=np.arange(k), sym=[syms[i % len(syms)] for i in range(k)], sig_ms=t.astype(np.int64) * 60_000,
-                             level_px_e8=(rng.choice([-1, 1], k) * rng.integers(10**11, 5 * 10**12, k)),
-                             approach_dur_min=rng.integers(1, 3000, k).astype(np.float64)))
+                             level_px_e8=(rng.choice([-1, 1], k) * rng.integers(10**11, 5 * 10**12, k))))
+
+
+def near_levels(rows, tmp, rng, side):
+    """Уровни рядом с ценой (0 … 0,5 % по ходу пробоя), чтобы начало подхода лежало глубоко в истории, а не на минуте t − 1."""
+    store, out = {}, []
+    for r in rows.itertuples():
+        a = gate.load_arr(tmp, r.sym, store)
+        c = float(fam.ft.ffill_close(a["o"], a["c"])[int(r.sig_ms // 60_000) - 1])
+        out.append(int(round(c * (1.0 + (1 if side == "long" else -1) * rng.uniform(0.0, 0.005)))))
+    rows = rows.copy()
+    rows["level_px_e8"] = np.array(out, dtype=np.int64)
+    return rows
 
 
 def test_compute_vs_brute_and_causal():
@@ -138,14 +149,16 @@ def test_compute_vs_brute_and_causal():
     syms = ["AAAUSDT", "BBBUSDT", fam.BTC]
     with tempfile.TemporaryDirectory() as tmp:
         make_cache(tmp, rng, syms)
-        rows = synth_rows(rng, syms, 120)
+        rows0 = synth_rows(rng, syms, 120)
         for side in ("long", "short"):
             s = fam.SIGN[side]
+            rows = near_levels(rows0, tmp, rng, side)
             df = fam.compute(rows, "wa", side, procs=1, cache_dir=tmp)
             assert list(df.columns) == fam.COLUMNS and len(df) == len(rows)
+            assert df[["pm_p24", "pm_p48", "pm_p72"]].notna().any().all()
             store = {}
             ab = gate.load_arr(tmp, fam.BTC, store)
-            ref = np.array([gate.brute_row(gate.load_arr(tmp, r.sym, store), ab, int(r.sig_ms // 60_000), float(r.approach_dur_min), s, abs(int(r.level_px_e8)) / 1e8)
+            ref = np.array([gate.brute_row(gate.load_arr(tmp, r.sym, store), ab, int(r.sig_ms // 60_000), s, abs(int(r.level_px_e8)))
                             for r in rows.itertuples()])
             bad, dmax = gate.compare(df.to_numpy(), ref)
             assert bad.sum() == 0, (side, dict(zip(fam.COLUMNS, bad)), dmax)
