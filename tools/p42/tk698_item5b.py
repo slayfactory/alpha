@@ -133,9 +133,10 @@ def main(run_key):
         div_rows.append((c, fam.get(c, "—"), None, None if np.isnan(rng_real) else float(rng_real), noise_hi, int((side == 1).sum()), int((side == 0).sum()), ex))
         if (k + 1) % 25 == 0:
             print("%d / %d столбцов, %.0f с" % (k + 1, len(feats), time.time() - t0), file=sys.stderr, flush=True)
-    order = sorted(range(len(div_rows)), key=lambda i: -(div_rows[i][3] if div_rows[i][3] is not None else -1))
+    # FIX критика (TK-699): ранг только у столбцов без f12 (1…295), у 10 столбцов f12 ранг NULL
+    order = sorted((i for i in range(len(div_rows)) if div_rows[i][0] not in BAD10), key=lambda i: -(div_rows[i][3] if div_rows[i][3] is not None else -1))
     rank = {i: r + 1 for r, i in enumerate(order)}
-    div_rows = [(r[0], r[1], rank[i], r[3], r[4], r[5], r[6], r[7]) for i, r in enumerate(div_rows)]
+    div_rows = [(r[0], r[1], rank.get(i), r[3], r[4], r[5], r[6], r[7]) for i, r in enumerate(div_rows)]
     D.put(db, "res_feat", run_key, feat_rows, ["col", "side", "bin", "lo", "hi", "n", "usd", "per_trade", "stop_share", "extra"])
     D.put(db, "res_div", run_key, div_rows, ["col", "family", "rank", "div", "noise_hi", "n_short", "n_long", "extra"])
     D.put(db, "res_text", run_key, [("notes", json.dumps(notes, ensure_ascii=False))], ["key", "value"])

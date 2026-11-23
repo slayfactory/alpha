@@ -141,6 +141,9 @@ def main(root, run_key, which="all"):
                 for nm, d_, nn_, uu in (("core", dc, float(n_c.mean()), us_c), ("rest", dr, float((nper - n_c).mean()), us_r)):
                     if kname != "entry_ms":
                         continue
+                    if (core.sum() if nm == "core" else (~core).sum()) == 0:             # нет сделок — метрик нет (не 0 $)
+                        linerows.append(("I3|%s|%s|%s" % (sname, cn, nm), "e20+n_bounce1 (%s)" % sname, "short", 0, None, None, None, None, None, None, None, None, None, dict(note="нет сделок", cells=C, keys=0)))
+                        continue
                     m = L.metrics(d_)
                     linerows.append(("I3|%s|%s|%s" % (sname, cn, nm), "e20+n_bounce1 (%s)" % sname, "short", int(round(nn_)), m["usd"], m["usd"] / max(nn_, 1e-9), m["sharpe"], m["dd"], m["dd_pct"], m["gap_longest"], m["gap_mean"], m["gap_tail"], None,
                                      dict(kind="mean over cells of the set", cells=C, keys=int(core.sum() if nm == "core" else (~core).sum()))))

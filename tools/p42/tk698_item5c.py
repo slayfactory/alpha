@@ -79,17 +79,18 @@ def main(root, run_key):
             continue
         e = json.loads(ex)
         feats.append((col, kindtype(col), d, nz, d / nz, e["bin_max"], e["short_at_max"], e["long_at_max"], e["bin_min"], e["short_at_min"], e["long_at_min"], len(e["edges"]) + 1))
-    n_all = db.execute("select count(*) from res_div where run_key = ? and div is not null", (R5B,)).fetchone()[0]
-    n_bad = db.execute("select count(*) from res_div where run_key = ? and div is not null and col in (%s)" % ",".join("?" * len(BAD)), (R5B,) + tuple(BAD)).fetchone()[0]
+    n_cols = db.execute("select count(*) from res_div where run_key = ?", (R5B,)).fetchone()[0]
+    n_nonf12 = db.execute("select count(*) from res_div where run_key = ? and col not in (%s)" % ",".join("?" * len(BAD)), (R5B,) + tuple(BAD)).fetchone()[0]
+    n_read = db.execute("select count(*) from res_div where run_key = ? and div is not null and col not in (%s)" % ",".join("?" * len(BAD)), (R5B,) + tuple(BAD)).fetchone()[0]
     md = ["| пара | раздел | показатель | шорт | лонг |", "|---|---|---|---|---|"] + ["| %s | %s | %s | %s | %s |" % r for r in rows]
     md2 = ["| столбец | что это | расхождение, $/строку | линия шума 95 % | отношение | корзина max (шорт / лонг) | корзина min (шорт / лонг) | корзин |", "|---|---|---|---|---|---|---|---|"]
     md2 += ["| %s | %s | %.3f | %.3f | %.2f | б%d: %.2f / %.2f | б%d: %.2f / %.2f | %d |" % r for r in feats]
     D.put(db, "res_text", run_key, [("table_5c_a", "\n".join(md)), ("table_5c_b", "\n".join(md2)),
-                                     ("meta", json.dumps({"pairs": PAIRS, "columns_div": n_all, "columns_f12_excluded": n_bad, "above_noise95": len(feats), "expected_by_chance_95": round(0.05 * (n_all - n_bad), 1), "sources": [R5A, R2, R5B]}, ensure_ascii=False))], ["key", "value"])
+                                     ("meta", json.dumps({"pairs": PAIRS, "columns_total": n_cols, "columns_f12_excluded": n_cols - n_nonf12, "columns_non_f12": n_nonf12, "columns_readable": n_read, "above_noise95": len(feats), "expected_by_chance_95_readable": round(0.05 * n_read, 1), "expected_by_chance_95_non_f12": round(0.05 * n_nonf12, 1), "sources": [R5A, R2, R5B]}, ensure_ascii=False))], ["key", "value"])
     print("\n".join(md))
     print()
     print("\n".join(md2[: 2 + 20]))
-    print("выше линии шума: %d из %d (ожидание по случаю ≈ %.0f)" % (len(feats), n_all - n_bad, 0.05 * (n_all - n_bad)))
+    print("выше линии шума: %d из %d читаемых (%d без f12; по случаю ≈ %.1f)" % (len(feats), n_read, n_nonf12, 0.05 * n_read))
 
 
 if __name__ == "__main__":
