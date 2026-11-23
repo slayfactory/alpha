@@ -17,7 +17,7 @@ HELD=0
 release() { if [ "$HELD" = 1 ]; then rmdir "$R/slot.lock" 2>/dev/null; HELD=0; fi; }
 trap release EXIT
 say() { echo "== $(date -u +%FT%TZ) $*" >> "$LOG"; }
-stage() { say "$TAG $*"; "$PY" tk674_run.py "$@" >> "$LOG" 2>&1; }
+stage() { say "$TAG $*"; "$PY" tk674_run.py "$@" >> "$LOG" 2>&1 || { say "$TAG $* упал (rc=$?) — стоп"; exit 5; }; }
 TABS=()
 reap() {        # юниты tables + ccheck готовых партий: упавший — стоп (клетки на диске остаются, `tables` повторяется отдельно); пик памяти и CPU юнита — в журнал
   local keep=() u
