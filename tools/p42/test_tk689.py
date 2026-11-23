@@ -187,3 +187,202 @@ def test_upgma_average_linkage_not_chain():
 
 def test_jaccard():
     assert abs(ti.jaccard(np.array([1, 2, 3]), np.array([2, 3, 4])) - 0.5) < 1e-12 and ti.jaccard(np.array([]), np.array([1])) == 0.0
+
+
+# ---- TK-693: влияние осей в БД летописи (tk689_db.py) --------------------------------------------------------------------------------
+import json  # noqa: E402
+import shutil  # noqa: E402
+import tempfile  # noqa: E402
+
+import tk689_db as dbm  # noqa: E402
+import tk689_report as rp  # noqa: E402
+
+FEATURES = os.path.join(HERE, "ml_features.json")
+
+
+def world_db():
+    """Клетки уровней 1–2 с уникальными id (как строки metric) → (результаты уровней, obs, meta, клетки)."""
+    cells = [mk(334, BASE, 100.0, 20.0, 50, tsig="anchor"),
+             mk(336, BASE.replace("rs=20", "rs=5"), 130.0, 22.0, 50, tsig="A1"),
+             mk(336, BASE.replace("rs=20", "rs=8"), 120.0, 21.0, 48, tsig="A2"),
+             mk(336, BASE + " tt=5", 90.0, 18.0, 45, tsig="B1"),
+             mk(336, BASE + " tt=10", 70.0, 17.0, 40, tsig="B2"),
+             mk(337, BASE.replace("rs=20", "rs=5") + " tt=5", 150.0, 25.0, 40, tsig="AB"),
+             mk(337, BASE.replace("rs=20", "rs=8") + " tt=5", 140.0, 24.0, 38, tsig="AB2"),
+             mk(337, BASE.replace("rs=20", "rs=5") + " tt=10", 110.0, 23.0, 36, tsig="AB3"),
+             mk(337, BASE.replace("rs=20", "rs=8") + " tt=10", 100.0, 22.0, 35, tsig="AB4")]
+    for i, c in enumerate(cells):
+        c["id"] = 100 + i
+        c["rr"] = float("nan") if i == 4 else 1.0                                   # R:R не определён → NaN → NULL
+    sides, stat = ti.prepare(cells)
+    sd = sides["long"]
+    results, obs = {}, {}
+    for k in (1, 2):
+        res, o = ti.compute_level("long", sd, k, 1000, None, False)
+        if k == 1:
+            res["clusters"] = {"полная": dict(grid="полная", names=["rs", "tt"], families=[["rs", "tt"]], small=[], pairs=1)}
+        results[("long", k)], obs[("long", k)] = res, o
+    meta = dict(uni="c539", win="01.07–13.11", m=dict(long=1000, short=1000), levels_in_db={"long": {"0": 1, "1": 4, "2": 4}}, excluded={}, dup_keys=0, dup_diff=0,
+                anchors={"long": dict(ckey=BASE, n=50, usd=100.0, dd=20.0, sh=1.0, gap=5)}, thresholds=dict(many=0.3, little=0.05), bins=["b"], entries=[334, 336, 337])
+    return results, obs, meta, cells
+
+
+def db_with_cells(cells):
+    """Временная БД летописи (схема v8) со строками metric под id клеток."""
+    d = tempfile.mkdtemp()
+    conn = dbm.connect(os.path.join(d, "t.sqlite"))
+    conn.execute("PRAGMA foreign_keys=OFF")
+    for c in cells:
+        conn.execute("INSERT INTO metric(id, entry, side, cell, uni, win, trades, usd, src, h, created, ckey, bin) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                     (c["id"], c["entry"], "long", c["cell"], "c539", "01.07–13.11", c["n"], c["usd"], "x", "h%d" % c["id"], "2026-11-23", c["ckey"], "b"))
+    conn.row_factory = dbm.sqlite3.Row
+    return conn, d
+
+
+def write_json(results, obs, meta, d):
+    os.makedirs(d, exist_ok=True)
+    for (side, k), r in results.items():
+        json.dump(r, open(os.path.join(d, "level-%s-%d.json" % (side, k)), "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump(obs[(side, k)], open(os.path.join(d, "obs-%s-%d.json" % (side, k)), "w", encoding="utf-8"), ensure_ascii=False)
+    json.dump(meta, open(os.path.join(d, "meta.json"), "w", encoding="utf-8"), ensure_ascii=False)
+
+
+def put(conn, results, obs, meta, key="k1", **kw):
+    ft, ver = dbm.feat_table(FEATURES)
+    return dbm.put_run(conn, meta, results, obs, ft, ver, ti.LEAD, {"t": "1"}, "test", key, [1, 2], **kw)
+
+
+def test_db_roundtrip_all_rows_equal_json():
+    results, obs, meta, cells = world_db()
+    conn, d = db_with_cells(cells)
+    try:
+        rid, new = put(conn, results, obs, meta)
+        assert new and rid == 1
+        jd = os.path.join(d, "json")
+        write_json(results, obs, meta, jd)
+        rows, diffs = dbm.verify_json(conn, rid, [jd])
+        assert diffs == [] and rows == sum(len(r["axes"]) + len(r["interactions"]) for r in results.values()) + sum(len(o) for o in obs.values())
+        res, ob = dbm.load_level(conn, rid, "long", 2)
+        assert all(isinstance(a["dead"], bool) and isinstance(a["above_noise_sh"], bool) for a in res["axes"])
+        assert any(o["c_rr"] is None for o in dbm.load_level(conn, rid, "long", 1)[1])          # NaN хранится как NULL
+        assert res["interactions"][0]["cid"] in {c["id"] for c in cells}
+        conn.execute("DROP TRIGGER infl_axis_noupdate")                         # порча одной строки видна сверке
+        conn.execute("UPDATE infl_axis SET r_p = r_p + 0.001 WHERE id = (SELECT min(id) FROM infl_axis)")
+        assert dbm.verify_json(conn, rid, [jd])[1]
+    finally:
+        conn.close()
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_db_report_text_same_from_db_and_json():
+    results, obs, meta, cells = world_db()
+    conn, d = db_with_cells(cells)
+    try:
+        rid, _ = put(conn, results, obs, meta)
+        res_db, obs_db, meta_db, runs = dbm.load_run(conn, rid)
+        assert runs == {("long", 1): rid, ("long", 2): rid}
+        F = rp.feat_numbers(FEATURES)
+        rp.DRY = True
+        for side, k in results:
+            assert rp.level_table(res_db[(side, k)], F) == rp.level_table(results[(side, k)], F)
+        assert rp.cluster_section(res_db) == rp.cluster_section(results)
+        assert rp.interaction_section(res_db) == rp.interaction_section(results)
+        assert rp.top_section(res_db, F) == rp.top_section(results, F) and rp.groups_section(res_db) == rp.groups_section(results)
+        assert rp.natr_section(res_db, obs_db, meta_db, F, "p", "r") == rp.natr_section(results, obs, meta, F, "p", "r")
+    finally:
+        rp.DRY = False
+        conn.close()
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_db_run_idempotent_new_run_old_stays_and_immutable():
+    results, obs, meta, cells = world_db()
+    conn, d = db_with_cells(cells)
+    try:
+        r1, n1 = put(conn, results, obs, meta, "k1")
+        r1b, n1b = put(conn, results, obs, meta, "k1")
+        assert (n1, n1b, r1b) == (True, False, r1)
+        n_axes = conn.execute("SELECT count(*) FROM infl_axis").fetchone()[0]
+        r2, n2 = put(conn, {("long", 2): results[("long", 2)]}, {("long", 2): obs[("long", 2)]}, meta, "k2")
+        assert n2 and r2 == 2 and conn.execute("SELECT count(*) FROM infl_axis WHERE run=?", (r1,)).fetchone()[0] == n_axes
+        cur = {(r["side"], r["k"]): r["run"] for r in conn.execute("SELECT * FROM infl_cur")}
+        assert cur == {("long", 1): 1, ("long", 2): 2}                          # уровень 2 — из последнего прогона, уровень 1 — из первого
+        _, _, _, runs = dbm.load_run(conn)
+        assert runs == cur
+        for sql in ("UPDATE infl_run SET note='x'", "DELETE FROM infl_axis", "UPDATE infl_obs SET dup=1", "DELETE FROM infl_inter"):
+            try:
+                conn.execute(sql)
+                assert False, sql
+            except dbm.sqlite3.DatabaseError as e:
+                assert "только добавляются" in str(e)
+    finally:
+        conn.close()
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_db_failed_write_leaves_nothing():
+    results, obs, meta, cells = world_db()
+    conn, d = db_with_cells(cells)
+    try:
+        bad = dict(results)
+        bad[("long", 2)] = dict(results[("long", 2)], axes=[dict(results[("long", 2)]["axes"][0], grid="не такая")])    # нарушает CHECK по сетке
+        try:
+            put(conn, bad, obs, meta, "k9")
+            assert False
+        except dbm.sqlite3.DatabaseError:
+            pass
+        assert conn.execute("SELECT (SELECT count(*) FROM infl_run) + (SELECT count(*) FROM infl_axis) + (SELECT count(*) FROM infl_obs)").fetchone()[0] == 0
+    finally:
+        conn.close()
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_feat_table_and_composite_axes():
+    ft, ver = dbm.feat_table(FEATURES)
+    assert len(ver) == 10 and ft["natr_min"]["n"] == 1 and ft["natr_min"]["cat"] == "pcoins"
+    f, ld = dbm.axis_feature("F:natr_bp", ft, ti.LEAD)
+    assert f["n"] == 105 and ld is None
+    f, ld = dbm.axis_feature("split", ft, ti.LEAD)                                  # составная ось — № ведущего ключа e2t
+    assert ld == "e2t" and f["n"] == ft["e2t"]["n"]
+    f, ld = dbm.axis_feature("sl", ft, ti.LEAD)
+    assert ld is None and f["n"] == 38                                                # у «sl» есть свой №
+    assert dbm.axis_feature("нет_такого", ft, ti.LEAD) == (None, None)
+
+
+def test_stale_levels_by_fingerprint_and_tool():
+    results, obs, meta, cells = world_db()
+    conn, d = db_with_cells(cells)
+    try:
+        ft, ver = dbm.feat_table(FEATURES)
+        fps = {"long:1": "a", "long:2": "b"}
+        assert ti.stale_levels(conn, fps, {"t": "1"}, [1, 2]) == [1, 2]            # прогонов нет
+        dbm.put_run(conn, meta, results, obs, ft, ver, ti.LEAD, {"t": "1"}, "test", "k1", [1, 2], fps=fps)
+        assert ti.stale_levels(conn, fps, {"t": "1"}, [1, 2]) == []                # тот же вход и код
+        assert ti.stale_levels(conn, dict(fps, **{"long:2": "c"}), {"t": "1"}, [1, 2]) == [2]     # новые клетки уровня 2
+        assert ti.stale_levels(conn, fps, {"t": "2"}, [1, 2]) == [1, 2]            # код другой — всё заново
+        s1 = ti.prepare(world_db()[3])[0]["long"]
+        assert ti.level_fp(s1, 2) == ti.level_fp(ti.prepare(world_db()[3])[0]["long"], 2) and ti.level_fp(s1, 1) != ti.level_fp(s1, 2)
+    finally:
+        conn.close()
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_rollup_rules_floor_mixing_and_composites():
+    def row(cat, r, rn, lead=None, run=1, k=1, nul=1, dead=0):
+        return dict(run=run, side="long", k=k, grid="полная", cat_short=cat, lead=lead, dead=dead, null_applicable=nul, r_null=rn, r=r, r_p=r, r_d=r / 2, r_null_p=None, r_null_d=None,
+                    grp_p="много" if r >= 0.3 else "мало", grp_d="мало", grp="много" if r >= 0.3 else "мало", not_random=0, d_usd_mean=-10.0, d_dd_mean=-1.0)
+    rows = [row("A", 0.5, 0.3), row("A", 0.4, 0.3), row("A", 0.6, 0.3), row("B", 0.9, 0.1), row("B", 0.8, 0.1, nul=0), row("C", 0.9, 0.0, lead="e2t"),
+            row("C", 0.9, 0.0), row("C", 0.9, 0.0), row(None, 0.5, 0.0)]
+    st = dbm.rollup_rows(rows)
+    assert abs(st["A"]["ex"] - 0.2) < 1e-12 and st["B"]["n"] == 2 and st["B"]["n_null"] == 1 and st["A"]["many_p"] == 3
+    assert abs(st["C"]["ex"] - 0.9) < 1e-12
+    assert dbm.rank_by(st, "ex") == ["C", "A"]                                      # у B одна ось с нулевой моделью (< 3) — не ранжируется
+    assert "без №" in st and "без №" not in dbm.rank_by(st, "ex")                  # «без №» печатается, не ранжируется
+    st2 = dbm.rollup_rows([r for r in rows if not r["lead"]])
+    assert dbm.rank_by(st2, "ex") == ["A"]                                          # без составной оси C — осей с нулевой моделью 2 (< 3): порядок меняется, это видно
+    for extra in (row("A", 0.1, 0.0, run=2), row("A", 0.1, 0.0, k=2)):
+        try:
+            dbm.rollup_rows(rows + [extra])
+            assert False
+        except SystemExit as e:
+            assert "смешаны" in str(e)

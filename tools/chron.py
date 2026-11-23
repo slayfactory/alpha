@@ -33,7 +33,7 @@ VERDICTS = ("работает", "не работает", "не ясно", "оп�
 METRIC_COLS = ("side", "cell", "uni", "win", "trades", "usd", "mean_usd", "sharpe", "verdict", "same_data", "from_text", "src", "src_commit",
                "src_ptr", "extra")
 KINDS = ("verdict", "prereg", "amend", "freeze", "result", "step", "measure", "experiment", "correction", "note")
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 # почему у записи нет чисел (TK-661): строка metric_gap — объяснение пробела в БД, не в карточке
 GAP_REASONS = ("предрегистрация", "заморозка", "не запускалось", "числа не вписаны", "чисел сделок нет")
 HERE = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
@@ -165,6 +165,77 @@ ALTER TABLE metric ADD COLUMN ckey TEXT;
 ALTER TABLE metric ADD COLUMN bin TEXT;
 CREATE INDEX metric_cell ON metric(side, uni, win, ckey);
 """}
+# влияние осей на прибыль и просадку (TK-693, В-179): результаты разбора TK-689 по прогонам; таблицы только добавляются
+INFL_MET = ("n", "usd", "mean", "sh", "dd", "ddp", "gap", "rr")      # метрики клетки: сделок, Σ $, $/сд., Шарп, просадка $ / % маржи, перехай, R:R
+INFL_DDL = """
+CREATE TABLE infl_run(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_key TEXT NOT NULL UNIQUE,            -- sha1(инструмент + вселенная + окно + уровни + отпечатки клеток уровней): тот же ключ — тот же прогон, повтор не пишется
+  created TEXT NOT NULL,                   -- GMT+4
+  uni TEXT NOT NULL, win TEXT NOT NULL, stake REAL NOT NULL, anchor_entry INTEGER NOT NULL,
+  levels TEXT NOT NULL,                    -- JSON: уровни, посчитанные этим прогоном
+  tool TEXT NOT NULL,                      -- JSON {файл: sha1[:10]}: код инструмента на момент счёта
+  git_sha TEXT, source TEXT NOT NULL,      -- коммит инструмента; compute | import-json:<каталог>
+  feat_ver TEXT,                           -- sha1[:10] ml_features.json (вкладка «Признаки»): ключ infl_feat
+  note TEXT, bins TEXT, entries TEXT, thresholds TEXT, anchors TEXT, levels_in_db TEXT, excluded TEXT,
+  dup_keys INTEGER, dup_diff INTEGER, m_long INTEGER, m_short INTEGER);
+CREATE TABLE infl_feat(
+  ver TEXT NOT NULL, n INTEGER NOT NULL, name TEXT NOT NULL, cat TEXT NOT NULL, cat_short TEXT, cat_title TEXT, grp TEXT,
+  PRIMARY KEY(ver, n)) WITHOUT ROWID;
+CREATE TABLE infl_level(
+  run INTEGER NOT NULL REFERENCES infl_run(id), side TEXT NOT NULL CHECK (side IN ('long','short')), k INTEGER NOT NULL,
+  n_cells INTEGER, cells_full INTEGER, cells_sel INTEGER,
+  sigma_sh REAL, noise_sh REAL, sigma_usd REAL, noise_usd REAL, m INTEGER, missing TEXT,
+  fp TEXT,                                 -- sha1 id клеток уровней k и k−1 (опоры): без изменений — уровень не пересчитывается
+  PRIMARY KEY(run, side, k)) WITHOUT ROWID;
+CREATE TABLE infl_axis(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run INTEGER NOT NULL REFERENCES infl_run(id), side TEXT NOT NULL CHECK (side IN ('long','short')), k INTEGER NOT NULL,
+  grid TEXT NOT NULL CHECK (grid IN ('полная','отбор')), axis TEXT NOT NULL,
+  feat_no INTEGER, cat TEXT, cat_short TEXT, lead TEXT,   -- № и вкладка «Признаки»; lead — ведущий ключ, если № взят у него (составная ось)
+  n INTEGER, n_raw INTEGER, dead INTEGER,
+%(dcols)s
+  r_p REAL, r_d REAL, r REAL, grp TEXT, grp_p TEXT, grp_d TEXT,
+  share_pos REAL, sign_stable INTEGER, months_same_sign INTEGER, months_stable INTEGER, d_months TEXT,
+  max_abs_dsh REAL, above_noise_sh INTEGER, max_abs_dusd REAL, above_noise_usd INTEGER, share_removing REAL, missing INTEGER, dirs TEXT,
+  null_cells INTEGER, null_applicable INTEGER, r_null REAL, r_null_p95 REAL, r_null_p REAL, r_null_d REAL, not_random INTEGER,
+  cl TEXT CHECK (cl IS NULL OR cl IN ('name','small')), fam INTEGER, fam_ord INTEGER,   -- кластеры: участие, № семьи, порядок в семье
+  UNIQUE(run, side, k, grid, axis));
+CREATE INDEX infl_axis_q ON infl_axis(side, k, grid, run);
+CREATE INDEX infl_axis_cat ON infl_axis(cat, side, k);
+CREATE INDEX infl_axis_axis ON infl_axis(axis, run);
+CREATE TABLE infl_cluster(
+  run INTEGER NOT NULL REFERENCES infl_run(id), side TEXT NOT NULL, k INTEGER NOT NULL, grid TEXT NOT NULL,
+  n_names INTEGER, n_small INTEGER, pairs INTEGER, n_fam INTEGER, PRIMARY KEY(run, side, k, grid)) WITHOUT ROWID;
+CREATE TABLE infl_family(
+  run INTEGER NOT NULL REFERENCES infl_run(id), side TEXT NOT NULL, k INTEGER NOT NULL, grid TEXT NOT NULL, fam INTEGER NOT NULL,
+  size INTEGER, rep_axis TEXT, PRIMARY KEY(run, side, k, grid, fam)) WITHOUT ROWID;
+CREATE TABLE infl_obs(                     -- значения оси: клетка × ось (кривые графиков); c_ — метрики клетки, d_ — Δ против опоры
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  axis_id INTEGER NOT NULL REFERENCES infl_axis(id), label TEXT, cell INTEGER REFERENCES metric(id), ref INTEGER REFERENCES metric(id),
+  dir TEXT, dup INTEGER, partners TEXT, others TEXT,
+%(ocols)s);
+CREATE INDEX infl_obs_axis ON infl_obs(axis_id, label);
+CREATE TABLE infl_inter(                   -- чистая интерактивность порядка k клетки (уровни ≥ 2)
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run INTEGER NOT NULL REFERENCES infl_run(id), side TEXT NOT NULL, k INTEGER NOT NULL, grid TEXT NOT NULL,
+  cell INTEGER REFERENCES metric(id), axes TEXT NOT NULL, tsig TEXT, n INTEGER, usd_cell REAL, usd REAL, daily_sum REAL, lo REAL, hi REAL, p_le0 REAL);
+CREATE INDEX infl_inter_q ON infl_inter(run, side, k, grid);
+CREATE VIEW infl_cur AS SELECT side, k, max(run) AS run FROM infl_level GROUP BY side, k;   -- последний прогон уровня
+CREATE VIEW infl_value AS SELECT a.run, a.side, a.k, a.grid, a.axis, o.label, count(*) AS n_obs, sum(1 - o.dup) AS n_uniq,
+%(vcols)s
+  FROM infl_obs o JOIN infl_axis a ON a.id = o.axis_id GROUP BY o.axis_id, o.label;      -- точки кривых: среднее по клеткам значения оси
+""" % dict(
+    dcols="\n".join("  d_%s_mean REAL, d_%s_min REAL, d_%s_max REAL," % (m, m, m) for m in INFL_MET),
+    ocols=",\n".join("  c_%s REAL, d_%s REAL" % (m, m) for m in INFL_MET),
+    vcols=",\n".join("  avg(o.c_%s) AS c_%s, avg(CASE WHEN o.dup = 0 THEN o.d_%s END) AS d_%s, min(CASE WHEN o.dup = 0 THEN o.d_%s END) AS d_%s_min,"
+                      " max(CASE WHEN o.dup = 0 THEN o.d_%s END) AS d_%s_max" % ((m,) * 8) for m in INFL_MET))
+INFL_TABLES = ("infl_run", "infl_feat", "infl_level", "infl_axis", "infl_cluster", "infl_family", "infl_obs", "infl_inter")
+INFL_TRIGGERS = "".join(
+    "CREATE TRIGGER %s_noupdate BEFORE UPDATE ON %s BEGIN SELECT RAISE(ABORT, 'chron: результаты влияния осей только добавляются (прогон — новой строкой)'); END;\n"
+    "CREATE TRIGGER %s_nodelete BEFORE DELETE ON %s BEGIN SELECT RAISE(ABORT, 'chron: результаты влияния осей только добавляются'); END;\n" % (t, t, t, t)
+    for t in INFL_TABLES)
+MIGRATE[8] = INFL_DDL + INFL_TRIGGERS
 FTS_SQL = "CREATE VIRTUAL TABLE fts USING fts5(node UNINDEXED, title, body, tokenize='trigram')"
 
 
@@ -1089,7 +1160,8 @@ class Store:
         trig = {r[0] for r in self.c.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
         for t in ("entry_immutable", "entry_nodelete", "psec_locked", "psec_nodelete", "link_nodelete", "link_noupdate",
                   "psec_flag_noupdate", "psec_flag_nodelete", "metric_noupdate", "metric_nodelete", "psec_num_noupdate", "psec_num_nodelete",
-                  "metric_gap_noupdate", "metric_gap_nodelete", "metric_fix_noupdate", "metric_fix_nodelete"):
+                  "metric_gap_noupdate", "metric_gap_nodelete", "metric_fix_noupdate", "metric_fix_nodelete",
+                  *("%s_%s" % (t, w) for t in INFL_TABLES for w in ("noupdate", "nodelete"))):
             if t not in trig:
                 issues.append("нет триггера %s" % t)
         for src, dst, rel in self.c.execute("SELECT src, dst, rel FROM link").fetchall():

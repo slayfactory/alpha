@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""TK-689: отчёт и графики по результатам `tk689_influence.py compute` (каталоги уровней). Таблицы, раздел NATR первым, графики PNG (один акцентный цвет).
-    python3 tk689_report.py --inp DIR[,DIR…] --features ml_features.json --md OUT.md --tables TABLES_DIR --plots PLOTS_DIR [--only natr]"""
+"""TK-689 / TK-693: отчёт и графики — ВИД на результаты в БД летописи (`infl_*`), не хранилище: md и PNG строятся из БД по запросу (В-179).
+Таблицы, раздел NATR первым, графики PNG (один акцентный цвет). Источник — БД (`--db`, по умолчанию последний прогон каждого уровня, `--run N` — один прогон)
+или прежние каталоги JSON (`--inp`, для сверки).
+    python3 tk689_report.py --db /data/chron/chron.sqlite [--run N] --features ml_features.json --md OUT.md --tables TABLES_DIR --plots PLOTS_DIR [--only natr] [--dry-plots]"""
 import argparse
 import glob
 import json
@@ -17,11 +19,8 @@ ACCENT, GREY, DARK = "#1f6feb", "#9aa0a6", "#3c4043"
 SIDES = (("long", "Лонг"), ("short", "Шорт"))
 NATR_AXES = ("natr_min", "natr_p", "nf", "fg", "xb", "ev", "ls", "sl", "sn", "nx", "chan", "vf", "vs", "va", "vb", "vp", "v0", "vm", "vz", "vr",
              "t_low", "t_high", "a", "rr", "natr_exit_p", "ns", "F:natr_bp", "F:VOL")
-LEAD = {name: sorted(leads)[0] for name, leads, _ in ti.RULES}
-LEAD["split"] = "e2t"
-LEAD["chan"] = "ch"
-LEAD["sn"] = "sn"
-LEAD["ev"] = "ev"
+LEAD = ti.LEAD
+DRY = False                      # --dry-plots: не рисовать PNG, только вернуть путь (сверка текста отчёта без matplotlib)
 MET = (("usd", "Σ $", "%.0f"), ("mean", "$ на сделку", "%.2f"), ("n", "сделок", "%.0f"), ("sh", "Шарп", "%.2f"), ("dd", "просадка $", "%.0f"), ("gap", "перехай, сут.", "%.0f"))
 
 
@@ -34,6 +33,15 @@ def load(dirs):
             obs[(side, int(k))] = json.load(open(os.path.join(d, "obs-%s-%s.json" % (side, k)), encoding="utf-8"))
         if os.path.exists(os.path.join(d, "meta.json")):
             meta = json.load(open(os.path.join(d, "meta.json"), encoding="utf-8"))
+    return res, obs, meta
+
+
+def load_db(db, run=None):
+    import tk689_db as dbm
+    conn = dbm.connect(db, ro=True)
+    conn.row_factory = dbm.sqlite3.Row
+    res, obs, meta, _ = dbm.load_run(conn, run)
+    conn.close()
     return res, obs, meta
 
 
@@ -148,11 +156,13 @@ def axis_title(axis, side, F, extra):
 
 
 def plot_level1(side, axis, obs, meta, res, path, F=None):
-    plt = _plt()
     A = meta["anchors"][side]
     mine = [o for o in obs if o["axis"] == axis and o["grid"] == "полная"]
     if not mine:
         return None
+    if DRY:
+        return path
+    plt = _plt()
     al = anchor_label(axis, meta, side)
     labs = order_labels([o["label"] for o in mine] + ([al] if al is not None else []))
     fig, axs = plt.subplots(2, 3, figsize=(9, 4.6))
@@ -184,10 +194,12 @@ def plot_level1(side, axis, obs, meta, res, path, F=None):
 
 def plot_level_k(side, axis, k, obs, path, metric="usd", maxp=24, F=None, meta=None):
     """Уровни ≥ 2: эффект значения оси (Δ против опоры) для каждого партнёра — среднее по значениям партнёра и полоса min … max."""
-    plt = _plt()
     mine = [o for o in obs if o["axis"] == axis and not o["dup"] and o["grid"] == "полная" and o["others"] and o["d_" + metric] is not None]
     if not mine:
         return None
+    if DRY:
+        return path
+    plt = _plt()
     by = defaultdict(list)
     for o in mine:
         by["+".join(sorted(ax_name(x) for x in o["others"]))].append(o)
@@ -512,15 +524,22 @@ def natr_compact(res, meta, F):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--inp", required=True)
+    ap.add_argument("--db", default=None)
+    ap.add_argument("--run", type=int, default=None)
+    ap.add_argument("--inp", default=None)
+    ap.add_argument("--dry-plots", action="store_true")
     ap.add_argument("--features", required=True)
     ap.add_argument("--md", required=True)
     ap.add_argument("--tables", required=True)
     ap.add_argument("--plots", required=True)
     ap.add_argument("--rel-plots", default="p42-axis-influence-2026-11-23")
     ap.add_argument("--only", default="")
+    ap.add_argument("--check-md", default=None, help="сверка с прежним отчётом (снимок TK-689): md и tables-*.md должны совпасть байт в байт")
+    ap.add_argument("--check-tables", default=None)
     a = ap.parse_args()
-    res, obs, meta = load(a.inp.split(","))
+    global DRY
+    DRY = a.dry_plots
+    res, obs, meta = load(a.inp.split(",")) if a.inp else load_db(a.db, a.run)
     F = feat_numbers(a.features)
     L = natr_section(res, obs, meta, F, a.plots, a.rel_plots)
     os.makedirs(a.tables, exist_ok=True)
@@ -533,6 +552,23 @@ def main():
     L += data_section(res, meta) + groups_section(res) + top_section(res, F) + shift_section(res) + cluster_section(res) + interaction_section(res) + uncovered_section(res, meta)
     write_tables(res, meta, F, a.tables)
     open(a.md, "w", encoding="utf-8").write("\n".join(L) + "\n")
+    if a.check_md or a.check_tables:
+        sys.exit(check_against(a.md, a.tables, a.check_md, a.check_tables))
+
+
+def check_against(md, tables, ref_md, ref_tables):
+    """Отчёт, построенный из БД, против прежнего отчёта (md и таблицы уровней, все строки): байт в байт (LF, как в git). → код выхода."""
+    bad, ok = [], 0
+    pairs = [(md, ref_md)] if ref_md else []
+    if ref_tables:
+        pairs += [(os.path.join(tables, os.path.basename(f)), f) for f in sorted(glob.glob(os.path.join(ref_tables, "*.md")))]
+    for new, ref in pairs:
+        if os.path.exists(new) and open(new, "rb").read() == open(ref, "rb").read():
+            ok += 1
+        else:
+            bad.append(os.path.basename(ref))
+    print("сверка с прежним отчётом: совпало %d из %d%s" % (ok, len(pairs), "; РАЗНИЦА: " + ", ".join(bad) if bad else ""))
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":
