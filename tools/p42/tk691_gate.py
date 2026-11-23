@@ -215,8 +215,8 @@ def cmd_describe(a):
         side = "L" if k.startswith("L") else "S"
         try:
             res[k] = cell_row(u, side, dirs, st, p8, t43, s674)
-        except SystemExit as e:
-            res[k] = {"error": str(e)}
+        except (SystemExit, OSError, ValueError, KeyError) as e:
+            res[k] = {"error": "%s: %s" % (type(e).__name__, e)}
     if a.out:
         dump(res, a.out)
     for k, m in res.items():
