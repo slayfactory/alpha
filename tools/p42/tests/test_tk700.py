@@ -12,6 +12,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 import tk700_lock as lk  # noqa: E402
+import tk700_warm20 as wm  # noqa: E402
 import tk700_win as w  # noqa: E402
 
 SHA = "ab" * 32
@@ -203,6 +204,40 @@ class Holdout(unittest.TestCase):
         self.assertEqual(line, "a=1 b=2")
         self.assertEqual(sorted(parts), [["n24", ">=", 250000.0], ["tpm60", "<=", 0.5]])
         self.assertEqual(fz.split_ckey("a=1")[1], [])
+
+
+class Warm20(unittest.TestCase):
+    """Ворота прогрева: строки эталона (T0 = 17.06) сдвигаются на 6 суток к координатам wa20 (T0 = 11.06)."""
+    HEAD = "sym,level,sig_ms,dist_e8,level_px_e8,born,end,first_bar,natr_e8,members\n"
+
+    def _write(self, d, name, rows):
+        p = os.path.join(d, name)
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(self.HEAD + "".join(rows))
+        return p
+
+    def test_shift_and_diff(self):
+        sh_ms, sh_min = wm.T0_SHIFT_MS, wm.T0_SHIFT_MIN
+        fb = sh_min // 60
+        ref = ["AUSDT,3,1209600592,100,500,20100,20280,326,70,332:6099|326:6093\n",
+               "BUSDT,1,1209601000,200,600,100,300,10,80,12:6000\n"]
+        new = ["AUSDT,9,%d,100,500,%d,%d,%d,70,%d:6099|%d:6093\n" % (1209600592 + sh_ms, 20100 + sh_min, 20280 + sh_min, 326 + fb, 332 + fb, 326 + fb),
+               "BUSDT,7,%d,200,600,%d,%d,%d,80,%d:6000\n" % (1209601000 + sh_ms, 100 + sh_min, 300 + sh_min, 10 + fb, 12 + fb)]
+        with tempfile.TemporaryDirectory() as d:
+            c = wm.compare(self._write(d, "n.csv", new), self._write(d, "r.csv", ref), 60)
+            self.assertTrue(c["ok"], c)
+            self.assertEqual((c["new_rows"], c["ref_rows"]), (2, 2))
+            new[1] = new[1].replace(",200,600,", ",201,600,")                     # dist_e8 другой → расхождение в обе стороны
+            c = wm.compare(self._write(d, "n.csv", new), self._write(d, "r.csv", ref), 60)
+            self.assertFalse(c["ok"])
+            self.assertEqual((c["only_new"], c["only_ref"]), (1, 1))
+
+    def test_before_day20_ignored(self):
+        with tempfile.TemporaryDirectory() as d:
+            early = ["AUSDT,0,%d,1,2,3,4,5,6,7:8\n" % (19 * 86400 * 1000)]           # wa20 сутки 19 — в сравнение не входит
+            c = wm.compare(self._write(d, "n.csv", early), self._write(d, "r.csv", []), 60)
+            self.assertTrue(c["ok"])
+            self.assertEqual(c["new_rows"], 0)
 
 
 if __name__ == "__main__":
