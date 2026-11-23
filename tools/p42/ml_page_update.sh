@@ -5,7 +5,7 @@
 # «Цели TK-598» — tools/p42/ml_progress.json → targets (схема ml_progress.schema.json). «Признаки» (TK-606) — tools/p42/ml_features.json (схема ml_features.schema.json).
 # «Эквити» (TK-684) — tools/p42/tk684_variants.json (вариант = одна запись + каталоги его сделок на srv); tk684_equity.py читает готовые сделки,
 #   сверяет каждую линию с летописью (/data/chron/chron.sqlite) и принятыми числами — расхождение останавливает выкладку.
-# Вид «Веер» — data/fan/ (tk684_fan.py: все клетки перебора из летописи, ≈ 1,5 мин, юнит Nice 19); строится, если каталога ещё нет, пересчитать после новых клеток: REBUILD_FAN=1 bash tools/p42/ml_page_update.sh
+# Вид «Веер» — data/fan/ (tk684_fan.py: все клетки перебора c539 из летописи, ≈ 8 мин, юнит Nice 19, пик 3,4 ГБ); строится, если каталога ещё нет, пересчитать после новых клеток (четвёрки шорта, пересчёт bd): REBUILD_FAN=1 bash tools/p42/ml_page_update.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 KEY=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15)
@@ -25,9 +25,11 @@ if [ -n "$MISSING" ]; then echo "ml_features.json: на srv есть призн�
 else scp "${KEY[@]}" -q ml_features.json "$HOST:/data/pages/ml/data/features.json"; fi
 ssh "${KEY[@]}" "$HOST" "REBUILD_FAN=${REBUILD_FAN:-0} bash -s" <<'REMOTE'
 set -e
-/opt/venv/bin/python /data/p42-tk624/code/tk684_equity.py /data/p42-tk639/code /data/p42-tk624/code/tk684_variants.json /data/chron/chron.sqlite /data/pages/ml/data/variants.json /data/pages/ml/data/variants_check.json   # TK-684: варианты для выбора (только чтение, сверка с летописью)
+# TK-696: код чтения сделок — снимок кода TK-674 (вселенная c539 есть только там), берётся один раз; файлы TK-674 не трогаются (без .pyc)
+[ -s /data/p42-tk696/engine/tk625_run.py ] || { mkdir -p /data/p42-tk696/engine /data/p42-tk696/cells && cp /data/p42-tk674c/code/*.py /data/p42-tk696/engine/; }
+systemd-run --quiet --wait --pipe -p Nice=19 -p MemoryMax=6G -p CPUQuota=200% -E PYTHONDONTWRITEBYTECODE=1 /opt/venv/bin/python /data/p42-tk624/code/tk684_equity.py /data/p42-tk696/engine /data/p42-tk624/code/tk684_variants.json /data/chron/chron.sqlite /data/pages/ml/data/variants.json /data/pages/ml/data/variants_check.json   # TK-684: варианты для выбора (только чтение, сверка с летописью)
 if [ "$REBUILD_FAN" = 1 ] || [ ! -s /data/pages/ml/data/fan/index.json ]; then
-  rm -rf /data/pages/ml/data/fan.new && systemd-run --quiet --wait --pipe -p Nice=19 -p MemoryMax=6G /opt/venv/bin/python /data/p42-tk624/code/tk684_fan.py /data/chron/chron.sqlite /data/pages/ml/data/fan.new | tail -3
+  rm -rf /data/pages/ml/data/fan.new && systemd-run --quiet --wait --pipe -p Nice=19 -p MemoryMax=6G -p CPUQuota=200% /opt/venv/bin/python /data/p42-tk624/code/tk684_fan.py /data/chron/chron.sqlite /data/pages/ml/data/fan.new | tail -3
   test -s /data/pages/ml/data/fan.new/index.json && rm -rf /data/pages/ml/data/fan.old && { [ ! -d /data/pages/ml/data/fan ] || mv /data/pages/ml/data/fan /data/pages/ml/data/fan.old; } && mv /data/pages/ml/data/fan.new /data/pages/ml/data/fan && rm -rf /data/pages/ml/data/fan.old
 fi
 /opt/venv/bin/python /data/pages/_src/tk593_page.py /data/pages/_src/tk593_template.html /data/pages/ml

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""П-42 TK-684: пакеты вида «Веер» вкладки «Эквити» (:8090) — суточные ряды всех клеток перебора TK-674 из летописи.
+"""П-42 TK-684 / TK-696: пакеты вида «Веер» вкладки «Эквити» (:8090) — суточные ряды всех клеток перебора TK-674 на составе c539 из летописи.
 
 Использование (srv, только чтение БД; в ml_page_update.sh — под systemd-run, Nice 19): <venv>/bin/python tk684_fan.py <chron.sqlite> <каталог выхода data/fan>
-Источник — таблица metric, src LIKE 'tools/p42/tk674%': в extra уже лежат суточные $ (daily, 136 суток по дню входа, ставка 500 $) и метрики клетки;
+Источник — таблица metric, uni = 'c539', src LIKE 'tools/p42/tk674%', окно 01.07–13.11: в extra уже лежат суточные $ (daily, 136 суток по дню входа, ставка 500 $) и метрики клетки;
 CSV сделок не читаются, движок не запускается (В-213). Отбор (правила перебора TK-674): стоп patch.s ∈ {1; 1,5; 2; 3; 4} (без s = стоп 5 % и s ∈ {6, 8, 12} — вне базы, В-173);
-клетки SHARP_* (порог с заглядыванием вперёд) — вне; одинаковые сделки (extra.trades_sig) в пределах стороны — одна клетка (меньший уровень, затем меньший id).
-Уровень = число осей в patch, кроме s, + число фильтров; раздельный вход (e2t / w2 / s2 и e2 при e2t) — одна ось «split». 0 — семья базы (только стоп), 1 — единичка, 2 — пара, 3 — тройка, 4 — четвёрка, 5 — пять осей и больше.
+клетки SHARP_* (порог с заглядыванием вперёд) — вне; клетки с фильтром bd_* на прежних таблицах — вне (PS-993 (б), L-384: не читаются до пересчёта PS-996; их строки TK690-xb / TK690-recount входят и заменяют прежние);
+одинаковые сделки (extra.trades_sig) в пределах стороны — одна клетка (база, затем клетки вариантов `chron`, затем меньший уровень, затем меньший id).
+Уровень = число осей клетки, кроме s (плюс фильтры); составная ось считается один раз: split (e2t / w2 / s2 и e2 при них), e1t (+ e2), cw (cl, ch, cm), sg (sb, sr, sd), nf (+ natr_min), ev (ea, el, eh), sm (+ sl, nx, cw-семья).
+0 — семья базы (только стоп), 1 — единичка, 2 — пара, 3 — тройка, 4 — четвёрка, 5 — пять осей и больше. База — строка entry = 334 (L-334, якоря c539).
 Сверка до записи (расхождение = код 1, файлы не пишутся): Σ daily == usd, Шарп / просадка / перехай, пересчитанные из daily (tk684_metrics), == числам летописи; n_win + n_loss ≤ n.
 Выход: index.json (оси, базы, счётчики, размеры) и на каждую сторону и уровень — <L|S>-<уровень>.bin.gz: Int16 суточный P&L в центах × N × days, затем Float32 × N × len(fields), затем Uint32 id строки metric × N;
 <L|S>-<уровень>.json.gz: ключи клеток и их оси ([[№ оси, № значения], …] по словарям index.json).
@@ -24,9 +26,14 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tk684_metrics as mt  # noqa: E402
 
+UNI, WIN, ANCHOR_ENTRY = "c539", "01.07–13.11", 334
+RECOUNT = ("TK690-recount", "TK690-xb")     # пересчёт PS-994 / PS-995: строки заменяют прежние строки тех же клеток (контроли K1 / K3 / all — дубли, не берём)
 STOPS = {1.0, 1.5, 2.0, 3.0, 4.0}
 SPLIT = ("e2t", "w2", "s2")
-ANCHOR = {"long": "s3", "short": "s4"}      # базы сторон: строки tk674_import.py
+ANCHOR = {"long": "s3", "short": "s4"}      # базы сторон (L-334)
+# составные оси: ключи, которые ось задаёт вместе (ось → (ключи-родители, зависимые ключи)); порядок — от большей к меньшей
+FAMILY = (("sm", {"sm"}, {"sl", "nx", "cw", "cl", "ch", "cm"}), ("nf", {"nf"}, {"natr_min"}), ("ev", {"ev"}, {"ea", "el", "eh"}), ("cw", {"cw"}, {"cl", "ch", "cm"}),
+          ("sg", {"sg"}, {"sb", "sr", "sd"}), ("e1t", {"e1t"}, {"e2"}), ("split", set(SPLIT), {"e2"}))
 FIELDS = ["n", "usd", "sharpe", "dd", "gap", "nw", "mw", "nl", "ml", "worst", "split"]
 DAYS = 136
 LV_MAX = 5      # 5 = «пять осей и больше» (единичные клетки импорта)
@@ -39,33 +46,41 @@ def fnum(x):
 
 
 def axes_of(patch, filt):
-    """[(ось, значение)] клетки без стопа; раздельный вход — одна ось split."""
+    """[(ось, значение)] клетки без стопа; составная ось (FAMILY) — одна ось со значением «ключ=значение …»; split — флаг раздельного входа."""
     split = any(k in patch for k in SPLIT)
-    out, sp = [], []
-    for k in sorted(patch):
-        if k == "s":
-            continue
-        if k in SPLIT or (k == "e2" and "e2t" in patch):
-            sp.append(f"{k}={fnum(patch[k])}")
-        else:
-            out.append((k, fnum(patch[k])))
-    if split:
-        out.append(("split", " ".join(sp)))
+    rest, out = {k: v for k, v in patch.items() if k != "s"}, []
+    for name, parents, deps in FAMILY:
+        if parents & rest.keys():
+            used = sorted((parents | deps) & rest.keys())
+            out.append((name, " ".join(f"{k}={fnum(rest[k])}" for k in used)))
+            for k in used:
+                del rest[k]
+    out += [(k, fnum(v)) for k, v in sorted(rest.items())]
     for f in filt:
         name, val = (str(f[0]), str(f[1])) if isinstance(f, (list, tuple)) else str(f).partition("_")[::2]
         out.append((name, val))
     return out, split
 
 
+def keep_cells():
+    """{(сторона, клетка)} вариантов страницы (поле chron в tk684_variants.json рядом): при одинаковых сделках остаётся клетка варианта."""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tk684_variants.json")
+    return {(v["side"], v["chron"]) for v in json.load(open(p, encoding="utf-8"))["variants"] if v.get("chron")} if os.path.exists(p) else set()
+
+
 def main():
     db, out_dir = sys.argv[1:3]
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    rows = con.execute("SELECT id, side, cell, src, extra FROM metric WHERE src LIKE 'tools/p42/tk674%' AND side IN ('long','short') ORDER BY id").fetchall()
+    keep = keep_cells()
+    rec = {(side, cell) for side, cell in con.execute("SELECT side, cell FROM metric WHERE uni = ? AND win IN (?, ?) AND side IN ('long','short')", (UNI,) + RECOUNT)}
     stat, cells, bad = Counter(), {}, []
-    for mid, side, cell, src, extra in rows:
+    for mid, entry, side, cell, win, src, extra in con.execute("SELECT id, entry, side, cell, win, src, extra FROM metric WHERE uni = ? AND win IN (?, ?, ?) AND src LIKE 'tools/p42/tk674%' AND side IN ('long','short') ORDER BY id", (UNI, WIN) + RECOUNT):
         e = json.loads(extra)
         stat["строк"] += 1
         patch, filt = e.get("patch") or {}, e.get("filt") or e.get("filt_sem") or []
+        if win == WIN and (side, cell) in rec:
+            stat["вне: заменены строкой пересчёта (TK690)"] += 1
+            continue
         if "s" not in patch:
             stat["вне: стоп 5 % (нет s)"] += 1
             continue
@@ -76,6 +91,9 @@ def main():
         if "SHARP" in cell or any("SHARP" in str(f) for f in filt):
             stat["вне: SHARP_*"] += 1
             continue
+        if win == WIN and any(str(f[0] if isinstance(f, (list, tuple)) else f).startswith("bd_") for f in filt):
+            stat["вне: bd_* на прежних таблицах (PS-996)"] += 1
+            continue
         if not e.get("daily") or len(e["daily"]) != DAYS:
             stat["вне: нет суточного ряда"] += 1
             continue
@@ -85,17 +103,17 @@ def main():
         ax, split = axes_of(patch, filt)
         d = np.asarray(e["daily"], dtype=np.float64)
         rr, c = e.get("rr") or {}, {}
-        c.update(id=mid, side=side, cell=cell, level=min(len(ax), LV_MAX), axes=ax, s=s, daily=d, sig=e.get("trades_sig") or f"id{mid}", anchor=src.endswith("tk674_import.py") and cell == ANCHOR[side],
+        c.update(id=mid, side=side, cell=cell, level=min(len(ax), LV_MAX), axes=ax, s=s, daily=d, sig=e.get("trades_sig") or f"id{mid}", anchor=entry == ANCHOR_ENTRY and cell == ANCHOR[side], keep=(side, cell) in keep,
                  f=[e["n"], e["usd"], e["sharpe"] if e.get("sharpe") is not None else np.nan, e["maxdd"], (e.get("kpi") or {}).get("gap_longest", np.nan),
                     rr.get("n_win", 0), rr.get("mean_win") or 0.0, rr.get("n_loss", 0), rr.get("mean_loss") or 0.0, (e.get("lmax") or {}).get("worst", np.nan), float(split)])
         # сверка с числами летописи
         m = mt.daily_metrics(d)
-        if abs(d.sum() - e["usd"]) > 0.006 or abs(m["dd"] - e["maxdd"]) > 0.006 or (e.get("sharpe") is not None and (m["sharpe"] is None or abs(m["sharpe"] - e["sharpe"]) > 1e-6 * max(1, abs(e["sharpe"])))) \
-                or ("kpi" in e and m["gap"] != e["kpi"]["gap_longest"]) or rr.get("n_win", 0) + rr.get("n_loss", 0) > e["n"] or np.abs(d).max() > 327:
+        if abs(d.sum() - e["usd"]) > 0.006 or abs(m["dd"] - e["maxdd"]) > 0.006 or (e.get("sharpe") is not None and (m["sharpe"] is None or abs(m["sharpe"] - e["sharpe"]) > 1e-6 * max(1, abs(e["sharpe"]))))                 or ("kpi" in e and m["gap"] != e["kpi"]["gap_longest"]) or rr.get("n_win", 0) + rr.get("n_loss", 0) > e["n"] or np.abs(d).max() > 327:
             bad.append((mid, cell, round(float(d.sum()), 2), e["usd"], m, e["maxdd"], e.get("sharpe"), (e.get("kpi") or {}).get("gap_longest")))
         k = (side, c["sig"])
         old = cells.get(k)
-        if old is None or (c["anchor"], -c["level"], -c["id"]) > (old["anchor"], -old["level"], -old["id"]):
+        key = lambda x: (x["anchor"], x["keep"], -x["level"], -x["id"])
+        if old is None or key(c) > key(old):
             cells[k] = c
         if old is not None:
             stat["вне: те же сделки (trades_sig)"] += 1
