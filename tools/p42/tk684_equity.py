@@ -10,7 +10,9 @@ variants_check.json — ожидаемые метрики для клик-тес
 import datetime as dt
 import json
 import os
+import shutil
 import sqlite3
+import subprocess
 import sys
 
 import numpy as np
@@ -32,7 +34,7 @@ TOL = 0.006
 
 def load(side, d):
     """(ряд, P&L сделок) варианта по трём окнам; охрана G7 — по всему окну (клетки без выхода rt держат сделки до 3,4 сут.)."""
-    tables, daily = p8.read_tables({w.name: (d.replace("{w}", w.name), ENG[side]) for w in st.TRADE_WINDOWS})
+    tables, daily = p8.read_tables({w.name: (d[w.name] if isinstance(d, dict) else d.replace("{w}", w.name), ENG[side]) for w in st.TRADE_WINDOWS})
     for w in st.TRADE_WINDOWS:
         tb, dl = tables[w.name], daily[w.name]
         assert abs(float(sum(dl.values())) - float(tb.net.sum())) <= 1e-4 + 2e-6 * len(tb.net), ("G7 окна", w.name, d)
@@ -43,11 +45,31 @@ def load(side, d):
 
 
 def chron_row(db, cell, side):
-    r = db.execute("select trades, usd, sharpe, extra from metric where cell = ? and side = ? and uni = ? order by id desc limit 1", (cell, side, SRC["universe"])).fetchone()
+    """(принятые метрики, каталоги сделок по окнам) — строка `metric` клетки на вселенной варианта, основное окно (последняя по id)."""
+    r = db.execute("select trades, usd, sharpe, extra from metric where cell = ? and side = ? and uni = ? and win = ? order by id desc limit 1", (cell, side, SRC["universe"], SRC.get("win", "01.07–13.11"))).fetchone()
     assert r, "летопись: нет строки metric для клетки %s (%s)" % (cell, side)
     ex = json.loads(r[3] or "{}")
     out = {"n": r[0], "sum": r[1], "sharpe": r[2], "dd": ex.get("maxdd"), "gap": (ex.get("kpi") or {}).get("gap_longest"), "worst": (ex.get("lmax") or {}).get("worst"), "rr": (ex.get("rr") or {}).get("rr")}
-    return {k: v for k, v in out.items() if v is not None}
+    return {k: v for k, v in out.items() if v is not None}, ex.get("dirs") or {}
+
+
+def stage(dirs):
+    """{окно: каталог сделок} → копии в SRC["stage"]: готовый каталог клетки копируется, упакованный (cells-arch/<окно>-<сторона>/<пакет>.tar.zst) достаётся одним членом архива; движок не запускается."""
+    out = {}
+    for w, d in dirs.items():
+        sub = d.split("/cells/", 1)[1]                                  # <окно>-<сторона>/<пакет>/<клетка>
+        dest = os.path.join(SRC["stage"], sub)
+        if not os.path.isfile(os.path.join(dest, "meta.json")):
+            shutil.rmtree(dest, ignore_errors=True)
+            win, batch, cell = sub.split("/", 2)
+            if os.path.isdir(d):
+                shutil.copytree(d, dest)
+            else:
+                os.makedirs(os.path.join(SRC["stage"], win), exist_ok=True)
+                subprocess.run(["tar", "--zstd", "-xf", "%s/%s/%s.tar.zst" % (SRC["arch"], win, batch), "-C", os.path.join(SRC["stage"], win), "%s/%s" % (batch, cell)], check=True)
+            assert os.path.isfile(os.path.join(dest, "meta.json")), "нет каталога клетки после распаковки: " + dest
+        out[w] = dest
+    return out
 
 
 def compare(vid, got, want, tol, what):
@@ -71,14 +93,15 @@ D0_MS = int(dt.datetime.combine(st.D0, dt.time(), dt.timezone.utc).timestamp() *
 out, single, bad = [], {}, []
 for v in SRC["variants"]:
     assert "ref" in v or "chron" in v, v["id"] + ": нет принятых чисел (ref / chron)"
-    ser = load(v["side"], v["dir"])
+    want, dirs = chron_row(db, v["chron"], v["side"]) if "chron" in v else ({}, {})
+    ser = load(v["side"], v["dir"] if "dir" in v else stage(dirs))      # нет dir — каталоги из строки летописи (extra.dirs)
     order = np.lexsort((ser.t_in, ser.t_out))
     one = {"id": v["id"], "side": v["side"], "group": v["group"], "label": v["label"], "status": v.get("status", ""), "key": v["key"],
            "t": [int(ser.t_out[i]) for i in order], "d": [int(ser.day[i]) for i in order], "v": [round(float(ser.val[i]), 6) for i in order]}
     assert min(int(x) for x in ser.t_in) >= D0_MS and max(int(x) for x in ser.t_in) < st.LAST_MS, v["id"] + ": вход вне 01.07–13.11"
     m = mt.metrics(one["d"], one["v"])
     if "chron" in v:
-        bad += compare(v["id"], m, chron_row(db, v["chron"], v["side"]), 1e-5, "летопись, metric «%s»" % v["chron"])
+        bad += compare(v["id"], m, want, 1e-5, "летопись, metric «%s»" % v["chron"])
     if "ref" in v:
         bad += compare(v["id"], m, {k: x for k, x in v["ref"].items() if k != "entry"}, TOL, v["ref"].get("entry", "ref"))
     single[v["id"]] = m
