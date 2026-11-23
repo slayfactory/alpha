@@ -98,5 +98,41 @@ class Canary(unittest.TestCase):
         self.assertEqual(len(bad), len(run.CMP_FILES))
 
 
+class SplitUnion(unittest.TestCase):
+    """PS-988: остаток уровня партиями — упаковка комбинаций и объединение файлов уровня."""
+
+    def test_fits(self):
+        import tk674_level as lv
+        self.assertTrue(lv.fits(dict(taken=[], n_new=0), 70000, 40000))                  # пустая партия берёт любую комбинацию (крупнее cap — своя партия)
+        self.assertTrue(lv.fits(dict(taken=[1], n_new=39990), 10, 40000))
+        self.assertFalse(lv.fits(dict(taken=[1], n_new=39990), 11, 40000))
+
+    def test_union_in_order_and_gap_stops(self):
+        import tk674_axes as ax
+        import tk674_level as lv
+        res = os.path.join(TMP, "res")
+
+        def lvl(side, tg, names, skip, cells):
+            put(lv.level_file(3, side, tg), dict(side=side, n=3, cap=20000, eligible=5, taken=[dict(names=[x]) for x in names], left_out=0, n_cells=len(cells), skip=skip,
+                                                 cells={k: dict(cid=k, patch={}, filt=[], sig=[]) for k in cells}))
+        for side in ax.SIDES:
+            lvl(side, "", ["a", "b"], 0, ["k1", "k2"])
+            lvl(side, "r01", ["c"], 2, ["k3"])
+            lvl(side, "r02", ["d", "e"], 3, ["k4"])
+        put(os.path.join(res, "invalid674%s3r01-%s.json" % (ax.SUF2, ax.SIDES[0])), {"cidX": "no_key"})
+        lv.cmd_union(3, ["r01", "r02"])
+        for side in ax.SIDES:
+            u = json.load(open(lv.level_file(3, side, "u"), encoding="utf-8"))
+            self.assertEqual([x["names"][0] for x in u["taken"]], list("abcde"))           # порядок отбора сохранён
+            self.assertEqual(sorted(u["cells"]), ["k1", "k2", "k3", "k4"])
+            self.assertEqual(u["left_out"], 0)
+        inv = json.load(open(os.path.join(res, "invalid674%s3u-%s.json" % (ax.SUF2, ax.SIDES[0])), encoding="utf-8"))
+        self.assertEqual(inv, {"cidX": "no_key"})
+        for side in ax.SIDES:
+            lvl(side, "r03", ["z"], 7, ["k9"])                                              # партии не подряд (skip 7, набрано 5) — стоп
+        with self.assertRaises(SystemExit):
+            lv.cmd_union(3, ["r01", "r02", "r03"])
+
+
 if __name__ == "__main__":
     unittest.main()

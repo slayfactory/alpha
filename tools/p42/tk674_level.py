@@ -17,6 +17,8 @@ import tk674_axes as ax  # noqa: E402
 ROOT = os.environ.get("TK674_ROOT", "/data/p42-tk674")
 SIDENAME = {"L": "long", "S": "short"}
 UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"
+BATCH = os.environ.get("TK674_BATCH", "")           # партия остатка (PS-988): `rNN`; `u` — объединение для карты (как в tk674_run)
+LOWTAG = os.environ.get("TK674_LOWTAG", "")         # суффикс карты нижнего уровня (карта троек шага 4 + остаток — `u`; карта пар — без суффикса)
 
 
 def axis_combos(side, n):
@@ -96,8 +98,8 @@ def cmd_count(n):
 SUB_MIN = 2                                     # комбинация уровня n берётся, если активны ≥ SUB_MIN её подкомбинаций уровня n − 1
 
 
-def map_path(n, side):
-    return os.path.join(ROOT, "res", "map674%s%s-%s.json" % (ax.SUF2, n if n > 2 else "", side))
+def map_path(n, side, tag=""):
+    return os.path.join(ROOT, "res", "map674%s%s%s-%s.json" % (ax.SUF2, n if n > 2 else "", tag, side))
 
 
 def pair_maps(side):
@@ -122,7 +124,7 @@ def active_subs(n, side):
         prs, _, busd = pair_maps(side)
         plist = list(prs.values())
     else:
-        pm = json.load(open(map_path(n - 1, side), encoding="utf-8"))
+        pm = json.load(open(map_path(n - 1, side, LOWTAG), encoding="utf-8"))
         busd, plist = pm["base"]["usd"], pm["pairs"]
     act = {}
     for p in plist:
@@ -130,6 +132,104 @@ def active_subs(n, side):
         if bm and bm.get("gain_sub") is not None and bm["gain_sub"] > 0 and bm["usd"] >= busd:
             act[frozenset(p["pair"].split("|"))] = bm["gain_sub"]
     return act, len(plist)
+
+
+def ranked(side, n):
+    """Комбинации уровня n по правилу поправки в порядке отбора: [(−сумма приростов активных подкомбинаций, имена, число активных)]; + активные подкомбинации и их число."""
+    act, n_sub = active_subs(n, side)
+    cand = []
+    for names in axis_combos(side, n):
+        g = [act[frozenset(c)] for c in itertools.combinations(names, n - 1) if frozenset(c) in act]
+        if len(g) >= SUB_MIN:
+            cand.append((-sum(g), names, len(g)))
+    cand.sort()
+    return cand, act, n_sub
+
+
+def level_file(n, side, tag=""):
+    return os.path.join(ROOT, "res", "level674%s%d%s-%s.json" % (ax.SUF2, n, tag, side))
+
+
+def fits(cur, n_new, cap):
+    """Комбинация с n_new новыми клетками входит в текущую партию: пустая партия берёт любую (крупнее cap — своя партия), иначе сумма новых клеток ≤ cap."""
+    return not cur["taken"] or cur["n_new"] + n_new <= cap
+
+
+def cmd_split(n, cap, tag0="r"):
+    """Остаток уровня n за потолком `select` — партии с чистыми границами (PS-988): комбинации в том же порядке, что `select` (первые `taken` — из файла уровня, совпадение проверяется),
+    дальше подряд целыми комбинациями, пока новых клеток (нет в БД и нет в предыдущих партиях) ≤ cap; комбинация крупнее cap — своя партия. Каждая клетка — ровно в одной партии.
+    → res/level674<SUF2><n>r<NN>-<сторона>.json (вид как у `select`, + `skip`, `batch`) и res/split674<SUF2><n>.json (сводка «есть / считаем» по партиям). Номера партий сквозные — сначала лонг, затем шорт; у партии одна сторона (файл только её)."""
+    import tk674_run as run
+    store = run.chron_store(ro=True)
+    bins = run.eq_bins()
+    per_side, summary = {}, {}
+    for side in ax.SIDES:
+        thr = load_thr(side)
+        cand, act, n_sub = ranked(side, n)
+        base = json.load(open(level_file(n, side), encoding="utf-8"))
+        nt = len(base["taken"])
+        if [list(c[1]) for c in cand[:nt]] != [x["names"] for x in base["taken"]]:
+            raise SystemExit("%s: порядок отбора не совпал с файлом уровня" % side)
+        seen, bl, cur = set(base["cells"]), [], None
+        for neg, names, na in cand[nt:]:
+            cc = combo_cells(side, names, thr, {})
+            fresh = {k: c for k, c in cc.items() if k not in seen}
+            found = store.cells_lookup(SIDENAME[side], UNI, WIN, list(fresh), bins=bins)
+            new = [k for k in fresh if k not in found]
+            if cur is None or not fits(cur, len(new), cap):
+                cur = dict(taken=[], cells={}, n_new=0, n_have=0)
+                bl.append(cur)
+            cur["cells"].update(fresh)
+            seen.update(fresh)
+            cur["n_new"] += len(new)
+            cur["n_have"] += len(fresh) - len(new)
+            cur["taken"].append(dict(names=list(names), score=-neg, n_act=na, cells=len(cc), new=len(new)))
+        per_side[side] = (bl, cand, act, n_sub, nt)
+    nb = 0
+    for side in ax.SIDES:                        # номера партий сквозные: сначала партии лонга, затем шорта; у партии одна сторона
+        bl, cand, act, n_sub, nt = per_side[side]
+        summary[side] = []
+        for i, b in enumerate(bl):
+            nb += 1
+            sigs = {c["sig"] for c in b["cells"].values() if c["sig"]}
+            skip = nt + sum(len(x["taken"]) for x in bl[:i])
+            tg = "%s%02d" % (tag0, nb)
+            out = dict(side=side, n=n, cap=cap, sub_min=SUB_MIN, active_subs=len(act), subs=n_sub, eligible=len(cand), taken=b["taken"], left_out=len(cand) - skip - len(b["taken"]),
+                       n_cells=len(b["cells"]), n_have=b["n_have"], n_new=b["n_new"], skip=skip, batch=tg,
+                       cells={k: dict(cid=c["cid"], patch=c["patch"], filt=c["filt"], sig=c["sig"]) for k, c in b["cells"].items()})
+            json.dump(out, open(level_file(n, side, tg), "w", encoding="utf-8"), ensure_ascii=False)
+            summary[side].append(dict(batch=tg, skip=skip, triples=len(b["taken"]), cells=len(b["cells"]), in_db=b["n_have"], new=b["n_new"], sigs=len(sigs),
+                                      filt=sum(1 for c in b["cells"].values() if c["filt"])))
+            print("== %s %s: комбинаций %d (с %d), клеток %d (в БД %d, считаем %d), проходов сигналов %d, с фильтром %d" % (
+                side, tg, len(b["taken"]), skip + 1, len(b["cells"]), b["n_have"], b["n_new"], len(sigs), summary[side][-1]["filt"]), flush=True)
+    json.dump(dict(n=n, cap=cap, batches=nb, summary=summary), open(os.path.join(ROOT, "res", "split674%s%d.json" % (ax.SUF2, n)), "w", encoding="utf-8"), ensure_ascii=False)
+    print("партий %d" % nb)
+
+
+def cmd_union(n, tags):
+    """Объединение уровня n: файл шага (`level674<SUF2><n>`) + партии остатка `tags` → level674<SUF2><n>u-<сторона>.json (комбинации по порядку отбора, клетки — объединение, потолок снят) и
+    invalid674<SUF2><n>u-<сторона>.json (недействительные клетки PS-986 — объединение); карта объединения — `TK674_BATCH=u tk674_level.py map <n>`."""
+    for side in ax.SIDES:
+        lv = json.load(open(level_file(n, side), encoding="utf-8"))
+        taken, cells = list(lv["taken"]), dict(lv["cells"])
+        inv = {}
+        for tg in [""] + list(tags):
+            f = os.path.join(ROOT, "res", "invalid674%s%d%s-%s.json" % (ax.SUF2, n, tg, side))
+            if os.path.exists(f):
+                v = json.load(open(f, encoding="utf-8"))
+                inv.update(v if isinstance(v, dict) else {x: "" for x in v})
+        for tg in tags:
+            if not os.path.exists(level_file(n, side, tg)):
+                continue
+            b = json.load(open(level_file(n, side, tg), encoding="utf-8"))
+            if b["skip"] != len(taken):
+                raise SystemExit("%s %s: партии идут не подряд (skip %d, набрано %d)" % (side, tg, b["skip"], len(taken)))
+            taken += b["taken"]
+            cells.update(b["cells"])
+        out = dict(lv, taken=taken, cells=cells, left_out=lv["eligible"] - len(taken), cap=None, n_cells=len(cells), batches=list(tags))
+        json.dump(out, open(level_file(n, side, "u"), "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump(inv, open(os.path.join(ROOT, "res", "invalid674%s%d%s-%s.json" % (ax.SUF2, n, "u", side)), "w", encoding="utf-8"), ensure_ascii=False)
+        print("== %s n=%d: объединение — комбинаций %d из %d, клеток %d, недействительных %d, за потолком %d" % (side, n, len(taken), lv["eligible"], len(cells), len(inv), out["left_out"]))
 
 
 def cmd_select(n, cap):
@@ -214,7 +314,7 @@ def cmd_map(n):
                 for a_, v in b1.items():
                     bar[frozenset([a_])] = v
             else:
-                plist = json.load(open(map_path(lvl, side), encoding="utf-8"))["pairs"]
+                plist = json.load(open(map_path(lvl, side, LOWTAG), encoding="utf-8"))["pairs"]
             for p in plist:
                 if p["best_no_plateau"]:
                     bar[frozenset(p["pair"].split("|"))] = p["best_no_plateau"]["sharpe"]
@@ -276,7 +376,7 @@ def cmd_map(n):
                    rr=bx["rr"]["rr"], **run.loss_fields(bx)), pairs=out_rows, n_cells=len(rows), m=m_side, m_own=m_own, sharpe_sd=sig_sh, noise_max=sig_sh * float(np.sqrt(2 * np.log(max(m_side, 2)))),
                    g_dup=dict(groups=len(dup), cells=sum(len(v) for v in dup), examples=dup[:5]),
                    select=dict(cap=lv["cap"], eligible=lv["eligible"], taken=len(lv["taken"]), left_out=lv["left_out"], active_subs=lv["active_subs"], subs=lv["subs"]))
-        json.dump(out, open(map_path(n, side), "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump(out, open(map_path(n, side, BATCH), "w", encoding="utf-8"), ensure_ascii=False)
         nw = sum(1 for p in out_rows if p["both_moved"] and p["both_moved"]["gain_sub"] > 0)
         print("== %s n=%d: комбинаций %d, клеток %d, m %d, шум ≈ %.2f; с победителем %d; все оси сдвинуты и лучше планки нижних уровней: %d" % (
             side, n, len(out_rows), len(rows), m_side, out["noise_max"], sum(1 for p in out_rows if p["winner"]), nw))
@@ -288,6 +388,10 @@ if __name__ == "__main__":
         cmd_count(int(sys.argv[2]))
     elif len(sys.argv) >= 4 and sys.argv[1] == "select":
         cmd_select(int(sys.argv[2]), int(sys.argv[3]))
+    elif len(sys.argv) >= 4 and sys.argv[1] == "split":
+        cmd_split(int(sys.argv[2]), int(sys.argv[3]))
+    elif len(sys.argv) >= 4 and sys.argv[1] == "union":
+        cmd_union(int(sys.argv[2]), sys.argv[3:])
     elif len(sys.argv) >= 3 and sys.argv[1] == "map":
         cmd_map(int(sys.argv[2]))
     else:

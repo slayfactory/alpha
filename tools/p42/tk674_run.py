@@ -45,7 +45,10 @@ AUTHOR = os.environ.get("TK674_AUTHOR", "TK-674")
 PARTIAL = bool(os.environ.get("TK674_PARTIAL"))  # tables: только партии, посчитанные на диске во всех трёх окнах (счёт остановлен до конца: В-175); индекс партий — из плана + маркеров done
 if ax.X680 and LEVEL == 1:
     raise SystemExit("TK674_X680=1 — пары (TK674_LEVEL=2), тройки и четвёрки (3, 4; отбор `tk674_level.py select` по картам пар обоих шагов)")
-FSUF = str(LEVEL) if LEVEL != 2 else ("x" if ax.X680 else "")          # таблица составных фильтров уровня (ftab674<FSUF>); режим X680 — своя таблица и суффикс bx
+BATCH = os.environ.get("TK674_BATCH", "")        # партия остатка уровня (PS-988): суффикс файлов уровня / плана / партий / ftab — `rNN` (клетки за потолком `select`), `u` — объединение для карты
+if BATCH and LEVEL <= 2:
+    raise SystemExit("TK674_BATCH — только для уровней 3, 4")
+FSUF = (str(LEVEL) if LEVEL != 2 else ("x" if ax.X680 else "")) + BATCH          # таблица составных фильтров уровня (ftab674<FSUF>); режим X680 — своя таблица и суффикс bx
 SUF = ax.SUF2 + FSUF         # файлы плана / партий / карты при базе стопа ≤ 4 % (поправка §13.73.2) и уровня — рядом с прежними
 
 
@@ -943,7 +946,7 @@ def cmd_ccheck(a):
         say("   полных стопов %d, из них убыток > Lmax(s) %d (%.1f %%), стоп-выходов в зоне 60–90 %% от полного %d (%.2f %% от stop-выходов); максимум превышения над Lmax(s) %.2f $; худший убыток полного стопа: при s=5 %.2f $ (Lmax(5 %%) = 25.42 $), по всем клеткам %.2f $" % (
             n_full, n_above, 100.0 * n_above / max(n_full, 1), n_mid, 100.0 * n_mid / max(1, sum(r["n_stop"] for r in res)), max([r["ex_max"] for r in wf] or [float("nan")]),
             max(w5 or [float("nan")]), max([r["worst"] for r in wf] or [float("nan")])))
-    json.dump(out, open(t.q("res", "ccheck674.json"), "w", encoding="utf-8"))
+    json.dump(out, open(t.q("res", "ccheck674%s.json" % BATCH), "w", encoding="utf-8"))
     say("ccheck готово")
 
 
