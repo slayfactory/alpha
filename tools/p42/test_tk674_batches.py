@@ -189,5 +189,34 @@ class Recount(unittest.TestCase):
         self.assertEqual(sorted(run.load_invalid("S")), ["c00004"])
 
 
+class FakeStore:
+    """cells_lookup / cells_count по меткам окна: прежние строки под основной меткой, пересчёт — под отдельной."""
+
+    def __init__(self, data):
+        self.data = data                                                       # {win: {ckey: row}}
+
+    def cells_lookup(self, side, uni, win, keys, bins=None):
+        return {k: self.data.get(win, {})[k] for k in keys if k in self.data.get(win, {})}
+
+    def cells_count(self, bins=None):
+        return [dict(side="short", uni=run.UNI, win=w, bin="b", n=len(d)) for w, d in self.data.items()]
+
+
+class Overlay(unittest.TestCase):
+    """Пересчёт PS-994: клетка в карте одна (строка заменяется), m по основной метке окна не растёт."""
+
+    def test_overlay_replaces_once_and_m_unchanged(self):
+        main = {"k1": dict(sharpe=1.0), "k2": dict(sharpe=2.0), "k3": dict(sharpe=3.0)}
+        new = {"k2": dict(sharpe=9.0), "k3": dict(sharpe=8.0), "kz": dict(sharpe=7.0)}      # kz — контроль вне плана
+        store = FakeStore({run.WIN: main, "01.07–13.11 TK-690": new})
+        plan = dict(cells={"k1": dict(cid="a"), "k2": dict(cid="b"), "k3": dict(cid="c")})
+        rows = store.cells_lookup("short", run.UNI, run.WIN, list(plan["cells"]))
+        n = run.overlay_rows(store, "S", plan, rows, None, "01.07–13.11 TK-690", {"b"})
+        self.assertEqual(n, 1)
+        self.assertEqual({k: r["sharpe"] for k, r in rows.items()}, {"k1": 1.0, "k2": 9.0, "k3": 3.0})      # k2 заменена, k3 не в списке — прежняя
+        self.assertEqual(len(rows), 3)                                                                   # клеток столько же
+        self.assertEqual(run.m_trials(store, "short"), (3, 3))                                          # m — только по основной метке (без пересчёта и без контроля)
+
+
 if __name__ == "__main__":
     unittest.main()

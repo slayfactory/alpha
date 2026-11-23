@@ -1156,6 +1156,13 @@ def base_idx(side, name, vals):
     return vals.index(b) if b in vals else None
 
 
+def overlay_rows(store, side, plan, rows, bins, win, cids):
+    """Заменить в `rows` строки клеток плана с cid из `cids` строками метки окна `win` (пересчёт PS-994); ключ клетки остаётся тем же — клетка в карте одна, число m (по метке WIN) не растёт."""
+    keys = [k for k, c in plan["cells"].items() if c["cid"] in cids]
+    rows.update(store.cells_lookup(SIDENAME[side], UNI, win, keys, bins=bins))
+    return len(keys)
+
+
 def cmd_map(a):
     store = chron_store(ro=True)
     bins = eq_bins()
@@ -1164,8 +1171,7 @@ def cmd_map(a):
         rows = store.cells_lookup(SIDENAME[side], UNI, WIN, list(plan["cells"]), bins=bins)
         ow = os.environ.get("TK674_OVERLAY_WIN")
         if ow:                                                   # пересчёт клеток TK-690 (PS-994): строки этих cid — из пересчёта (метка окна ow), остальные — прежние
-            over = set(_cidlist("TK674_OVERLAY_CIDS"))
-            rows.update(store.cells_lookup(SIDENAME[side], UNI, ow, [k for k, c in plan["cells"].items() if c["cid"] in over], bins=bins))
+            overlay_rows(store, side, plan, rows, bins, ow, set(_cidlist("TK674_OVERLAY_CIDS")))
         base_ck = ax.base_ckey(side)
         brow = store.cells_lookup(SIDENAME[side], UNI, WIN, [base_ck], bins=bins).get(base_ck)
         if brow is None:
