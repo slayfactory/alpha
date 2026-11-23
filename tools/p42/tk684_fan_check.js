@@ -35,7 +35,7 @@ const MS_MAX = 250;      // кадр на самом большом наборе
   });
   // независимая распаковка пакетов в странице: поля клеток стороны и счёт под пороги
   await page.goto(base + '#equity/fan/short', {waitUntil: 'load'});
-  await page.evaluate(() => {
+  const installT = () => page.evaluate(() => {
     window.__T = {packs: {}};
     window.__T.load = async name => {
       if (window.__T.packs[name]) return window.__T.packs[name];
@@ -60,7 +60,25 @@ const MS_MAX = 250;      // кадр на самом большом наборе
       }
       return {k, tot, best};
     };
+    // первые K значений столбца k среди клеток стороны и уровня, проходящих пороги f (без признака), по убыванию desc или возрастанию; пустые значения — в конце
+    window.__T.topCol = async (side, lv, f, k, desc, K) => {
+      const I = window.__T.I, p = side === 'long' ? 'L' : 'S', vals = [];
+      for (const name of Object.keys(I.files).filter(n => n[0] === p)) {
+        const P = await window.__T.load(name);
+        for (let i = 0; i < P.N; i++) {
+          const o = i * P.NF, F = P.F;
+          if (!(lv === 'all' || (lv === 'split' ? F[o + 10] > 0 : P.level === +lv))) continue;
+          if (f.dd != null && F[o + 3] > f.dd) continue; if (f.gap != null && F[o + 4] > f.gap) continue; if (f.n != null && F[o] < f.n) continue; if (f.sum != null && F[o + 1] < f.sum) continue; if (f.sh != null && !(F[o + 2] >= f.sh)) continue;
+          const n = F[o], nw = F[o + 5], nl = F[o + 7], ml = F[o + 8];
+          const v = {name: P.meta.k[i], n, sum: F[o + 1], mean: n ? F[o + 1] / n : null, sharpe: Number.isNaN(F[o + 2]) ? null : F[o + 2], dd: F[o + 3], ddp: F[o + 3] / I.margin * 100, gap: F[o + 4], rr: nw && nl && ml < 0 ? F[o + 6] / Math.abs(ml) : null, worst: Number.isNaN(F[o + 9]) ? null : F[o + 9]}[k];
+          if (v != null) vals.push(v);
+        }
+      }
+      vals.sort((a, b) => a < b ? -1 : a > b ? 1 : 0); if (desc) vals.reverse();
+      return vals.slice(0, K);
+    };
   });
+  await installT();
   await ready();
   const I = await page.evaluate(async () => { await window.__T.load('S-0'); return window.__T.I; });
   // 1. пакеты == выборка летописи
@@ -81,6 +99,8 @@ const MS_MAX = 250;      // кадр на самом большом наборе
   ok(d.rows[0].kind === 'anchor' && d.rows.length === 31 && d.head[1] === 'Линия' && d.ink > 2000, 'таблица: база и 30 лучших; холст не пуст: ' + JSON.stringify([d.rows.length, d.ink]));
   const clean = (d, m) => { ok(d.prose === 0 && !/медиан/i.test(d.text) && !/TK-\d|L-\d{3}/.test(d.text), m + ': абзацы, медианы или номера задач'); ok(d.overflow <= 0 && d.tableOver <= 0, m + ': перелив ' + d.overflow + ' / таблица ' + d.tableOver); };
   clean(d, 'по умолчанию');
+  const gm = await page.evaluate(() => ({ch: document.querySelector('canvas[data-fan="base"]').getBoundingClientRect().height, ww: document.querySelector('.wrap').getBoundingClientRect().width, cw: document.documentElement.clientWidth}));      // лист на всю ширину, холст +20 %
+  ok(Math.abs(gm.ww - gm.cw) <= 1 && Math.abs(gm.ch - (W < 520 ? 384 : 552)) <= 1, 'ширина листа и высота холста веера: ' + JSON.stringify(gm));
   // база в таблице == база «Вариантов» (числа летописи)
   const K = await page.evaluate(async () => (await fetch('data/variants_check.json')).json());
   const J = await page.evaluate(async () => (await fetch('data/variants.json')).json());
@@ -95,6 +115,7 @@ const MS_MAX = 250;      // кадр на самом большом наборе
       await clickLv(lv); d = await dom();
       const want = await page.evaluate(([s, l]) => window.__T.count(s, l, {}), [side, lv]);
       eq([d.total, d.n, d.lv, d.side], [want.tot, want.tot, lv, side], `${side} уровень ${lv}`);
+      ok((await page.$$('[data-fanerr]')).length === 0, `${side} уровень ${lv}: узел ошибки данных на виде`);
       ok(d.ink > 2000 && d.mode === (d.n > 300 ? 'density' : 'lines'), `${side} ${lv}: холст ${d.ink}, режим ${d.mode}`);
       rep.ms[side + '/' + lv] = d.ms; rep.brk[side + '/' + lv] = [d.msSel, d.msDraw];
     }
@@ -121,7 +142,7 @@ const MS_MAX = 250;      // кадр на самом большом наборе
   await setSl('dd', 1e9);
   await page.selectOption('#fan-top', '100'); await ready(); await page.selectOption('#fan-by', 'sum'); await ready(); d = await dom();
   let want = await page.evaluate(() => window.__T.count('short', 'all', {by: 1}));
-  eq([d.n, d.mode, d.rows[1].name], [100, 'lines', want.best.key], 'топ 100 по сумме');
+  eq([d.n, d.mode, d.rows[1].name], [100, 'lines', want.best.key.replace(/_bp(?![a-z])/g, '')], 'топ 100 по сумме');
   ok(d.hash.includes('top=100') && d.hash.includes('by=sum'), 'топ в хеше: ' + d.hash);
   await shot('top100');
   await page.selectOption('#fan-top', '0'); await ready();
@@ -136,6 +157,44 @@ const MS_MAX = 250;      // кадр на самом большом наборе
     if (ax === 'rf') await shot('axis-rf');
   }
   await page.selectOption('#fan-ax', ''); await ready();
+  // 5б. порядок таблицы по столбцу: клик по заголовку, повторный — наоборот; по всем линиям набора, не по нарисованной выборке; переживает ползунки, уровень, ссылку; «порядок» его сбрасывает
+  const SORT = ['name', 'n', 'sum', 'mean', 'sharpe', 'dd', 'ddp', 'gap', 'rr', 'worst'], ASC1 = new Set(['name', 'dd', 'ddp', 'gap']);
+  const sortSeq = d => d.rows.filter(r => r.kind === 'row').map(r => r.v);
+  const sortWant = async (side, lv, fl, k, asc) => {      // ожидаемые значения 30 строк; базовая строка таблицы выпадает из них, если сама вошла в первые 30
+    const exp = (await page.evaluate(([s, l, fl, k, desc]) => window.__T.topCol(s, l, fl, k, desc, 30), [side, lv, fl, k, !asc]));
+    const a = (await dom()).rows[0], av = k === 'name' ? null : +a.v[k], i = k === 'name' ? exp.findIndex(x => x.replace(/_bp(?![a-z])/g, '') === a.name) : exp.findIndex(x => Math.abs(x - av) <= 1e-9 * Math.max(1, Math.abs(av)));
+    if (i >= 0) exp.splice(i, 1); return exp;
+  };
+  const sortCheck = async (side, lv, fl, k, asc, m) => {
+    const d = await dom(), th = await page.evaluate(k => { const t = document.querySelector(`th[data-sort="${k}"]`); return {as: t.getAttribute('aria-sort'), text: t.textContent}; }, k);
+    const exp = await sortWant(side, lv, fl, k, asc), got = d.rows.filter(r => r.kind === 'row').map(r => k === 'name' ? r.name : +r.v[k]);
+    const want = k === 'name' ? exp.map(x => x.replace(/_bp(?![a-z])/g, '')) : exp;
+    ok(th.as === (asc ? 'ascending' : 'descending') && th.text.endsWith(asc ? '▲' : '▼') && d.hash.includes(`so=${k}:${asc ? 'a' : 'd'}`), `${m}: заголовок ${JSON.stringify(th)}, хеш ${d.hash}`);
+    ok(got.length === want.length && got.every((x, q) => k === 'name' ? x === want[q] : Math.abs(x - want[q]) <= 1e-9 * Math.max(1, Math.abs(want[q]))), `${m}: значения ${JSON.stringify(got.slice(0, 5))} ≠ ожидаемым ${JSON.stringify(want.slice(0, 5))}`);
+  };
+  await clickLv('all');
+  for (const k of SORT) {
+    await page.click(`th[data-sort="${k}"]`); rep.clicks++; await ready(); await sortCheck('short', 'all', {}, k, ASC1.has(k), `шорт все, ${k}, 1-й клик`);
+    await page.click(`th[data-sort="${k}"]`); rep.clicks++; await ready(); await sortCheck('short', 'all', {}, k, !ASC1.has(k), `шорт все, ${k}, 2-й клик`);
+  }
+  // состояние переживает ползунок и уровень; ссылка воспроизводит порядок
+  await page.click('th[data-sort="sharpe"]'); rep.clicks++; await ready();
+  const sf = {}; sf.dd = await setSl('dd', 80); sf.n = await setSl('n', 200); d = await dom();
+  await sortCheck('short', 'all', sf, 'sharpe', false, 'шорт все, Шарп, после ползунков');
+  const sortHash = (await dom()).hash; await page.goto('about:blank'); await page.goto(base + sortHash, {waitUntil: 'load'}); await ready(); await installT(); await page.evaluate(() => window.__T.load('S-0'));
+  eq([(await dom()).hash, sortSeq(await dom()).length > 0], [sortHash, true], 'ссылка с порядком');
+  await sortCheck('short', 'all', sf, 'sharpe', false, 'шорт все, Шарп, по ссылке');
+  await clickLv('3'); await sortCheck('short', '3', {}, 'sharpe', false, 'шорт тройки, Шарп, после смены уровня (ползунки сброшены)');
+  await clickLv('all');
+  await page.click('th[data-sort="n"]'); rep.clicks++; await ready(); await page.selectOption('#fan-top', '100'); await ready(); d = await dom();
+  ok(d.n === 100 && d.rows.filter(r => r.kind === 'row').map(r => +r.v.n).every((x, q, a) => !q || x <= a[q - 1]), 'топ 100 + порядок по «Сделок»: ' + JSON.stringify([d.n, d.hash]));
+  await page.selectOption('#fan-top', '0'); await ready();
+  await page.selectOption('#fan-by', 'sum'); await ready(); d = await dom();
+  ok(!/so=/.test(d.hash) && d.rows.filter(r => r.kind === 'row').map(r => +r.v.sum).every((x, q, a) => !q || x <= a[q - 1]), '«порядок» сбрасывает порядок столбца: ' + d.hash);
+  await page.selectOption('#fan-by', 'sh'); await ready();
+  await page.click('th[data-sort="sum"]'); rep.clicks++; await ready(); await sortCheck('short', 'all', {}, 'sum', false, 'шорт все, Сумма');
+  await shot('sorted');
+  await page.selectOption('#fan-by', 'sh'); await ready();      // порядок по умолчанию для дальнейших шагов — «порядок» сбрасывает порядок столбца
   // 6. наведение, образец, «похожие», избранное, «открыть в эквити»
   await clickLv('2');
   const cv = page.locator('canvas[data-fan="over"]'); await cv.scrollIntoViewIfNeeded(); const bb = await cv.boundingBox();

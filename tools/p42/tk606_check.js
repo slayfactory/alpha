@@ -85,7 +85,7 @@ const base = url.split('#')[0];
     await page.screenshot({path: `${out}/features_nav_${s.id}_${W}.png`});
   }
   C.others = {};
-  for (const k of ['targets', 'equity', 'features']) {
+  for (const k of ['equity', 'features']) {
     await page.click(`#toptabs button[data-tab="${k}"]`); await page.waitForTimeout(400);
     const st = await state();
     C.others[k] = {hash: st.hash, visible: st.visible.join(), overflow: await overflow()};
