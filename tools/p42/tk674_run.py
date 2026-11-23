@@ -179,6 +179,7 @@ def cmd_gates(a):
 UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"      # TK674_UNI=c539 — вселенная без TradFi (В-175, §13.73.17): клетки в БД под своим именем, свой TK674_ROOT
 SIDENAME = {"L": "long", "S": "short"}
 VMAX, SIGMAX = 400, 26                          # вариантов и разных проходов сигналов на вызов движка (память: 26 проходов ≈ 30 ГБ при двух сторонах)
+VMAX_LIGHT, LIGHT_SIGS = int(os.environ.get("TK674_VMAX_LIGHT", VMAX)), 20     # TK-683 (бинарь k): лёгкие партии (< 20 проходов сигналов) — до TK674_VMAX_LIGHT вариантов на вызов (постоянная часть вызова ≈ 4,5 с); по умолчанию = VMAX
 MIN_N, MIN_MONTH = 150, (15, 15, 15, 15, 8)     # охрана (а) §13.73
 GUARD_A_C539 = {"long": (105, (11, 11, 11, 11, 6)), "short": (81, (9, 9, 9, 9, 5))}      # охрана (а) на c539: формула PS-975 разд. 3 от якорей L-334 (298 / 172 против 428 / 319), числа записаны L-335
 
@@ -463,7 +464,7 @@ def batches(todo):
         grp = sorted(grp, key=lambda c: (c["sig"], c["cid"]))
         cur, sg = [], set()
         for c in grp:
-            if cur and (len(cur) >= VMAX or (c["sig"] not in sg and len(sg) >= SIGMAX)):
+            if cur and (len(cur) >= (VMAX_LIGHT if len(sg) < LIGHT_SIGS else VMAX) or (c["sig"] not in sg and len(sg) >= SIGMAX)):
                 out.append((kind, cur))
                 cur, sg = [], set()
             cur.append(c)
