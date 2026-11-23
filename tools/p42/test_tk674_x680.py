@@ -381,6 +381,18 @@ class Bans(X680Case):
         self.assertTrue(self.ok("TPM60", "ls")[0])
         self.assertTrue(self.ok("mv15.le", "natr_min")[0])                       # пул — допустим (ослабленный пул отсекается по клетке)
 
+    def test_column_x_stream_keys_tk681(self):
+        """§13.73.26: оси потока TK-681 (nf / ev / ea / el / eh) не совместимы со столбцом таблицы признаков — ключи (монета, sig_ms) потока не совпадают с таблицей; natr_min и sm — совместимы."""
+        for side in "LS":
+            f = self.axis(side, "TPM60")
+            for keys in (("nf", "natr_min"), ("ev", "ea"), ("ev", "ea", "el"), ("ev", "ea", "eh")):
+                a = dict(name="A", cls="x680key", keys=keys, x680=True, key="A", gain=0.1)
+                self.assertEqual(ax.compat(side, f, a), (False, x6.R_COLKEY), keys)
+                self.assertEqual(ax.compat(side, a, f), (False, x6.R_COLKEY), keys)
+            for keys in (("natr_min",), ("sm",), ("s",)):
+                a = dict(name="A", cls="x680key", keys=keys, x680=True, key="A", gain=0.1)
+                self.assertTrue(ax.compat(side, f, a)[0], keys)
+
     def test_same_column_same_sign(self):
         self.assertFalse(self.ok("btc_mv5.le", "btc_mv5.le@c")[0])               # один столбец и знак в двух наборах
         self.assertFalse(self.ok("ok10_d7.ge", "ok10_d7.ge@h")[0])               # ok10_d7 в основном = ok10_d7 истории пробоев (TK-680: столбец переименован в таблицах, COL_MAP его больше не сводит)
