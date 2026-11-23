@@ -199,20 +199,22 @@ def merge_file(path: str, news: dict, apply: bool, rep: dict, tag: str):
     pq.write_table(out, tmp, compression="zstd", row_group_size=max(out.num_rows, 1))
 
 
-def swap_file(path: str):
-    """Подмена: старый файл → `<файл>.bak-tk699` (жёсткая ссылка, место не занимает), новый → на место (одна атомарная замена)."""
+def swap_file(path: str, alt: str | None = None):
+    """Подмена: старый файл → `<файл>.bak-tk699` (+ `<файл><alt>`) жёсткими ссылками (место не занимают), новый → на место (одна атомарная замена)."""
     assert os.path.exists(path + NEW), path + NEW
-    bak = path + BAK
-    if os.path.exists(bak):
-        raise SystemExit(f"уже есть {bak}")
-    os.link(path, bak)
+    for suf in (BAK, alt):
+        if suf and os.path.exists(path + suf):
+            raise SystemExit(f"уже есть {path + suf}")
+    for suf in (BAK, alt):
+        if suf:
+            os.link(path, path + suf)
     os.replace(path + NEW, path)
 
 
 def cmd_swap(a):
     for w in a.wins.split(","):
         swap_file(f"{ASM}/{w}-{a.side}.parquet")
-    swap_file(f"{DATA}/{a.side}.parquet")
+    swap_file(f"{DATA}/{a.side}.parquet", ".pre-f12")  # имя, которое ждёт читатель TK-674 (thr_n8653xpt8j)
     print("swap ok", a.side, a.wins)
 
 
