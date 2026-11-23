@@ -4,10 +4,12 @@
 
 Ось = семейство ключей движка (RULES) или один ключ или столбец фильтра; клетка = набор активных осей против якоря стороны (L-334);
 уровень k = число осей. Эффект оси a на уровне k: Δ = метрика(C) − метрика(C∖a) по клеткам C с осью a (опора C∖a — в БД; k = 1 — якорь).
-Уровни не усредняются. Запуск (srv, `systemd-run`, ≤ 2 ядра, MemoryMax 4G, nice):
-    python3 tk689_influence.py compute --db /data/chron/chron.sqlite --out DIR [--levels 1,2,3,4] [--code /data/p42-tk674c/code] [--no-trades]
-Отчёт и графики — `tk689_report.py`."""
+Уровни не усредняются. Результат пишется в БД летописи (`infl_*`, схема v8, TK-693; `tk689_db.py`): прогон = клетки × код, повтор того же — не пишется. Запуск — `tk689_update.sh`
+(srv, `systemd-run`, ≤ 2 ядра, nice) или на srv:
+    python3 tk689_influence.py compute [--levels auto|1,2,3,4] [--db /data/chron/chron.sqlite] [--code /data/p42-tk674c/code] [--out DIR] [--no-trades]
+Отчёт и графики — `tk689_report.py`; запросы — `tk689_db.py`."""
 import argparse
+import hashlib
 import itertools
 import json
 import math
@@ -38,6 +40,8 @@ RULES = [
     ("nf", {"nf"}, {"natr_min"}), ("sn", {"sn", "sg", "sb", "sd", "sr"}, {"sm"}), ("chan", {"ch", "cl", "cm", "cw"}, {"sm"}),
     ("sl", {"sl"}, {"sm"}), ("nx", {"nx"}, {"sm"}), ("rf", {"rf"}, {"rs"}), ("tt", {"tt"}, {"tb"}),
 ]
+LEAD = {name: sorted(leads)[0] for name, leads, _ in RULES}      # № оси-семейства на вкладке «Признаки» — у ведущего ключа
+LEAD.update(split="e2t", chan="ch", sn="sn", ev="ev")
 DROPPED_COMPANION = ("rf", "tt")               # rs / tb спутник, только если в клетке ключа нет (canon убирает rs без rf, tb без tt)
 FILT_RE = re.compile(r"^([^<>=]+)(<=|>=|==|<|>)(.*)$")
 
@@ -452,12 +456,14 @@ def compute_level(side, sd, k, mcount, tr=None, do_null=True, boot=True):
                 rb = np.maximum(sums[0] / cnt / abs(anc["usd"]), sums[1] / cnt / anc["dd"])
                 st["r_null"] = float(rb.mean())
                 st["r_null_p95"] = float(np.quantile(rb, 0.95))
+                st["r_null_p"] = float((sums[0] / cnt / abs(anc["usd"])).mean())      # TK-693: по прибыли и по просадке отдельно (r_null — max из двух)
+                st["r_null_d"] = float((sums[1] / cnt / anc["dd"]).mean())
                 st["not_distinguishable_from_random"] = bool(st["null_applicable"] and st["r"] is not None and st["r"] <= st["r_null_p95"])
         axes_out.append(st)
         kept = {id(o[2]) for o in uniq}
         for _, lab, c, r in items:
             d = delta(c, r)
-            obs_out.append(dict(axis=a, label=lab, grid=grid, cell=c["ckey"], ref=r["ckey"], dir=direction(c, r), dup=id(c) not in kept,
+            obs_out.append(dict(axis=a, label=lab, grid=grid, cell=c["ckey"], ref=r["ckey"], cid=c["id"], rid=r["id"], dir=direction(c, r), dup=id(c) not in kept,
                                 others={x: y for x, y in c["axes"].items() if x != a}, **{"c_" + m: c[m] for m in METRICS},
                                 **{"r_" + m: r[m] for m in METRICS}, **{"d_" + m: d[m] for m in METRICS}))
     res = dict(side=side, k=k, n_cells=len(cells_k), by_grid={g: sum(1 for c in cells_k if c["grid"] == g) for g in ("полная", "отбор")},
@@ -468,7 +474,7 @@ def compute_level(side, sd, k, mcount, tr=None, do_null=True, boot=True):
         for c in cells_k:
             it = interaction(c, sd, ib)
             if it is not None:
-                ints.append(dict(ckey=c["ckey"], cell=c["cell"], axes=c["axes"], grid=c["grid"], tsig=c["tsig"], n=c["n"], usd_cell=c["usd"], **it))
+                ints.append(dict(ckey=c["ckey"], cell=c["cell"], cid=c["id"], axes=c["axes"], grid=c["grid"], tsig=c["tsig"], n=c["n"], usd_cell=c["usd"], **it))
     res["interactions"] = ints
     return res, obs_out
 
@@ -515,31 +521,93 @@ def noise_check(db):
     return out
 
 
-def run(db, out, levels, code=None, do_trades=True, do_null=True):
-    os.makedirs(out, exist_ok=True)
+def level_fp(sd, k):
+    """Отпечаток входа уровня k: id клеток уровней k и k − 1 (опоры; для k = 1 — якорь) после исключений и повторов ключа."""
+    return sha1(json.dumps(sorted(c["id"] for c in sd["cells"] if c["k"] in (k, k - 1))))
+
+
+def sha1(s):
+    return hashlib.sha1(s.encode("utf-8") if isinstance(s, str) else s).hexdigest()
+
+
+def tool_hashes():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return {n: sha1(open(os.path.join(here, n), "rb").read())[:10] for n in ("tk689_influence.py", "tk674_axes.py", "tk689_db.py")}
+
+
+def stale_levels(conn, fps, tool, have):
+    """Уровни из have, у которых отпечаток клеток или код инструмента отличается от последнего прогона уровня (или прогона нет): их и пересчитывать."""
+    out = []
+    for k in have:
+        for side in ("long", "short"):
+            if "%s:%d" % (side, k) not in fps:
+                continue
+            row = conn.execute("SELECT l.fp, r.tool FROM infl_cur c JOIN infl_level l ON l.run = c.run AND l.side = c.side AND l.k = c.k JOIN infl_run r ON r.id = c.run"
+                               " WHERE c.side = ? AND c.k = ?", (side, k)).fetchone()
+            if not row or row[0] != fps["%s:%d" % (side, k)] or json.loads(row[1]) != tool:
+                out.append(k)
+                break
+    return out
+
+
+def run(db, out=None, levels=None, code=None, do_trades=True, do_null=True, features=None, git_sha=None, note=None, write=True):
+    """Счёт уровней по готовым клеткам БД и запись прогона в БД (одной транзакцией, в конце). levels = None — только уровни, чьи клетки или код изменились
+    с последнего прогона (одна команда пересчитывает то, что нужно); тот же набор клеток и код — прогон не повторяется."""
+    import tk689_db as dbm
     cells, mcount = load_rows(db)
     sides, stat = prepare(cells)
+    have = [k for k in range(1, 5) if any(c["k"] == k for sd in sides.values() for c in sd["cells"])]
+    tool = tool_hashes()
+    fps = {"%s:%d" % (s_, k): level_fp(sd, k) for s_, sd in sides.items() for k in range(1, 5)}
+    if write:
+        ro = dbm.connect(db, ro=True)
+        levels = stale_levels(ro, fps, tool, have) if levels is None else levels
+        ro.close()
+    elif levels is None:
+        levels = have
+    if not levels:
+        print("нечего пересчитывать: клетки уровней и код те же, что в последних прогонах", flush=True)
+        return None
+    run_key = sha1(json.dumps(dict(tool=tool, uni=UNI, win=WIN, levels=sorted(levels), fps={x: fps[x] for x in sorted(fps) if int(x.split(":")[1]) in levels}), sort_keys=True))
+    if write:
+        ro = dbm.connect(db, ro=True)
+        ex = ro.execute("SELECT id FROM infl_run WHERE run_key = ?", (run_key,)).fetchone()
+        ro.close()
+        if ex:
+            print("прогон #%d с тем же набором клеток, уровней и кода уже записан" % ex[0], flush=True)
+            return ex[0]
     meta = dict(db=db, uni=UNI, win=WIN, m=mcount, levels_in_db={}, excluded={"%s:%s" % k: v for k, v in stat["excluded"].items()}, dup_keys=stat["dup_keys"],
                 dup_diff=stat["dup_diff"], anchors={s: dict(ckey=sd["anchor"]["ckey"], n=sd["anchor"]["n"], usd=sd["anchor"]["usd"], dd=sd["anchor"]["dd"],
                                                             sh=sd["anchor"]["sh"], gap=sd["anchor"]["gap"]) for s, sd in sides.items()},
                 thresholds=dict(many=THR_MANY, little=THR_LITTLE), bins=sorted({c["bin"] for c in cells}), entries=sorted({c["entry"] for c in cells}))
     tr = Trades(code) if (do_trades and code) else None
+    results, observ = {}, {}
     for side, sd in sides.items():
         meta["levels_in_db"][side] = {str(k): sum(1 for c in sd["cells"] if c["k"] == k) for k in sorted({c["k"] for c in sd["cells"]})}
-        stats1 = None
-        for k in levels:
+        for k in sorted(levels):
             res, obs = compute_level(side, sd, k, mcount[side], tr, do_null)
             if tr is not None:
                 res["clusters"] = {g: clusters(sd, side, k, tr, {x["axis"]: x for x in res["axes"] if x["grid"] == g}, g) for g in ("полная", "отбор")
                                    if any(x["grid"] == g for x in res["axes"])}
+            results[(side, k)], observ[(side, k)] = res, obs
+            print(side, "уровень", k, "клеток", res["n_cells"], "осей", len(res["axes"]), "взаимодействий", len(res["interactions"]), flush=True)
+    if out:
+        os.makedirs(out, exist_ok=True)
+        for (side, k), res in results.items():
             with open(os.path.join(out, "level-%s-%d.json" % (side, k)), "w", encoding="utf-8") as f:
                 json.dump(res, f, ensure_ascii=False)
             with open(os.path.join(out, "obs-%s-%d.json" % (side, k)), "w", encoding="utf-8") as f:
-                json.dump(obs, f, ensure_ascii=False)
-            print(side, "уровень", k, "клеток", res["n_cells"], "осей", len(res["axes"]), "взаимодействий", len(res["interactions"]), flush=True)
-    with open(os.path.join(out, "meta.json"), "w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=1)
-    return meta
+                json.dump(observ[(side, k)], f, ensure_ascii=False)
+        with open(os.path.join(out, "meta.json"), "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=1)
+    if not write:
+        return meta
+    ft, ver = dbm.feat_table(features or os.path.join(os.path.dirname(os.path.abspath(__file__)), "ml_features.json"))
+    conn = dbm.connect(db)
+    rid, new = dbm.put_run(conn, meta, results, observ, ft, ver, LEAD, tool, "compute", run_key, levels, fps, git_sha, note)
+    conn.close()
+    print("прогон #%d %s: уровни %s, осей %d" % (rid, "записан" if new else "уже был", sorted(levels), sum(len(r["axes"]) for r in results.values())), flush=True)
+    return rid
 
 
 def main():
@@ -547,8 +615,12 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("compute")
     p.add_argument("--db", default="/data/chron/chron.sqlite")
-    p.add_argument("--out", required=True)
-    p.add_argument("--levels", default="1,2,3,4")
+    p.add_argument("--out", default=None, help="дополнительно выгрузить JSON (по умолчанию — только БД)")
+    p.add_argument("--levels", default="auto", help="auto — только уровни с изменившимися клетками / кодом; или список 1,2,3,4")
+    p.add_argument("--features", default=None)
+    p.add_argument("--git-sha", default=None)
+    p.add_argument("--note", default=None)
+    p.add_argument("--no-db", action="store_true")
     p.add_argument("--code", default="/data/p42-tk674c/code")
     p.add_argument("--no-trades", action="store_true")
     p.add_argument("--no-null", action="store_true")
@@ -559,7 +631,8 @@ def main():
         print(json.dumps(noise_check(a.db), ensure_ascii=False, indent=1))
         return
     if a.cmd == "compute":
-        run(a.db, a.out, [int(x) for x in a.levels.split(",")], a.code, not a.no_trades, not a.no_null)
+        run(a.db, a.out, None if a.levels == "auto" else [int(x) for x in a.levels.split(",")], a.code, not a.no_trades, not a.no_null, a.features, a.git_sha, a.note,
+            write=not a.no_db)
 
 
 if __name__ == "__main__":
