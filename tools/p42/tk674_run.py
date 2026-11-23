@@ -31,8 +31,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import tk643_run as t  # noqa: E402
 import tk674_axes as ax  # noqa: E402
+import tk674_pack as pk  # noqa: E402
 
 ROOT = os.environ.get("TK674_ROOT", "/data/p42-tk674")
+pk.ROOT = ROOT
 t.ROOT = ROOT                                   # run_variants / q / cell_dir пишут в каталог этой задачи
 BIN = os.environ.get("TK674_BIN", ROOT + "/bin/alpha-tk674")   # бинарь HEAD ветки (md5 a26ce03f…); клетки оси split — бинарь TK-677 (TK674_BIN, G-base — TK674_GBASE)
 GBASE = os.environ.get("TK674_GBASE", ROOT + "/res/gbase674.json")
@@ -646,7 +648,7 @@ def canary_pick(side, cur, n):
             for ck in cks:
                 c = pc.get(ck)
                 sg = tuple(tuple(x) for x in c["sig"]) if c else None
-                if c and not c["filt"] and sg in sigs and c["cid"] not in seen and os.path.isdir(os.path.join(ROOT, "cells", "wa-%s" % side, nm, c["cid"])):
+                if c and not c["filt"] and sg in sigs and c["cid"] not in seen and pk.cell_exists(os.path.join(ROOT, "cells", "wa-%s" % side, nm, c["cid"])):
                     seen.add(c["cid"])
                     by_sig.setdefault(sg, []).append((nm, dict(c, ckey=ck)))
     out = []
@@ -664,7 +666,7 @@ def canary_check(side, w, out, canary):
     bad = []
     for nm, c in canary:
         new = os.path.join(out, "cn-" + c["cid"])
-        old = os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm, c["cid"])
+        old = pk.ensure_cell(os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm, c["cid"]))
         bad += ["%s %s" % (c["cid"], f) for f in CMP_FILES if not filecmp.cmp(os.path.join(old, "%s-%s" % (SIDENAME[side], f)), os.path.join(new, "%s-%s" % (SIDENAME[side], f)), shallow=False)]
         shutil.rmtree(new, ignore_errors=True)
     return bad
@@ -749,12 +751,19 @@ def _winit():
     _W["u"] = r5.Uni(UNI)
 
 
+def _have(dirs):
+    """{окно: (каталог клетки, сторона)}: клетки запакованных партий (`tk674_pack`) — на место из архива."""
+    for d, _ in dirs.values():
+        pk.ensure_cell(d)
+    return dirs
+
+
 def _row_job(job):
     import tk674_stats as ms
     st, p8, u = _W["st"], _W["p8"], _W["u"]
     side, ckey, cid, bname, line, patch, filt, eff = job
     dirs = {w.name: (os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), bname, cid), side) for w in st.TRADE_WINDOWS}
-    tables, daily = p8.read_tables(dirs)
+    tables, daily = p8.read_tables(_have(dirs))
     for w in st.TRADE_WINDOWS:
         tb, dl = tables[w.name], daily[w.name]
         tot_d, tot_n = float(sum(dl.values())), float(tb.net.sum())
@@ -804,7 +813,7 @@ def _cc_job(job):
     side, cid, bname, s_pct = job
     st, p8 = _W["st"], _W["p8"]
     dirs = {w.name: (os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), bname, cid), side) for w in st.TRADE_WINDOWS}
-    tables, _ = p8.read_tables(dirs)
+    tables, _ = p8.read_tables(_have(dirs))
     kinds, pnl = p8.kinds_pnl(tables)
     kinds, pnl = np.array(kinds), np.asarray(pnl, dtype=float)
     base = 500.0 * s_pct / 100.0
@@ -1092,6 +1101,8 @@ def split_report(side, row):
     ex = row["extra"]
     out = dict(split_losses(ex), n=0, n_b=0, stop_a=[0, 0.0], stop_ab=[0, 0.0])
     for d in (ex.get("dirs") or {}).values():
+        if pk.cell_exists(d):
+            pk.ensure_cell(d)
         f = os.path.join(d, "%s-lots.csv" % SIDENAME[side])
         if not os.path.exists(f):
             return dict(out, missing=True)
@@ -1267,7 +1278,7 @@ def cmd_spot(a):
         out = os.path.join(ROOT, "spot677", kind)
         os.makedirs(out, exist_ok=True)
         r5.tick(u, w, [(c["cid"], line)], out, one_side_env(side), t.q("log", "spot677-%s.log" % kind), ftab=t.q("ftab674", "%s-%s.csv" % (w.name, side)) if c["filt"] else None)
-        old = os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm, c["cid"])
+        old = pk.ensure_cell(os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm, c["cid"]))
         diff = [f for f in CMP_FILES if not filecmp.cmp(os.path.join(old, "%s-%s" % (SIDENAME[side], f)), os.path.join(out, c["cid"], "%s-%s" % (SIDENAME[side], f)), shallow=False)]
         say("spot %s %s: %s" % (kind, c["cid"], "байт в байт" if not diff else "РАЗЛИЧИЯ " + ", ".join(diff)))
         bad += diff

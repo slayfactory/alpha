@@ -143,7 +143,9 @@ def classes_report():
 
 
 def find_dirs(side, want):
-    """{окно: {cid: каталог клетки}} по `cells/<окно>-<сторона>/*.variants.txt` (хеш каталога партии — не по имени клетки)."""
+    """{окно: {cid: каталог клетки}} по `cells/<окно>-<сторона>/*.variants.txt` (хеш каталога партии — не по имени клетки); клетки запакованных партий — на место из архива (`tk674_pack`)."""
+    import tk674_pack as pk
+    pk.ROOT = ROOT
     where = {w: {} for w in WINS}
     for w in WINS:
         for vf in glob.glob(os.path.join(ROOT, "cells", "%s-%s" % (w, side), "*.variants.txt")):
@@ -151,7 +153,7 @@ def find_dirs(side, want):
                 for line in f:
                     cid = line.split(" ", 1)[0]
                     if cid in want and cid not in where[w]:
-                        where[w][cid] = os.path.join(vf[:-len(".variants.txt")], cid)
+                        where[w][cid] = pk.ensure_cell(os.path.join(vf[:-len(".variants.txt")], cid))
     return where
 
 
@@ -234,6 +236,8 @@ def trades_report(dirs_file):
     """Сделки клеток из файлов клеток: сколько зачётных сделок (вход в сутках окна) пришло со строк без строки TK-671 (`dirs_file`: {cid: {сторона, dirs: {окно: каталог}}});
     сумма по окнам должна равняться числу сделок клетки в БД."""
     import tk604_stats as st
+    import tk674_pack as pk
+    pk.ROOT = ROOT
     if not MISS:
         rows_report()
     wins = {w.name: w for w in st.TRADE_WINDOWS}
@@ -242,6 +246,7 @@ def trades_report(dirs_file):
         side, tot, emp = v["side"], 0, 0
         per = {}
         for w, d in v["dirs"].items():
+            pk.ensure_cell(d)
             with open(os.path.join(d, "%s-trades.csv" % ENG[side]), encoding="utf-8", newline="") as f:
                 rows = list(csv.DictReader(f))
             win = wins[w]
