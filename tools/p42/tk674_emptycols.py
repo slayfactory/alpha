@@ -160,36 +160,46 @@ def find_dirs(side, want):
 def without_report(cids_file):
     """Σ $ и Sharpe клетки с зачётными сделками со строк без строки TK-671 и без них (правило критика 23.11, п. а; ряд и Sharpe — как у `tk674_run._row_job`: `splice` → суточные суммы →
     `tk625_stats.sharpe_year`); `cids_file`: {сторона: [cid, …]}."""
+    if not MISS:
+        rows_report()
+    out = {}
+    for side, cids in json.load(open(cids_file, encoding="utf-8")).items():
+        out.update(without_cells(side, cids, lambda w, sym, ms, c, side=side: (sym, ms) in MISS[(side, w)]))
+    return out
+
+
+def without_cells(side, cids, empty, root=None):
+    """Ядро `without`: `empty(окно, монета, sig_ms, cid)` → сделка на «пустой» строке; клетки ищутся в `root` (по умолчанию ROOT); {«сторона:cid»: n, n_empty, usd, usd_without, sharpe, sharpe_without}."""
     import numpy as np
     import tk604_stats as st
     import tk625_run as r5
     import tk625_stats as s5
     import tk638_post as p8
-    if not MISS:
-        rows_report()
+    global ROOT
+    if root:
+        ROOT = root
     u = r5.Uni(os.environ.get("TK674_UNI", "c539"))
     out = {}
-    for side, cids in json.load(open(cids_file, encoding="utf-8")).items():
-        where = find_dirs(side, set(cids))
-        for c in cids:
-            if not all(c in where[w] for w in WINS):
-                out[side + ":" + c] = dict(error="нет каталога")
-                continue
-            tables, _ = p8.read_tables({w: (where[w][c], side) for w in WINS})
-            ser = st.splice(tables, u.coins(), daily=None)
-            drop = []                                                             # маска в порядке `splice`: по окнам, внутри окна — зачётные строки таблицы сделок
-            for w in st.TRADE_WINDOWS:
-                t = tables[w.name]
-                d = st.abs_day(w, t.entry_ms)
-                sel = np.nonzero((d >= (w.lod - st.D0).days) & (d <= (w.hid - st.D0).days))[0]
-                drop += [(t.sym[i], int(t.sig_ms[i])) in MISS[(side, w.name)] for i in sel]
-            drop = np.array(drop, dtype=bool)
-            assert len(drop) == len(ser.val)
-            keep = ~drop
-            sd_all = np.bincount(ser.day, weights=ser.val, minlength=st.NDAYS)
-            sd_wo = np.bincount(ser.day[keep], weights=ser.val[keep], minlength=st.NDAYS)
-            out[side + ":" + c] = dict(n=int(len(ser.val)), n_empty=int(drop.sum()), usd=float(ser.val.sum()), usd_without=float(ser.val[keep].sum()),
-                                      sharpe=float(s5.sharpe_year(sd_all)), sharpe_without=float(s5.sharpe_year(sd_wo)))
+    where = find_dirs(side, set(cids))
+    for c in cids:
+        if not all(c in where[w] for w in WINS):
+            out[side + ":" + c] = dict(error="нет каталога")
+            continue
+        tables, _ = p8.read_tables({w: (where[w][c], side) for w in WINS})
+        ser = st.splice(tables, u.coins(), daily=None)
+        drop = []                                                             # маска в порядке `splice`: по окнам, внутри окна — зачётные строки таблицы сделок
+        for w in st.TRADE_WINDOWS:
+            t = tables[w.name]
+            d = st.abs_day(w, t.entry_ms)
+            sel = np.nonzero((d >= (w.lod - st.D0).days) & (d <= (w.hid - st.D0).days))[0]
+            drop += [empty(w.name, t.sym[i], int(t.sig_ms[i]), c) for i in sel]
+        drop = np.array(drop, dtype=bool)
+        assert len(drop) == len(ser.val)
+        keep = ~drop
+        sd_all = np.bincount(ser.day, weights=ser.val, minlength=st.NDAYS)
+        sd_wo = np.bincount(ser.day[keep], weights=ser.val[keep], minlength=st.NDAYS)
+        out[side + ":" + c] = dict(n=int(len(ser.val)), n_empty=int(drop.sum()), usd=float(ser.val.sum()), usd_without=float(ser.val[keep].sum()),
+                                  sharpe=float(s5.sharpe_year(sd_all)), sharpe_without=float(s5.sharpe_year(sd_wo)))
     return out
 
 

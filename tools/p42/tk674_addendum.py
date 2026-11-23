@@ -69,6 +69,23 @@ def trades_of(root, cid, nm=None):
     return out
 
 
+FAST_COLS = ("sac10", "sac60", "accdv1_300")
+FAST_CSV = "/data/p42-tk690/fam/rust/%s-short/fast.csv"      # сырые признаки FAST по ключу (монета, sig_ms): пусто = NaN; в таблице фильтров NaN уже свёрнут в флаг 1 (проходит)
+
+
+def fast_feats(cid):
+    """Признаки FAST в имени клетки: s4+sac10.le@t_q60 → sac10."""
+    return sorted(set(re.findall(r"(%s)\.(?:le|ge)@t" % "|".join(FAST_COLS), cid)))
+
+
+def fast_nan(w):
+    """(ключи (монета, sig_ms) строк `fast.csv` окна w, {столбец: ключи с NaN})."""
+    import pandas as pd
+    d = pd.read_csv(FAST_CSV % w, usecols=["sym", "sig_ms", *FAST_COLS])
+    ms = d["sig_ms"].astype("int64")
+    return set(zip(d["sym"], ms)), {c: set(zip(d["sym"][d[c].isna()], ms[d[c].isna()])) for c in FAST_COLS}
+
+
 def x_share(tr, nk, fs):
     """{окно: (сделок, из них с NaN хотя бы у одного признака fs)} — по ключам сделок «клетки без cc / bd» (то, что фильтр мог бы допустить)."""
     return {w: (len(tr[w]), sum(1 for k in tr[w] if any(k in nk[w][0].get(f, ()) for f in fs))) for w in WIN}
@@ -181,10 +198,38 @@ def main():
         p("| %s | `%s` | %s | %s | %s |" % (sec, nm, what, xo, xc))
     p("")
     p("Строк карты (А + Б + синергия) %d; пересчитанных среди них %d; с cc_* / bd_* в фильтре %d." % (len(mr), n_rec, n_cc))
+    syn = [(nm, nm in recount or nm in bd, feats(nm)) for sec, nm, ln in mr if sec == "синергия"]
+    p("Синергия: строк %d; без cc / bd %d; с cc %d, с bd %d; пересчитанных (в списке PS-994 / PS-995) %d — cc-строки синергии прежние клетки, не из списка пересчёта." % (
+        len(syn), sum(1 for _, _, f in syn if not f), sum(1 for _, _, f in syn if any(x.startswith("cc_") for x in f)),
+        sum(1 for _, _, f in syn if any(x.startswith("bd_") for x in f)), sum(1 for _, r, _ in syn if r)))
+    p("")
+    p("## Строки таблиц А / Б с фильтром FAST (sac10 / sac60 / accdv1_300): сделки на строках, где признак пуст (NaN в `fast.csv`, фильтр такую строку пропускает: флаг таблицы 1)")
+    p("")
+    p("| клетка | таблицы | пересчитана | сделок (зачётных) | на пустых строках | Σ $ с / без них | Шарп с / без них |")
+    p("|---|---|---|---|---|---|---|")
+    fz = {w: fast_nan(w) for w in WIN}
+    want = {}
+    for sec, nm, ln in mr:
+        if sec in ("А", "Б") and fast_feats(nm):
+            want.setdefault(nm, []).append(sec)
+    import tk674_emptycols as ec
+    res_ec = {}
+    for root, sel in ((R2, [c for c in want if c in recount]), (R, [c for c in want if c not in recount])):
+        res_ec.update(ec.without_cells("S", sel, lambda w, sym, ms, c: (sym, ms) not in fz[w][0] or any((sym, ms) in fz[w][1][f] for f in fast_feats(c)), root))
+    for nm, secs in want.items():
+        e = res_ec.get("S:" + nm, {})
+        if "error" in e or not e:
+            p("| `%s` | %s | %s | нет каталога клетки | | | |" % (nm, "+".join(secs), "PS-994" if nm in recount else "нет"))
+            continue
+        p("| `%s` | %s | %s | %d | %d (%.0f %%) | %+.1f / %+.1f | %.2f / %.2f |" % (nm, "+".join(secs), "PS-994" if nm in recount else "нет", e["n"], e["n_empty"],
+                                                                                  100.0 * e["n_empty"] / max(e["n"], 1), e["usd"], e["usd_without"], e["sharpe"], e["sharpe_without"]))
+    p("")
+    p("Доля строк окна с пустым признаком FAST (все кандидатные строки таблицы): " + "; ".join(
+        "%s %s" % (f, " / ".join("%.1f %%" % (100.0 * len(fz[w][1][f]) / max(len(fz[w][0]), 1)) for w in WIN)) for f in FAST_COLS) + " (wa / wb / wc).")
     p("")
     p("## Классы cc (PS-994) и bd (PS-995): X = доля сделок клетки с NaN у признака фильтра, по окнам")
     p("")
-    p("| класс | клеток | со сделками во всех окнах | X > 0 хотя бы в одном окне | X > 50 % хотя бы в одном окне | максимум X по окнам wa / wb / wc, % | медиана X по окнам, % |")
+    p("| класс | клеток | со сделками во всех окнах | X > 0 хотя бы в одном окне | X > 50 % хотя бы в одном окне | максимум X по окнам wa / wb / wc, % | среднее X по клеткам, % |")
     p("|---|---|---|---|---|---|---|")
     for nm in ("cc", "bd"):
         xs = {}
@@ -196,9 +241,9 @@ def main():
         gt0 = [c for c, x in xs.items() if any(v for v in x.values() if v)]
         gt50 = [c for c, x in xs.items() if any(v is not None and v > 50 for v in x.values())]
         mx = {w: max([x[w] for x in xs.values() if x[w] is not None] or [0]) for w in WIN}
-        md = {w: sorted(x[w] for x in xs.values() if x[w] is not None)[len([1 for x in xs.values() if x[w] is not None]) // 2] if any(x[w] is not None for x in xs.values()) else 0 for w in WIN}
+        mn = {w: (lambda v: sum(v) / len(v) if v else 0.0)([x[w] for x in xs.values() if x[w] is not None]) for w in WIN}
         p("| %s | %d (каталогов %d) | %d | %d | %d | %s | %s |" % (nm, len(cls[nm]), len(xs), len(full), len(gt0), len(gt50),
-                                                              " / ".join("%.1f" % mx[w] for w in WIN), " / ".join("%.1f" % md[w] for w in WIN)))
+                                                              " / ".join("%.1f" % mx[w] for w in WIN), " / ".join("%.1f" % mn[w] for w in WIN)))
     open(a.out, "w", encoding="utf-8").write("\n".join(out) + "\n")
     print("\n".join(out))
 
