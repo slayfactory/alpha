@@ -53,10 +53,12 @@ def nan_keys(w):
 
 
 def trades_of(root, cid, nm=None):
-    """Ключи (монета, sig_ms) сделок клетки по окнам; каталог клетки — из корня (извлекается из архива партии, если упакован)."""
+    """Ключи (монета, sig_ms) зачётных сделок клетки по окнам (вход в зачётных сутках окна, как в БД); каталог клетки — из корня (извлекается из архива партии, если упакован)."""
     import csv
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import tk604_stats as st
     import tk674_pack as pk
+    wins = {x.name: x for x in st.TRADE_WINDOWS}
     out = {}
     for w in WIN:
         ps = glob.glob(os.path.join(root, "cells", "%s-S" % w, "*", cid, "short-trades.csv"))
@@ -65,7 +67,10 @@ def trades_of(root, cid, nm=None):
         if not ps:
             return None
         with open(ps[0], encoding="utf-8") as fh:
-            out[w] = {(r["sym"], int(r["sig_ms"])) for r in csv.DictReader(fh)}
+            rows = list(csv.DictReader(fh))
+        day = st.abs_day(wins[w], [int(r["entry_ms"]) for r in rows])
+        lo, hi = (wins[w].lod - st.D0).days, (wins[w].hid - st.D0).days
+        out[w] = {(r["sym"], int(r["sig_ms"])) for r, d in zip(rows, day) if lo <= d <= hi}
     return out
 
 
@@ -84,6 +89,37 @@ def fast_nan(w):
     d = pd.read_csv(FAST_CSV % w, usecols=["sym", "sig_ms", *FAST_COLS])
     ms = d["sig_ms"].astype("int64")
     return set(zip(d["sym"], ms)), {c: set(zip(d["sym"][d[c].isna()], ms[d[c].isna()])) for c in FAST_COLS}
+
+
+PARQ_S = "/data/p42-tk671/data/short.parquet"
+
+
+def col_of(tok):
+    """Столбец фильтра в токене имени клетки: sac10.le@t_q60 → sac10, N24_q20 → N24; не фильтр-столбец → None."""
+    m = re.match(r"^(.*?)(?:\.(?:le|ge))?(?:@t)?_q\d+$", tok)
+    return m.group(1) if m else None
+
+
+def cols_of(cid):
+    return [c for c in (col_of(t) for t in cid.split("+")) if c]
+
+
+def t671_empty(cols):
+    """{окно: (ключи (монета, sig_ms) строк TK-671 шорта (meta_base_pass > 0, как в `tk674_emptycols.rows_report`), {столбец: ключи с NaN})} для столбцов, лежащих в parquet напрямую."""
+    import pandas as pd
+    import pyarrow.parquet as pq
+    cols = [c for c in cols if c in pq.ParquetFile(PARQ_S).schema.names]
+    df = pd.read_parquet(PARQ_S, columns=["win", "sym", "meta_sig_ms", "meta_base_pass", *cols])
+    df = df[df["meta_base_pass"] > 0].copy()
+    df["win"], df["sym"] = df["win"].astype(str), df["sym"].astype(str)
+    df["_pri"] = (df["meta_base_pass"] != 1).astype(int)
+    df = df.sort_values("_pri", kind="stable").drop_duplicates(["win", "sym", "meta_sig_ms"])
+    out = {}
+    for w in WIN:
+        d = df[df["win"] == w]
+        keys = list(zip(d["sym"], d["meta_sig_ms"].astype("int64")))
+        out[w] = (set(keys), {c: {k for k, z in zip(keys, d[c].isna().to_numpy()) if z} for c in cols})
+    return out
 
 
 def x_share(tr, nk, fs):
@@ -226,6 +262,54 @@ def main():
     p("")
     p("Доля строк окна с пустым признаком FAST (все кандидатные строки таблицы): " + "; ".join(
         "%s %s" % (f, " / ".join("%.1f %%" % (100.0 * len(fz[w][1][f]) / max(len(fz[w][0]), 1)) for w in WIN)) for f in FAST_COLS) + " (wa / wb / wc).")
+    p("")
+    p("## X по всем прочитанным строкам карты (А, Б, синергия) с фильтром по столбцу: доля зачётных сделок на пустых строках признака (NaN или нет строки таблицы), по окнам wa / wb / wc")
+    p("")
+    secs_of = {}
+    for sec, nm, ln in mr:
+        secs_of.setdefault(nm, []).append(sec)
+    need = sorted({c for nm in secs_of for c in cols_of(nm) if c in ec.AXIS_COLS and not c.startswith(("cc_", "bd_"))})
+    t671 = t671_empty(need)
+    detail, summ = [], {}
+    for nm, secs in secs_of.items():
+        cs = cols_of(nm)
+        if not cs:
+            continue
+        tr = trades_of(R5 if nm in bd else (R2 if nm in recount else R), nm, nm_of.get(nm))
+        for c in cs:
+            if c in nk[WIN[0]][0]:
+                src, em = "fam cc / bd", (lambda w, k, c=c: k in nk[w][0][c])
+            elif c in FAST_COLS:
+                src, em = "fast.csv", (lambda w, k, c=c: k not in fz[w][0] or k in fz[w][1][c])
+            elif c in t671[WIN[0]][1]:
+                src, em = "TK-671", (lambda w, k, c=c: k not in t671[w][0] or k in t671[w][1][c])
+            elif c in ec.A_NAMES:
+                src, em = "таблицы TK-654 / TK-638 (полные строки; здесь не считалось)", None
+            else:
+                src, em = "не считалось (отношение / файл истории)", None
+            if em is None or not tr:
+                x, xs = None, "нет каталога клетки" if em and not tr else "—"
+            else:
+                x = {w: (len(tr[w]), sum(1 for k in tr[w] if em(w, k))) for w in WIN}
+                xs = fmt_x(x)
+            detail.append((nm, "+".join(secs), "PS-994" if nm in recount else ("PS-995" if nm in bd else "нет"), c, src, xs))
+            s = summ.setdefault(c, dict(src=src, rows=0, measured=0, gt0=0, gt50=0, mx=0.0))
+            s["rows"] += 1
+            if x:
+                pc = [100.0 * k / n for n, k in x.values() if n]
+                s["measured"] += 1
+                s["gt0"] += any(v > 0 for v in pc)
+                s["gt50"] += any(v > 50 for v in pc)
+                s["mx"] = max([s["mx"]] + pc)
+    p("| столбец | источник | строк карты | измерено | X > 0 в каком-либо окне | X > 50 % в каком-либо окне | максимум X, % |")
+    p("|---|---|---|---|---|---|---|")
+    for c, s in sorted(summ.items(), key=lambda kv: (-kv[1]["gt50"], -kv[1]["gt0"], kv[0])):
+        p("| %s | %s | %d | %d | %d | %d | %.1f |" % (c, s["src"], s["rows"], s["measured"], s["gt0"], s["gt50"], s["mx"]))
+    p("")
+    p("| клетка | разделы | пересчитана | столбец | источник | X: wa / wb / wc |")
+    p("|---|---|---|---|---|---|")
+    for d in detail:
+        p("| `%s` | %s | %s | %s | %s | %s |" % d)
     p("")
     p("## Классы cc (PS-994) и bd (PS-995): X = доля сделок клетки с NaN у признака фильтра, по окнам")
     p("")
