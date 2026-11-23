@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Обновить страницу П-42 (srv:8090; вкладки «Цели TK-598», «Эквити», «Признаки»):
+# Обновить страницу П-42 (srv:8090; вкладки «Эквити», «Признаки»):
 #   bash tools/p42/ml_page_update.sh
 # Заливает данные и исходники генератора на srv и пересобирает /data/pages/ml/index.html (tk593_page.py; JSON проверяется по схемам до записи страницы).
-# «Цели TK-598» — tools/p42/ml_progress.json → targets (схема ml_progress.schema.json). «Признаки» (TK-606) — tools/p42/ml_features.json (схема ml_features.schema.json).
+# «Признаки» (TK-606) — tools/p42/ml_features.json (схема ml_features.schema.json).
 # «Эквити» (TK-684) — tools/p42/tk684_variants.json (вариант = одна запись + каталоги его сделок на srv); tk684_equity.py читает готовые сделки,
 #   сверяет каждую линию с летописью (/data/chron/chron.sqlite) и принятыми числами — расхождение останавливает выкладку.
 # Вид «Веер» — data/fan/ (tk684_fan.py: все клетки перебора c539 из летописи, ≈ 8 мин, юнит Nice 19, пик 3,4 ГБ); строится, если каталога ещё нет, пересчитать после новых клеток (четвёрки шорта, пересчёт bd): REBUILD_FAN=1 bash tools/p42/ml_page_update.sh
@@ -10,11 +10,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 KEY=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15)
 HOST=root@5.231.25.224
-python -c "import json,sys; json.load(open('ml_progress.json', encoding='utf-8'))" || { echo "ml_progress.json — не JSON"; exit 2; }
 python -c "import json,sys; json.load(open('ml_features.json', encoding='utf-8'))" || { echo "ml_features.json — не JSON"; exit 2; }
-tar -c ml_progress.schema.json ml_features.schema.json tk593_page.py tk593_template.html tk684_fan.js ml_page_server.py | ssh "${KEY[@]}" "$HOST" 'tar -x -C /data/pages/_src'
+tar -c ml_features.schema.json tk593_page.py tk593_template.html tk684_fan.js ml_page_server.py | ssh "${KEY[@]}" "$HOST" 'tar -x -C /data/pages/_src'
 tar -c tk684_equity.py tk684_metrics.py tk684_variants.json tk684_fan.py | ssh "${KEY[@]}" "$HOST" 'mkdir -p /data/p42-tk624/code && tar -x -C /data/p42-tk624/code'
-scp "${KEY[@]}" -q ml_progress.json "$HOST:/data/pages/ml/data/progress.json"
 # TK-684 / TK-680: не затирать опись признаков, выложенную из другой ветки и более новую (22.11: выкладка из ветки без TK-681 откатила вкладку «Признаки»;
 # охрана по наибольшему № не ловила ветку с пропуском № 252–307) — заливаем, только если все имена живого файла есть в локальном
 FT_NAMES='import json,sys; print(" ".join(x["name"] for s in json.load(open(sys.argv[1], encoding="utf-8"))["sets"] for g in s["groups"] for x in g["features"]))'

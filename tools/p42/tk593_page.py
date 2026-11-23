@@ -1,8 +1,8 @@
-"""П-42 TK-593: сборка страницы П-42 :8090 (один HTML, данные внутри). Вкладки: «Цели TK-598», «Эквити» (вид «Варианты»), «Признаки».
+"""П-42 TK-593: сборка страницы П-42 :8090 (один HTML, данные внутри). Вкладки: «Эквити» (виды «Варианты» и «Веер»), «Признаки».
 
-Использование: <venv>/bin/python tk593_page.py <template.html> <выход: каталог страницы> [progress.json] [features.json] [variants.json]
+Использование: <venv>/bin/python tk593_page.py <template.html> <выход: каталог страницы> [features.json] [variants.json]
 Пишет <каталог>/index.html (страница статическая: после правки JSON — запустить сборку ещё раз).
-Цели TK-598 — progress.json → targets (по умолчанию <каталог>/data/progress.json; источник — tools/p42/ml_progress.json, проверяется по ml_progress.schema.json рядом со скриптом).
+TK-696: вкладка «Цели TK-598» убрана (владелец 23.11: «удаляй»); данные целей и схема — docs/archive/page-8090-removed-tabs-2026-11-22/.
 TK-606: вкладка «Признаки» — features.json (по умолчанию <каталог>/data/features.json; источник — tools/p42/ml_features.json, схема ml_features.schema.json,
 плюс проверки: ссылки src ∈ sources, имена признаков не повторяются, у набора «идёт» нет цифр).
 TK-684: вид «Веер» — код tk684_fan.js рядом со скриптом вшивается в страницу, данные data/fan/ (tk684_fan.py) страница подгружает сама.
@@ -17,7 +17,7 @@ import sys
 import jsonschema
 
 tpl_path, out_dir = sys.argv[1:3]
-progress_path, features_path, variants_path = (sys.argv[3 + i] if len(sys.argv) > 3 + i else f"{out_dir}/data/{n}.json" for i, n in enumerate(("progress", "features", "variants")))
+features_path, variants_path = (sys.argv[3 + i] if len(sys.argv) > 3 + i else f"{out_dir}/data/{n}.json" for i, n in enumerate(("features", "variants")))
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -54,8 +54,6 @@ def blob(x):
 
 
 def main():
-    progress = json.load(open(progress_path, encoding="utf-8"))
-    jsonschema.validate(progress, json.load(open(os.path.join(HERE, "ml_progress.schema.json"), encoding="utf-8")))
     features = json.load(open(features_path, encoding="utf-8"))
     jsonschema.validate(features, json.load(open(os.path.join(HERE, "ml_features.schema.json"), encoding="utf-8")))
     check_features(features)
@@ -65,7 +63,7 @@ def main():
     fan_idx = f"{out_dir}/data/fan/index.json"      # версия данных веера — адреса пакетов с ?v=<время каталога> (кэш браузера)
     fan_v = str(int(os.path.getmtime(fan_idx))) if os.path.exists(fan_idx) else ""
     fan_js = open(os.path.join(HERE, "tk684_fan.js"), encoding="utf-8").read().replace("/*__FANV__*/''", repr(fan_v))
-    parts = {"/*__FANJS__*/": fan_js, "/*__PROGRESS__*/": blob({"targets": progress["targets"]}), "/*__FEATURES__*/": blob(features), "/*__VARIANTS__*/": blob(variants)}
+    parts = {"/*__FANJS__*/": fan_js, "/*__FEATURES__*/": blob(features), "/*__VARIANTS__*/": blob(variants)}
     assert all(tpl.count(k) == 1 for k in parts), "шаблон: метки данных"
     html = tpl
     for k, v in parts.items():

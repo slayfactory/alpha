@@ -153,9 +153,9 @@ const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'Н
   for (const [hsh, side] of [['#equity/short/where', 'short'], ['#equity/long/bases', 'long'], ['#equity/short/shape', 'short'], ['#equity/both/curve', 'both'], ['#equity/long/comp/dep=7000', 'long']]) {
     await page.goto('about:blank'); await page.goto(base + hsh, {waitUntil: 'load'}); await page.waitForSelector('table[data-vtable]'); await state(side, dl, ds, 'прежний вид ' + hsh);
   }
-  // верхние вкладки — ровно три; прежние хеши убранных вкладок (#live, #progress, #model, …) и пустой хеш открывают «Эквити» · «Варианты» без ошибок консоли
-  eq(await page.evaluate(() => [...document.querySelectorAll('#toptabs button')].map(b => b.innerText)), ['Цели TK-598', 'Эквити', 'Признаки'], 'верхние вкладки');
-  for (const hsh of ['#live', '#progress', '#model', '#model/long', '#long', '#short', '']) {
+  // верхние вкладки — ровно две (TK-696: «Цели TK-598» убрана); прежние хеши убранных вкладок (#live, #progress, #model, …) и пустой хеш открывают «Эквити» · «Варианты» без ошибок консоли
+  eq(await page.evaluate(() => [...document.querySelectorAll('#toptabs button')].map(b => b.innerText)), ['Эквити', 'Признаки'], 'верхние вкладки');
+  for (const hsh of ['#live', '#progress', '#model', '#model/long', '#long', '#short', '#targets', '']) {
     const e0 = errs.length;
     await page.goto('about:blank'); await page.goto(base + hsh, {waitUntil: 'load'}); await page.waitForSelector('table[data-vtable]');
     await state('short', dl, ds, 'старый хеш «' + hsh + '» → «Эквити» · «Варианты»');
