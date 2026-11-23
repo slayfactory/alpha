@@ -20,7 +20,7 @@ import tk680_axes as a80  # noqa: E402
 COLS_FILE = os.path.join(HERE, "tk680_cols.json")     # имена столбцов покрытия (docs/findings/p42-titration-coverage-2026-11-22/cols.json)
 ENGNAME = {"L": "long", "S": "short"}
 OPS = {"le": "<=", "ge": ">="}
-THR_NAME = {"hist": "thr680h.json", "grid": "thr680g.json", "ctx": "thr680c.json", "t681": "thr680t.json", "new": "thr680n.json", "t697": "thr680p.json"}.get(a80.SET, "thr680.json")     # пороги набора «история пробоев» (§13.73.8) — свой файл, заморозка thr680.json не трогается
+THR_NAME = {"hist": "thr680h.json", "grid": "thr680g.json", "ctx": "thr680c.json", "t681": "thr680t.json", "new": "thr680n.json", "t697": "thr680p.json", "t697b": "thr680q.json"}.get(a80.SET, "thr680.json")     # пороги набора «история пробоев» (§13.73.8) — свой файл, заморозка thr680.json не трогается
 
 
 def cosig15(sym, ms):
@@ -45,6 +45,8 @@ def coverage_cols():
         return list(a80.FAST_NAMES)
     if a80.SET == "t697":
         return list(a80.T697_NAMES)
+    if a80.SET == "t697b":
+        return list(a80.T697B_NAMES)
     return json.load(open(COLS_FILE, encoding="utf-8"))
 
 
@@ -97,6 +99,22 @@ def t697_join(side, df):
     return pd.concat([m] + ext, ignore_index=True)
 
 
+def t697b_join(side):
+    """Набор t697b: строки сигналов базы со столбцами `btc_mv15`, `mk_btc_s60` (`tk697_b.py`, файл на окно и сторону, ключ (sym, sig_ms)); все сигналы базы h775, строка таблицы TK-671 не нужна —
+    значения столбцов зависят только от монеты и минуты сигнала. Дубли ключа — ошибка; порядок и состав столбцов сверяются со списком поправки."""
+    import pandas as pd
+    parts = []
+    for w in a80.T681_WINS:
+        x = pd.read_parquet(a80.T697B_FAM % (w, ENGNAME[side])).reset_index(drop=True).rename(columns={"sig_ms": "meta_sig_ms"})
+        if list(x.columns) != ["sym", "meta_sig_ms"] + a80.T697B_NAMES:
+            raise SystemExit("t697b %s %s: столбцы файла ≠ списку поправки" % (w, side))
+        if x.duplicated(["sym", "meta_sig_ms"]).any():
+            raise SystemExit("t697b %s %s: дубли (sym, sig_ms)" % (w, side))
+        x["win"], x["meta_base_pass"] = w, 1
+        parts.append(x)
+    return pd.concat(parts, ignore_index=True)
+
+
 def add_columns(side, st, tabs):
     """Столбцы таблицы TK-671 к строкам кандидатов базы (ключ окно + sym + sig_ms, строка с meta_base_pass > 0, бит 1 раньше бита 2); нет строки — пусто (проходит)."""
     import numpy as np
@@ -122,6 +140,8 @@ def add_columns(side, st, tabs):
         have |= set(a80.FAST_NAMES)
     if a80.SET == "t697":
         have |= set(a80.T697_FAM_NAMES)
+    if a80.SET == "t697b":
+        have |= set(a80.T697B_NAMES)
     if a80.SET == "hist":
         extra = set(pq.ParquetFile(a80.HIST_EXTRA % ENGNAME[side]).schema.names) - have
         have |= extra
@@ -131,7 +151,7 @@ def add_columns(side, st, tabs):
     absent = [name for name, src, _ in cl if not all(x in have for x in srcs(src)) and name not in tabs[st.TRADE_WINDOWS[0].name]]
     cl = [c for c in cl if c[0] not in absent]
     need = sorted({x for _, src, _ in cl for x in srcs(src) if x in have})
-    fast = set(a80.FAST_NAMES) if a80.SET == "t681" else (set(a80.T697_FAM_NAMES) if a80.SET == "t697" else set())
+    fast = set(a80.FAST_NAMES) if a80.SET == "t681" else (set(a80.T697_FAM_NAMES) if a80.SET == "t697" else (set(a80.T697B_NAMES) if a80.SET == "t697b" else set()))
     df = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["win", "sym", "meta_sig_ms", "meta_base_pass"] + (["row_id"] if fast else []) + [x for x in need if x not in extra and x not in fast])
     if extra:                                       # ok10_d3 / d5: файл tk680_hist.py, строки в порядке таблицы TK-671 (ключ сверяется)
         ex = pd.read_parquet(a80.HIST_EXTRA % ENGNAME[side])
@@ -142,7 +162,7 @@ def add_columns(side, st, tabs):
     df = df[df["meta_base_pass"] > 0].copy()
     df["win"], df["sym"] = df["win"].astype(str), df["sym"].astype(str)
     if fast:
-        df = t697_join(side, df) if a80.SET == "t697" else fast_join(side, df)
+        df = t697b_join(side) if a80.SET == "t697b" else (t697_join(side, df) if a80.SET == "t697" else fast_join(side, df))
     df["_pri"] = (df["meta_base_pass"] != 1).astype(int)
     df = df.sort_values("_pri", kind="stable").drop_duplicates(["win", "sym", "meta_sig_ms"])
     rep = {}
@@ -171,7 +191,7 @@ def add_columns(side, st, tabs):
 def _win_cover(tabs, st, sel, cname):
     """Набор t697 (критик 23.11, PS-993 (в)/(д)): определённость столбца по окнам — {окно: [определён, кандидатов]} по кандидатам базы в отборе `sel`; охрана 70 % читает минимум по окнам."""
     import numpy as np
-    if a80.SET != "t697":
+    if a80.SET not in ("t697", "t697b"):
         return None
     return {w.name: [int(np.isfinite(tabs[w.name][cname][sel[w.name]]).sum()), int(sel[w.name].sum())] for w in st.TRADE_WINDOWS}
 
@@ -197,6 +217,8 @@ def _thresholds(v, cname=None):
         if x not in seen:
             seen.add(x)
             out.append(("q%d" % q, x))
+    if a80.SET == "t697b" and a80.T697B_ZERO[1] not in seen:      # TK-697 вторая поправка: порог 0 (знак хода BTC) к квантилям; по возрастанию порога — соседи плато
+        out = sorted(out + [a80.T697B_ZERO], key=lambda t: t[1])
     return out, list(out)
 
 
@@ -279,7 +301,7 @@ def cmd_select():
             axes.append(dict(axis=name, kind="key", base=base, vals=[[lab, base_ck if lab == base else put(name, lab, patch)] for lab, patch in vals]))
         tabs = run.feat_tabs(side, st, u, eps)
         sc = {w.name: r54.in_scored_range(w, tabs[w.name]["ms"]) for w in st.TRADE_WINDOWS}
-        if a80.SET == "t697" and run.UNI != "h775":     # TK-697: пороги — по кандидатам базы состава c539 (крипто-монеты), как охрана покрытия в `select_from`
+        if a80.SET in ("t697", "t697b") and run.UNI != "h775":     # TK-697: пороги — по кандидатам базы состава c539 (крипто-монеты), как охрана покрытия в `select_from`
             crypto = sorted(u.coins())
             sc = {w.name: sc[w.name] & np.isin(np.asarray(tabs[w.name]["sym"]).astype(str), crypto) for w in st.TRADE_WINDOWS}
         thr_out[side] = {}
@@ -406,7 +428,7 @@ def cmd_map():
         lv = json.load(open(run.level_path(side), encoding="utf-8"))
         inv = run.load_invalid(side)
         base_ck = ax.base_ckey(side)
-        nank = _nan_keys(side) if a80.SET in ("hist", "t681", "t697") else None
+        nank = _nan_keys(side) if a80.SET in ("hist", "t681", "t697", "t697b") else None
         rows = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(lv["cells"]) + [base_ck], bins=bins)
         brow = rows[base_ck]
         bsh, busd = brow["sharpe"], brow["usd"]

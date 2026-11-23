@@ -54,7 +54,7 @@ GRID_OLD = {"natr_min": _o(0.2, 0.4, 0.6, 0.8), "t1h": _o(0.25, 0.5, 1, 2), "t24
 def engine_axes(side):
     if SET == "grid":
         return grid_axes(side)
-    if SET in ("hist", "ctx", "t697"):
+    if SET in ("hist", "ctx", "t697", "t697b"):
         return []
     if SET == "t681":
         return t681_axes(side)
@@ -157,7 +157,7 @@ T681_SM = (0.1, 0.2, 0.3, 0.5)                   # минимальное рас
 T681_SM_PARENT = (("sl", dict(sl=3.5)), ("cw", dict(cw=30, cl=0, ch=1000, cm=0.5)), ("nx", dict(nx=3.5)))
 FAST_NAMES = (["tfv30", "tfn30", "vpin300", "bigimb10", "bigimb30", "bigimb60", "sac10", "sac30", "sac60", "mk1_10", "mk1_30", "mk5_30", "mk5_60", "mk10_60", "kyle1m", "amih1m",
                "kyle5m", "amih5m"] + ["acc%s%d_%d" % (k, s_, P) for s_ in (1, 5, 10, 30) for P in (60, 300) for k in ("n", "v", "dn", "dv")])
-COVER_MIN = 0.7 if SET in ("t681", "t697") else 0.0       # столбец, определённый менее чем у такой доли кандидатов базы (зачётный диапазон), активным не бывает — только описание (критик PS-974: пустая половина стоит в тихих минутах)
+COVER_MIN = 0.7 if SET in ("t681", "t697", "t697b") else 0.0       # столбец, определённый менее чем у такой доли кандидатов базы (зачётный диапазон), активным не бывает — только описание (критик PS-974: пустая половина стоит в тихих минутах)
 
 
 # поправка TK-697 (признаки из разбора сделок трейдера пробоев; семейства `m697` / `h697` / `l697` строк TK-671 + `mk_rel_s60 / 240 / 1440` таблицы TK-671):
@@ -179,9 +179,17 @@ T697_NAMES = T697_FAM_NAMES + T697_TABLE
 T697_COUNT = [f"ls_c{k}p" for k in (1, 2, 3)] + [f"ls_c{k}n" for k in (2, 4, 8)]
 
 
+# поправка TK-697 (вторая, 24.11; ось выбрана после просмотра P&L TK-698 на этих данных): набор TK680_SET=t697b — два столбца рынка `btc_mv15` = s · (BTC close[t−1] / close[t−16] − 1) · 1e4 (бп, f12 `btc_mv15`)
+# и `mk_btc_s60` = s · (BTC close[t−1] / close[t−61] − 1) (доля, семейство mkt TK-671); s = +1 лонг, −1 шорт; > 0 — BTC шёл в сторону сделки. Свой каталог TK674_ROOT. Пороги — квантили 20 / 40 / 60 / 80 по кандидатам
+# базы состава c539 и порог 0 (знак); обе стороны порога (≤ / ≥) = 10 клеток на столбец и сторону. Столбцы считает `tk697_b.py` по минуткам BTCUSDT для ВСЕХ сигналов базы (таблица TK-671 и сигналы без её строки).
+T697B_FAM = "/data/p42-tk697/fam/b697/%s-%s.parquet"      # окно, сторона: индекс row_id (< 0), столбцы sym, sig_ms, btc_mv15, mk_btc_s60
+T697B_NAMES = ["btc_mv15", "mk_btc_s60"]
+T697B_ZERO = ("z0", 0.0)                                  # порог по знаку: ≥ 0 — BTC шёл по ходу сделки, ≤ 0 — против
+
+
 def nan_cols():
     """Столбцы, у которых пустое значение пропускает фильтр и поэтому считается отдельно (сделки с пустым значением, их Σ $)."""
-    return list(HIST_COLS) if SET == "hist" else (list(FAST_NAMES) if SET == "t681" else (list(T697_NAMES) if SET == "t697" else []))
+    return (list(HIST_COLS) if SET == "hist" else (list(FAST_NAMES) if SET == "t681" else (list(T697_NAMES) if SET == "t697" else (list(T697B_NAMES) if SET == "t697b" else []))))
 
 
 def t681_volq():
@@ -247,6 +255,8 @@ def column_list(coverage_cols):
         return [(c, c, ("le",)) for c in CTX_COLS]
     if SET == "t681":
         return [(c, c, ("le", "ge")) for c in FAST_NAMES]
+    if SET == "t697b":
+        return [(c, c, ("le", "ge")) for c in T697B_NAMES]
     if SET == "t697":       # окно > 60 мин — исключение поправки TK-697 (`horizon_skip` не вызывается)
         return [(c, c, ("le", "ge")) for c in T697_NAMES]
     out = []
