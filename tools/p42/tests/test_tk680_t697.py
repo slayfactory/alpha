@@ -79,3 +79,7 @@ def test_t697_join_key_checks(tmp_path):
     assert list(out["sw_d15"].isna()) == [False, True] and float(out["rn_n"].iloc[0]) == 15.0 and float(out["hl_lo_n365"].iloc[0]) == 11.0 and float(out["bl_eth_brk60"].iloc[0]) == 11.0
     with pytest.raises(SystemExit):
         s.t697_join("L", pd.DataFrame(dict(win=["wa"], row_id=[5], sym=["ZZZ"], meta_sig_ms=[100])))
+
+
+def test_no_engine_key_axes():
+    assert run("import tk680_axes as a; print(json.dumps([a.engine_axes('L'), a.engine_axes('S')]))") == [[], []]

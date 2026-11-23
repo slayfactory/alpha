@@ -54,7 +54,7 @@ GRID_OLD = {"natr_min": _o(0.2, 0.4, 0.6, 0.8), "t1h": _o(0.25, 0.5, 1, 2), "t24
 def engine_axes(side):
     if SET == "grid":
         return grid_axes(side)
-    if SET in ("hist", "ctx"):
+    if SET in ("hist", "ctx", "t697"):
         return []
     if SET == "t681":
         return t681_axes(side)
