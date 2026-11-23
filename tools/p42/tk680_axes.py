@@ -157,12 +157,32 @@ T681_SM = (0.1, 0.2, 0.3, 0.5)                   # минимальное рас
 T681_SM_PARENT = (("sl", dict(sl=3.5)), ("cw", dict(cw=30, cl=0, ch=1000, cm=0.5)), ("nx", dict(nx=3.5)))
 FAST_NAMES = (["tfv30", "tfn30", "vpin300", "bigimb10", "bigimb30", "bigimb60", "sac10", "sac30", "sac60", "mk1_10", "mk1_30", "mk5_30", "mk5_60", "mk10_60", "kyle1m", "amih1m",
                "kyle5m", "amih5m"] + ["acc%s%d_%d" % (k, s_, P) for s_ in (1, 5, 10, 30) for P in (60, 300) for k in ("n", "v", "dn", "dv")])
-COVER_MIN = 0.7 if SET == "t681" else 0.0       # столбец, определённый менее чем у такой доли кандидатов базы (зачётный диапазон), активным не бывает — только описание (критик PS-974: пустая половина стоит в тихих минутах)
+COVER_MIN = 0.7 if SET in ("t681", "t697") else 0.0       # столбец, определённый менее чем у такой доли кандидатов базы (зачётный диапазон), активным не бывает — только описание (критик PS-974: пустая половина стоит в тихих минутах)
+
+
+# поправка TK-697 (признаки из разбора сделок трейдера пробоев; семейства `m697` / `h697` / `l697` строк TK-671 + `mk_rel_s60 / 240 / 1440` таблицы TK-671):
+# набор TK680_SET=t697 (свой каталог TK674_ROOT). Пороги — квантили 20 / 40 / 60 / 80 по кандидатам базы; для счётчиков `ls_*` — числа (≥ 1 / 2 / 3, ≤ 0 / 1 / 2, как ok10_*);
+# для расстояний `bl_*_ahead_n` / `bl_*_back_n` к квантилям добавлены назначенные критиком 1 / 2 / 4 NATR. Исключение из правила окна ≤ 60 мин (HMAX): `pm_*` (24 / 48 / 72 ч), `hl_*`
+# (30 / 90 / 365 сут.), `mk_rel_s240` / `mk_rel_s1440` / `mk_rel_sd` (4 ч, 24 ч, с 00:00 UTC) — «предыстория по природе» (решение координатора 23.11).
+T697_FAM = "/data/p42-tk697/fam/%s/%s-%s.parquet"      # семейство, окно, сторона; индекс row_id
+T697_ROWS = "/data/p42-tk671/prod/lvl-%s-%s/rows.parquet"      # окно, сторона: row_id, sym, sig_ms (сверка строк)
+T697_FAMS = {
+    "m697": ([f"sw_d{w}" for w in (15, 30, 60)] + [f"sw_a{w}" for w in (15, 30, 60)] + [f"pm_p{h}" for h in (24, 48, 72)] + [f"pm_n{h}" for h in (24, 48, 72)]
+             + ["pm_sharp", "mk_rel_sd", "rn_p", "rn_n"]),
+    "h697": [f"hl_{k}_{u}{n}" for u in ("p", "n") for k in ("hi", "lo") for n in (30, 90, 365)],
+    "l697": [f"ls_c{k}p" for k in (1, 2, 3)] + [f"ls_c{k}n" for k in (2, 4, 8)] + [f"bl_{r}_{x}" for r in ("btc", "eth") for x in ("ahead_n", "back_n", "brk60")],
+}
+T697_TABLE = ["mk_rel_s60", "mk_rel_s240", "mk_rel_s1440"]       # уже в таблице TK-671 (семейство mkt)
+T697_FAM_NAMES = [c for f in T697_FAMS.values() for c in f]
+T697_NAMES = T697_FAM_NAMES + T697_TABLE
+T697_COUNT = [f"ls_c{k}p" for k in (1, 2, 3)] + [f"ls_c{k}n" for k in (2, 4, 8)]
+T697_NATR = [f"bl_{r}_{x}" for r in ("btc", "eth") for x in ("ahead_n", "back_n")]
+T697_NATR_THR = (1.0, 2.0, 4.0)
 
 
 def nan_cols():
     """Столбцы, у которых пустое значение пропускает фильтр и поэтому считается отдельно (сделки с пустым значением, их Σ $)."""
-    return list(HIST_COLS) if SET == "hist" else (list(FAST_NAMES) if SET == "t681" else [])
+    return list(HIST_COLS) if SET == "hist" else (list(FAST_NAMES) if SET == "t681" else (list(T697_NAMES) if SET == "t697" else []))
 
 
 def t681_volq():
@@ -228,6 +248,8 @@ def column_list(coverage_cols):
         return [(c, c, ("le",)) for c in CTX_COLS]
     if SET == "t681":
         return [(c, c, ("le", "ge")) for c in FAST_NAMES]
+    if SET == "t697":       # окно > 60 мин — исключение поправки TK-697 (`horizon_skip` не вызывается)
+        return [(c, c, ("le", "ge")) for c in T697_NAMES]
     out = []
     for c in coverage_cols:
         if c in COL_SKIP or horizon_skip(c):
