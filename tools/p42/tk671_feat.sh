@@ -12,12 +12,12 @@ TOX=/data/p42-tk671/bin/alpha-feat-tox-ed78ac4c408073f5f7343538c99b1cf3
 STORE=/data/p42-tk599/tick-store
 case $WIN in wa) T0=2026-06-17;; wb) T0=2026-07-25;; wc) T0=2026-09-01;; *) echo "окно?"; exit 2;; esac
 W=/data/p42-tk621/$WIN
-O=/data/p42-tk671/fam/rust/$WIN-$SIDE
+O=${TK671_RUST_OUT:-/data/p42-tk671/fam/rust}/$WIN-$SIDE            # TK-690: TK671_RUST_OUT / TK671_ROWS — строки другого набора (потоки nf / ev / ea); по умолчанию — как было
 mkdir -p "$O"; cd "$O" || exit 2
 export TK594_TRADES=$W/aggtrades TK594_METRICS=/data/p42-tk600/metrics-all TK594_PREMIUM=/data/p42-tk600/premium-all TK594_FUNDING_M=/data/p42-tk600/fund-all
 tm() { echo "$1 rc=$2 sec=$(( $(date +%s) - $3 )) threads=$TH rows=$(( $(wc -l < eps-ts.csv) - 1 )) load=$(cut -d' ' -f1 /proc/loadavg)" | tee -a steps.log; }
 S=$(date +%s)
-$PY $CODE/tk671_prep.py --rows /data/p42-tk671/prod/lvl-$WIN-$SIDE/rows.parquet --out "$O" > prep.log 2>&1; rc=$?; rm -f rows-slice.parquet
+$PY $CODE/tk671_prep.py --rows "${TK671_ROWS:-/data/p42-tk671/prod/lvl-$WIN-$SIDE/rows.parquet}" --out "$O" > prep.log 2>&1; rc=$?; rm -f rows-slice.parquet
 tm prep $rc $S
 awk -v s=$SIDE 'NR==1{print $0",side";next}{print $0","s}' eps-ts.csv > eps-tox.csv
 S=$(date +%s)

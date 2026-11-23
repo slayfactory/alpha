@@ -324,14 +324,15 @@ def feat_tabs(side, st, u, eps):
     return tabs
 
 
-def write_ftab(side, st, tabs, cells):
-    """Таблица составных фильтров `--ftab` клеток (столбец на смысл фильтра) по окнам → ftab674<FSUF>/<окно>-<сторона>.csv; возвращает {смысл: столбец}."""
-    cols = ftab_cols(cells)
+def write_ftab(side, st, tabs, cells, cols=None, out=None):
+    """Таблица составных фильтров `--ftab` клеток (столбец на смысл фильтра) по окнам → ftab674<FSUF>/<окно>-<сторона>.csv; возвращает {смысл: столбец}.
+    `cols` (готовое {смысл: столбец}) и `out` (каталог) — для таблиц потоков TK-690: столбцы и имена прежней таблицы, запись не в каталог TK-674."""
+    cols = ftab_cols(cells) if cols is None else cols
     sem_list = {sem: parse_sem(sem) for sem in cols}
     for w in st.TRADE_WINDOWS:
         tab = tabs[w.name]
         pm = {sem: np.logical_and.reduce([_pass(f_, x, tab, op_) for f_, op_, x in parts]) for sem, parts in sem_list.items()}
-        path = t.q("ftab674" + FSUF, "%s-%s.csv" % (w.name, side))
+        path = os.path.join(out, "%s-%s.csv" % (w.name, side)) if out else t.q("ftab674" + FSUF, "%s-%s.csv" % (w.name, side))
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write("sym,sig_ms," + ",".join(cols[s_] for s_ in sem_list) + "\n")
             for i in range(len(tab["sym"])):
