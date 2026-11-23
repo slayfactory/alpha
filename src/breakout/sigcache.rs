@@ -17,11 +17,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-/// Версия формата записи и состава ключа.
-pub const SIGCACHE_VERSION: u32 = 1;
+/// Версия формата записи и состава ключа. 2 — TK-697: в записи сигнала появилось `nxt` (цена следующего уровня); текст ключа `cfg_key_text` не менялся
+/// (поле зависит только от `SigCfg` и минуты сигнала, ключи выхода `tn`/`tno` в кэш сигналов не входят).
+pub const SIGCACHE_VERSION: u32 = 2;
 const MAGIC: [u8; 4] = *b"SG42";
 const HEAD_LEN: usize = 4 + 4 + 4 + 5 * 8 + 4 + 4;
-const TSIG_LEN: usize = 8 + 2 + 4 + 4 + 4 + 2 + 4 + 8 + 8 + 1;
+const TSIG_LEN: usize = 8 + 2 + 4 + 4 + 4 + 2 + 4 + 8 + 8 + 1 + 8;
 
 #[derive(Debug, Clone)]
 pub struct SigCacheOpts {
@@ -152,6 +153,7 @@ fn encode(sigs: &[TSig], ctr: &TickCtr) -> Option<Vec<u8>> {
         raw.extend_from_slice(&s.lp.to_le_bytes());
         raw.extend_from_slice(&s.far.to_le_bytes());
         raw.push(u8::from(s.ws));
+        raw.extend_from_slice(&s.nxt.to_le_bytes());
     }
     let comp = compress(&raw)?;
     let mut f = Vec::with_capacity(HEAD_LEN + comp.len());
@@ -214,6 +216,7 @@ fn decode(buf: &[u8]) -> Option<(Vec<TSig>, TickCtr)> {
                 lp: i64_at(28),
                 far: i64_at(36),
                 ws: b[44] != 0,
+                nxt: i64_at(45),
             }
         })
         .collect();

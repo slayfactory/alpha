@@ -487,6 +487,7 @@ fn lx_levels_dump_has_the_same_columns() {
         lp: px(105.0),
         far: px(105.0),
         ws: false,
+        nxt: 0,
     };
     write_sigsx(
         tmp.path(),

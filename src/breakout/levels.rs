@@ -149,6 +149,17 @@ pub fn build_levels_far(sym: &Sym, cfg: &LevelCfg, side: Side) -> Vec<Level> {
 }
 
 impl Level {
+    /// Уровень известен и жив на минуте `t`: `born ≤ t < end` (как цикл `tick::candidates_fg`).
+    pub fn alive_at(&self, t: usize) -> bool {
+        self.born as usize <= t && t < self.end as usize
+    }
+
+    /// Цена версии на минуте `t` (настоящая, не рама): последняя версия с началом ≤ `t`, до первой — первая (как переход версий в `tick::candidates_fg`).
+    pub fn price_at(&self, t: usize) -> i64 {
+        let k = self.segs.partition_point(|&(from, _)| from as usize <= t);
+        self.segs[k.saturating_sub(1)].1
+    }
+
     /// Дальний край зоны версии цены `seg` в длинной раме: минимум цен пивотов (лонг — самый низкий, шорт — минус самый высокий).
     /// Без журнала членов — `None`.
     pub fn far_edge(&self, seg: usize, s: i64) -> Option<i64> {
@@ -159,6 +170,18 @@ impl Level {
             m.iter().map(|x| -x.1).min()
         }
     }
+}
+
+/// TK-697 (`tn`): цена ближайшего уровня набора `levels` строго за ценой `lp` (длинная рама, `s` — сторона) по ходу сделки на минуте `t`; 0 — такого уровня нет.
+/// Берутся только уровни, известные и живые на минуте `t` (`born ≤ t < end`), цена — версия минуты `t`.
+pub fn next_px(levels: &[Level], s: i64, lp: i64, t: usize) -> i64 {
+    levels
+        .iter()
+        .filter(|lv| lv.alive_at(t))
+        .map(|lv| s * lv.price_at(t))
+        .filter(|&p| p > lp)
+        .min()
+        .unwrap_or(0)
 }
 
 fn members(m: &[Pv]) -> Vec<(u32, i64)> {

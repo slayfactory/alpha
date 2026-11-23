@@ -83,6 +83,7 @@ fn sig(i: u64) -> TSig {
         lp: -(i as i64) * 123_456_789_012,
         far: i64::MIN + i as i64,
         ws: i % 2 == 1,
+        nxt: -(i as i64) * 7_654_321 - 1,
     }
 }
 
