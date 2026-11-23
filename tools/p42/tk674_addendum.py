@@ -122,6 +122,20 @@ def t671_empty(cols):
     return out
 
 
+def col_empty(c, nk, fz, t671):
+    """(источник, em(окно, ключ) → пуст ли признак c на строке) для столбца фильтра c; em = None — столбец здесь не считается."""
+    import tk674_emptycols as ec
+    if c in nk[WIN[0]][0]:
+        return "fam cc / bd", (lambda w, k: k in nk[w][0][c])
+    if c in FAST_COLS:
+        return "fast.csv", (lambda w, k: k not in fz[w][0] or k in fz[w][1][c])
+    if c in t671[WIN[0]][1]:
+        return "TK-671", (lambda w, k: k not in t671[w][0] or k in t671[w][1][c])
+    if c in ec.A_NAMES:
+        return "таблицы TK-654 / TK-638 (полные строки; здесь не считалось)", None
+    return "не считалось (отношение / файл истории)", None
+
+
 def x_share(tr, nk, fs):
     """{окно: (сделок, из них с NaN хотя бы у одного признака fs)} — по ключам сделок «клетки без cc / bd» (то, что фильтр мог бы допустить)."""
     return {w: (len(tr[w]), sum(1 for k in tr[w] if any(k in nk[w][0].get(f, ()) for f in fs))) for w in WIN}
@@ -277,16 +291,7 @@ def main():
             continue
         tr = trades_of(R5 if nm in bd else (R2 if nm in recount else R), nm, nm_of.get(nm))
         for c in cs:
-            if c in nk[WIN[0]][0]:
-                src, em = "fam cc / bd", (lambda w, k, c=c: k in nk[w][0][c])
-            elif c in FAST_COLS:
-                src, em = "fast.csv", (lambda w, k, c=c: k not in fz[w][0] or k in fz[w][1][c])
-            elif c in t671[WIN[0]][1]:
-                src, em = "TK-671", (lambda w, k, c=c: k not in t671[w][0] or k in t671[w][1][c])
-            elif c in ec.A_NAMES:
-                src, em = "таблицы TK-654 / TK-638 (полные строки; здесь не считалось)", None
-            else:
-                src, em = "не считалось (отношение / файл истории)", None
+            src, em = col_empty(c, nk, fz, t671)
             if em is None or not tr:
                 x, xs = None, "нет каталога клетки" if em and not tr else "—"
             else:
