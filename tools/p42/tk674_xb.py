@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""TK-674 PS-995 (§13.73.33): таблица `ftab674xb` = `ftab674xs` с пересчитанными `bd_*`-столбцами по всем строкам wa / wb / wc.
+
+  python3 tk674_xb.py need     — какие сутки архива bookDepth нужны строкам (как читает `tk671_bd.compute`), чего нет на диске → res/xb-need.json
+  python3 tk674_xb.py dl       — докачка недостающих (монета, сутки) с data.binance.vision: 404 = «биржа файла не даёт» (записывается), любая другая ошибка — повтор, не NaN
+  python3 tk674_xb.py check    — каждая нужная пара: файл есть или 404 в охвате; печать числа 404 и монет без архива по окнам; иначе стоп (код 5)
+  python3 tk674_xb.py fam      — `fam/bd/<окно>-short.parquet` теми же функциями, что TK-671 / TK-690 (`tk671_bd.compute`), нижняя граница ω — первые сутки строк (01.07)
+  python3 tk674_xb.py build    — `ftab674xb`: столбцы без `bd_*` — байты `ftab674xs`; столбец с `bd_*` = остаток (столбец xs без `bd_*`-условий) И столбцы единичек `bd_*` новой таблицы (-all-b)
+  python3 tk674_xb.py controls — (1) столбцы без `bd_*` равны xs; (2) признаки / столбцы против прежнего счёта TK-690 там, где оба определены; охрана NaN
+
+Среда: TK674XB_ROOT (по умолчанию /data/p42-tk674c-xb); python — /data/tk592/venv/bin/python (как `tk671_pyfam.sh`); скрипты TK-671 — /data/p42-tk671/code/p (боевая копия, как у TK-690).
+"""
+from __future__ import annotations
+
+import argparse
+import concurrent.futures as cf
+import csv
+import datetime as dt
+import glob
+import json
+import os
+import shutil
+import sys
+import threading
+
+import numpy as np
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+
+ROOT = os.environ.get("TK674XB_ROOT", "/data/p42-tk674c-xb")
+PROD = os.environ.get("TK674XB_PROD", "/data/p42-tk690/prod")
+BOOK = os.environ.get("TK674XB_BOOK", "/data/p42-book")
+ZIP = BOOK + "/zip"
+C671 = "/data/p42-tk671/code/p"
+WINS = ("wa", "wb", "wc")
+SN = "short"
+EPOCH = dt.date(1970, 1, 1)
+OMEGA_LO = dt.date(2026, 7, 1)                  # первые сутки строк wa (t0 окна 17.06 — предыстория, строк там нет)
+MIN_FREE_GB = 12.0                              # охрана диска: ниже — докачка встаёт, ничего не удаляется
+say = lambda *a: print(*a, flush=True)
+
+
+class XbError(SystemExit):
+    pass
+
+
+def q(*a):
+    p = os.path.join(ROOT, *a)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    return p
+
+
+def day_str(d):
+    return (EPOCH + dt.timedelta(int(d))).isoformat()
+
+
+def omega_lo_d():
+    return (OMEGA_LO - EPOCH).days
+
+
+def rows_path(w):
+    return os.path.join(PROD, "lvl-%s-%s" % (w, SN), "rows.parquet")
+
+
+# ---- какие сутки нужны ------------------------------------------------------------------------------------------------------------
+def need_days(s, lo_d, hi_d, holes_d):
+    """{(индекс строки): (сутки σ, сутки σ − 1 ч)} для строк в ω (как `tk671_bd.omega_mask` + `_coin_job`); возвращает маску и два массива суток."""
+    d1 = np.floor(s / 86400.0).astype(np.int64)
+    d2 = np.floor((s - 3600.0) / 86400.0).astype(np.int64)
+    ok = (d1 >= lo_d) & (d1 <= hi_d)
+    for h in holes_d:
+        ok &= d1 != h
+    return ok, d1, d2
+
+
+def need_pairs(sym, s, lo_d, hi_d, holes_d):
+    """Множество (монета, сутки ISO), которые `tk671_bd.compute` читает для строк (sym[i], σ = s[i])."""
+    ok, d1, d2 = need_days(np.asarray(s, dtype=np.float64), lo_d, hi_d, holes_d)
+    out = set()
+    for sy, a, b in zip(np.asarray(sym)[ok], d1[ok], d2[ok]):
+        out.add((str(sy), day_str(a)))
+        out.add((str(sy), day_str(b)))
+    return out
+
+
+def have_pairs(zdir):
+    """Пары (монета, сутки), у которых файл есть и не пуст (чтение каталогов, не обход дерева)."""
+    out = set()
+    if not os.path.isdir(zdir):
+        return out
+    for sy in os.listdir(zdir):
+        d = os.path.join(zdir, sy)
+        if not os.path.isdir(d):
+            continue
+        for e in os.scandir(d):
+            if e.name.endswith(".zip") and "-bookDepth-" in e.name and e.stat().st_size > 0:
+                out.add((sy, e.name.split("-bookDepth-")[1][:10]))
+    return out
+
+
+def coverage_status(paths):
+    """{(монета, сутки): статус} из файлов охвата (sym,day,status,bytes); у пары берётся последняя строка, «ok» не затирается ошибкой."""
+    st = {}
+    for p in paths:
+        with open(p, encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                k = (r["sym"], r["day"])
+                if st.get(k) == "ok" and r["status"] != "ok":
+                    continue
+                st[k] = r["status"]
+    return st
+
+
+def load_need():
+    sys.path.insert(0, C671)
+    import tk671_bd as bd
+    import pandas as pd
+    lo_d = omega_lo_d()
+    per = {}
+    for w in WINS:
+        rows = pd.read_parquet(rows_path(w))
+        s = bd.row_seconds(rows, w)
+        per[w] = need_pairs(rows["sym"].astype(str).to_numpy(), s, lo_d, bd.OMEGA_HI_D, bd.HOLES_D)
+    return per
+
+
+def cmd_need(a):
+    per = load_need()
+    have = have_pairs(ZIP)
+    allp = set().union(*per.values())
+    miss = sorted(p for p in allp if p not in have)
+    out = dict(omega_lo=OMEGA_LO.isoformat(), need=len(allp), missing=len(miss), per_window={w: dict(need=len(p), missing=len([x for x in p if x not in have])) for w, p in per.items()},
+               files_on_disk=len(have), missing_pairs=[list(x) for x in miss])
+    json.dump(out, open(q("res", "xb-need.json"), "w", encoding="utf-8"))
+    say("нужно пар %d, файлов на диске %d, недостаёт %d; по окнам %s" % (len(allp), len(have), len(miss), json.dumps(out["per_window"])))
+
+
+# ---- докачка ----------------------------------------------------------------------------------------------------------------------
+def cmd_dl(a):
+    import bookdepth_dl as dl
+    per = load_need()
+    have = have_pairs(ZIP)
+    todo = sorted(p for p in set().union(*per.values()) if p not in have)
+    cov = q("res", "xb-coverage.csv")
+    prev = coverage_status([cov]) if os.path.exists(cov) else {}
+    todo = [p for p in todo if prev.get(p) != "404"]                    # 404 уже записан — не дёргать биржу заново
+    say("к докачке %d пар (из них 404 уже записаны: %d)" % (len(todo), len([1 for p in prev.values() if p == "404"])))
+    lock, stop = threading.Lock(), threading.Event()
+    n = dict(ok=0, n404=0, err=0)
+    new = not os.path.exists(cov)
+    with open(cov, "a", encoding="utf-8") as fh:
+        if new:
+            fh.write("sym,day,status,bytes\n")
+        for rnd in range(a.rounds):
+            if not todo:
+                break
+
+            def run(p):
+                if stop.is_set():
+                    return None
+                if shutil.disk_usage(BOOK).free < MIN_FREE_GB * 1e9:
+                    stop.set()
+                    return None
+                return dl.fetch(BOOK, p[0], p[1])
+            left = []
+            with cf.ThreadPoolExecutor(a.workers) as ex:
+                for p, r in zip(todo, ex.map(run, todo)):
+                    if r is None:
+                        left.append(p)
+                        continue
+                    with lock:
+                        fh.write("%s,%s,%s,%d\n" % r)
+                    if r[2] == "ok":
+                        n["ok"] += 1
+                    elif r[2] == "404":
+                        n["n404"] += 1
+                    else:
+                        left.append(p)
+            fh.flush()
+            say("круг %d: ok %d, 404 %d, осталось с ошибкой / не тронуто %d" % (rnd + 1, n["ok"], n["n404"], len(left)))
+            todo = left
+            if stop.is_set():
+                say("СТОП: свободного места < %.0f ГБ — ничего не удалено" % MIN_FREE_GB)
+                raise XbError(3)
+    if todo:
+        say("НЕ ОБЪЯСНЕНО 404: %d пар с сетевой ошибкой после %d кругов: %s" % (len(todo), a.rounds, todo[:5]))
+        raise XbError(4)
+    say("DONE ok=%d 404=%d" % (n["ok"], n["n404"]))
+
+
+def cmd_check(a):
+    per = load_need()
+    have = have_pairs(ZIP)
+    covs = sorted(glob.glob(BOOK + "/coverage-*.csv")) + [q("res", "xb-coverage.csv")]
+    st = coverage_status([c for c in covs if os.path.exists(c)])
+    allp = set().union(*per.values())
+    bad = sorted(p for p in allp if p not in have and st.get(p) != "404")
+    n404 = sorted(p for p in allp if p not in have and st.get(p) == "404")
+    rep = dict(need=len(allp), on_disk=len([p for p in allp if p in have]), n404=len(n404), unexplained=len(bad), per_window={})
+    for w, p in per.items():
+        coins = sorted({x[0] for x in p})
+        none = [c for c in coins if not any((c, d) in have for d in {x[1] for x in p if x[0] == c})]
+        rep["per_window"][w] = dict(pairs=len(p), n404=len([x for x in p if x in set(n404)]), coins=len(coins), coins_without_any_file=len(none), coins_without_file=none)
+    days404 = {}
+    for _, d in n404:
+        days404[d] = days404.get(d, 0) + 1
+    rep["n404_by_day"] = dict(sorted(days404.items()))
+    json.dump(rep, open(q("res", "xb-archive.json"), "w", encoding="utf-8"), ensure_ascii=False)
+    say("нужно пар %d: на диске %d, 404 %d, без объяснения %d" % (rep["need"], rep["on_disk"], rep["n404"], rep["unexplained"]))
+    for w, v in rep["per_window"].items():
+        say("  %s: пар %d, 404 %d, монет %d, монет без единого файла %d" % (w, v["pairs"], v["n404"], v["coins"], v["coins_without_any_file"]))
+    if bad:
+        say("СТОП: %d пар без файла и без 404 (первые %s)" % (len(bad), bad[:5]))
+        raise XbError(5)
+
+
+# ---- признаки bd_* по всем строкам ------------------------------------------------------------------------------------------------
+def cmd_fam(a):
+    """`fam/bd/<окно>-short.parquet` — `tk671_bd.compute` боевой копии TK-671 (как в TK-690); единственное отличие — нижняя граница ω (с 14.09 на 01.07), дыры (08.10) прежние."""
+    sys.path.insert(0, C671)
+    import pandas as pd
+    import tk671_bd as bd
+    bd.OMEGA_LO_D = omega_lo_d()
+    for w in WINS:
+        rows = pd.read_parquet(rows_path(w))
+        stats = {}
+        df = bd.compute(rows, w, SN, a.procs, ZIP, None, stats)
+        out = q("fam", "bd", "%s-%s.parquet" % (w, SN))
+        df.to_parquet(out)
+        info = dict(omega_lo=OMEGA_LO.isoformat(), nonnan={c: round(float(df[c].notna().mean()), 6) for c in df.columns}, **stats)
+        json.dump(info, open(out + ".info.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        say("fam %s: строк %d, в ω %d, монет с архивом %d из %d, bd_imb02 определён у %.1f %%" % (w, stats["rows"], stats["rows_omega"], stats["coins_with_archive"], stats["coins"], 100.0 * info["nonnan"]["bd_imb02"]))
+
+
+# ---- сборка ftab674xb -------------------------------------------------------------------------------------------------------------
+def is_bd(tok):
+    return tok.startswith("bd_")
+
+
+def split_sem(sem):
+    """(остаток без bd-условий, список bd-условий) канонического смысла фильтра «a<=x&b>=y&…»."""
+    toks = sem.split("&")
+    return "&".join(t for t in toks if not is_bd(t)), [t for t in toks if is_bd(t)]
+
+
+def plan_bd_columns(cols):
+    """{имя столбца: (имя остатка | None, [имена столбцов единичек bd])} для всех столбцов с bd-условием; стоп, если остатка или единички нет в таблице."""
+    out = {}
+    for sem, name in cols.items():
+        res, bds = split_sem(sem)
+        if not bds:
+            continue
+        try:
+            singles = [cols[b] for b in bds]
+            rn = cols[res] if res else None
+        except KeyError as e:
+            raise XbError("столбца нет в таблице: %s (смысл %s)" % (e, sem))
+        out[name] = (rn, singles)
+    return out
+
+
+def rebuild_bd(xs, allb, cols):
+    """xs, allb — DataFrame строк-токенов с ключом (sym, sig_ms); возвращает копию xs, где столбцы с bd-условием = остаток(xs) И единички bd (allb)."""
+    import pandas as pd
+    plan = plan_bd_columns(cols)
+    key = xs["sym"] + "|" + xs["sig_ms"]
+    al = allb.set_index(allb["sym"] + "|" + allb["sig_ms"])
+    miss = [k for k in key if k not in al.index]
+    if miss:
+        raise XbError("ключей xs нет в -all-b: %d (%s)" % (len(miss), miss[:3]))
+    al = al.loc[key.to_numpy()]
+    new = {}
+    for name, (rn, singles) in plan.items():
+        v = np.ones(len(xs), dtype=bool) if rn is None else (xs[rn].to_numpy() == "1.0")
+        for sn in singles:
+            v = v & (al[sn].to_numpy() == "1.0")
+        new[name] = np.where(v, "1.0", "0.0")
+    out = xs.copy()
+    for name, v in new.items():
+        out[name] = v
+    return out, plan
+
+
+def read_table(path):
+    import pandas as pd
+    return pd.read_csv(path, dtype=str, keep_default_na=False)
+
+
+def write_table(df, path):
+    df.to_csv(path, index=False, lineterminator="\n")
+
+
+def cmd_build(a):
+    """ftab674xb/<окно>-S.csv: xs с заменой столбцов bd; на выходе круговая проверка записи (xs → тот же файл байт в байт) и сводка."""
+    xsd = os.path.join("/data/p42-tk690", "ftab674xs")
+    alld = q("ftab674xs-all")
+    cols = json.load(open(a.cols, encoding="utf-8"))
+    rep = {}
+    for w in WINS:
+        xs = read_table(os.path.join(xsd, "%s-S.csv" % w))
+        p_rt = q("tmp", "roundtrip-%s.csv" % w)
+        write_table(xs, p_rt)
+        if open(p_rt, "rb").read() != open(os.path.join(xsd, "%s-S.csv" % w), "rb").read():
+            raise XbError("круговая запись xs ≠ файл (%s): формат писателя не совпадает" % w)
+        allb = read_table(os.path.join(alld, "%s-S.csv" % w))
+        if list(allb.columns) != list(xs.columns):
+            raise XbError("заголовки xs и -all-b различаются (%s)" % w)
+        out, plan = rebuild_bd(xs, allb, cols)
+        write_table(out, q("ftab674xb", "%s-S.csv" % w))
+        rep[w] = dict(rows=len(out), bd_columns=len(plan), changed_cells=int(sum((out[n].to_numpy() != xs[n].to_numpy()).sum() for n in plan)),
+                      changed_rows=int(np.any([out[n].to_numpy() != xs[n].to_numpy() for n in plan], axis=0).sum()))
+        say("build %s: строк %d, столбцов bd %d, изменено клеток %d, строк с изменением %d" % (w, rep[w]["rows"], rep[w]["bd_columns"], rep[w]["changed_cells"], rep[w]["changed_rows"]))
+    json.dump(rep, open(q("res", "xb-build.json"), "w", encoding="utf-8"))
+
+
+def cmd_controls(a):
+    """(1) столбцы без bd у xb = xs (число расхождений 0); (2а) bd-признаки нового счёта = прежнего (TK-690) там, где прежние определены; (2б) -all-b = прежний -all на строках, где все bd-признаки прежнего определены;
+    (2в) xb = -all-b на строках, где остаток xs = остатку -all-b. Расхождение — стоп (код 6)."""
+    import pandas as pd
+    cols = json.load(open(a.cols, encoding="utf-8"))
+    plan = plan_bd_columns(cols)
+    bdcols = set(plan)
+    rep, bad = {}, []
+    for w in WINS:
+        xs = read_table(os.path.join("/data/p42-tk690", "ftab674xs", "%s-S.csv" % w))
+        xb = read_table(q("ftab674xb", "%s-S.csv" % w))
+        nb = [c for c in xs.columns if c not in bdcols]
+        d1 = int(sum((xs[c].to_numpy() != xb[c].to_numpy()).sum() for c in nb))
+        fo = pd.read_parquet(os.path.join("/data/p42-tk690", "fam", "bd", "%s-%s.parquet" % (w, SN)))
+        fn = pd.read_parquet(q("fam", "bd", "%s-%s.parquet" % (w, SN)))
+        if not fo.index.equals(fn.index):
+            raise XbError("row_id у старого и нового fam/bd различаются (%s)" % w)
+        both = fo.notna().all(axis=1).to_numpy()
+        with np.errstate(invalid="ignore"):
+            d2 = int(((fo.to_numpy()[both] != fn.to_numpy()[both]) & ~(np.isnan(fo.to_numpy()[both]) & np.isnan(fn.to_numpy()[both]))).sum())
+        fully_new = int(fn.notna().all(axis=1).sum())
+        rows = pd.read_parquet(rows_path(w))[["row_id", "sym", "sig_ms"]]
+        rk = (rows["sym"].astype(str) + "|" + rows["sig_ms"].astype(str)).to_numpy()
+        old_all = read_table(os.path.join("/data/p42-tk690", "ftab674xs-all", "%s-S.csv" % w))
+        new_all = read_table(q("ftab674xs-all", "%s-S.csv" % w))
+        kk = lambda df: (df["sym"] + "|" + df["sig_ms"]).to_numpy()
+        ok_rows = set(rk[both])
+        sel_o = np.array([k in ok_rows for k in kk(old_all)])
+        o2 = old_all.set_index(pd.Index(kk(old_all)))[sorted(bdcols)]
+        n2 = new_all.set_index(pd.Index(kk(new_all)))[sorted(bdcols)]
+        common = o2.index[sel_o]
+        d3 = int((o2.loc[common].to_numpy() != n2.loc[common].to_numpy()).sum())
+        # (2в): xb = -all-b там, где остаток xs = остатку -all-b
+        xbi = xb.set_index(pd.Index(kk(xb)))
+        xsi = xs.set_index(pd.Index(kk(xs)))
+        nai = new_all.set_index(pd.Index(kk(new_all))).loc[xbi.index]
+        d4 = n4 = 0
+        for name, (rn, _) in plan.items():
+            same = np.ones(len(xbi), dtype=bool) if rn is None else (xsi[rn].to_numpy() == nai[rn].to_numpy())
+            n4 += int(same.sum())
+            d4 += int((xbi[name].to_numpy()[same] != nai[name].to_numpy()[same]).sum())
+        rep[w] = dict(non_bd_diff=d1, features_diff_where_old_defined=d2, rows_old_all_defined=int(both.sum()), rows_new_all_defined=fully_new, allb_vs_old_diff=d3, xb_vs_allb_diff=d4, xb_vs_allb_checked=n4)
+        say("controls %s: (1) не-bd расхождений %d | (2а) признаков %d (строк с прежними определёнными %d, с новыми %d из %d) | (2б) -all-b vs -all %d | (2в) xb vs -all-b %d из %d" %
+            (w, d1, d2, int(both.sum()), fully_new, len(fn), d3, d4, n4))
+        for k, v in (("(1)", d1), ("(2а)", d2), ("(2б)", d3), ("(2в)", d4)):
+            if v:
+                bad.append("%s %s: %d" % (w, k, v))
+    json.dump(rep, open(q("res", "xb-controls.json"), "w", encoding="utf-8"))
+    if bad:
+        say("СТОП: контроль не пройден: %s" % "; ".join(bad))
+        raise XbError(6)
+    say("КОНТРОЛИ 1, 2а, 2б, 2в: 0 расхождений")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp = ap.add_subparsers(dest="cmd", required=True)
+    p = sp.add_parser("fam")
+    p.add_argument("--procs", type=int, default=3)
+    p.set_defaults(f=cmd_fam)
+    for nm, fn in (("build", cmd_build), ("controls", cmd_controls)):
+        p = sp.add_parser(nm)
+        p.add_argument("--cols", default="/data/p42-tk674c/res/ftabcols674x-S.json")
+        p.set_defaults(f=fn)
+    sp.add_parser("need").set_defaults(f=cmd_need)
+    p = sp.add_parser("dl")
+    p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--rounds", type=int, default=4)
+    p.set_defaults(f=cmd_dl)
+    sp.add_parser("check").set_defaults(f=cmd_check)
+    a = ap.parse_args()
+    sys.exit(a.f(a) or 0)
+
+
+if __name__ == "__main__":
+    main()
