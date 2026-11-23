@@ -158,5 +158,19 @@ class Guard(unittest.TestCase):
         self.assertEqual(r["nan"], 1)                           # n24 при m24 = 1 не определён
 
 
+class Lineage(unittest.TestCase):
+    def rows(self, items):
+        return pd.DataFrame([dict(sym=s, sig_ms=m, level_px_e8=px, dist_e8=d, born=b, end=9, first_bar=2, members=mem) for s, m, px, d, b, mem in items])
+
+    def test_classes(self):
+        mine = self.rows([("AAA", 1, 100, 5, 7, "x"), ("BBB", 2, 100, 5, 7, "x"), ("CCC", 3, 100, 5, 7, "x"), ("DDD", 4, 100, 5, 7, None)])
+        ref = self.rows([("AAA", 1, 100, 5, 7, "x"), ("CCC", 3, 100, 5, 8, "x"), ("DDD", 4, 100, 5, 7, None), ("DDD", 4, 100, 5, 6, "y")])
+        self.assertEqual(t.lineage_classes(mine, ref), {("AAA", 1): "a", ("BBB", 2): "b", ("CCC", 3): "c", ("DDD", 4): "a"})
+
+    def test_other_distance_is_other_lineage(self):
+        mine, ref = self.rows([("AAA", 1, 100, 5, 7, "x")]), self.rows([("AAA", 1, 100, 6, 7, "x")])
+        self.assertEqual(t.lineage_classes(mine, ref), {("AAA", 1): "c"})
+
+
 if __name__ == "__main__":
     unittest.main()

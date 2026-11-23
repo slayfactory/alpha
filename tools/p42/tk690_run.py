@@ -442,6 +442,25 @@ def cmd_tables(a):
 
 
 # ---- ворота ---------------------------------------------------------------------------------------------------------------------------
+LIN = ["level_px_e8", "dist_e8", "born", "end", "first_bar", "members"]      # линия уровня строки: у одного (sym, sig_ms) в разных источниках / потоках бывает разной
+
+
+def lineage_classes(mine, ref):
+    """{(sym, sig_ms): класс} для строк `mine` (rows потоков) относительно строк таблицы TK-671 `ref` (rows.parquet): a — у ключа в TK-671 есть строка с той же линией уровня (`LIN`);
+    b — строки TK-671 по ключу нет (в прежней таблице фильтров такой ключ взят из эпизодов TK-654: столбцы TK-671 пусты → «проходит»); c — строка есть, линия иная (другой источник уровней)."""
+    def lin(r):
+        return tuple(str(getattr(r, c)) if c == "members" else int(getattr(r, c)) for c in LIN)
+    rg = {}
+    for r in ref.assign(members=ref["members"].fillna("")).itertuples(index=False):
+        rg.setdefault((r.sym, int(r.sig_ms)), set()).add(lin(r))
+    out = {}
+    for r in mine.assign(members=mine["members"].fillna("")).itertuples(index=False):
+        k = (r.sym, int(r.sig_ms))
+        c = rg.get(k)
+        out[k] = "b" if not c else ("a" if lin(r) in c else "c")
+    return out
+
+
 def cmd_gate(a):
     ss = load_streams()
     res, bad = {}, []
@@ -450,14 +469,17 @@ def cmd_gate(a):
         _, old, _ = read_lines(os.path.join(SRC, "ftab674x", "%s-%s.csv" % (w, SIDE)))
         _, new, _ = read_lines(os.path.join(ROOT, "ftab674xs", "%s-%s.csv" % (w, SIDE)))
         _, new_all, _ = read_lines(os.path.join(ROOT, "ftab674xs-all", "%s-%s.csv" % (w, SIDE)))
+        cls = lineage_classes(pd.read_parquet(rows_path(w)), pd.read_parquet(os.path.join(P671, "prod", "lvl-%s-%s" % (w, SN), "rows.parquet")))
         for s in ss:
             keys = set(zip(per[s["vid"]]["sym"].astype(str), per[s["vid"]]["sig_ms"].astype(int)))
             n_dup = len(per[s["vid"]]) - len(keys)
             no_old = len(keys - set(old))
             no_new = len(keys - set(new))
             common = [k for k in keys if k in old]
-            diff = [k for k in common if old[k] != new_all[k]]
-            r = dict(cands=len(keys), cands_meta=s["cands"][w], no_key_old=no_old, no_key_meta=s["no_key"][w], no_key_new=no_new, common=len(common), diff=len(diff), dup_keys=n_dup)
+            by = {c: [k for k in common if cls[k] == c] for c in "abc"}
+            diff = {c: [k for k in by[c] if old[k] != new_all[k]] for c in "abc"}
+            r = dict(cands=len(keys), cands_meta=s["cands"][w], no_key_old=no_old, no_key_meta=s["no_key"][w], no_key_new=no_new, common=len(common), dup_keys=n_dup,
+                     **{"common_" + c: len(by[c]) for c in "abc"}, **{"diff_" + c: len(diff[c]) for c in "abc"})
             res.setdefault(s["vid"], {})[w] = r
             if len(keys) != s["cands"][w] or n_dup:
                 bad.append("%s %s: ключей дампа %d (дублей %d) ≠ cands клеток TK-674 %d" % (s["vid"], w, len(keys), n_dup, s["cands"][w]))
@@ -465,16 +487,17 @@ def cmd_gate(a):
                 bad.append("%s %s: ключей дампа без строки прежней таблицы %d ≠ no_key клеток TK-674 %d" % (s["vid"], w, no_old, s["no_key"][w]))
             if no_new:
                 bad.append("%s %s: no_key после слияния %d ≠ 0" % (s["vid"], w, no_new))
-            if diff:
-                bad.append("%s %s: на %d из %d общих ключей строка отличается от прежней таблицы" % (s["vid"], w, len(diff), len(common)))
+            if diff["a"]:
+                bad.append("%s %s: на %d из %d общих ключей с той же линией уровня строка отличается от прежней таблицы" % (s["vid"], w, len(diff["a"]), len(by["a"])))
     json.dump(res, open(q("res", "gate690.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    streams_with_common = sum(1 for v in res.values() if sum(r["common"] for r in v.values()) > 0)
-    say("ворота: потоков %d, потоков с общими ключами %d, общих ключей %d, no_key после слияния %d, нарушений %d" % (
-        len(ss), streams_with_common, sum(r["common"] for v in res.values() for r in v.values()), sum(r["no_key_new"] for v in res.values() for r in v.values()), len(bad)))
+    tot = lambda f: sum(r[f] for v in res.values() for r in v.values())     # noqa: E731
+    streams_a = sum(1 for v in res.values() if sum(r["common_a"] for r in v.values()) > 0)
+    say("ворота: потоков %d, общих ключей (по потокам) %d: линия та же %d (расходится %d), строки TK-671 нет %d (расходится %d), линия иная %d (расходится %d); потоков с проверяемыми ключами %d; no_key после слияния %d; нарушений %d" % (
+        len(ss), tot("common"), tot("common_a"), tot("diff_a"), tot("common_b"), tot("diff_b"), tot("common_c"), tot("diff_c"), streams_a, tot("no_key_new"), len(bad)))
     for b in bad[:30]:
         say("  FAIL", b)
-    if streams_with_common < 3:
-        bad.append("общих ключей есть у %d потоков (< 3)" % streams_with_common)
+    if streams_a < 3:
+        bad.append("ключи с той же линией уровня есть у %d потоков (< 3)" % streams_a)
     if bad:
         raise GuardError("gate: нарушений %d" % len(bad))
 
