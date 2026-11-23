@@ -18,7 +18,7 @@ AP.add_argument("--sig-cache", default="", help="каталог кэша сиг�
 AP.add_argument("--code", default=os.path.dirname(os.path.abspath(__file__)))
 AP.add_argument("--root", required=True, help="каталог карты с посчитанными клетками")
 AP.add_argument("--ws", required=True, help="окно-сторона, например wc-L")
-AP.add_argument("--batch", required=True)
+AP.add_argument("--batch", required=True, nargs="+", help="несколько партий — один вызов движка на все их клетки")
 AP.add_argument("--bins", nargs="+", required=True)
 AP.add_argument("--threads", type=int, default=4)
 AP.add_argument("--cap-gb", type=int, default=2)
@@ -40,15 +40,21 @@ def main():
     wname, side = A.ws.split("-")
     w = next(x for x in st.TRADE_WINDOWS if x.name == wname)
     u = r5.Uni(m.UNI)
-    old = os.path.join(A.root, "cells", A.ws, A.batch)
-    vs = [tuple(x.rstrip("\n").split(" ", 1)) for x in open(old + ".variants.txt", encoding="utf-8") if x.strip()]
-    vs = [v for v in vs if os.path.isdir(os.path.join(old, v[0]))]
-    print("партия %s %s: клеток %d, потоков %d, cap-gb %d" % (A.ws, A.batch, len(vs), A.threads, A.cap_gb), flush=True)
+    vs, olds = [], {}
+    for bt in A.batch:
+        old = os.path.join(A.root, "cells", A.ws, bt)
+        for x in open(old + ".variants.txt", encoding="utf-8"):
+            v = tuple(x.rstrip("\n").split(" ", 1))
+            if x.strip() and v[0] not in olds and os.path.isdir(os.path.join(old, v[0])):
+                vs.append(v)
+                olds[v[0]] = old
+    tag = A.batch[0] if len(A.batch) == 1 else "%s+%d" % (A.batch[0], len(A.batch) - 1)
+    print("партия %s %s: клеток %d, потоков %d, cap-gb %d" % (A.ws, " ".join(A.batch), len(vs), A.threads, A.cap_gb), flush=True)
     for rep in range(A.reps):
         for b in A.bins:
             name = os.path.basename(b)
-            out = os.path.join(m.ROOT, "bench", A.batch, name)
-            log = t.q("log", "bench-%s-%s.log" % (A.batch, name))
+            out = os.path.join(m.ROOT, "bench", tag, name)
+            log = t.q("log", "bench-%s-%s.log" % (tag, name))
             r4.BIN = b
             t0 = time.time()
             r5.tick(u, w, vs, out, m.one_side_env(side), log)
@@ -59,9 +65,9 @@ def main():
             fin = re.findall(r"готово: \d+ вариантов, ([0-9.]+) с; файлов прочитано (\d+)", txt)
             bad = 0
             for cid, _ in vs:
-                for f in os.listdir(os.path.join(old, cid)):
+                for f in os.listdir(os.path.join(olds[cid], cid)):
                     nf = os.path.join(out, cid, f)
-                    bad += not (os.path.exists(nf) and filecmp.cmp(os.path.join(old, cid, f), nf, shallow=False))
+                    bad += not (os.path.exists(nf) and filecmp.cmp(os.path.join(olds[cid], cid, f), nf, shallow=False))
             print("%-34s повтор %d: стена %.1f с, фаза 1 к %s с, разогрев %s с, готово %s с, файлов прочитано %s, различий %d" % (
                 name, rep + 1, wall, p1[-1] if p1 else "?", warm[-1] if warm else "-", fin[-1][0] if fin else "?", fin[-1][1] if fin else "?", bad), flush=True)
 

@@ -28,7 +28,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Счётчик опции `pk` (§13.11, диагностика): уровни, убитые минутным проколом > τ, которых запрет ложного пробоя к этой минуте не убил.
 pub static PK_MINUTE_KILLED: AtomicU64 = AtomicU64::new(0);
@@ -55,11 +55,48 @@ pub fn mul_div(a: i64, b: i64, d: i64) -> i128 {
 
 /// Одна агрегированная сделка: цена ×1e8, время — мс от начала суток файла, `bm` = `is_buyer_maker`
 /// (агрессор — продавец).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// TK-683: 12 байт вместо 16 — `bm` лежит в старшем бите `off` (мс суток < 2^27), выравнивание 4: сутки сделок занимают на четверть
+/// меньше памяти (`--cap-gb` вмещает на треть больше суток). На поле `px` нельзя брать ссылку (не выровнено) — только копия.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed(4))]
 pub struct Tick {
     pub px: i64,
-    pub off: u32,
-    pub bm: bool,
+    ob: u32,
+}
+
+impl Tick {
+    const BM: u32 = 1 << 31;
+
+    #[inline(always)]
+    pub fn new(px: i64, off: u32, bm: bool) -> Tick {
+        debug_assert!(off < Self::BM);
+        Tick {
+            px,
+            ob: off | (u32::from(bm) << 31),
+        }
+    }
+
+    #[inline(always)]
+    pub fn off(&self) -> u32 {
+        self.ob & !Self::BM
+    }
+
+    #[inline(always)]
+    pub fn bm(&self) -> bool {
+        self.ob & Self::BM != 0
+    }
+}
+
+impl std::fmt::Debug for Tick {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let px = self.px;
+        f.debug_struct("Tick")
+            .field("px", &px)
+            .field("off", &self.off())
+            .field("bm", &self.bm())
+            .finish()
+    }
 }
 
 /// Источник сделок: сутки монеты (0 = 01.09) по времени; `None` — файла нет.
@@ -266,11 +303,7 @@ fn parse_rows(
             unsorted = true;
         }
         prev = off;
-        v.push(Tick {
-            px,
-            off,
-            bm: b.first() == Some(&b't'),
-        });
+        v.push(Tick::new(px, off, b.first() == Some(&b't')));
         if let Some(c) = col.as_deref_mut() {
             c.push(p, px, q);
         }
@@ -280,7 +313,7 @@ fn parse_rows(
         st.unsorted_files += 1;
         match col {
             Some(c) => c.sort_with(&mut v),
-            None => v.sort_by_key(|x| x.off),
+            None => v.sort_by_key(|x| x.off()),
         }
     }
     Ok(v)
@@ -297,30 +330,35 @@ struct Lru {
     map: HashMap<(String, usize), DaySlot>,
     order: VecDeque<(String, usize)>,
     bytes: usize,
-    /// Вытесненные сутки, которые ещё держит какой-то вариант: пока они живы, их возвращают в `map` без разбора (память уже занята).
-    ghosts: HashMap<(String, usize), Weak<Vec<Tick>>>,
-    /// Сколько раз вытесненные сутки возвращены без разбора.
-    revived: usize,
 }
 
 impl Lru {
-    /// Вытеснение сверх `cap`: самые старые сутки уходят из `map`, слабая ссылка остаётся в `ghosts`.
+    /// Вытеснение сверх `cap`: самые старые сутки уходят из `map`.
+    ///
+    /// TK-683: сутки, которые сейчас держит вариант или которые ещё грузятся, не вытесняются (память они не вернут, а в счёте
+    /// `bytes` перестанут быть) — уходят в конец очереди; за один вызов очередь обходится не больше одного раза.
     fn shrink(&mut self, cap: usize) {
-        while self.bytes > cap && self.order.len() > 1 {
+        let mut left = self.order.len();
+        while self.bytes > cap && self.order.len() > 1 && left > 0 {
+            left -= 1;
+            self.evicted = true;
             let Some(k) = self.order.pop_front() else {
                 break;
             };
-            self.evicted = true;
+            let busy = self.map.get(&k).is_some_and(|s| match s.get() {
+                Some(Some(v)) => Arc::strong_count(v) > 1,
+                Some(None) => false,
+                None => true,
+            });
+            if busy {
+                self.order.push_back(k);
+                continue;
+            }
             if let Some(old) = self.map.remove(&k) {
                 if let Some(Some(v)) = old.get() {
                     self.bytes = self.bytes.saturating_sub(day_bytes(v));
-                    self.ghosts.insert(k, Arc::downgrade(v));
                 }
             }
-        }
-        // слабые ссылки на уже освобождённые сутки не копятся
-        if self.ghosts.len() > 2 * self.map.len() + 1024 {
-            self.ghosts.retain(|_, w| w.strong_count() > 0);
         }
     }
 }
@@ -364,8 +402,6 @@ impl ZipSrc {
                 map: HashMap::new(),
                 order: VecDeque::new(),
                 bytes: 0,
-                ghosts: HashMap::new(),
-                revived: 0,
             }),
             gcds: Mutex::new(HashMap::new()),
             stat: Mutex::new(LoadStat::default()),
@@ -404,11 +440,6 @@ impl ZipSrc {
     /// TK-683: память под сутки (`cap_bytes`) уже исчерпана — загрузка впрок (разогрев) бесполезна.
     pub fn evicted(&self) -> bool {
         self.lru.lock().is_ok_and(|g| g.evicted)
-    }
-
-    /// TK-683: сколько раз вытесненные сутки возвращены без разбора (их ещё держал другой вариант).
-    pub fn revived(&self) -> usize {
-        self.lru.lock().map_or(0, |g| g.revived)
     }
 
     /// Сутки, уже лежащие в памяти (без загрузки).
@@ -543,20 +574,9 @@ impl TradeSrc for ZipSrc {
             Ok(mut g) => match g.map.get(&key) {
                 Some(slot) => slot.clone(),
                 None => {
-                    // вытесненные сутки ещё живы у другого варианта — берутся у него, без разбора
-                    let alive = g.ghosts.remove(&key).and_then(|w| w.upgrade());
-                    let slot = match &alive {
-                        Some(v) => Arc::new(OnceLock::from(Some(v.clone()))),
-                        None => DaySlot::default(),
-                    };
+                    let slot = DaySlot::default();
                     g.map.insert(key.clone(), slot.clone());
                     g.order.push_back(key.clone());
-                    if let Some(v) = alive {
-                        g.revived += 1;
-                        g.bytes += day_bytes(&v);
-                        g.shrink(self.cap_bytes);
-                        return Some(v);
-                    }
                     slot
                 }
             },
@@ -1052,8 +1072,8 @@ pub fn minute_range(ticks: &[Tick], t: usize) -> (usize, usize) {
     let start = ((t % 1440) as i64 * MIN_MS) as u32;
     let end = start + MIN_MS as u32;
     (
-        ticks.partition_point(|x| x.off < start),
-        ticks.partition_point(|x| x.off < end),
+        ticks.partition_point(|x| x.off() < start),
+        ticks.partition_point(|x| x.off() < end),
     )
 }
 
@@ -1139,7 +1159,7 @@ pub fn signals_for_coin(
                     ws = true;
                 }
                 outs[j].push(TSig {
-                    ms: day as i64 * DAY_MS + i64::from(ticks[k].off),
+                    ms: day as i64 * DAY_MS + i64::from(ticks[k].off()),
                     sym: si,
                     level: c.level,
                     dist,
@@ -1733,7 +1753,11 @@ impl<'a> Cursor<'a> {
             if let Some(v) = &self.cur {
                 if let Some(tk) = v.get(self.idx) {
                     self.idx += 1;
-                    return Some((self.day as i64 * DAY_MS + i64::from(tk.off), tk.px, tk.bm));
+                    return Some((
+                        self.day as i64 * DAY_MS + i64::from(tk.off()),
+                        tk.px,
+                        tk.bm(),
+                    ));
                 }
             }
             self.cur = None;
@@ -2100,23 +2124,23 @@ pub fn tape_last_side(
     cap_ms: i64,
 ) -> Option<(i64, i64)> {
     let t_off = t_abs - day as i64 * DAY_MS;
-    let hi = ticks.partition_point(|x| i64::from(x.off) <= t_off);
+    let hi = ticks.partition_point(|x| i64::from(x.off()) <= t_off);
     for tk in ticks[..hi].iter().rev() {
-        let age = t_off - i64::from(tk.off);
+        let age = t_off - i64::from(tk.off());
         if age > cap_ms {
             return None;
         }
-        if tk.bm == taker_bm {
+        if tk.bm() == taker_bm {
             return Some((tk.px, age));
         }
     }
     let v = src.day(name, day.checked_sub(1)?)?;
     for tk in v.iter().rev() {
-        let age = t_off + DAY_MS - i64::from(tk.off);
+        let age = t_off + DAY_MS - i64::from(tk.off());
         if age > cap_ms {
             return None;
         }
-        if tk.bm == taker_bm {
+        if tk.bm() == taker_bm {
             return Some((tk.px, age));
         }
     }
@@ -2559,7 +2583,7 @@ pub fn tick_at(
     };
     let part = src.day(name, day).map_or(PxGcd::default(), |v| {
         let off = t - day as i64 * DAY_MS;
-        let k = v.partition_point(|x| i64::from(x.off) < off);
+        let k = v.partition_point(|x| i64::from(x.off()) < off);
         src.gcd_steps(name, day)
             .map_or(PxGcd::default(), |s| s.prefix(k))
     });

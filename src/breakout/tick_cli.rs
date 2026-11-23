@@ -970,10 +970,7 @@ pub fn run(
         );
     }
     if src.evicted() {
-        eprintln!(
-            "сутки сверх памяти: возвращено без разбора {}",
-            src.revived()
-        );
+        eprintln!("сутки сверх памяти: были вытеснения");
     }
     if let Some(st) = &store {
         eprintln!("{}", st.summary());
