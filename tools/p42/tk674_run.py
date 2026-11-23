@@ -886,6 +886,8 @@ def cmd_cgate(a):
                             f.write("%s,%d,%s\n" % (sym[i], int(rel[i]), "1.0" if sym[i] in keep else "0.0"))
                 r5.tick(uh, w, [("tf", line + " fa=tr539 fo=lo fv=%g" % ax.FV_PASS)], outh, one_side_env(side), t.q("log", "cgate-h775f-%s-%s.log" % (w.name, side)), ftab=ftab)
                 open(outh + "/DONE", "w").close()
+            if pk.cell_exists(os.path.join(outc, cid)):                                                 # партия могла быть упакована (tk674_pack)
+                pk.ensure_cell(os.path.join(outc, cid))
             for f in CMP_FILES:
                 p1, p2 = os.path.join(outc, cid, "%s-%s" % (ENGNAME[side], f)), os.path.join(outh, "tf", "%s-%s" % (ENGNAME[side], f))
                 eq = os.path.exists(p1) and os.path.exists(p2) and filecmp.cmp(p1, p2, shallow=False)

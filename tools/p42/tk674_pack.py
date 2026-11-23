@@ -10,6 +10,7 @@ import os
 import random
 import subprocess
 import sys
+import tempfile
 
 ROOT = os.environ.get("TK674_ROOT", "/data/p42-tk674c")
 SAMPLE = 20
@@ -26,20 +27,25 @@ def arch_path(cell_dir):
 
 
 def ensure_cell(cell_dir):
-    """Каталог клетки на месте: нет — извлечь из архива партии (атомарно: во временный каталог рядом, затем rename). Возвращает путь; нет и архива — FileNotFoundError."""
+    """Каталог клетки на месте: нет — извлечь из архива партии (атомарно: во временный каталог рядом (`mkdtemp`, свой у каждого потока и процесса), затем rename; проигранная гонка — клетка уже
+    извлечена другим читателем — не ошибка). Возвращает путь; нет и архива — FileNotFoundError."""
     if os.path.isdir(cell_dir):
         return cell_dir
     arch, member = arch_path(cell_dir)
     if not os.path.exists(arch):
         raise FileNotFoundError("нет каталога клетки и архива партии: %s" % cell_dir)
     ws = os.path.dirname(os.path.dirname(os.path.normpath(cell_dir)))
-    tmp = os.path.join(ws, ".x%d" % os.getpid())
-    os.makedirs(tmp, exist_ok=True)
+    os.makedirs(ws, exist_ok=True)
+    tmp = tempfile.mkdtemp(prefix=".x", dir=ws)
     try:
         subprocess.run(["tar", "--zstd", "-xf", arch, "-C", tmp, member], check=True)
         os.makedirs(os.path.dirname(cell_dir), exist_ok=True)
         if not os.path.isdir(cell_dir):
-            os.rename(os.path.join(tmp, member), cell_dir)
+            try:
+                os.rename(os.path.join(tmp, member), cell_dir)
+            except OSError:
+                if not os.path.isdir(cell_dir):                                                   # не гонка — настоящая ошибка
+                    raise
     finally:
         subprocess.run(["rm", "-rf", tmp], check=False)
     return cell_dir
@@ -100,10 +106,20 @@ def verify_sample(ws_dir, arch_dir, hashes, k=SAMPLE, seed=674):
     return bad
 
 
+def is_done(ws, h):
+    """Партия клеток `<окно>-<сторона>/<хеш>` закончена: метка `done/<окно>-<сторона>-<хеш>` (её пишет движок после клеток партии). Недоделанную партию не упаковываем и не удаляем."""
+    return os.path.exists(os.path.join(ROOT, "done", "%s-%s" % (ws, h)))
+
+
 def cmd_pack(ws, delete, only, jobs):
+    """Упаковать законченные партии окна-стороны (с меткой done/); остальные каталоги (идущая партия, `fchk` …) пропускаются — возвращает их список."""
     ws_dir = os.path.join(ROOT, "cells", ws)
     arch_dir = os.path.join(ROOT, "cells-arch", ws)
     hashes = sorted(h for h in os.listdir(ws_dir) if os.path.isdir(os.path.join(ws_dir, h)) and (not only or h == only))
+    skipped = [h for h in hashes if not is_done(ws, h)]
+    hashes = [h for h in hashes if h not in skipped]
+    if skipped:
+        print("%s: пропущено %d каталогов без метки done/ (партия не закончена)" % (ws, len(skipped)), flush=True)
     arch_n = {}                                                                                 # готовый архив: каталог рядом — полный (повтор после неудачной проверки) или часть, извлечённая читателем
     for h in hashes:
         a = os.path.join(arch_dir, h + ".tar.zst")
@@ -121,7 +137,7 @@ def cmd_pack(ws, delete, only, jobs):
         tot_n, tot_b = tot_n + n, tot_b + b
     print("%s: упаковано %d каталогов партий (архив уже был у %d), записей %d, архивы %.1f МБ" % (ws, len(hashes), len(done), tot_n, tot_b / 1e6), flush=True)
     if not hashes:
-        return
+        return skipped
     for h in hashes:
         verify_one(ws_dir, h, arch_dir, counts[h])
     bad = verify_sample(ws_dir, arch_dir, hashes)
@@ -132,6 +148,7 @@ def cmd_pack(ws, delete, only, jobs):
         for h in hashes:
             subprocess.run(["rm", "-rf", os.path.join(ws_dir, h)], check=True)
         print("%s: каталоги удалены" % ws, flush=True)
+    return skipped
 
 
 def cmd_pack_batch():
@@ -150,17 +167,32 @@ def cmd_pack_batch():
             if not os.path.isdir(os.path.join(ROOT, "cells", ws, h)) and not os.path.exists(os.path.join(ROOT, "cells-arch", ws, h + ".tar.zst")):
                 raise SystemExit("партия %s: нет ни каталога, ни архива %s/%s" % (batch, ws, h))
         for h in sorted(idx):
-            if os.path.isdir(os.path.join(ROOT, "cells", ws, h)):
-                cmd_pack(ws, True, h, 3)
+            if os.path.isdir(os.path.join(ROOT, "cells", ws, h)) and cmd_pack(ws, True, h, 3):
+                raise SystemExit("партия %s: каталог %s/%s без метки done/ — упаковка только законченной партии" % (batch, ws, h))
+
+
+def in_archive(hd, arch):
+    """Записи каталога партии (сам каталог, подкаталоги, файлы), которых нет в `tar -t` архива."""
+    got = set(m.rstrip("/") for m in subprocess.run("tar --zstd -tf %s" % _q(arch), shell=True, check=True, capture_output=True, text=True).stdout.splitlines())
+    base, miss = os.path.dirname(hd), []
+    for d, _, files in os.walk(hd):
+        rel = os.path.relpath(d, base).replace(os.sep, "/")
+        miss += [m for m in [rel] + [rel + "/" + f for f in files] if m not in got]
+    return miss
 
 
 def cmd_drop(ws):
-    """Убрать извлечённые каталоги партий, у которых есть архив."""
+    """Убрать извлечённые каталоги партий, у которых есть архив и все записи каталога лежат в архиве (иначе — пропуск с печатью)."""
     ws_dir, arch_dir = os.path.join(ROOT, "cells", ws), os.path.join(ROOT, "cells-arch", ws)
     n = 0
     for h in sorted(os.listdir(ws_dir)):
-        if os.path.isdir(os.path.join(ws_dir, h)) and os.path.exists(os.path.join(arch_dir, h + ".tar.zst")):
-            subprocess.run(["rm", "-rf", os.path.join(ws_dir, h)], check=True)
+        hd, a = os.path.join(ws_dir, h), os.path.join(arch_dir, h + ".tar.zst")
+        if os.path.isdir(hd) and os.path.exists(a):
+            miss = in_archive(hd, a)
+            if miss:
+                print("%s/%s: пропуск, в архиве нет %d записей (например %s)" % (ws, h, len(miss), miss[0]))
+                continue
+            subprocess.run(["rm", "-rf", hd], check=True)
             n += 1
     print("%s: убрано извлечённых каталогов партий %d" % (ws, n))
 

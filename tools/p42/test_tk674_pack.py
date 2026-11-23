@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -22,7 +23,9 @@ class Pack(unittest.TestCase):
         pk.ROOT = self.root
         self.ws = os.path.join(self.root, "cells", "wa-S")
         self.cells = {}
+        os.makedirs(os.path.join(self.root, "done"))
         for h in ("f111", "f222"):
+            open(os.path.join(self.root, "done", "wa-S-" + h), "w").write("1" + chr(10))                                  # партия закончена
             os.makedirs(os.path.join(self.ws, h), exist_ok=True)
             open(os.path.join(self.ws, h, "summary.csv"), "w").write("a,b" + chr(10) + "1,2" + chr(10))                  # файл рядом с каталогами клеток (сводка движка)
             for i in range(30):
@@ -81,6 +84,39 @@ class Pack(unittest.TestCase):
             pk.verify_sample = old
         pk.cmd_pack("wa-S", True, None, 1)                                                          # архивы полны, каталоги целы — повтор проверяет и удаляет
         self.assertEqual(os.listdir(self.ws), [])
+
+    def test_unfinished_batch_not_packed(self):
+        os.remove(os.path.join(self.root, "done", "wa-S-f222"))                                       # идёт партия f222
+        os.makedirs(os.path.join(self.ws, "fchk", "c1"))                                              # служебный каталог без метки
+        self.assertEqual(sorted(pk.cmd_pack("wa-S", True, None, 1)), ["f222", "fchk"])
+        self.assertEqual(sorted(os.listdir(self.ws)), ["f222", "fchk"])                               # f111 упакована и удалена, остальное цело
+        self.assertEqual(os.listdir(os.path.join(self.root, "cells-arch", "wa-S")), ["f111.tar.zst"])
+
+    def test_drop_keeps_dir_not_in_archive(self):
+        pk.cmd_pack("wa-S", False, "f111", 1)
+        open(os.path.join(self.ws, "f111", "s4+x3.ge_q23", "new.csv"), "w").write("x")                # файл, которого нет в архиве
+        pk.cmd_drop("wa-S")
+        self.assertTrue(os.path.isdir(os.path.join(self.ws, "f111")))                                 # не удалён
+        os.remove(os.path.join(self.ws, "f111", "s4+x3.ge_q23", "new.csv"))
+        pk.cmd_drop("wa-S")
+        self.assertFalse(os.path.isdir(os.path.join(self.ws, "f111")))
+
+    def test_ensure_cell_threads_share_cell(self):
+        pk.cmd_pack("wa-S", True, None, 1)
+        d = os.path.join(self.ws, "f111", "s4+x5.ge_q25")
+        errs = []
+
+        def go():
+            try:
+                pk.ensure_cell(d)
+            except Exception as e:                                                                     # noqa: BLE001
+                errs.append(e)
+        ts = [threading.Thread(target=go) for _ in range(6)]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+        self.assertEqual(errs, [])
+        self.assertEqual(sorted(os.listdir(d)), sorted(FILES))
+        self.assertFalse(any(x.startswith(".x") for x in os.listdir(self.ws)))
 
     def test_missing_cell_raises(self):
         with self.assertRaises(FileNotFoundError):
