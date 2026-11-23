@@ -288,6 +288,53 @@ def rebuild_bd(xs, allb, cols):
     return out, plan
 
 
+def rebuild_bd_batch(t, allb, cols_b, cols_x, xs):
+    """Таблица партии шага 4 `t` (строки-токены, ключ (sym, sig_ms)) → копия, где столбцы с bd-условием = остаток И единички bd из `allb` (PS-996 разд. 2 п. 1; имя единички в
+    `allb` — по смыслу в `cols_x`). Остаток без bd: столбец таблицы партии, если он есть; иначе И единичек без bd — из таблицы партии, а если единички в ней нет — из `xs`
+    (на общих единичках таблицы партий равны xs: контроль (а') сборки). Возвращает (таблица, {откуда взят остаток})."""
+    key = (t["sym"] + "|" + t["sig_ms"]).to_numpy()
+
+    def aligned(df, what):
+        idx = df.set_index(df["sym"] + "|" + df["sig_ms"])
+        miss = [k for k in key if k not in idx.index]
+        if miss:
+            raise XbError("ключей таблицы партии нет в %s: %d (%s)" % (what, len(miss), miss[:3]))
+        return idx.loc[key]
+
+    al, xi = aligned(allb, "-all-b"), aligned(xs, "xs")
+
+    def single(tok):
+        if tok in cols_b:
+            return t[cols_b[tok]].to_numpy() == "1.0", "batch"
+        if tok in cols_x:
+            return xi[cols_x[tok]].to_numpy() == "1.0", "xs"
+        raise XbError("единички нет ни в таблице партии, ни в xs: %s" % tok)
+
+    out, st = t.copy(), dict(bd_cols=0, rem_col=0, rem_and_batch=0, rem_and_xs=0)
+    for sem, name in cols_b.items():
+        res, bds = split_sem(sem)
+        if not bds:
+            continue
+        v = np.ones(len(t), dtype=bool)
+        if res in cols_b:
+            v = t[cols_b[res]].to_numpy() == "1.0"
+            st["rem_col"] += 1
+        elif res:
+            srcs = set()
+            for tok in res.split("&"):
+                s_, w_ = single(tok)
+                v = v & s_
+                srcs.add(w_)
+            st["rem_and_xs" if "xs" in srcs else "rem_and_batch"] += 1
+        for b in bds:
+            if b not in cols_x:
+                raise XbError("единички bd нет в -all-b: %s" % b)
+            v = v & (al[cols_x[b]].to_numpy() == "1.0")
+        out[name] = np.where(v, "1.0", "0.0")
+        st["bd_cols"] += 1
+    return out, st
+
+
 def read_table(path):
     import pandas as pd
     return pd.read_csv(path, dtype=str, keep_default_na=False)
@@ -406,6 +453,66 @@ def cmd_controls(a):
     say("КОНТРОЛИ 1, 2а, 2б, 2в: 0 расхождений")
 
 
+def cmd_build_batch(a):
+    """ftab6743<партия>xb/<окно>-S.csv: таблица партии шага 4 с заменой столбцов bd (PS-996 разд. 2 п. 1; остаток без столбца — `rebuild_bd_batch`). Контроли до записи, любой провал — стоп (код 6):
+    (а) столбцы без bd равны таблице партии (байты); (а') единички без bd таблицы партии равны единичкам xs там, где есть в обеих; (б) bd-столбец равен составному столбцу -all-b на строках, где остаток
+    таблицы партии равен остатку -all-b (имя остатка в -all-b — по смыслу); (г) та же формула с ПРЕЖНЕЙ -all даёт прежние bd-столбцы таблицы партии на окне wa (как xs: wb / wc прежних таблиц собраны по другим bd,
+    их расхождение — предмет пересчёта, печатается числом)."""
+    colsx = json.load(open(a.colsx, encoding="utf-8"))
+    cols = json.load(open(os.path.join(a.src_res, "ftabcols6743%s-S.json" % a.tag), encoding="utf-8"))
+    src = os.path.join(a.src_root, "ftab6743%s" % a.tag)
+    plan = plan_bd_columns_batch(cols)
+    bdn = set(plan)
+    rep, bad = {}, []
+    for w in WINS:
+        t = read_table(os.path.join(src, "%s-S.csv" % w))
+        p_rt = q("tmp", "roundtrip-%s-%s.csv" % (a.tag, w))
+        write_table(t, p_rt)
+        if open(p_rt, "rb").read() != open(os.path.join(src, "%s-S.csv" % w), "rb").read():
+            raise XbError("круговая запись таблицы партии ≠ файл (%s %s): формат писателя не совпадает" % (a.tag, w))
+        xs = read_table(os.path.join("/data/p42-tk690", "ftab674xs", "%s-S.csv" % w))
+        allb = read_table(q("ftab674xs-all", "%s-S.csv" % w))
+        old = read_table(os.path.join("/data/p42-tk690", "ftab674xs-all", "%s-S.csv" % w))
+        out, st = rebuild_bd_batch(t, allb, cols, colsx, xs)
+        d_a = int(sum((out[c].to_numpy() != t[c].to_numpy()).sum() for c in t.columns if c not in bdn))
+        xi = xs.set_index(xs["sym"] + "|" + xs["sig_ms"]).loc[(t["sym"] + "|" + t["sig_ms"]).to_numpy()]
+        n_a2 = d_a2 = 0
+        for sem, name in cols.items():
+            if "&" not in sem and not sem.startswith("bd_") and sem in colsx:
+                n_a2 += 1
+                d_a2 += int((t[name].to_numpy() != xi[colsx[sem]].to_numpy()).any())
+        ai = allb.set_index(allb["sym"] + "|" + allb["sig_ms"]).loc[(t["sym"] + "|" + t["sig_ms"]).to_numpy()]
+        n_b = d_b = 0
+        for sem, name in cols.items():
+            res, bds = split_sem(sem)
+            if not bds or sem not in colsx or (res and (res not in cols or res not in colsx)):
+                continue
+            same = np.ones(len(t), dtype=bool) if not res else (t[cols[res]].to_numpy() == ai[colsx[res]].to_numpy())
+            n_b += int(same.sum())
+            d_b += int((out[name].to_numpy()[same] != ai[colsx[sem]].to_numpy()[same]).sum())
+        out_g, _ = rebuild_bd_batch(t, old, cols, colsx, xs)
+        d_g = {c: int((out_g[c].to_numpy() != t[c].to_numpy()).sum()) for c in bdn}
+        d_g_cells, d_g_cols = sum(d_g.values()), sum(1 for v in d_g.values() if v)
+        changed = int(sum((out[c].to_numpy() != t[c].to_numpy()).sum() for c in bdn))
+        write_table(out, q("ftab6743%sxb" % a.tag, "%s-S.csv" % w))
+        rep[w] = dict(rows=len(t), **st, non_bd_diff=d_a, singles_vs_xs_cols=n_a2, singles_vs_xs_bad=d_a2, vs_allb_checked=n_b, vs_allb_diff=d_b, old_formula_diff_cells=d_g_cells, old_formula_diff_cols=d_g_cols, changed_cells=changed)
+        say("batch %s %s: строк %d, bd-столбцов %d (остаток: столбец %d, И единичек партии %d, с xs %d) | (а) %d (а') %d из %d | (б) %d из %d | (г) формула на прежней -all: %d клеток в %d столбцах | изменено клеток %d" %
+            (a.tag, w, len(t), st["bd_cols"], st["rem_col"], st["rem_and_batch"], st["rem_and_xs"], d_a, d_a2, n_a2, d_b, n_b, d_g_cells, d_g_cols, changed))
+        for k_, v_ in (("(а)", d_a), ("(а')", d_a2), ("(б)", d_b)) + ((("(г)", d_g_cells),) if w == "wa" else ()):
+            if v_:
+                bad.append("%s %s: %d" % (w, k_, v_))
+    json.dump(rep, open(q("res", "xb-batch-%s.json" % a.tag), "w", encoding="utf-8"))
+    if bad:
+        say("СТОП: контроль не пройден: %s" % "; ".join(bad))
+        raise XbError(6)
+    say("партия %s: контроли (а), (а'), (б), (г wa): 0 расхождений" % a.tag)
+
+
+def plan_bd_columns_batch(cols):
+    """{имя столбца с bd-условием: смысл} таблицы партии (остаток без столбца допустим — `rebuild_bd_batch`)."""
+    return {name: sem for sem, name in cols.items() if split_sem(sem)[1]}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
@@ -416,6 +523,12 @@ def main():
         p = sp.add_parser(nm)
         p.add_argument("--cols", default="/data/p42-tk674c/res/ftabcols674x-S.json")
         p.set_defaults(f=fn)
+    p = sp.add_parser("build-batch")
+    p.add_argument("--tag", required=True)
+    p.add_argument("--colsx", default="/data/p42-tk674c/res/ftabcols674x-S.json")
+    p.add_argument("--src-root", default="/data/p42-tk674c")
+    p.add_argument("--src-res", default="/data/p42-tk674c/res")
+    p.set_defaults(f=cmd_build_batch)
     sp.add_parser("need").set_defaults(f=cmd_need)
     p = sp.add_parser("dl")
     p.add_argument("--workers", type=int, default=4)

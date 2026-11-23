@@ -19,6 +19,8 @@ SIDENAME = {"L": "long", "S": "short"}
 UNI, WIN = os.environ.get("TK674_UNI", "h775"), os.environ.get("TK674_WIN", "01.07–13.11")
 BATCH = os.environ.get("TK674_BATCH", "")           # партия остатка (PS-990): `rNN`; `u` — объединение для карты (как в tk674_run)
 WITHHOLD = {x for x in os.environ.get("TK674_WITHHOLD", "").split(",") if x}      # классы фильтра (`tk674_emptycols.filt_class`: bd, cc), клетки которых карта не читает (правило критика 23.11 п. б–в, PS-993); в m и σ остаются
+SPLIT_MAX = int(os.environ.get("TK674_SPLIT_MAX", "0"))                      # `split`: не больше стольких новых клеток стороны во всех партиях вместе (0 — без предела); граница — по целой комбинации, ранг отбора не меняется
+SPLIT_FIRST = int(os.environ.get("TK674_SPLIT_FIRST", "1"))                  # `split`: номер первой партии (сквозная нумерация после партий другой стороны, у которой файлы уровня уже есть)
 LOWTAG = os.environ.get("TK674_LOWTAG", "")         # суффикс карты нижнего уровня (карта троек шага 4 + остаток — `u`; карта пар — без суффикса)
 
 
@@ -171,12 +173,15 @@ def cmd_split(n, cap, tag0="r"):
         nt = len(base["taken"])
         if [list(c[1]) for c in cand[:nt]] != [x["names"] for x in base["taken"]]:
             raise SystemExit("%s: порядок отбора не совпал с файлом уровня" % side)
-        seen, bl, cur = set(base["cells"]), [], None
+        seen, bl, cur, total_new = set(base["cells"]), [], None, 0
         for neg, names, na in cand[nt:]:
             cc = combo_cells(side, names, thr, {})
             fresh = {k: c for k, c in cc.items() if k not in seen}
             found = store.cells_lookup(SIDENAME[side], UNI, WIN, list(fresh), bins=bins)
             new = [k for k in fresh if k not in found]
+            if SPLIT_MAX and total_new + len(new) > SPLIT_MAX:             # предел новых клеток (TK674_SPLIT_MAX): дальше — не берём
+                break
+            total_new += len(new)
             if cur is None or not fits(cur, len(new), cap):
                 cur = dict(taken=[], cells={}, n_new=0, n_have=0)
                 bl.append(cur)
@@ -186,7 +191,7 @@ def cmd_split(n, cap, tag0="r"):
             cur["n_have"] += len(fresh) - len(new)
             cur["taken"].append(dict(names=list(names), score=-neg, n_act=na, cells=len(cc), new=len(new)))
         per_side[side] = (bl, cand, act, n_sub, nt)
-    nb = 0
+    nb = SPLIT_FIRST - 1
     for side in ax.SIDES:                        # номера партий сквозные: сначала партии лонга, затем шорта; у партии одна сторона
         bl, cand, act, n_sub, nt = per_side[side]
         summary[side] = []
@@ -203,7 +208,8 @@ def cmd_split(n, cap, tag0="r"):
                                       filt=sum(1 for c in b["cells"].values() if c["filt"])))
             print("== %s %s: комбинаций %d (с %d), клеток %d (в БД %d, считаем %d), проходов сигналов %d, с фильтром %d" % (
                 side, tg, len(b["taken"]), skip + 1, len(b["cells"]), b["n_have"], b["n_new"], len(sigs), summary[side][-1]["filt"]), flush=True)
-    json.dump(dict(n=n, cap=cap, batches=nb, summary=summary), open(os.path.join(ROOT, "res", "split674%s%d.json" % (ax.SUF2, n)), "w", encoding="utf-8"), ensure_ascii=False)
+    for fn_ in ("split674%s%d.json" % (ax.SUF2, n), "split674%s%d-%s.json" % (ax.SUF2, n, "".join(ax.SIDES))):      # вторая копия — по сторонам запуска: запуск другой стороны сводку первой не затирает
+        json.dump(dict(n=n, cap=cap, batches=nb, first=SPLIT_FIRST, summary=summary), open(os.path.join(ROOT, "res", fn_), "w", encoding="utf-8"), ensure_ascii=False)
     print("партий %d" % nb)
 
 

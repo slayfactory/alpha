@@ -71,6 +71,23 @@ class Columns(unittest.TestCase):
         with self.assertRaises(SystemExit):
             xb.rebuild_bd(xs, allb, {"bd_a>=1": "f000"})
 
+    def test_rebuild_batch_remainder_sources(self):
+        # таблица партии: остаток «x<=1» — столбец; остаток «x<=1&y<=2» — столбца нет, И единичек (y — только в xs); единичка bd — из -all-b по имени смысла в cols_x
+        cols_b = {"x<=1": "f000", "bd_a>=1": "f001", "x<=1&bd_a>=1": "f002", "x<=1&y<=2&bd_a>=1": "f003"}
+        cols_x = {"x<=1": "g000", "y<=2": "g001", "bd_a>=1": "g002"}
+        t = pd.DataFrame(dict(sym=["A", "B", "C"], sig_ms=["1", "2", "3"], f000=["1.0", "1.0", "0.0"], f001=["1.0", "1.0", "1.0"], f002=["1.0", "1.0", "0.0"], f003=["1.0", "0.0", "0.0"]))
+        xs = pd.DataFrame(dict(sym=["C", "B", "A"], sig_ms=["3", "2", "1"], g000=["9", "9", "9"], g001=["1.0", "0.0", "1.0"], g002=["9", "9", "9"]))
+        allb = pd.DataFrame(dict(sym=["A", "B", "C"], sig_ms=["1", "2", "3"], g000=["9", "9", "9"], g001=["9", "9", "9"], g002=["0.0", "1.0", "1.0"]))
+        out, st = xb.rebuild_bd_batch(t, allb, cols_b, cols_x, xs)
+        self.assertEqual(list(out["f000"]), list(t["f000"]))             # без bd — байты таблицы партии
+        self.assertEqual(list(out["f001"]), ["0.0", "1.0", "1.0"])       # единичка bd — из -all-b
+        self.assertEqual(list(out["f002"]), ["0.0", "1.0", "0.0"])       # остаток — столбец f000
+        self.assertEqual(list(out["f003"]), ["0.0", "0.0", "0.0"])       # остаток x И y: x — таблица партии, y — xs (по ключу: A 1.0, B 0.0, C 1.0)
+        self.assertEqual(st, dict(bd_cols=3, rem_col=1, rem_and_batch=0, rem_and_xs=1))
+        self.assertEqual(list(t["f001"]), ["1.0", "1.0", "1.0"])        # вход не тронут
+        with self.assertRaises(SystemExit):
+            xb.rebuild_bd_batch(t, allb, cols_b, {"x<=1": "g000", "bd_a>=1": "g002"}, xs)   # единички y нет нигде
+
 
 if __name__ == "__main__":
     unittest.main()
