@@ -151,6 +151,18 @@ class SplitUnion(unittest.TestCase):
         with self.assertRaises(SystemExit):
             lv.cmd_union(3, ["r01", "r02", "r03"])
 
+    def test_union_skips_side_without_level_file(self):
+        """PS-991: четвёрки только лонга — у шорта нет файла уровня; объединение не падает и не создаёт файлов шорта."""
+        import tk674_axes as ax
+        import tk674_level as lv
+        if "L" not in ax.SIDES or "S" not in ax.SIDES:
+            self.skipTest("нужны обе стороны")
+        put(lv.level_file(4, "L", ""), dict(side="L", n=4, cap=None, eligible=1, taken=[dict(names=["q"])], left_out=0, n_cells=1, skip=0,
+                                            cells={"k1": dict(cid="k1", patch={}, filt=[], sig=[])}))
+        lv.cmd_union(4, [])
+        self.assertTrue(os.path.exists(lv.level_file(4, "L", "u")))
+        self.assertFalse(os.path.exists(lv.level_file(4, "S", "u")))
+
 
 if __name__ == "__main__":
     unittest.main()

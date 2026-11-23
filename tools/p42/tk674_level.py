@@ -210,6 +210,9 @@ def cmd_union(n, tags):
     """Объединение уровня n: файл шага (`level674<SUF2><n>`) + партии остатка `tags` → level674<SUF2><n>u-<сторона>.json (комбинации по порядку отбора, клетки — объединение, потолок снят) и
     invalid674<SUF2><n>u-<сторона>.json (недействительные клетки PS-986 — объединение); карта объединения — `TK674_BATCH=u tk674_level.py map <n>`."""
     for side in ax.SIDES:
+        if not os.path.exists(level_file(n, side)):                  # уровень одной стороны (четвёрки лонга, PS-991): второй стороны нет — пропуск
+            print("== %s n=%d: нет файла уровня — сторона пропущена" % (side, n))
+            continue
         lv = json.load(open(level_file(n, side), encoding="utf-8"))
         taken, cells = list(lv["taken"]), dict(lv["cells"])
         inv = {}
