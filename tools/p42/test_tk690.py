@@ -13,6 +13,7 @@ import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import tk690_run as t  # noqa: E402
+import tk690_sac as sac  # noqa: E402
 
 
 def sigkey(patch):
@@ -170,6 +171,43 @@ class Lineage(unittest.TestCase):
     def test_other_distance_is_other_lineage(self):
         mine, ref = self.rows([("AAA", 1, 100, 5, 7, "x")]), self.rows([("AAA", 1, 100, 6, 7, "x")])
         self.assertEqual(t.lineage_classes(mine, ref), {("AAA", 1): "c"})
+
+
+class Sac(unittest.TestCase):
+    """`tk690_sac.classify`: пустота sac* = окно не покрыто ∪ записей < 30 ∪ одна сторона; три категории не пересекаются, расхождение любого знака видно."""
+
+    def frames(self, spec):
+        """spec — строки (gap, n10, nb10, n30, nb30, n60, nb60, sac10, sac30, sac60); None = пусто."""
+        fast = pd.DataFrame(dict(sym=["A"] * len(spec), sig_ms=range(len(spec)), **{"sac%d" % w: [r[7 + k] for r in spec] for k, w in enumerate(sac.W_S)}))
+        d = pd.DataFrame(dict(sym=["A"] * len(spec), sig_ms=range(len(spec)), gap=[r[0] for r in spec]))
+        for k, w in enumerate(sac.W_S):
+            d["n%d" % w], d["nb%d" % w] = [r[1 + 2 * k] for r in spec], [r[2 + 2 * k] for r in spec]
+        return fast, d
+
+    def test_categories(self):
+        nan = float("nan")
+        spec = [(20_000, 40, 20, 90, 40, 200, 100, 0.1, nan, nan),      # данные начались за 20 с до σ: окно 10 с покрыто, 30 и 60 с — нет → пусто
+                (500_000, 29, 15, 90, 40, 200, 100, nan, 0.2, 0.3),     # 29 записей — пусто
+                (500_000, 30, 15, 90, 0, 200, 200, 0.1, nan, nan),      # 30 — считается; одна сторона — пусто
+                (500_000, 0, 0, 0, 0, 0, 0, nan, nan, nan)]
+        fast, d = self.frames(spec)
+        r = sac.classify(fast, d)
+        self.assertEqual((r[10]["uncovered"], r[30]["uncovered"], r[60]["uncovered"]), (0, 1, 1))
+        self.assertEqual((r[10]["few"], r[10]["one_side"], r[10]["rule"]), (2, 0, 2))
+        self.assertEqual((r[30]["few"], r[30]["one_side"], r[30]["rule"]), (1, 1, 3))
+        self.assertEqual(r[60]["nan_in_one"], 1)
+
+    def test_mismatch_is_visible_both_ways(self):
+        fast, d = self.frames([(500_000, 29, 15, 90, 40, 200, 100, 0.5, 0.2, 0.3), (500_000, 40, 20, 90, 40, 200, 100, float("nan"), 0.2, 0.3)])
+        r = sac.classify(fast, d)
+        self.assertEqual((r[10]["rule_not_nan"], r[10]["nan_not_rule"], r[10]["equal"]), (1, 1, False))
+        self.assertTrue(r[30]["equal"] and r[60]["equal"])
+
+    def test_row_order_guard(self):
+        fast, d = self.frames([(500_000, 40, 20, 90, 40, 200, 100, 0.1, 0.2, 0.3)] * 2)
+        d["sig_ms"] = [1, 0]
+        with self.assertRaises(SystemExit):
+            sac.classify(fast, d)
 
 
 if __name__ == "__main__":
