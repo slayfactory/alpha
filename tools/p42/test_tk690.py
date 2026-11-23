@@ -54,9 +54,27 @@ class Rows(unittest.TestCase):
         self.assertEqual(set(r["win"]), {"wa"})
 
     def test_conflicting_attributes_stop(self):
-        a, b = dump([("AAA", 100, 100, 5)]), dump([("AAA", 100, 100, 6)])
+        a, b = dump([("AAA", 100, 100, 5)]), dump([("AAA", 100, 100, 5)])
+        b["natr_e8"] = 501
         with self.assertRaises(SystemExit):
             t.build_rows({"n00": a, "n01": b}, "wa", 0)
+
+    def test_dist_conflict_takes_first_stream_by_priority(self):
+        per = {"n00": dump([("AAA", 100, 100, 5)]), "n01": dump([("AAA", 100, 100, 9)]), "n02": dump([("AAA", 100, 100, 5), ("BBB", 200, 100, 1)])}
+        self.assertEqual(len(t.dist_conflicts(per)), 1)
+        r = t.build_rows(per, "wa", 0, ["n01", "n00", "n02"])
+        self.assertEqual(sorted(zip(r["sym"], r["dist_e8"])), [("AAA", 9), ("BBB", 1)])
+        r = t.build_rows(per, "wa", 0, ["n00", "n01", "n02"])
+        self.assertEqual(sorted(zip(r["sym"], r["dist_e8"])), [("AAA", 5), ("BBB", 1)])
+
+    def test_alt_rows_are_other_distance_of_conflicting_keys_only(self):
+        per = {"n00": dump([("AAA", 100, 100, 5)]), "n01": dump([("AAA", 100, 100, 9), ("BBB", 200, 100, 1)])}
+        r = t.build_rows(per, "wa", 0, ["n00", "n01"], alt=True)
+        self.assertEqual(list(zip(r["sym"], r["dist_e8"])), [("AAA", 9)])
+
+    def test_stream_prio_nf_first(self):
+        ss = [dict(vid="n00", patch=dict(ev=8, ea=0.07)), dict(vid="n09", patch=dict(nf=2, natr_min=0.4)), dict(vid="n10", patch=dict(nf=1, natr_min=0.6))]
+        self.assertEqual(t.stream_prio(ss), ["n09", "n10", "n00"])
 
     def test_two_levels_one_key_stop(self):
         with self.assertRaises(SystemExit):

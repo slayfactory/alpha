@@ -112,15 +112,29 @@ def cmd_dump(a):
 
 
 # ---- строки ---------------------------------------------------------------------------------------------------------------------------
-def build_rows(per_stream, win, t0_ms):
+def stream_prio(ss):
+    """Порядок потоков для выбора `dist_e8` при расхождении: потоки `nf` (ключи прохода сигналов как у базы, `ev` / `ea` базовые) первыми — их расстояние совпадает с таблицей TK-671 — затем по vid."""
+    return [s["vid"] for s in sorted(ss, key=lambda s: ("nf" not in s["patch"], s["vid"]))]
+
+
+def build_rows(per_stream, win, t0_ms, prio=None, alt=False):
     """per_stream {vid: DataFrame дампа sigsx} → строки окна (одна на ключ (sym, sig_ms, level_px_e8), порядок как `tk671_lvl`), row_id — по порядку.
-    Стоп (GuardError): у одного ключа в разных потоках различаются свойства строки; одна монета и момент с двумя уровнями."""
+    Стоп (GuardError): у одного ключа в разных потоках различаются свойства строки (кроме `dist_e8`); одна монета и момент с двумя уровнями.
+    `dist_e8` — расстояние тика сигнала: при одном (sym, sig_ms) у потоков `ev` / `ea` оно бывает разным (разные тики одной миллисекунды), в таблице — одна строка на ключ → берётся у первого потока по `prio`.
+    `alt` (диагностика чувствительности): только ключи с расхождением, `dist_e8` — первое значение, отличное от выбранного."""
     allr = pd.concat([d.assign(vid=v) for v, d in per_stream.items()], ignore_index=True)
-    g = allr.groupby(KEYCOLS, sort=False)[ATTR].nunique(dropna=False)
+    allr["_p"] = allr["vid"].map({v: i for i, v in enumerate(prio or list(per_stream))})
+    allr = allr.sort_values("_p", kind="stable")
+    g = allr.groupby(KEYCOLS, sort=False)[[c for c in ATTR if c != "dist_e8"]].nunique(dropna=False)
     bad = g[(g > 1).any(axis=1)]
     if len(bad):
         raise GuardError("%s: у %d ключей свойства строки различаются между потоками (первый: %s)" % (win, len(bad), bad.index[0]))
-    rows = allr.drop_duplicates(KEYCOLS).drop(columns="vid")
+    first = allr.drop_duplicates(KEYCOLS)
+    if alt:
+        d0 = first.set_index(KEYCOLS)["dist_e8"]
+        o = allr[allr["dist_e8"].to_numpy() != d0.reindex(pd.MultiIndex.from_frame(allr[KEYCOLS])).to_numpy()]
+        first = o.drop_duplicates(KEYCOLS)
+    rows = first.drop(columns=["vid", "_p"])
     if rows.duplicated(["sym", "sig_ms"]).any():
         raise GuardError("%s: у %d ключей (sym, sig_ms) больше одного уровня" % (win, int(rows.duplicated(["sym", "sig_ms"], keep=False).sum())))
     rows = rows.sort_values(["sig_ms", "dist_e8", "sym", "level"], kind="stable").reset_index(drop=True)
@@ -130,8 +144,15 @@ def build_rows(per_stream, win, t0_ms):
     return rows
 
 
+def dist_conflicts(per_stream):
+    """Ключи, у которых `dist_e8` различается между потоками: DataFrame (sym, sig_ms, level_px_e8, n_dist, vids по значениям)."""
+    allr = pd.concat([d.assign(vid=v) for v, d in per_stream.items()], ignore_index=True)
+    n = allr.groupby(KEYCOLS, sort=False)["dist_e8"].nunique()
+    return n[n > 1].rename("n_dist").reset_index()
+
+
 def dump_paths(win, ss):
-    return {s["vid"]: os.path.join(ROOT, "dump", win, s["vid"], "%s-sigsx.csv" % SN) for s in ss}
+    return {s["vid"]: os.path.join(os.environ.get("TK690_DUMP", os.path.join(ROOT, "dump")), win, s["vid"], "%s-sigsx.csv" % SN) for s in ss}
 
 
 def read_dumps(win, ss):
@@ -144,14 +165,21 @@ def rows_path(win, root=None):
 
 
 def cmd_rows(a):
+    """rows: объединение потоков; TK690_ALT=1 — диагностика: только ключи с расхождением `dist_e8`, второе значение (каталог результата — TK690_ROOT, дампы — TK690_DUMP)."""
     import tk604_stats as st
     ss = load_streams()
+    alt = os.environ.get("TK690_ALT") == "1"
+    conf = {}
     for w in st.TRADE_WINDOWS:
         per = read_dumps(w.name, ss)
-        rows = build_rows(per, w.name, w.t0_ms)
+        rows = build_rows(per, w.name, w.t0_ms, stream_prio(ss), alt)
         os.makedirs(os.path.dirname(rows_path(w.name)), exist_ok=True)
         rows.to_parquet(rows_path(w.name), index=False)
-        say("rows %s: потоков %d, строк в дампах %d, уникальных ключей %d" % (w.name, len(per), sum(len(d) for d in per.values()), len(rows)))
+        dc = dist_conflicts(per)
+        conf[w.name] = len(dc)
+        say("rows %s%s: потоков %d, строк в дампах %d, уникальных ключей %d, ключей с расхождением dist_e8 %d" % (w.name, " (alt)" if alt else "", len(per), sum(len(d) for d in per.values()), len(rows), len(dc)))
+    if not alt:
+        json.dump(conf, open(q("res", "distconf690.json"), "w", encoding="utf-8"))
 
 
 # ---- недоступные значения (охрана «пусто проходит») -----------------------------------------------------------------------------------
