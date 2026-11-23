@@ -355,7 +355,23 @@ def cmd_controls(a):
             same = np.ones(len(xbi), dtype=bool) if rn is None else (xsi[rn].to_numpy() == nai[rn].to_numpy())
             n4 += int(same.sum())
             d4 += int((xbi[name].to_numpy()[same] != nai[name].to_numpy()[same]).sum())
-        rep[w] = dict(non_bd_diff=d1, features_diff_where_old_defined=d2, rows_old_all_defined=int(both.sum()), rows_new_all_defined=fully_new, allb_vs_old_diff=d3, xb_vs_allb_diff=d4, xb_vs_allb_checked=n4)
+        # (охрана NaN, FIX 2 критика) строки, где bd остался NaN: дыра 08.10 / сутки без файла (404) / прочее — прочее обязано быть 0
+        sys.path.insert(0, C671)
+        import tk671_bd as bd
+        rws = pd.read_parquet(rows_path(w))
+        sec = bd.row_seconds(rws, w)
+        nan_rows = fn.isna().any(axis=1).to_numpy()
+        day = np.floor(sec / 86400.0).astype(np.int64)
+        on_hole = np.isin(day, np.array(bd.HOLES_D, dtype=np.int64))
+        covs = glob.glob(BOOK + "/coverage-*.csv") + [q("res", "xb-coverage.csv")]
+        st404 = {k for k, v in coverage_status([c for c in covs if os.path.exists(c)]).items() if v == "404"}
+        no_file = np.array([((sy, day_str(a)) in st404) or ((sy, day_str(b)) in st404) for sy, a, b in zip(rws["sym"].astype(str), day, np.floor((sec - 3600.0) / 86400.0).astype(np.int64))])
+        other = nan_rows & ~on_hole & ~no_file
+        nan_rep = dict(rows=len(rws), nan_rows=int(nan_rows.sum()), on_hole=int((nan_rows & on_hole).sum()), no_file_404=int((nan_rows & ~on_hole & no_file).sum()), other=int(other.sum()))
+        say("NaN bd %s: строк %d, без bd %d — дыра 08.10 %d, сутки без файла (404) %d, прочее %d" % (w, nan_rep["rows"], nan_rep["nan_rows"], nan_rep["on_hole"], nan_rep["no_file_404"], nan_rep["other"]))
+        if nan_rep["other"]:
+            bad.append("%s NaN bd без объяснения: %d" % (w, nan_rep["other"]))
+        rep[w] = dict(nan=nan_rep, non_bd_diff=d1, features_diff_where_old_defined=d2, rows_old_all_defined=int(both.sum()), rows_new_all_defined=fully_new, allb_vs_old_diff=d3, xb_vs_allb_diff=d4, xb_vs_allb_checked=n4)
         say("controls %s: (1) не-bd расхождений %d | (2а) признаков %d (строк с прежними определёнными %d, с новыми %d из %d) | (2б) -all-b vs -all %d | (2в) xb vs -all-b %d из %d" %
             (w, d1, d2, int(both.sum()), fully_new, len(fn), d3, d4, n4))
         for k, v in (("(1)", d1), ("(2а)", d2), ("(2б)", d3), ("(2в)", d4)):
