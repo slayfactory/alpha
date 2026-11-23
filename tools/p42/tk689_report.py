@@ -263,6 +263,13 @@ def natr_section(res, obs, meta, F, plots_dir, rel_plots, make_plots=True):
                 L.append("Клетки уровня %d: полная сетка %d, отбор по результату %d. %s" % (
                     k, r["by_grid"]["полная"], r["by_grid"]["отбор"], "" if r["by_grid"]["отбор"] == 0 else "Оси отобраны по результату на этих данных; эффект — условный."))
                 L.append("")
+    for side, sname in SIDES:
+        for k in (3, 4):
+            n = meta["levels_in_db"].get(side, {}).get(str(k), 0)
+            r = res.get((side, k))
+            if n < 20 or not r or not any(x["axis"] in NATR_AXES for x in r["axes"]):
+                L.append("- %s, уровень %d (%s): в БД клеток %d — NATR-оси не оценены (карта этого уровня ещё не записана)." % (sname, k, "тройки" if k == 3 else "четвёрки", n))
+    L.append("")
     if make_plots:
         os.makedirs(plots_dir, exist_ok=True)
         L += ["### Графики", ""]
@@ -410,6 +417,32 @@ def interaction_section(res):
     return L + [""] + det
 
 
+def summary_section(res, meta):
+    gc = group_counts(res)
+    L = ["## Сводка", ""]
+    for side, sname in SIDES:
+        for k in sorted({k for (s_, k) in res if s_ == side and res[(s_, k)]["axes"]}):
+            for g in ("полная", "отбор"):
+                c = gc.get((side, k, g))
+                if not c:
+                    continue
+                L.append("- %s, уровень %d, %s: осей %d — много %d, мало %d, ничего %d (из них мёртвых %d), не оценено %d." % (
+                    sname, k, g, sum(c[x] for x in ("много", "мало", "ничего", "не оценена")), c["много"], c["мало"], c["ничего"], c["мёртвых"], c["не оценена"]))
+    for side, sname in SIDES:
+        for k in sorted({k for (s_, k) in res if s_ == side and k >= 2}):
+            ints = [x for x in res[(side, k)]["interactions"] if x.get("lo") is not None and x["grid"] == "полная"]
+            if ints:
+                L.append("- %s, уровень %d, взаимодействия (полная сетка): %d клеток, интервал целиком > 0 у %.1f %%, < 0 у %.1f %% (шум — 2,5 %% и 2,5 %%)." % (
+                    sname, k, len(ints), 100 * sum(1 for x in ints if x["lo"] > 0) / len(ints), 100 * sum(1 for x in ints if x["hi"] < 0) / len(ints)))
+    for side, sname in SIDES:
+        for k in sorted({k for (s_, k) in res if s_ == side}):
+            cl = res[(side, k)].get("clusters")
+            if isinstance(cl, dict) and cl.get("полная"):
+                c = cl["полная"]
+                L.append("- %s, уровень %d, семьи осей (полная сетка): %d, размеры %s." % (sname, k, len(c["families"]), ", ".join(str(len(x)) for x in sorted(c["families"], key=len, reverse=True)) or "—"))
+    return L + [""]
+
+
 def uncovered_section(res, meta):
     L = ["## 8. Что не покрыто", ""]
     for side, sname in SIDES:
@@ -466,7 +499,7 @@ def main():
         open(a.md, "w", encoding="utf-8").write("\n".join(L) + "\n")
         return
     L = ["# P-42: влияние осей на прибыль и просадку, кластеры (TK-689)", "",
-         "Описательно, найдено на этих данных. Деньги — $ при ставке 500 $; Шарп годовой по суточному ряду; перехай — сутки между новыми максимумами P&L.", ""] + L
+         "Описательно, найдено на этих данных. Деньги — $ при ставке 500 $; Шарп годовой по суточному ряду; перехай — сутки между новыми максимумами P&L.", ""] + summary_section(res, meta) + L
     L += data_section(res, meta) + groups_section(res) + top_section(res, F) + shift_section(res) + cluster_section(res) + interaction_section(res) + uncovered_section(res, meta)
     write_tables(res, meta, F, a.tables)
     open(a.md, "w", encoding="utf-8").write("\n".join(L) + "\n")
