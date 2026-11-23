@@ -165,6 +165,7 @@ COVER_MIN = 0.7 if SET in ("t681", "t697") else 0.0       # столбец, оп
 # для расстояний `bl_*_ahead_n` / `bl_*_back_n` к квантилям добавлены назначенные критиком 1 / 2 / 4 NATR. Исключение из правила окна ≤ 60 мин (HMAX): `pm_*` (24 / 48 / 72 ч), `hl_*`
 # (30 / 90 / 365 сут.), `mk_rel_s240` / `mk_rel_s1440` / `mk_rel_sd` (4 ч, 24 ч, с 00:00 UTC) — «предыстория по природе» (решение координатора 23.11).
 T697_FAM = "/data/p42-tk697/fam/%s/%s-%s.parquet"      # семейство, окно, сторона; индекс row_id
+T697_EXT = "/data/p42-tk697/fam/ext/%s-%s.parquet"      # окно, сторона: строки сигналов базы без строки таблицы TK-671 (`tk697_ext.py`, row_id < 0)
 T697_ROWS = "/data/p42-tk671/prod/lvl-%s-%s/rows.parquet"      # окно, сторона: row_id, sym, sig_ms (сверка строк)
 T697_FAMS = {
     "m697": ([f"sw_d{w}" for w in (15, 30, 60)] + [f"sw_a{w}" for w in (15, 30, 60)] + [f"pm_p{h}" for h in (24, 48, 72)] + [f"pm_n{h}" for h in (24, 48, 72)]
@@ -176,8 +177,6 @@ T697_TABLE = ["mk_rel_s60", "mk_rel_s240", "mk_rel_s1440"]       # уже в т�
 T697_FAM_NAMES = [c for f in T697_FAMS.values() for c in f]
 T697_NAMES = T697_FAM_NAMES + T697_TABLE
 T697_COUNT = [f"ls_c{k}p" for k in (1, 2, 3)] + [f"ls_c{k}n" for k in (2, 4, 8)]
-T697_NATR = [f"bl_{r}_{x}" for r in ("btc", "eth") for x in ("ahead_n", "back_n")]
-T697_NATR_THR = (1.0, 2.0, 4.0)
 
 
 def nan_cols():

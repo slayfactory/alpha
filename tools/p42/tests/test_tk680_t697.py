@@ -55,7 +55,7 @@ def test_thresholds():
     """)
     cnt, nat, plain, flag, zero = out
     assert [x[1] for x in cnt[0]] == [0.0, 1.0, 2.0] and [x[1] for x in cnt[1]] == [1.0, 2.0, 3.0]
-    assert [x[0] for x in nat[0]] == ["n1", "n2", "n4", "q20", "q40", "q60", "q80"] and nat[0] == nat[1]       # 1 / 2 / 4 NATR критика + квантили, по возрастанию порога
+    assert [x[0] for x in nat[0]] == ["q20", "q40", "q60", "q80"] and nat[0] == nat[1]       # пороги 1 / 2 / 4 NATR критика сняты (ниже q20: «≥» = база, «≤» пусто) — только квантили
     assert [x[0] for x in plain[0]] == ["q20", "q40", "q60", "q80"] and plain[0] == plain[1]
     assert [x[1] for x in flag[0]] == [-1.0, 0.0] and [x[1] for x in flag[1]] == [0.0, 1.0]
     assert [x[1] for x in zero[0]] == sorted({x[1] for x in zero[0]}) and zero[0][0][1] == 0.0 and len(zero[0]) < 4        # пороги с равным значением не повторяются
@@ -72,13 +72,35 @@ def test_t697_join_key_checks(tmp_path):
         pd.DataFrame(dict(row_id=[5, 9], sym=["AAA", "BBB"], sig_ms=[100, 200])).to_parquet(tmp_path / ("rows-%s-long.parquet" % w))
         for f, cols in a.T697_FAMS.items():
             pd.DataFrame({c: [float(i), float("nan")] for i, c in enumerate(cols)}, index=pd.Index([5, 9], name="row_id")).to_parquet(tmp_path / ("%s-%s-long.parquet" % (f, w)))
+        ext = pd.DataFrame({c: [float(i)] for i, c in enumerate(a.T697_NAMES)}, index=pd.Index([-1], name="row_id"))     # строка без строки таблицы: row_id < 0, ключ (sym, sig_ms) вне таблицы
+        ext.insert(0, "src", 3)
+        ext.insert(0, "sig_ms", 300)
+        ext.insert(0, "sym", "CCC")
+        ext.to_parquet(tmp_path / ("ext-%s-long.parquet" % w))
     a.T697_ROWS = str(tmp_path / "rows-%s-%s.parquet")
     a.T697_FAM = str(tmp_path / "%s-%s-%s.parquet")
+    a.T697_EXT = str(tmp_path / "ext-%s-%s.parquet")
     df = pd.DataFrame(dict(win=["wa", "wb"], row_id=[5, 9], sym=["AAA", "BBB"], meta_sig_ms=[100, 200]))
     out = s.t697_join("L", df)
+    assert len(out) == 2 + 3 and sorted(out["row_id"]) == [-1, -1, -1, 5, 9]       # строки таблицы + по одной строке ext на каждое из трёх окон
+    assert set(out[out["row_id"] < 0]["win"]) == {"wa", "wb", "wc"} and set(out[out["row_id"] < 0]["sym"]) == {"CCC"} and (out[out["row_id"] < 0]["meta_sig_ms"] == 300).all()
+    out = out[out["row_id"] > 0].reset_index(drop=True)
     assert list(out["sw_d15"].isna()) == [False, True] and float(out["rn_n"].iloc[0]) == 15.0 and float(out["hl_lo_n365"].iloc[0]) == 11.0 and float(out["bl_eth_brk60"].iloc[0]) == 11.0
     with pytest.raises(SystemExit):
         s.t697_join("L", pd.DataFrame(dict(win=["wa"], row_id=[5], sym=["ZZZ"], meta_sig_ms=[100])))
+
+
+def test_cover_by_window():
+    out = run("""
+        import numpy as np
+        import tk680_singles as s
+        from types import SimpleNamespace as N
+        st = N(TRADE_WINDOWS=[N(name="wa"), N(name="wb")])
+        tabs = {"wa": {"x": np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, np.nan])}, "wb": {"x": np.array([1.0, np.nan, 3.0, np.nan])}}
+        sel = {"wa": np.array([True] * 6 + [False]), "wb": np.array([True] * 4)}      # отбор: кандидаты базы крипто-монет в зачётном диапазоне (пустое значение вне отбора не считается)
+        print(json.dumps(s._win_cover(tabs, st, sel, "x")))
+    """)
+    assert out == {"wa": [6, 6], "wb": [2, 4]}       # общая доля 8 / 10 = 0,8 ≥ 0,7, но окно wb 0,5 < 0,7 — охрана по минимуму окон: столбец активным не бывает
 
 
 def test_no_engine_key_axes():

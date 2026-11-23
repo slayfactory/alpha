@@ -95,10 +95,16 @@ def check(res, win, side):
     """Самопроверка (`--which all`): у сигналов, которые есть в таблице TK-671, значения совпадают с основными семействами `fam/<семейство>/<окно>-<сторона>.parquet` и столбцами таблицы `mk_rel_s*`."""
     import pandas as pd
     import tk680_axes as ax
-    tab = pd.read_parquet(os.path.join(PROD, "lvl-%s-%s" % (win, side), "rows.parquet"), columns=["row_id", "sym", "sig_ms", "base_pass"])
-    tab = tab[tab["base_pass"] > 0].drop_duplicates(["sym", "sig_ms"]).set_index("row_id")
+    tab = pd.read_parquet(os.path.join(PROD, "lvl-%s-%s" % (win, side), "rows.parquet"), columns=["row_id", "sym", "sig_ms", "base_pass", "level_px_e8"])
+    tab["_pri"] = (tab["base_pass"] != 1).astype(np.int8)       # как `add_columns`: при равных (sym, sig_ms) — строка с битом 1
+    tab = tab[tab["base_pass"] > 0].sort_values("_pri", kind="stable").drop_duplicates(["sym", "sig_ms"]).drop(columns="_pri").set_index("row_id")
     j = res.reset_index().merge(tab.reset_index(), on=["sym", "sig_ms"], how="inner", suffixes=("_e", ""))
     j = j[[os.path.exists(os.path.join(CACHE % win, "%s.b42" % x)) for x in j["sym"]]].reset_index(drop=True)      # TradFi без минуток (вне c539): столбцы таблицы TK-671 у них из другого источника
+    lvl = pd.read_parquet(os.path.join(FEAT34, "h775", "%s-%s" % (win, SIDE_L[side]), "eps-%s.parquet" % SIDE_L[side]), columns=["sym", "sig_ms", "lp_e8"]).drop_duplicates(["sym", "sig_ms"])
+    j = j.merge(lvl, on=["sym", "sig_ms"], how="left")
+    other = (j["lp_e8"].abs() != j["level_px_e8"].abs()).to_numpy()      # один (sym, sig_ms) пробил два уровня: строка таблицы — другой уровень, чем в эпизоде базы
+    n_other = int(other.sum())
+    j = j[~other].reset_index(drop=True)
     bad, tot = {}, 0
     for fam_name, cols in ax.T697_FAMS.items():
         x = pd.read_parquet(ax.T697_FAM % (fam_name, win, side)).loc[j["row_id"].to_numpy()]
@@ -108,10 +114,10 @@ def check(res, win, side):
     tb = pd.read_parquet("/data/p42-tk671/data/%s.parquet" % side, columns=["win", "row_id"] + REL)
     tb = tb[tb["win"].astype(str) == win].set_index("row_id").loc[j["row_id"].to_numpy()]
     for c in REL:
-        u, v = j[c].to_numpy(np.float64), tb[c].to_numpy(np.float64)
-        bad[c] = int((~((u == v) | (np.isnan(u) & np.isnan(v)) | (np.abs(u - v) <= 1e-9 * (1 + np.abs(v))))).sum())
+        u, v = j[c].to_numpy(np.float32), tb[c].to_numpy(np.float32)      # таблица TK-671 держит mk_rel_s* в float32
+        bad[c] = int((~((u == v) | (np.isnan(u) & np.isnan(v)))).sum())
     tot = int(len(j))
-    return dict(matched=tot, bad_by_col={c: n for c, n in bad.items() if n}, ok=bool(tot > 0 and not any(bad.values())))
+    return dict(matched=tot, other_level=n_other, bad_by_col={c: n for c, n in bad.items() if n}, ok=bool(tot > 0 and not any(bad.values())))
 
 
 def main():

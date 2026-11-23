@@ -88,7 +88,13 @@ def t697_join(side, df):
     m = df.merge(pd.concat(parts, ignore_index=True), on=["win", "row_id"], how="left", validate="one_to_one")
     if m["f_sym"].isna().any() or not (m["f_sym"].to_numpy() == m["sym"].to_numpy()).all() or not (m["f_ms"].to_numpy() == m["meta_sig_ms"].to_numpy()).all():
         raise SystemExit("t697 %s: строки кандидатов не совпадают с rows.parquet (монета / sig_ms / нет пары)" % side)
-    return m.drop(columns=["f_sym", "f_ms"])
+    m = m.drop(columns=["f_sym", "f_ms"])
+    ext = []                                        # критик 23.11 FIX 2: сигналы базы без строки таблицы (следующие сигналы того же уровня) — строки из `tk697_ext.py`, ключ (sym, sig_ms) не пересекается с таблицей
+    for w in a80.T681_WINS:
+        e = pd.read_parquet(a80.T697_EXT % (w, ENGNAME[side])).reset_index().rename(columns={"sig_ms": "meta_sig_ms"}).drop(columns="src")
+        e["win"], e["meta_base_pass"] = w, 1
+        ext.append(e)
+    return pd.concat([m] + ext, ignore_index=True)
 
 
 def add_columns(side, st, tabs):
@@ -162,6 +168,14 @@ def add_columns(side, st, tabs):
     return rep
 
 
+def _win_cover(tabs, st, sel, cname):
+    """Набор t697 (критик 23.11, PS-993 (в)/(д)): определённость столбца по окнам — {окно: [определён, кандидатов]} по кандидатам базы в отборе `sel`; охрана 70 % читает минимум по окнам."""
+    import numpy as np
+    if a80.SET != "t697":
+        return None
+    return {w.name: [int(np.isfinite(tabs[w.name][cname][sel[w.name]]).sum()), int(sel[w.name].sum())] for w in st.TRADE_WINDOWS}
+
+
 def _thresholds(v, cname=None):
     """[(метка, порог ≤), …], [(метка, порог ≥), …] столбца по значениям кандидатов базы в зачётном диапазоне."""
     import numpy as np
@@ -183,8 +197,6 @@ def _thresholds(v, cname=None):
         if x not in seen:
             seen.add(x)
             out.append(("q%d" % q, x))
-    if a80.SET == "t697" and cname in a80.T697_NATR:       # + назначенные критиком 1 / 2 / 4 NATR (значения столбца — доля NATR, не %)
-        out = sorted(out + [("n%s" % ax.num(x), float(x)) for x in a80.T697_NATR_THR if x not in seen], key=lambda y: y[1])
     return out, list(out)
 
 
@@ -226,6 +238,9 @@ def select_from():
                     cn = a["axis"].split(".")[0]
                     allv = np.concatenate([(np.where(tabs[w.name]["m24"].astype(bool), np.nan, tabs[w.name]["n24"]) if cn == "n24" else tabs[w.name][cn])[sel[w.name]] for w in st.TRADE_WINDOWS])
                     a["n"], a["n_all"] = int(np.isfinite(allv).sum()), int(len(allv))
+                    nw = _win_cover(tabs, st, sel, cn)
+                    if nw:
+                        a["n_win"] = nw
         found = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(out["cells"]), bins=bins)
         out.update(n_cells=len(out["cells"]), n_have=len(found), n_new=len(out["cells"]) - len(found))
         json.dump(out, open(run.level_path(side), "w", encoding="utf-8"), ensure_ascii=False)
@@ -281,7 +296,8 @@ def cmd_select():
             if not le and not ge:
                 skipped.append([cname, "одно значение у кандидатов базы"])
                 continue
-            thr_out[side][cname] = dict(n=int(len(fin)), n_all=int(len(allv)), le=le, ge=ge)
+            nw = _win_cover(tabs, st, sc, cname)
+            thr_out[side][cname] = dict(n=int(len(fin)), n_all=int(len(allv)), le=le, ge=ge, **({"n_win": nw} if nw else {}))
             for d in dirs:
                 vals = []
                 for lab, x in (le if d == "le" else ge):
@@ -291,7 +307,7 @@ def cmd_select():
                     vals.append([lab, put("%s.%s" % (cname, d), lab, {}, (cname, OPS[d], x)), x, cut])
                 if vals:
                     vals = (vals + [["off", base_ck]]) if d == "le" else ([["off", base_ck]] + vals)      # «off» рядом с самым мягким порогом
-                    axes.append(dict(axis="%s.%s" % (cname, d), kind="col", base="off", vals=vals, n=int(len(fin)), n_all=int(len(allv))))
+                    axes.append(dict(axis="%s.%s" % (cname, d), kind="col", base="off", vals=vals, n=int(len(fin)), n_all=int(len(allv)), **({"n_win": nw} if nw else {})))
         found = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(cells), bins=bins)
         nk = sum(1 for c in cells.values() if not c["filt"])
         sigs = {tuple(tuple(x) for x in c["sig"]) for k, c in cells.items() if k not in found and c["sig"]}
@@ -436,8 +452,11 @@ def cmd_map():
             wr = run.rep_cell(win, bsh)
             active = bool(wr and wr["sharpe"] > bsh and wr["usd"] >= busd)
             low = bool(a.get("n_all") and a["n"] / a["n_all"] < a80.COVER_MIN)       # §13.73.14: столбец определён менее чем у COVER_MIN кандидатов — активным не бывает
+            nw = a.get("n_win")
+            if nw:                                  # t697 (PS-993 (в)/(д)): охрана — минимум доли по окнам (окно без кандидатов не считается)
+                low = any(n_all and n / n_all < a80.COVER_MIN for n, n_all in nw.values())
             return dict(axis=a["axis"], kind=a["kind"], base=a["base"], cells=cells, guarded=len(full), winner=wr, active=active and not low, gain=(wr["sharpe"] - bsh) if wr else None,
-                        n=a.get("n"), n_all=a.get("n_all"), low_cover=low)
+                        n=a.get("n"), n_all=a.get("n_all"), low_cover=low, **({"n_win": nw} if nw else {}))
 
         out_axes = []
         for a in lv["axes"]:
@@ -516,7 +535,9 @@ def cmd_md(d, out=None):
         for a in m["axes"]:
             note = " — активная" if a["active"] else ""
             if a.get("n_all"):
-                note += "; определён у %d из %d кандидатов базы (%s %%)%s" % (a["n"], a["n_all"], ("%.0f" % (100.0 * a["n"] / a["n_all"])), ", активным не бывает (определён менее чем у %d %% кандидатов)" % round(100 * a80.COVER_MIN) if a.get("low_cover") else "")
+                note += "; определён у %d из %d кандидатов базы (%s %%)%s" % (a["n"], a["n_all"], ("%.0f" % (100.0 * a["n"] / a["n_all"])), ", активным не бывает (определён менее чем у %d %% кандидатов%s)" % (round(100 * a80.COVER_MIN), " хотя бы в одном окне" if a.get("n_win") else "") if a.get("low_cover") else "")
+                if a.get("n_win"):
+                    note += "; по окнам: " + ", ".join("%s %d из %d (%.0f %%)" % (w, n, n_all, 100.0 * n / n_all if n_all else 0.0) for w, (n, n_all) in a["n_win"].items())
             if "old_active" in a:                      # §13.73.9: вердикт по прежней сетке рядом
                 note += "; по прежней сетке — %s%s" % ("активная (%s)" % a["old_winner"] if a["old_active"] else "не активная",
                                                        ", смена — от новых соседей плато" if a["old_active"] != a["active"] else "")
