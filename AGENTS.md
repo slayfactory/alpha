@@ -6,11 +6,11 @@ Rust + Python. Данные и исследование для крипто-би
 
 **Child threads (исп / пров / чит): English only, no chatter.** Progress lines, messages, final report in English; owner's words quoted verbatim in Russian. No narration; one progress line only on state change. MANDATORY (В-164, not advice): final report ≤ 8 lines; more only with a line «Reason: …» stating why: status · answer + key numbers · branch + SHA · card path (`kb/task/TK-NNN.md`) · deviations (one line); everything else goes into the kb card, not the message. Do not comment intermediate stages: a turn that only waits (critic, unit, watcher) ends with one line «waiting: <what>» or nothing; no restating the brief, critic verdicts or previous reports. Repo docs (`docs/**`) stay in Russian.
 
-## Сейчас (20.11.2026)
+## Сейчас (23.11.2026)
 
-- **П-42 (пробои уровня):** проверка вперёд заморожена — `docs/research/freeze/tk626-frozen.json`, коммит `1d14575e2`; первая точка 30.11, далее 31.12, 31.01, 28.02, 31.03.2027. Страница http://5.231.25.224:8090/, протокол `docs/research/P-42-level-breakout.md`, состояние — `docs/plan/coord-handoff.md`.
-- **G-022 — Rust-коллекторы — на холде (В-166), коллекторы работают** (В-149..В-155): работают на srv (`collect-*`, `soak-bybit`; здоровье http://5.231.25.224:8088/); код в ветках `bb/g-022-*`, слияние в `master` — TK-628. Читать первым: `docs/plan/G-022-handoff-2026-11-13.md`.
-- TK-629 (база знаний `kb/`) — готово, влито `662abd449`. В работе: TK-631 (Прогресс now), TK-632 (перенос в kb); TK-627 / TK-630 — уборка проекта и стартовых инструкций. Арбитраж отложен (19.11), П-40 на паузе.
+- **П-42 (пробои уровня):** состав — c539 (539 крипто-контрактов; TradFi убран, В-175). Идёт общий перебор одной линии TK-674 (пары → тройки → четвёрки → ≤ 2 кандидата на сторону → заморозка → одна проверка на июне 2026, В-170); торгуется одна линия, фикс. стопа 5 % нет. Заморозки вперёд 20–21.11 (`docs/research/freeze/tk626-frozen.json` и далее) сделаны на 775 — до первой точки 30.11 перезаморозить на крипте. Страница http://5.231.25.224:8090/, состояние — `docs/plan/coord-handoff.md` (читать первым).
+- **G-022 — Rust-коллекторы — на холде (В-166), коллекторы работают** (В-149..В-155): на srv (`collect-*`, `soak-bybit`; здоровье http://5.231.25.224:8088/), код в `master` (TK-628). Читать первым: `docs/plan/G-022-handoff-2026-11-13.md`.
+- srv: один движок счёта за раз (юнитам `MemoryMax 40G`). Арбитраж отложен (19.11), П-40 на паузе.
 
 ## Где что
 

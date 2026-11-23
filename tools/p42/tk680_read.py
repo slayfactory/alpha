@@ -25,7 +25,7 @@ def rows_of(side, axes):
 
 
 def stops(side):
-    want, rows = rows_of(side, ("sl", "nx", "cw", "ls", "sn", "sg"))
+    want, rows = rows_of(side, ("sl", "nx", "cw", "ls", "sn", "sg", "sm_sl", "sm_cw", "sm_nx"))     # sm_*: набор t681 (§13.73.14)
     for axis, lab, ck in want:
         r = rows.get(ck)
         if r is None:

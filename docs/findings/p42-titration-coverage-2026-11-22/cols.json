@@ -8523,7 +8523,7 @@
   "verdict_ru": "Холм не прошёл (m=61); лонг +0,07, шорт −0,13 $ на сделку"
  },
  {
-  "col": "n_ok_d7",
+  "col": "ok10_d7",
   "family_row": "L158 История пробоев монеты: n_ok",
   "status": "stale",
   "runs": [
@@ -8564,7 +8564,7 @@
   "verdict_ru": "одна из 9 клеток, ни одна не прошла g1"
  },
  {
-  "col": "n_ok_d14",
+  "col": "ok10_d14",
   "family_row": "L158 История пробоев монеты: n_ok",
   "status": "stale",
   "runs": [
@@ -8600,12 +8600,12 @@
    }
   ],
   "flags": [],
-  "note": "real column ok10_d14 (m=1 NATR); variants ok05_d14, ok20_d14 (m 0.5 / 2) were neighbors",
+  "note": "real column ok10_d14 (m=1 NATR); variants ok05_d14, ok20_d14 (m 0.5 / 2) were neighbors; ok10_d14 = колонка ftab клетки D=14 (fa=ok10_d14 fo=lo fv=c) — тот же столбец",
   "where_ru": "TK-625 L-114/L-116 §13.32, h775 (+o566), стоп 5 %: фильтр n_ok ≥ c, c = наименьшее целое, ниже которого ≥ 15 / 30 % сделок базы",
   "verdict_ru": "лучшая шорт D14 n_ok ≥ 2: p 0,0645 против Холма 0,0056, неясно"
  },
  {
-  "col": "n_ok_d30",
+  "col": "ok10_d30",
   "family_row": "L158 История пробоев монеты: n_ok",
   "status": "stale",
   "runs": [
@@ -8644,49 +8644,6 @@
   "note": "real column ok10_d30 (m=1 NATR); variants ok05_d30, ok20_d30 (m 0.5 / 2) were neighbors",
   "where_ru": "TK-625 L-114/L-116 §13.32, h775 (+o566), стоп 5 %: фильтр n_ok ≥ c, c = наименьшее целое, ниже которого ≥ 15 / 30 % сделок базы",
   "verdict_ru": "одна из 9 клеток, ни одна не прошла g1"
- },
- {
-  "col": "ok10_d14",
-  "family_row": "L159 История пробоев монеты: ok10_d14",
-  "status": "stale",
-  "runs": [
-   {
-    "task": "TK-625",
-    "entry": "L-114/L-116 / §13.32",
-    "kind": "threshold filter with P&L",
-    "grid": "ftab column of the D=14 cell (fa=ok10_d14 fo=lo fv=c)",
-    "universe": "h775",
-    "stop_base": "5 %",
-    "verdict": "best trial cell (S D14 c>=2) p 0.0645, not clear",
-    "source": "docs/findings/p42-successful-breakouts-2026-11-19.md:5-12; docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1432-1450"
-   },
-   {
-    "task": "TK-671",
-    "entry": "L-280 / §13.71",
-    "kind": "ML feature only",
-    "grid": "CatBoost, all candidate rows, 303 features (rules as features), rolling monthly (Jul->Aug ... Oct->Nov), 3 thresholds, m=6 cells",
-    "universe": "h775 (rows 01.07-13.11; test 01.08-13.11)",
-    "stop_base": "5 %",
-    "verdict": "5 of 6 cells \"does not add\" vs base, none significant; feature is in the final list",
-    "source": "docs/findings/p42-catboost-full-2026-11-21.md; docs/findings/p42-catboost-full-2026-11-21/gates/fit/long/features.json"
-   },
-   {
-    "task": "TK-672",
-    "entry": "L-284 / §13.72",
-    "kind": "ML feature only",
-    "grid": "same dataset (+8 rule columns), classifier \"trade in plus\", top-K per day, CatBoost + LightGBM",
-    "universe": "h775",
-    "stop_base": "5 %",
-    "verdict": "all 6 cells \"does not add\" (Holm m=6, p 0.98-0.9998)",
-    "source": "docs/findings/p42-catboost-topk-2026-11-21.md; kb/task/TK-672.md:43"
-   }
-  ],
-  "flags": [
-   "duplicate_of:n_ok_d14"
-  ],
-  "note": "ftab column name of n_ok at m=1 NATR, D=14; real names of the n_ok family: ok05/ok10/ok20_d7/d14/d30 (tk625_feat.py:222, tk671_hist.py:28)",
-  "where_ru": "TK-625 L-114/L-116 §13.32, h775, стоп 5 %: колонка ftab клетки D=14 (fa=ok10_d14 fo=lo fv=c)",
-  "verdict_ru": "лучшая клетка p 0,0645, неясно"
  },
  {
   "col": "xok10_d14",
@@ -8728,26 +8685,6 @@
   "note": "",
   "where_ru": "TK-633 L-118 §13.33, h775, стоп 5 %: история встречной стороны, 12 новых клеток",
   "verdict_ru": "лонг × короткая история ниже базы; шорт Sharpe 3,76, ни одна не прошла"
- },
- {
-  "col": "hL",
-  "family_row": "L161 История пробоев монеты: hL hS hist_own hist_cross",
-  "status": "unclear",
-  "runs": [],
-  "flags": [],
-  "note": "literal column name not found in any code/finding; concept = long-history count (successful long breakouts, D 7/14/30, TK-633); real columns are own/cross ok*/xok* by side",
-  "where_ru": "—",
-  "verdict_ru": "—"
- },
- {
-  "col": "hS",
-  "family_row": "L161 История пробоев монеты: hL hS hist_own hist_cross",
-  "status": "unclear",
-  "runs": [],
-  "flags": [],
-  "note": "literal column name not found; concept = short-history count; see hL",
-  "where_ru": "—",
-  "verdict_ru": "—"
  },
  {
   "col": "hist_own",
@@ -9017,5 +8954,148 @@
   "note": "",
   "where_ru": "только описательные страты TK-604 L-101 (566, стоп 5 %): m_tr < 0 / ≥ 0 / нет сделок, не фильтр",
   "verdict_ru": "описательно, в фильтр не принято"
+ },
+ {
+  "col": "ok10_d3",
+  "family_row": "L160 История пробоев монеты: ok10_d3",
+  "status": "never",
+  "runs": [],
+  "flags": [],
+  "note": "построен TK-680 (PS-961, приказ владельца 22.11 «число успешных пробоев надо добавить еще на 3 и 5 суток»); сборщик tk625_feat.features(…, ds), tools/p42/tk680_hist.py",
+  "where_ru": "—",
+  "verdict_ru": "—"
+ },
+ {
+  "col": "ok10_d5",
+  "family_row": "L160 История пробоев монеты: ok10_d5",
+  "status": "never",
+  "runs": [],
+  "flags": [],
+  "note": "построен TK-680 (PS-961, приказ владельца 22.11); сборщик как у ok10_d3",
+  "where_ru": "—",
+  "verdict_ru": "—"
+ },
+ {
+  "col": "xok10_d3",
+  "family_row": "L160 История пробоев монеты: xok10_d3",
+  "status": "never",
+  "runs": [],
+  "flags": [],
+  "note": "чужая сторона: строки страницы есть, порогов с P&L не было",
+  "where_ru": "построен TK-680 (PS-961); осью не был: единички семейства — только своя сторона",
+  "verdict_ru": "—"
+ },
+ {
+  "col": "xok10_d5",
+  "family_row": "L160 История пробоев монеты: xok10_d5",
+  "status": "never",
+  "runs": [],
+  "flags": [],
+  "note": "чужая сторона: строки страницы есть, порогов с P&L не было",
+  "where_ru": "построен TK-680 (PS-961); осью не был: единички семейства — только своя сторона",
+  "verdict_ru": "—"
+ },
+ {
+  "col": "xok10_d7",
+  "family_row": "L160 История пробоев монеты: xok10_d7",
+  "status": "stale",
+  "runs": [
+   {
+    "task": "TK-633",
+    "entry": "L-118 / §13.33",
+    "kind": "threshold filter with P&L",
+    "grid": "opposite-side history: 12 new cells (L x short-history 5, S x long-history 5, L with long-history=0 x2); m=1, D 7/14/30",
+    "universe": "h775",
+    "stop_base": "5 %",
+    "verdict": "L x short-history all 5 below base (best +135 $ Sharpe 1.50); S x long-history best +189 $ Sharpe 3.76 (+0.06 +- 0.15); none passes Holm (<=0.0024)",
+    "source": "docs/findings/p42-breakout-history-r2-2026-11-20.md:5-14; chron L-118"
+   },
+   {
+    "task": "TK-671",
+    "entry": "L-280 / §13.71",
+    "kind": "ML feature only",
+    "grid": "CatBoost, all candidate rows, 303 features (rules as features), rolling monthly (Jul->Aug ... Oct->Nov), 3 thresholds, m=6 cells",
+    "universe": "h775 (rows 01.07-13.11; test 01.08-13.11)",
+    "stop_base": "5 %",
+    "verdict": "5 of 6 cells \"does not add\" vs base, none significant; feature is in the final list",
+    "source": "docs/findings/p42-catboost-full-2026-11-21.md; docs/findings/p42-catboost-full-2026-11-21/gates/fit/long/features.json"
+   },
+   {
+    "task": "TK-672",
+    "entry": "L-284 / §13.72",
+    "kind": "ML feature only",
+    "grid": "same dataset (+8 rule columns), classifier \"trade in plus\", top-K per day, CatBoost + LightGBM",
+    "universe": "h775",
+    "stop_base": "5 %",
+    "verdict": "all 6 cells \"does not add\" (Holm m=6, p 0.98-0.9998)",
+    "source": "docs/findings/p42-catboost-topk-2026-11-21.md; kb/task/TK-672.md:43"
+   }
+  ],
+  "flags": [],
+  "note": "вариант окна D=7 столбца xok10_d14 (TK-633)",
+  "where_ru": "TK-633 L-118 §13.33, h775, стоп 5 %: история встречной стороны, 12 новых клеток",
+  "verdict_ru": "лонг × короткая история ниже базы; шорт Sharpe 3,76, ни одна не прошла"
+ },
+ {
+  "col": "xok10_d30",
+  "family_row": "L160 История пробоев монеты: xok10_d30",
+  "status": "stale",
+  "runs": [
+   {
+    "task": "TK-633",
+    "entry": "L-118 / §13.33",
+    "kind": "threshold filter with P&L",
+    "grid": "opposite-side history: 12 new cells (L x short-history 5, S x long-history 5, L with long-history=0 x2); m=1, D 7/14/30",
+    "universe": "h775",
+    "stop_base": "5 %",
+    "verdict": "L x short-history all 5 below base (best +135 $ Sharpe 1.50); S x long-history best +189 $ Sharpe 3.76 (+0.06 +- 0.15); none passes Holm (<=0.0024)",
+    "source": "docs/findings/p42-breakout-history-r2-2026-11-20.md:5-14; chron L-118"
+   },
+   {
+    "task": "TK-671",
+    "entry": "L-280 / §13.71",
+    "kind": "ML feature only",
+    "grid": "CatBoost, all candidate rows, 303 features (rules as features), rolling monthly (Jul->Aug ... Oct->Nov), 3 thresholds, m=6 cells",
+    "universe": "h775 (rows 01.07-13.11; test 01.08-13.11)",
+    "stop_base": "5 %",
+    "verdict": "5 of 6 cells \"does not add\" vs base, none significant; feature is in the final list",
+    "source": "docs/findings/p42-catboost-full-2026-11-21.md; docs/findings/p42-catboost-full-2026-11-21/gates/fit/long/features.json"
+   },
+   {
+    "task": "TK-672",
+    "entry": "L-284 / §13.72",
+    "kind": "ML feature only",
+    "grid": "same dataset (+8 rule columns), classifier \"trade in plus\", top-K per day, CatBoost + LightGBM",
+    "universe": "h775",
+    "stop_base": "5 %",
+    "verdict": "all 6 cells \"does not add\" (Holm m=6, p 0.98-0.9998)",
+    "source": "docs/findings/p42-catboost-topk-2026-11-21.md; kb/task/TK-672.md:43"
+   }
+  ],
+  "flags": [],
+  "note": "вариант окна D=30 столбца xok10_d14 (TK-633)",
+  "where_ru": "TK-633 L-118 §13.33, h775, стоп 5 %: история встречной стороны, 12 новых клеток",
+  "verdict_ru": "лонг × короткая история ниже базы; шорт Sharpe 3,76, ни одна не прошла"
+ },
+ {
+  "col": "ok05_d14",
+  "family_row": "L160 История пробоев монеты: ok05_d14",
+  "status": "stale",
+  "runs": [
+   {
+    "task": "TK-625",
+    "entry": "L-114/L-116 / §13.32",
+    "kind": "threshold filter with P&L",
+    "grid": "filter n_ok>=c, c = smallest integer with >=15 pct / 30 pct of base trades below; m=1 NATR (m 0.5/2 neighbors); D=14",
+    "universe": "h775 (+o566 ref)",
+    "stop_base": "5 %",
+    "verdict": "best cell S D14 n_ok>=2: +0.40 +- 0.27 $/tr, p 0.0645 vs Holm 0.0056 -> not clear; L slice n_ok=0 (D14) 143 tr +166 $ post-hoc",
+    "source": "docs/findings/p42-successful-breakouts-2026-11-19.md:5-12; docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1432-1450"
+   }
+  ],
+  "flags": [],
+  "note": "сосед m = 0,5 NATR (TK-625)",
+  "where_ru": "TK-625 L-114/L-116 §13.32, h775 (+o566), стоп 5 %: фильтр n_ok ≥ c, c = наименьшее целое, ниже которого ≥ 15 / 30 % сделок базы",
+  "verdict_ru": "сосед m = 0,5 NATR клетки D=14; одна из 9 клеток, ни одна не прошла g1"
  }
 ]

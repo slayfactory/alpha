@@ -20,7 +20,7 @@ import tk680_axes as a80  # noqa: E402
 COLS_FILE = os.path.join(HERE, "tk680_cols.json")     # имена столбцов покрытия (docs/findings/p42-titration-coverage-2026-11-22/cols.json)
 ENGNAME = {"L": "long", "S": "short"}
 OPS = {"le": "<=", "ge": ">="}
-THR_NAME = {"hist": "thr680h.json", "grid": "thr680g.json", "ctx": "thr680c.json"}.get(a80.SET, "thr680.json")     # пороги набора «история пробоев» (§13.73.8) — свой файл, заморозка thr680.json не трогается
+THR_NAME = {"hist": "thr680h.json", "grid": "thr680g.json", "ctx": "thr680c.json", "t681": "thr680t.json", "new": "thr680n.json"}.get(a80.SET, "thr680.json")     # пороги набора «история пробоев» (§13.73.8) — свой файл, заморозка thr680.json не трогается
 
 
 def cosig15(sym, ms):
@@ -41,6 +41,8 @@ def coverage_cols():
         return list(a80.HIST_COLS)
     if a80.SET == "ctx":
         return list(a80.CTX_COLS)
+    if a80.SET == "t681":
+        return list(a80.FAST_NAMES)
     return json.load(open(COLS_FILE, encoding="utf-8"))
 
 
@@ -78,9 +80,20 @@ def add_columns(side, st, tabs, cl=None, ctx=None, hist=None):
     have = set(pq.ParquetFile(a80.PARQUET % ENGNAME[side]).schema.names)
     if ctx:
         for w in st.TRADE_WINDOWS:
-            tabs[w.name]["cosig15"] = cosig15(tabs[w.name]["sym"], tabs[w.name]["ms"])
+            sym, ms = np.asarray(tabs[w.name]["sym"]).astype(str), np.asarray(tabs[w.name]["ms"], dtype=np.int64)
+            if crypto is None:
+                tabs[w.name]["cosig15"] = cosig15(sym, ms)
+                continue
+            keep = np.isin(sym, crypto)
+            v = np.full(len(ms), np.nan)
+            v[keep] = cosig15(sym[keep], ms[keep])
+            tabs[w.name]["cosig15"] = v
     extra = set()
-    if hist:
+    if ctx:
+        crypto = None
+        if os.environ.get("TK674_UNI") == "c539":      # §13.73.18: на c539 «другие монеты» — только крипто-монеты (сигналов TradFi в составе нет)
+            import tk625_run as r5
+            crypto = sorted(r5.Uni("c539").coins())
         extra = set(pq.ParquetFile(a80.HIST_EXTRA % ENGNAME[side]).schema.names) - have
         have |= extra
         rid = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["row_id"])["row_id"].to_numpy()
@@ -149,7 +162,57 @@ def _thresholds(v, cname=None):
     return out, list(out)
 
 
+def reroot_level(src, base_ck, base_cell, anchors):
+    """§13.73.17: набор PS-974 на новой вселенной — те же клетки (ключи, пороги, фильтры, оси без изменений), плюс клетка базы (на h775 она была в БД); anchors — только база."""
+    out = dict(src)
+    if anchors:
+        out.update(axes=[], skipped=[], cells={base_ck: base_cell}, eligible=0)
+    else:
+        out["cells"] = dict({base_ck: base_cell}, **src["cells"])
+    return out
+
+
+def select_from():
+    """TK680_FROM=<каталог счёта PS-974>: уровень и пороги берутся из него без пересчёта (решений отбора нет); TK680_ANCHORS=1 — только база стороны."""
+    import shutil
+    import tk674_run as run
+    assert run.LEVEL == 1 and ax.REBASE and run.UNI != "h775", "TK674_LEVEL=1 TK674_REBASE=1 TK674_UNI=c539"
+    src_root, anchors = os.environ["TK680_FROM"], os.environ.get("TK680_ANCHORS") == "1"
+    store, bins = run.chron_store(ro=True), run.eq_bins()
+    os.makedirs(os.path.join(run.ROOT, "res"), exist_ok=True)
+    if not anchors:
+        import numpy as np
+        import tk643_run as t
+        import tk654_run as r54
+        st, r5, _, _ = t._srv()
+        u = r5.Uni(run.UNI)
+        crypto, eps = sorted(u.coins()), r54.episodes_h775()
+    for side in ax.SIDES:
+        src = json.load(open(os.path.join(src_root, "res", os.path.basename(run.level_path(side))), encoding="utf-8"))
+        base = a80.make_cell(side, "base", "base", {})
+        assert base["ckey"] == ax.base_ckey(side)
+        out = reroot_level(src, base["ckey"], dict(cid=base["cid"], patch=base["patch"], filt=base["filt"], sig=base["sig"]), anchors)
+        if not anchors:                             # покрытие столбцов — по кандидатам базы только крипто-монет (охрана 70 % PS-974 п. 3 читает n / n_all)
+            tabs = run.feat_tabs(side, st, u, eps)
+            sel = {w.name: r54.in_scored_range(w, tabs[w.name]["ms"]) & np.isin(np.asarray(tabs[w.name]["sym"]).astype(str), crypto) for w in st.TRADE_WINDOWS}
+            for a in out["axes"]:
+                if a["kind"] == "col":
+                    cn = a["axis"].split(".")[0]
+                    allv = np.concatenate([(np.where(tabs[w.name]["m24"].astype(bool), np.nan, tabs[w.name]["n24"]) if cn == "n24" else tabs[w.name][cn])[sel[w.name]] for w in st.TRADE_WINDOWS])
+                    a["n"], a["n_all"] = int(np.isfinite(allv).sum()), int(len(allv))
+        found = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(out["cells"]), bins=bins)
+        out.update(n_cells=len(out["cells"]), n_have=len(found), n_new=len(out["cells"]) - len(found))
+        json.dump(out, open(run.level_path(side), "w", encoding="utf-8"), ensure_ascii=False)
+        sigs = {tuple(tuple(x) for x in c["sig"]) for k, c in out["cells"].items() if k not in found and c["sig"]}
+        print("== %s (%s): клеток %d, в БД есть %d, считаем %d; проходов сигналов %d" % (side, run.UNI, out["n_cells"], out["n_have"], out["n_new"], len(sigs)), flush=True)
+    tp = os.path.join(run.ROOT, "res", THR_NAME)
+    shutil.copyfile(os.path.join(src_root, "res", THR_NAME), tp)
+    print("select_from готово; пороги %s sha256 %s" % (tp, _sha(tp)))
+
+
 def cmd_select():
+    if os.environ.get("TK680_FROM"):
+        return select_from()
     import numpy as np
     import tk643_run as t
     import tk654_run as r54
@@ -199,7 +262,7 @@ def cmd_select():
                     vals.append([lab, put("%s.%s" % (cname, d), lab, {}, (cname, OPS[d], x)), x, cut])
                 if vals:
                     vals = (vals + [["off", base_ck]]) if d == "le" else ([["off", base_ck]] + vals)      # «off» рядом с самым мягким порогом
-                    axes.append(dict(axis="%s.%s" % (cname, d), kind="col", base="off", vals=vals))
+                    axes.append(dict(axis="%s.%s" % (cname, d), kind="col", base="off", vals=vals, n=int(len(fin)), n_all=int(len(allv))))
         found = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(cells), bins=bins)
         nk = sum(1 for c in cells.values() if not c["filt"])
         sigs = {tuple(tuple(x) for x in c["sig"]) for k, c in cells.items() if k not in found and c["sig"]}
@@ -238,6 +301,19 @@ def _concurrency(row):
     return best
 
 
+def _lvl_stop(row):
+    """[сдвинуто зажимом sm, вплотную] — сумма `lvl_stop_[floored,clamped]` из meta.json клетки по окнам; None, если счётчика нет (клетка считалась старым бинарём)."""
+    tot = [0, 0]
+    for d in row["extra"]["dirs"].values():
+        meta = json.load(open(os.path.join(d, "meta.json"), encoding="utf-8"))
+        v = meta.get("lvl_stop_[floored,clamped]", (meta.get(row["side_name"]) or {}).get("lvl_stop_[floored,clamped]"))
+        if v is None:
+            return None
+        tot[0] += int(v[0])
+        tot[1] += int(v[1])
+    return tot
+
+
 def _nan_keys(side):
     """{столбец: {окно: множество (монета, sig_ms) кандидатов с пустым значением}} — набор «история пробоев» (§13.73.8: пустое проходит фильтр)."""
     import numpy as np
@@ -247,7 +323,7 @@ def _nan_keys(side):
     st, r5, _, _ = t._srv()
     tabs = run.feat_tabs(side, st, r5.Uni(run.UNI), r54.episodes_h775())
     out = {}
-    for c in a80.HIST_COLS:
+    for c in a80.nan_cols():
         out[c] = {}
         for w in st.TRADE_WINDOWS:
             tab = tabs[w.name]
@@ -257,13 +333,16 @@ def _nan_keys(side):
 
 
 def _nan_trades(row, keys):
-    """(число, Σ $ gross − fees) сделок клетки, чей кандидат прошёл с пустым значением столбца."""
+    """(число, Σ $ gross − fees) зачётных сделок клетки, чей кандидат прошёл с пустым значением столбца; зачётные — как в `tk604_stats.splice` (вход в сутках окна;
+    файл сделок держит и разгонные сутки — их считать нельзя: у них нет истории, значение пусто всегда)."""
     import tk604_stats as st
     n, usd = 0, 0.0
-    for wn, d in row["extra"]["dirs"].items():
-        tb = st.read_trades_csv(os.path.join(d, "%s-trades.csv" % row["side_name"]))
+    for w in st.TRADE_WINDOWS:
+        tb = st.read_trades_csv(os.path.join(row["extra"]["dirs"][w.name], "%s-trades.csv" % row["side_name"]))
+        d = st.abs_day(w, tb.entry_ms)
+        lo_i, hi_i = (w.lod - st.D0).days, (w.hid - st.D0).days
         for i in range(len(tb.sym)):
-            if (str(tb.sym[i]), int(tb.sig_ms[i])) in keys[wn]:
+            if lo_i <= d[i] <= hi_i and (str(tb.sym[i]), int(tb.sig_ms[i])) in keys[w.name]:
                 n += 1
                 usd += float(tb.gross[i] - tb.fees[i])
     return n, usd
@@ -282,7 +361,7 @@ def cmd_map():
         lv = json.load(open(run.level_path(side), encoding="utf-8"))
         inv = run.load_invalid(side)
         base_ck = ax.base_ckey(side)
-        nank = _nan_keys(side) if a80.SET == "hist" else None
+        nank = _nan_keys(side) if a80.SET in ("hist", "t681") else None
         rows = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(lv["cells"]) + [base_ck], bins=bins)
         brow = rows[base_ck]
         bsh, busd = brow["sharpe"], brow["usd"]
@@ -310,9 +389,13 @@ def cmd_map():
                 rep.update(label=lab, is_base=ck == base_ck, guards={k: bool(v) for k, v in g.items()})
                 if len(a["vals"][i]) > 2:
                     rep.update(thr=a["vals"][i][2], cut=a["vals"][i][3])
-                if nank is not None and ck != base_ck:
+                if nank is not None and ck != base_ck and a["axis"].split(".")[0] in nank:
                     nn, nu = _nan_trades(dict(r, side_name=ENGNAME[side]), nank[a["axis"].split(".")[0]])
                     rep.update(nan_n=nn, nan_usd=nu)
+                if a["axis"].startswith("sm_") and ck != base_ck:      # §13.73.14: счётчики зажима sm (новый бинарь; клетка из БД со старым бинарём — без счётчика)
+                    lv_ = _lvl_stop(dict(r, side_name=ENGNAME[side]))
+                    if lv_ is not None:
+                        rep.update(lvl_floored=lv_[0], lvl_clamped=lv_[1])
                 if a["axis"] == "p":                   # число позиций меняет капитал под риском: маржа в работе и просадка — в долях счёта
                     nc = _concurrency(dict(r, side_name=ENGNAME[side]))
                     rep.update(conc=nc, conc_margin=nc * MARGIN_POS, conc_margin_pct=nc * MARGIN_POS / ACCOUNT * 100.0, maxdd_acct_pct=r["extra"]["maxdd"] / ACCOUNT * 100.0)
@@ -323,7 +406,9 @@ def cmd_map():
             win = run.pick(full)
             wr = run.rep_cell(win, bsh)
             active = bool(wr and wr["sharpe"] > bsh and wr["usd"] >= busd)
-            return dict(axis=a["axis"], kind=a["kind"], base=a["base"], cells=cells, guarded=len(full), winner=wr, active=active, gain=(wr["sharpe"] - bsh) if wr else None)
+            low = bool(a.get("n_all") and a["n"] / a["n_all"] < a80.COVER_MIN)       # §13.73.14: столбец определён менее чем у COVER_MIN кандидатов — активным не бывает
+            return dict(axis=a["axis"], kind=a["kind"], base=a["base"], cells=cells, guarded=len(full), winner=wr, active=active and not low, gain=(wr["sharpe"] - bsh) if wr else None,
+                        n=a.get("n"), n_all=a.get("n_all"), low_cover=low)
 
         out_axes = []
         for a in lv["axes"]:
@@ -336,7 +421,11 @@ def cmd_map():
         missing = missing[0]
         if missing:
             raise SystemExit("%s: в БД нет %d клеток единичек" % (side, missing))
-        m_side = sum(r["n"] for r in store.cells_count() if r["side"] == ENGNAME[side] and r["uni"] == run.UNI and r["win"] == run.WIN)
+        def m_of(uni):                              # §13.73.18: канонический ключ клетки — один раз (клетки TK-674 и TK-680 на c539 в одном пространстве ключей; база есть в обоих)
+            return store.c.execute("SELECT count(DISTINCT ckey) FROM metric_cur WHERE ckey IS NOT NULL AND side = ? AND uni = ? AND win = ?", (ENGNAME[side], uni, run.WIN)).fetchone()[0]
+        m_c = m_of(run.UNI)
+        m_h = m_of("h775") if run.UNI != "h775" else 0      # §13.73.17: состав c539 выбран по результату h775 — клетки h775 в счётчике испытаний
+        m_side = m_c + m_h
         shs = np.array([rows[k]["sharpe"] for k in lv["cells"] if k in rows and rows[k]["sharpe"] is not None])
         sd = float(shs.std()) if len(shs) > 1 else float("nan")
         by_sig = {}
@@ -347,12 +436,12 @@ def cmd_map():
         bx = brow["extra"]
         out = dict(side=side, level=1, base=dict(ckey=base_ck, sharpe=bsh, usd=busd, n=brow["trades"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"],
                                                  **run.loss_fields(bx)),
-                   axes=out_axes, n_cells=len(shs), m=m_side, sharpe_sd=sd, noise_max=sd * float(np.sqrt(2 * np.log(max(m_side, 2)))),
+                   axes=out_axes, n_cells=len(shs), m=m_side, m_c=m_c, m_h=m_h, sharpe_sd=sd, noise_max=sd * float(np.sqrt(2 * np.log(max(m_side, 2)))), noise_max_c=sd * float(np.sqrt(2 * np.log(max(m_c, 2)))),
                    same_as_base=sorted(by_sig.get(bsig, [])), skipped=lv["skipped"], invalid=inv,
                    thr_sha256=_sha(os.path.join(run.ROOT, "res", THR_NAME)))
         json.dump(out, open(os.path.join(run.ROOT, "res", "map674b1-%s.json" % side), "w", encoding="utf-8"), ensure_ascii=False)
-        print("== %s: осей %d, клеток %d, m %d, шум ≈ %.2f; активных осей %d (ключи %d, столбцы %d); клеток со сделками базы %d" % (
-            side, len(out_axes), len(shs), m_side, out["noise_max"], sum(a["active"] for a in out_axes), sum(a["active"] for a in out_axes if a["kind"] == "key"),
+        print("== %s: осей %d, клеток %d, m %d (%s %d + h775 %d), шум ≈ %.2f; активных осей %d (ключи %d, столбцы %d); клеток со сделками базы %d" % (
+            side, len(out_axes), len(shs), m_side, run.UNI, m_c, m_h, out["noise_max"], sum(a["active"] for a in out_axes), sum(a["active"] for a in out_axes if a["kind"] == "key"),
             sum(a["active"] for a in out_axes if a["kind"] == "col"), len(out["same_as_base"])), flush=True)
     print("map единичек готово")
 
@@ -382,6 +471,11 @@ def cmd_md(d, out=None):
         L.append("## %s\n" % sname)
         L.append("База (якорь): стоп %g %%, ставка 500 $. Клеток единичек %d, испытаний стороны m = %d, шум отбора (σ Sharpe клеток × √(2 ln m)) ≈ %s. Активных осей %d из %d. Найдено на этих данных.\n" % (
             b["s"], m["n_cells"], m["m"], ("%.2f" % m["noise_max"]).replace(".", ","), len(act), len(m["axes"])))
+        L.append("Перехай (В-169, метод TK-663, `gap_longest`): сутки между новыми максимумами кривой по закрытию, UTC — самый длинный (включая отрезок от начала окна до первого максимума и открытый хвост), средний, p90 суток под водой, хвост на конец окна; это не `kpi.longest` В-120 в картах TK-674 и PS-979 (там 12 / 40). Убыток на полный стоп: %s $%s; реализованный средний убыток по стопам — другая величина.\n" % (
+            ("%.1f" % b["lstop"]).replace(".", ","), " (обе части A + B; только часть A ≈ %s $)" % ("%.1f" % (b["lstop"] / 2)).replace(".", ",") if "e2=" in b["ckey"] else ""))
+        if m.get("m_h"):                                # §13.73.17: вселенная c539 — состав выбран по результату h775, пороги — по кандидатам h775 с TradFi
+            L.append("Вселенная без TradFi (c539): состав выбран на этих данных (по результату h775); пороги столбцов подобраны на этих данных (кандидаты h775, с TradFi). m = %d — клетки c539 %d + клетки h775 %d; только c539: m = %d, шум ≈ %s.\n" % (
+                m["m"], m["m_c"], m["m_h"], m["m_c"], ("%.2f" % m["noise_max_c"]).replace(".", ",")))
         L.append("### Активные оси (%s)\n" % sname.lower())
         L.append("| Ось | Значение | Сделок | Σ $ | $ на сделку | Sharpe | Δ Sharpe | Просадка $ | Просадка, % маржи | Перехай: самый длинный, сут | средний | p90 | хвост | Охраны |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         L.append("| — " + _line("база", anchor, b["sharpe"]))
@@ -392,6 +486,8 @@ def cmd_md(d, out=None):
         L.append("\n### Все оси (%s)\n" % sname.lower())
         for a in m["axes"]:
             note = " — активная" if a["active"] else ""
+            if a.get("n_all"):
+                note += "; определён у %d из %d кандидатов базы (%s %%)%s" % (a["n"], a["n_all"], ("%.0f" % (100.0 * a["n"] / a["n_all"])), ", активным не бывает (определён менее чем у %d %% кандидатов)" % round(100 * a80.COVER_MIN) if a.get("low_cover") else "")
             if "old_active" in a:                      # §13.73.9: вердикт по прежней сетке рядом
                 note += "; по прежней сетке — %s%s" % ("активная (%s)" % a["old_winner"] if a["old_active"] else "не активная",
                                                        ", смена — от новых соседей плато" if a["old_active"] != a["active"] else "")
@@ -405,6 +501,8 @@ def cmd_md(d, out=None):
                     lab = c["label"] + ((" (порог %s, убрано %d)" % (ax.num(c["thr"]).replace(".", ","), c["cut"])) if "thr" in c else "")
                     if "nan_n" in c:
                         lab += "; с пустым значением: %d сд., %s $" % (c["nan_n"], _f(c["nan_usd"], 0))
+                    if "lvl_floored" in c:
+                        lab += "; стоп сдвинут зажимом sm: %d сд., вплотную к входу: %d сд." % (c["lvl_floored"], c["lvl_clamped"])
                     L.append(_line(lab, c, b["sharpe"]))
             if a["axis"] == "p":
                 L.append("\nМаржа в работе (позиция 250 $, счёт 2 500 $): " + "; ".join("p = %s — одновременно до %d позиций, %d $ (%d %% счёта), просадка %s %% счёта" % (

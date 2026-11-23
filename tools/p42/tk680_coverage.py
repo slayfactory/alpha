@@ -68,7 +68,7 @@ def rows():
     singles = {}
     sp = os.path.join(DIR, "singles.json")
     if os.path.exists(sp):
-        singles = json.load(open(sp, encoding="utf-8"))          # {имя: {"where": …, "verdict": …}} — единички TK-680 на текущей базе
+        singles = json.load(open(sp, encoding="utf-8"))          # {имя: {"where": …, "verdict": …[, "keep_status": true]}} — единички TK-680 на текущей базе (tk680_singles_json.py)
     for kind, fn, nk in (("engine", "engine.json", "key"), ("cols", "cols.json", "col")):
         for x in json.load(open(os.path.join(DIR, fn), encoding="utf-8")):
             name = x[nk]
@@ -79,8 +79,8 @@ def rows():
                 where = ENGINE_FIX[name][1]
             if st == "never" and kind == "cols" and x["status"] == "ml_only" and where == "—":
                 where = "только признак модели"
-            if name in singles:
-                st, where, verdict = "current", singles[name]["where"] + "; раньше: " + where, singles[name]["verdict"]
+            if name in singles:      # keep_status — клетки единичек равны базе (ключ при базовых значениях не действует): прежний статус остаётся
+                st, where, verdict = (st if singles[name].get("keep_status") else "current"), singles[name]["where"] + ("" if where == "—" else "; раньше: " + where), singles[name]["verdict"]
             out.append(dict(kind=kind, name=name, status=st, where=where, verdict=verdict, flags=flags(x), n=PAGE_N[name]))
     return sorted(out, key=lambda r: r["n"])
 

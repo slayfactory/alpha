@@ -176,7 +176,7 @@ def cmd_gates(a):
 
 
 # ---- константы этапа 1 ------------------------------------------------------------------------------------------------------------
-UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"      # TK674_UNI=c539 — вселенная без TradFi (В-175, §13.73.16): клетки в БД под своим именем, свой TK674_ROOT
+UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"      # TK674_UNI=c539 — вселенная без TradFi (В-175, §13.73.17): клетки в БД под своим именем, свой TK674_ROOT
 SIDENAME = {"L": "long", "S": "short"}
 VMAX, SIGMAX = 400, 26                          # вариантов и разных проходов сигналов на вызов движка (память: 26 проходов ≈ 30 ГБ при двух сторонах)
 MIN_N, MIN_MONTH = 150, (15, 15, 15, 15, 8)     # охрана (а) §13.73
@@ -289,7 +289,7 @@ def feat_tabs(side, st, u, eps):
     hist = tf.episode_history(eps, tf.SIDE_NAME[side])
     tabs = {w.name: r54.load_window(w, side, hist) for w in st.TRADE_WINDOWS}
     keep = None
-    if u.name == "c539":                            # §13.73.16: таблицы признаков построены по базе h775; строки крипто-кандидатов — её подмножество
+    if u.name == "c539":                            # §13.73.17: таблицы признаков построены по базе h775; строки крипто-кандидатов — её подмножество
         import tk625_run as r5
         keep = set(u.coins())
         u = r5.Uni("h775")
@@ -611,6 +611,21 @@ def cmd_validate(a):
     say("validate готово")
 
 
+def engine_opts(r5):
+    """Параметры движка из среды (результат от них не зависит, TK-683): TK674_CAP_GB → `--cap-gb`, TK674_SIG_CACHE → `--sig-cache <каталог>` (проход сигналов из общего кэша),
+    TK674_THREADS → потоки движка."""
+    add = []
+    if os.environ.get("TK674_CAP_GB") and "--cap-gb" not in r5.TICK_STORE:
+        add += ["--cap-gb", os.environ["TK674_CAP_GB"]]
+    if os.environ.get("TK674_SIG_CACHE") and "--sig-cache" not in r5.TICK_STORE:
+        add += ["--sig-cache", os.environ["TK674_SIG_CACHE"]]
+    r5.TICK_STORE = list(r5.TICK_STORE) + add
+    if os.environ.get("TK674_THREADS"):
+        import tk604_run as r4
+        r4.THREADS = int(os.environ["TK674_THREADS"])
+    say("движок: TICK_STORE %s, потоков %d" % (" ".join(r5.TICK_STORE), __import__("tk604_run").THREADS))
+
+
 def cmd_cells(a):
     st, r5, _, _ = t._srv()
     engine_opts(r5)
@@ -621,6 +636,7 @@ def cmd_cells(a):
         raise SystemExit("G-base не пройден или бинарь подменён")
     u = r5.Uni(UNI)
     store = chron_store(ro=True)
+    calls, up = 0, int(os.environ.get("TK674_THREADS_UP", "0"))     # потоки движка: после TK674_THREADS_AFTER (3) вызовов — TK674_THREADS_UP (TK-683, замер на пакетах)
     for side in SIDES:
         cells, grids, skipped, bad, found = plan_side(side, store)
         todo = [c for k, c in cells.items() if k not in found]
@@ -652,6 +668,10 @@ def cmd_cells(a):
                 os.makedirs(os.path.dirname(done), exist_ok=True)
                 open(done, "w").write("%d\n" % len(cur))
                 say("cells %s-%s %s [%d вариантов, проходов %d] готово" % (w.name, side, nm, len(cur), len({c["sig"] for c in cur})))
+                calls += 1
+                if up and calls == int(os.environ.get("TK674_THREADS_AFTER", "3")):
+                    __import__("tk604_run").THREADS = up
+                    say("потоки движка: %d со следующего вызова" % up)
         json.dump(index, open(t.q("res", "batches674%s-%s.json" % (SUF, side)), "w", encoding="utf-8"))
     say("cells готово")
 
