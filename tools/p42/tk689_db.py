@@ -472,7 +472,7 @@ def rank_by(stats, key):
 def cmd_rollup(conn, a):
     sides = (a.side,) if a.side else SIDES
     print("Роллап по вкладкам «Признаки» (правило TK-693; критик thr_m27kv64m9h: PASS + 4 правки). «Сильнее сдвигает» — только про эти таблицы; это не вывод об оси и не рекомендация.\n"
-          "Первичная мера — среднее (r − r_null) по осям с нулевой моделью (размер сверх случайного выкидывания сделок); rP / rD — справочно, по всем осям. "
+          "Первичная мера — среднее (r − r_null), r = max(rP, rD), по осям с нулевой моделью (размер сверх случайного выкидывания сделок): один список, не «по прибыли» и не «по просадке»; rP / rD — справочно, по всем осям. "
           "Порог показа «ранг» — не меньше %d осей с нулевой моделью: назначено (правило TK-693), не измерено. Прогоны не смешиваются." % PRIMARY_FLOOR)
     for side in sides:
         for k in ([a.level] if a.level else sorted({r[0] for r in conn.execute("SELECT k FROM infl_level WHERE side=?", (side,))})):
@@ -487,7 +487,7 @@ def cmd_rollup(conn, a):
                 comp = [r for r in rows if r["lead"]]
                 st2 = rollup_rows([r for r in rows if not r["lead"]])
                 has_pd = any(s["exP"] is not None for s in st.values())
-                keys = [("ex", "r − r_null (итог)")] + ([("exP", "rP − r_null_p"), ("exD", "rD − r_null_d")] if has_pd else [])
+                keys = [("ex", "max(rP, rD) − r_null")] + ([("exP", "rP − r_null_p"), ("exD", "rD − r_null_d")] if has_pd else [])
                 rk = {key: rank_by(st, key) for key, _ in keys}
                 rk2 = {key: rank_by(st2, key) for key, _ in keys}
                 print("\n== %s" % header(conn, run, side, k, grid))
@@ -499,7 +499,7 @@ def cmd_rollup(conn, a):
                 print(table(body, ("вкладка", "осей", "мёртвых", "с нул. моделью", "r − r_null") + (("rP − r_null_p", "rD − r_null_d") if has_pd else ()) +
                             ("rP", "rD", "много П / У", "много сверх нулевой", "Δ Σ $ ср.", "Δ просадка $ ср.", "ранг", "ранг без составных"), tuple(range(1, 99))))
                 if not has_pd:
-                    print("rP / rD по отдельности против нулевой модели в этом прогоне не записаны (нулевая модель сохранена одним числом r_null = max(П, У)); ранг — по r − r_null.")
+                    print("Нуль один на ось — среднее max(rP, rD) по розыгрышам; раздельных нулей для П / У в этом прогоне нет, поэтому порядок по прибыли и по просадке отдельно не строится; ранг — по r − r_null.")
                 for key, nm in keys:
                     same = rk[key] == rk2[key]
                     print("порядок по «%s»: %s; без составных осей: %s — %s" % (nm, " > ".join(rk[key]) or "—", " > ".join(rk2[key]) or "—",
