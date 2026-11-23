@@ -22,7 +22,7 @@ timeout $(( $(left) - 300 )) $PY tk697_smoke_d.py >> $G/log/smoke.log 2>&1; RS=$
 echo "== $(date -u +%FT%TZ) smoke rc=$RS left=$(left)s" >> $LOG
 if [ -n "$ENTRY" ]; then
   cd /data/p42-tk697x/code
-  env -u TK674_BIN -u TK674_ROOT -u TK674_CAP_GB TK674_BIN=$REF TK674_GBASE=/data/p42-tk688/res/gate688.json timeout $(( $(left) - 20 )) bash tk697_chain.sh $ENTRY; RC=$?
+  env -u TK674_BIN -u TK674_ROOT -u TK674_CAP_GB TK674_BIN=$REF TK674_GBASE=/data/p42-tk680n/res/gbase688.json timeout $(( $(left) - 20 )) bash tk697_chain.sh $ENTRY; RC=$?
   echo "== $(date -u +%FT%TZ) chain rc=$RC left=$(left)s" >> $LOG
 fi
 echo "SLOT-DONE" >> $LOG
