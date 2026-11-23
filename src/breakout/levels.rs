@@ -12,7 +12,7 @@
 //! `< N` членов уровень кончается. Уровень жив, пока ни один закрытый бар (после первого пивота) не закрылся за
 //! ним; такой бар — истинный пробой, уровень израсходован.
 
-use super::data::{Bars, Sym};
+use super::data::{Bars, Sym, N_MIN, SCALE};
 use super::params::LevelCfg;
 use super::Side;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -201,6 +201,9 @@ fn build_levels_impl(
     track: bool,
     count: bool,
 ) -> Vec<Level> {
+    if cfg.lx == 4 {
+        return build_line_levels(sym, cfg, side);
+    }
     if cfg.lx != 0 {
         return build_source_levels(sym, cfg, side);
     }
@@ -463,4 +466,206 @@ fn profile_poc(sym: &Sym, f: &Frame, a: usize, z: usize) -> Option<(i64, usize)>
     }
     let poc = bin * w + w / 2;
     Some((f.s * poc, peak_min / SRC_TF_MIN))
+}
+
+// ───────────── TK-697 D № 1 (`lx = 4`): наклонная линия по последним разворотам ─────────────
+
+/// Период NATR для предела наклона `lsl` (расстояния в NATR60 — вердикт критика TK-697).
+const LINE_NATR_P: usize = 60;
+
+/// МНК-линия по точкам `(x, y)`, `x` — минуты сетки (строго возрастают), `y` — цена ×1e8 в раме стороны. Целая арифметика (`i128`), коэффициенты
+/// рациональные: float в расчёте нет. `x`, `y` берутся от первой точки (`x0`, `y0`); наклон = `nn / d` цены за минуту.
+struct Line {
+    x0: i64,
+    y0: i64,
+    n: i128,
+    /// `n·Σxy − Σx·Σy`: наклон `nn / d` (строго падающие точки дают `nn < 0`).
+    nn: i128,
+    /// `n·Σx² − (Σx)²` > 0.
+    d: i128,
+    /// `Σy·d − nn·Σx`: числитель свободного члена над `n·d`.
+    c0: i128,
+}
+
+impl Line {
+    /// `None` — точек нет.
+    fn fit(pts: &[(i64, i64)]) -> Option<Line> {
+        let &(x0, y0) = pts.first()?;
+        let n = pts.len() as i128;
+        let (mut sx, mut sy, mut sxx, mut sxy) = (0i128, 0i128, 0i128, 0i128);
+        for &(x, y) in pts {
+            let (dx, dy) = (i128::from(x - x0), i128::from(y - y0));
+            sx += dx;
+            sy += dy;
+            sxx += dx * dx;
+            sxy += dx * dy;
+        }
+        let d = n * sxx - sx * sx;
+        let nn = n * sxy - sx * sy;
+        Some(Line {
+            x0,
+            y0,
+            n,
+            nn,
+            d,
+            c0: sy * d - nn * sx,
+        })
+    }
+
+    /// Значение линии в раме стороны в середине минуты `m` (`m·60 с + 30 с`): `y0 + (c0 + n·nn·(x − x0)) / (n·d)` при `x = m + ½`; округление
+    /// к ближайшему целому 1e-8, половина — вверх.
+    fn at_mid(&self, m: usize) -> i64 {
+        let rel2 = 2 * (m as i128 - i128::from(self.x0)) + 1;
+        let num = 2 * self.c0 + self.n * self.nn * rel2;
+        let q = 2 * self.n * self.d;
+        let off = (2 * num + q).div_euclid(2 * q);
+        self.y0
+            .saturating_add(i64::try_from(off).unwrap_or(i64::MAX))
+    }
+}
+
+/// `lx = 4` (TK-697 D № 1): наклонная линия через `lk` последних подтверждённых разворотов стороны (тот же `find_pivots`, свечи `tf`, ключи `k` / `d`).
+/// Линия рождается на каждое подтверждение пивота стороны (закрытие бара `active`; пивоты одного бара — одна линия), если
+/// - набралось `lk` точек (последние по номеру бара среди подтверждённых) и их цены в раме стороны строго падают (лонг — падающие максимумы, шорт — растущие
+///   минимумы: наклон против пробоя);
+/// - возраст старшей точки на минуте рождения (от начала её бара) ≤ `ld` суток;
+/// - при `lsl > 0`: |наклон| ≤ `lsl`·NATR60[рождение − 1]·цена линии в час (мерится один раз, при рождении; нет значения NATR — линии нет);
+/// - цена линии в момент рождения положительна, и ни один закрытый бар `tf` после старшей точки не закрылся выше линии (закрытие против версии
+///   последней минуты бара; рама стороны).
+///
+/// Конец — первое из: следующее подтверждение пивота той же стороны (набор «последние `lk`» сменился: старая линия кончилась, новая — другой `Level`),
+/// возраст старшей точки > `ld` суток на закрытии бара `tf` (как окно `l_days` у пивотных уровней), закрытие бара выше линии, цена ≤ 0. Версия цены — на каждую минуту
+/// жизни: значение линии в середине минуты (`Line::at_mid`); внутри минуты уровень неподвижен, как любой уровень движка. Журнала членов нет (`mem` пуст),
+/// `first_bar` — бар старшей точки в барах `tf`, `src = 4`.
+fn build_line_levels(sym: &Sym, cfg: &LevelCfg, side: Side) -> Vec<Level> {
+    let Some(bars) = sym.bars_for(cfg.tf_min) else {
+        return Vec::new();
+    };
+    let f = Frame {
+        b: bars,
+        s: side.s(),
+    };
+    let pivs = find_pivots(&f, cfg);
+    let natr = if cfg.lsl_m > 0 {
+        sym.natr_for(LINE_NATR_P)
+    } else {
+        None
+    };
+    let tfm = cfg.tf_min;
+    let mut out = Vec::new();
+    // последние `lk` подтверждённых пивотов по возрастанию бара: поздно подтверждённый пивот с более ранним баром встаёт на своё место
+    let mut last: Vec<Pv> = Vec::with_capacity(cfg.lk + 1);
+    // пивоты одного бара подтверждения — одна группа (`pivs` отсортирован по `active`)
+    let groups: Vec<&[Pv]> = pivs.chunk_by(|a, b| a.active == b.active).collect();
+    for (gi, grp) in groups.iter().enumerate() {
+        let Some(first) = grp.first() else {
+            continue;
+        };
+        for &pv in *grp {
+            let at = last.partition_point(|q| q.bar < pv.bar);
+            last.insert(at, pv);
+            if last.len() > cfg.lk {
+                last.remove(0);
+            }
+        }
+        if last.len() < cfg.lk {
+            continue;
+        }
+        // следующее подтверждение пивота стороны — конец этой линии (даже если новой линии не будет)
+        let next = groups
+            .get(gi + 1)
+            .and_then(|g| g.first())
+            .map_or(usize::MAX, |p| (p.active as usize + 1) * tfm);
+        if let Some(lv) = line_level(&f, cfg, natr, &last, first.active as usize, next) {
+            out.push(lv);
+        }
+    }
+    out
+}
+
+/// Линия по точкам `pts` (по возрастанию бара), подтверждённым к закрытию бара `b`; `next` — минута следующего подтверждения пивота стороны. `None` — линии нет.
+fn line_level(
+    f: &Frame,
+    cfg: &LevelCfg,
+    natr: Option<&[i32]>,
+    pts: &[Pv],
+    b: usize,
+    next: usize,
+) -> Option<Level> {
+    let tfm = cfg.tf_min;
+    let now = (b + 1) * tfm;
+    if !pts.windows(2).all(|w| matches!(w, [p, q] if q.p < p.p)) {
+        return None;
+    }
+    let first_bar = pts.first()?.bar;
+    let oldest = first_bar as usize;
+    let lwin = cfg.ld * 1440;
+    if now - oldest * tfm > lwin {
+        return None;
+    }
+    let xy: Vec<(i64, i64)> = pts
+        .iter()
+        .map(|p| ((p.bar as usize * tfm + tfm / 2) as i64, p.p))
+        .collect();
+    let line = Line::fit(&xy)?;
+    if line.nn >= 0 {
+        return None;
+    }
+    let v_born = line.at_mid(now);
+    if f.s * v_born <= 0 {
+        return None;
+    }
+    if cfg.lsl_m > 0 {
+        // |наклон|·60 / цена ≤ lsl·NATR60 (доли ×SCALE): nn·60·1000·SCALE ≤ d·lsl_m·natr·цена
+        let nv = i64::from(*natr?.get(now - 1)?);
+        if nv < 0 {
+            return None;
+        }
+        let lhs = line.nn.abs().saturating_mul(60_000 * i128::from(SCALE));
+        let rhs = line
+            .d
+            .saturating_mul(i128::from(cfg.lsl_m))
+            .saturating_mul(i128::from(nv))
+            .saturating_mul(i128::from(v_born.abs()));
+        if lhs > rhs {
+            return None;
+        }
+    }
+    // конец давности: закрытие первого бара, на котором возраст старшей точки больше `ld` суток
+    let cutoff = next.min((oldest + lwin / tfm + 1) * tfm);
+    // закрытие бара выше линии (в раме стороны): до рождения — линии нет, после — её конец; бар сверяется с версией своей последней минуты
+    let mut kill = cutoff;
+    for (bb, &ok) in f.b.ok.iter().enumerate().skip(oldest + 1) {
+        if (bb + 1) * tfm > cutoff {
+            break;
+        }
+        if ok && f.cl(bb) > line.at_mid((bb + 1) * tfm - 1) {
+            if bb <= b {
+                return None;
+            }
+            kill = (bb + 1) * tfm;
+            break;
+        }
+    }
+    let mut end = kill;
+    let mut segs = Vec::with_capacity(kill.min(N_MIN).saturating_sub(now));
+    for m in now..kill.min(N_MIN) {
+        let v = line.at_mid(m);
+        if f.s * v <= 0 {
+            end = m;
+            break;
+        }
+        segs.push((u32::try_from(m).ok()?, v.abs()));
+    }
+    if segs.is_empty() {
+        return None;
+    }
+    Some(Level {
+        born: u32::try_from(now).ok()?,
+        end: u32::try_from(end).unwrap_or(u32::MAX),
+        segs,
+        first_bar,
+        mem: Vec::new(),
+        src: 4,
+    })
 }
