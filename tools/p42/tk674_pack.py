@@ -88,7 +88,7 @@ def verify_sample(ws_dir, arch_dir, hashes, k=SAMPLE, seed=674):
     bad = []
     for _ in range(k):
         h = rnd.choice(hashes)
-        cells = sorted(os.listdir(os.path.join(ws_dir, h)))
+        cells = sorted(c for c in os.listdir(os.path.join(ws_dir, h)) if os.path.isdir(os.path.join(ws_dir, h, c)))      # в каталоге партии есть и файлы (summary.csv движка)
         c = rnd.choice(cells)
         files = sorted(os.listdir(os.path.join(ws_dir, h, c)))
         f = rnd.choice(files)
@@ -104,10 +104,18 @@ def cmd_pack(ws, delete, only, jobs):
     ws_dir = os.path.join(ROOT, "cells", ws)
     arch_dir = os.path.join(ROOT, "cells-arch", ws)
     hashes = sorted(h for h in os.listdir(ws_dir) if os.path.isdir(os.path.join(ws_dir, h)) and (not only or h == only))
-    done = [h for h in hashes if os.path.exists(os.path.join(arch_dir, h + ".tar.zst"))]      # готовый архив партии — не перепаковывать (каталог рядом может быть частью, извлечённой читателем)
+    arch_n = {}                                                                                 # готовый архив: каталог рядом — полный (повтор после неудачной проверки) или часть, извлечённая читателем
+    for h in hashes:
+        a = os.path.join(arch_dir, h + ".tar.zst")
+        if os.path.exists(a):
+            arch_n[h] = int(subprocess.run("tar --zstd -tf %s | wc -l" % _q(a), shell=True, check=True, capture_output=True, text=True).stdout.strip())
+    done = [h for h in arch_n if entries(os.path.join(ws_dir, h)) != arch_n[h]]                   # неполный каталог — часть из архива: не трогаем
     hashes = [h for h in hashes if h not in done]
     tot_n, tot_b, counts = 0, 0, {}
     for h in hashes:
+        if h in arch_n:                                                                          # архив уже есть и полон — только проверка и удаление
+            counts[h] = arch_n[h]
+            continue
         n, b = pack_one(ws_dir, h, arch_dir, jobs)
         counts[h] = n
         tot_n, tot_b = tot_n + n, tot_b + b

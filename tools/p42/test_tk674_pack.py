@@ -23,6 +23,8 @@ class Pack(unittest.TestCase):
         self.ws = os.path.join(self.root, "cells", "wa-S")
         self.cells = {}
         for h in ("f111", "f222"):
+            os.makedirs(os.path.join(self.ws, h), exist_ok=True)
+            open(os.path.join(self.ws, h, "summary.csv"), "w").write("a,b" + chr(10) + "1,2" + chr(10))                  # файл рядом с каталогами клеток (сводка движка)
             for i in range(30):
                 cid = "s4+x%d.ge_q%d" % (i, 20 + i)
                 d = os.path.join(self.ws, h, cid)
@@ -69,13 +71,24 @@ class Pack(unittest.TestCase):
             pk.verify_sample = old
         self.assertEqual(sorted(os.listdir(self.ws)), ["f111", "f222"])                              # проверка не прошла — каталоги на месте
 
+    def test_retry_after_failed_check_deletes(self):
+        old = pk.verify_sample
+        pk.verify_sample = lambda *a, **k: ["x"]
+        try:
+            with self.assertRaises(SystemExit):
+                pk.cmd_pack("wa-S", True, None, 1)
+        finally:
+            pk.verify_sample = old
+        pk.cmd_pack("wa-S", True, None, 1)                                                          # архивы полны, каталоги целы — повтор проверяет и удаляет
+        self.assertEqual(os.listdir(self.ws), [])
+
     def test_missing_cell_raises(self):
         with self.assertRaises(FileNotFoundError):
             pk.ensure_cell(os.path.join(self.ws, "f999", "nope"))
 
     def test_entries_count_matches_tar(self):
         pk.cmd_pack("wa-S", False, "f111", 1)
-        self.assertEqual(pk.entries(os.path.join(self.ws, "f111")), 1 + 30 * (1 + len(FILES)))
+        self.assertEqual(pk.entries(os.path.join(self.ws, "f111")), 2 + 30 * (1 + len(FILES)))
 
 
 if __name__ == "__main__":
