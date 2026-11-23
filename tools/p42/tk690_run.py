@@ -4,6 +4,7 @@
   python3 tk690_run.py dump      — движок: дамп сигналов потоков (`P42_SIGSX=14:73`, вариант на поток) → dump/<окно>/<поток>/short-sigsx.csv
   python3 tk690_run.py rows      — объединение потоков без дублей → prod/lvl-<окно>-short/rows.parquet (раскладка TK-671; ключ строки (sym, sig_ms, level_px_e8))
   python3 tk690_run.py feat      — признаки теми же скриптами TK-671 / TK-680 / TK-681: Rust (`tk671_feat.sh`), FAST, семейства coin / bd / hist, ok10_d3 → fam/, hist35/
+  python3 tk690_run.py avail     — строки, у которых кластер монеты содержит соседа без кэша окна (TradFi удалён, В-175): cc_* считать нечем → fam/avail/ (вызывается из feat)
   python3 tk690_run.py asm       — сборка (`tk671_assemble.merge_families`) → data/short.parquet (раскладка таблицы TK-671: win, row_id, sym, meta_*, признаки float32), legacy.parquet (float64)
   python3 tk690_run.py tables    — составные столбцы фильтров (`tk674_run._pass`, столбцы — прежние `ftabcols674x-S.json`) → ftab674xs-all/ (все строки потоков) и ftab674xs/ (строки прежней `ftab674x` дословно + новые)
   python3 tk690_run.py gate      — ворота: равенство прежней таблице на общих ключах (байт в байт, все составные столбцы), дамп ≡ счётчики cands / no_key клеток TK-674, no_key = 0 по ключам дампа
@@ -32,6 +33,9 @@ PY = "/data/tk592/venv/bin/python"                           # как `tk671_pyf
 C671 = P671 + "/code/p"                                      # боевая копия скриптов TK-671 (prep, семейства)
 FAST_BIN = "/data/p42-tk681/bin/alpha-feat-tk681"            # как `tk681_chain.sh`
 STORE = "/data/p42-tk599/tick-store"
+BD_ZIP = "/data/p42-book/zip"                                # архив bookDepth: вынесен на бокс (TK-675), возвращён rsync с бокса; на боксе 17 069 файлов / 8 370 571 232 Б
+BD_FILES = 17069
+CC_COLS = ("cc_15m", "cc_1h", "cc_4h", "cc_24h", "cc_7d")    # столбцы, зависящие от соседей по кластеру: у соседа-TradFi кэша нет (В-175)
 SIDE, SN = "S", "short"
 WINS = ("wa", "wb", "wc")
 SIGSX_DAYS = "14:73"                                         # сутки торговой части сетки, как у дампов баз (`tk625_run.cmd_eng`)
@@ -150,6 +154,82 @@ def cmd_rows(a):
         say("rows %s: потоков %d, строк в дампах %d, уникальных ключей %d" % (w.name, len(per), sum(len(d) for d in per.values()), len(rows)))
 
 
+# ---- недоступные значения (охрана «пусто проходит») -----------------------------------------------------------------------------------
+def cc_unavail(coins, lab_by_mon, mon, sym, have):
+    """Строки, у которых кластер монеты (метки месяца сигнала) содержит соседа без кэша окна: cc_* считать нечем (у такой строки в таблице TK-671 значение было — сосед-TradFi, кэш удалён по В-175).
+    coins — вселенная в порядке меток; lab_by_mon {месяц: метки}; mon, sym — по строкам; have — множество монет с кэшем окна. Возвращает bool по строкам."""
+    ix = {c: i for i, c in enumerate(coins)}
+    out = np.zeros(len(sym), dtype=bool)
+    memo = {}
+    for r in range(len(sym)):
+        k = (int(mon[r]), sym[r])
+        if k not in memo:
+            lab = lab_by_mon.get(k[0])
+            i = ix.get(k[1], -1)
+            if lab is None or i < 0 or lab[i] < 0:
+                memo[k] = False
+            else:
+                mem = np.flatnonzero(lab == lab[i])
+                memo[k] = any(coins[j] not in have for j in mem if j != i)
+        out[r] = memo[k]
+    return out
+
+
+def cmd_avail(a):
+    """fam/avail/<окно>-short.parquet: row_id, cc_unavail — строки, у которых кластер содержит соседа без кэша окна."""
+    import tk671_coin as c71
+    coins = c71.universe_coins()
+    for w in WINS:
+        rows = pd.read_parquet(rows_path(w))
+        have = {f[:-4] for f in os.listdir(os.path.join(c71.CACHE_ROOT, w, "cache")) if f.endswith(".b42")}
+        mon = c71.month_of_vec(rows["abs_ms"].to_numpy(np.int64))
+        labels = c71.month_labels(np.unique(mon), coins, cache_root=c71.CACHE_ROOT, labels_dir=c71.LABELS_DIR)
+        u = cc_unavail(coins, labels, mon, rows["sym"].astype(str).to_numpy(), have)
+        pd.DataFrame(dict(row_id=rows["row_id"].to_numpy(), cc_unavail=u)).to_parquet(q("fam", "avail", "%s-%s.parquet" % (w, SN)), index=False)
+        say("avail %s: строк %d, cc недоступно (сосед без кэша) %d" % (w, len(rows), int(u.sum())))
+
+
+def bd_archive_guard():
+    """Архив bookDepth полон: `bd_*` без архива молча не фильтруют (NaN проходит) — стоп, если файлов меньше, чем было на боксе."""
+    n = sum(len(fs) for _, _, fs in os.walk(BD_ZIP))
+    if n < BD_FILES:
+        raise GuardError("архив bookDepth %s: файлов %d < %d (вернуть: rsync -aH box:offload-srv-2026-11-22/p42-book/zip/ %s/)" % (BD_ZIP, n, BD_FILES, BD_ZIP))
+    return n
+
+
+def parse_feats(ckey):
+    """Имена признаков фильтра клетки по смыслу `F=...` в её ключе (токены через `&`)."""
+    out = []
+    for tok in ckey.split("F=", 1)[1].split("&"):
+        for op in ("<=", ">=", "=="):
+            if op in tok:
+                out.append(tok.split(op)[0])
+                break
+    return out
+
+
+def feat_nan(tab, f):
+    """Строки, где признак `f` фильтра не определён: такая строка клеткой пропускается (`tk674_run._pass`: «пусто проходит»)."""
+    if f == "sharp":
+        return ~(np.isfinite(tab["cons60"]) & np.isfinite(tab["mv5"]))
+    if f == "n24":
+        return tab["m24"].astype(bool) | ~np.isfinite(tab["n24"])
+    return ~np.isfinite(tab[f])
+
+
+def cell_counts(tab, feats, idx, new):
+    """Охрана клетки по её кандидатам (`idx` — строки таблицы, `new` — bool: строки без места в прежней таблице): кандидатов; строк с NaN в признаках фильтра (всего / новых);
+    новых строк, где NaN — не «не определено», а «считать нечем» (`cc_unavail`): такую строку фильтр пропустил бы молча → клетка недействительна."""
+    nan = np.zeros(len(idx), dtype=bool)
+    una = np.zeros(len(idx), dtype=bool)
+    for f in feats:
+        nan |= feat_nan(tab, f)[idx]
+        if f in CC_COLS:
+            una |= tab["cc_unavail"][idx].astype(bool)
+    nw = new[idx]
+    return dict(cands=int(len(idx)), nan=int(nan.sum()), nan_new=int((nan & nw).sum()), unavail_new=int((una & nw).sum()))
+
+
 # ---- признаки -------------------------------------------------------------------------------------------------------------------------
 def sh(cmd, env, log):
     e = dict(os.environ)
@@ -165,6 +245,8 @@ def cmd_feat(a):
     import tk671_hist as h71
     import tk680_hist as h80
     import tk625_feat as f5
+    if any(not os.path.exists(os.path.join(ROOT, "fam", "bd", "%s-%s.parquet" % (w.name, SN))) for w in st.TRADE_WINDOWS):
+        say("архив bookDepth: файлов %d" % bd_archive_guard())
     for w in st.TRADE_WINDOWS:
         rp = rows_path(w.name)
         rows = pd.read_parquet(rp)
@@ -188,6 +270,7 @@ def cmd_feat(a):
                 res[c] = got[c]
             res.to_parquet(ex)
         say("feat %s готово" % w.name)
+    cmd_avail(a)
 
 
 def cmd_asm(a):
@@ -269,11 +352,46 @@ def stream_tabs(win_names):
             raise GuardError("legacy.parquet и data: row_id не совпадают (%s)" % w)
         for c in LEGACY:
             t[c] = l[c].to_numpy(np.float64)
+        av = pd.read_parquet(os.path.join(ROOT, "fam", "avail", "%s-%s.parquet" % (w, SN)))
+        if not np.array_equal(av["row_id"].to_numpy(), d["row_id"].to_numpy()[sel]):
+            raise GuardError("fam/avail и data: row_id не совпадают (%s)" % w)
+        t["cc_unavail"] = av["cc_unavail"].to_numpy(bool)
         tabs[w] = t
     a80.PARQUET = os.path.join(ROOT, "data", "%s.parquet")
     a80.HIST_EXTRA = os.path.join(ROOT, "hist35", "%s.parquet")
     a80.T681_FASTDIR = os.path.join(ROOT, "fam", "rust", "%s-%s")
     return tabs
+
+
+def write_nan_report(tabs):
+    """res/nan690.json: охрана 1 410 клеток по их кандидатам. Клетка недействительна, если среди новых (без места в прежней таблице) кандидатов есть строка с `cc_unavail` при фильтре по cc_*:
+    значение посчитать нечем, а фильтр «пусто проходит» пропустил бы её молча. Счётчики NaN (всего / новых) — для сведения: «не определено» по определению признака (нет кластера, нет архива на сутки) — не недоступность."""
+    import tk674_axes as ax
+    ss = load_streams()
+    cells = json.load(open(os.path.join(SRC, "res", "gkey674bsx-S.json"), encoding="utf-8"))["bad"]
+    by_sk = {json.dumps(s["sigkey"]): s for s in ss}
+    cand, new = {}, {}
+    for w in WINS:
+        t = tabs[w]
+        ix = {(sy, int(m)): i for i, (sy, m) in enumerate(zip(t["sym"], t["ms"]))}
+        _, old, _ = read_lines(os.path.join(SRC, "ftab674x", "%s-%s.csv" % (w, SIDE)))
+        new[w] = np.array([(sy, int(m)) not in old for sy, m in zip(t["sym"], t["ms"])])
+        for v, d in read_dumps(w, ss).items():
+            cand[(v, w)] = np.array([ix[(str(sy), int(m))] for sy, m in zip(d["sym"], d["sig_ms"])], dtype=np.int64)
+    out = []
+    for b in cells:
+        s = by_sk[json.dumps([list(x) for x in ax.sigkey(b["patch"])])]
+        feats = parse_feats(b["ckey"])
+        out.append(dict(cid=b["cid"], vid=s["vid"], feats=feats, win={w: cell_counts(tabs[w], feats, cand[(s["vid"], w)], new[w]) for w in WINS}))
+    inv = [c for c in out if any(r["unavail_new"] for r in c["win"].values())]
+    summ = dict(cells=len(out), with_cc=sum(1 for c in out if any(f in CC_COLS for f in c["feats"])), with_bd=sum(1 for c in out if any(f.startswith("bd_") for f in c["feats"])),
+                invalid_cc=len(inv), invalid_bd=0, counted=len(out) - len(inv), bd_archive_files=bd_archive_guard(),
+                nan_cells_any=sum(1 for c in out if any(r["nan"] for r in c["win"].values())), nan_cells_new=sum(1 for c in out if any(r["nan_new"] for r in c["win"].values())),
+                unavail_rows_new=sum(int(tabs[w]["cc_unavail"][new[w]].sum()) for w in WINS))
+    json.dump(dict(summary=summ, invalid=[c["cid"] for c in inv], cells=out), open(q("res", "nan690.json"), "w", encoding="utf-8"), ensure_ascii=False)
+    say("охрана: клеток %d, с cc_* %d, с bd_* %d; недействительных по cc_* %d, по bd_* %d, посчитано %d; с NaN у кандидатов %d (из них новых строк %d); новых строк без cc (сосед без кэша) %d" % (
+        summ["cells"], summ["with_cc"], summ["with_bd"], summ["invalid_cc"], summ["invalid_bd"], summ["counted"], summ["nan_cells_any"], summ["nan_cells_new"], summ["unavail_rows_new"]))
+    return summ
 
 
 def cmd_tables(a):
@@ -292,6 +410,7 @@ def cmd_tables(a):
         n_common, n_add, diff = merge_tables(os.path.join(SRC, "ftab674x", "%s-%s.csv" % (w.name, SIDE)), os.path.join(out_all, "%s-%s.csv" % (w.name, SIDE)),
                                              os.path.join(ROOT, "ftab674xs", "%s-%s.csv" % (w.name, SIDE)))
         say("tables %s: общих ключей %d (строк расходится %d), добавлено %d" % (w.name, n_common, len(diff), n_add))
+    write_nan_report(tabs)
 
 
 # ---- ворота ---------------------------------------------------------------------------------------------------------------------------
@@ -376,19 +495,28 @@ def cmd_slicegate(a):
     ref = pd.read_parquet(os.path.join(P671, "data", "%s.parquet" % SN))
     m = d.merge(ref, on=["win", "row_id"], how="left", suffixes=("", "__ref"), validate="one_to_one")
     cols = [c for c in d.columns if c not in ("win", "row_id", "sym") and not c.startswith("meta_") and c + "__ref" in m.columns]
-    bad = {}
+    av = pd.concat([pd.read_parquet(os.path.join(ROOT, "fam", "avail", "%s-%s.parquet" % (w, SN))).assign(win=w) for w in WINS], ignore_index=True)
+    m = m.merge(av, on=["win", "row_id"], how="left", validate="one_to_one")
+    una = m["cc_unavail"].fillna(False).to_numpy(bool)
+    bad, explained = {}, {}
     for c in cols:
         x, y = m[c].to_numpy(np.float64), m[c + "__ref"].to_numpy(np.float64)
-        n = int((~((x == y) | (np.isnan(x) & np.isnan(y)))).sum())
+        diff = ~((x == y) | (np.isnan(x) & np.isnan(y)))
+        if c in CC_COLS:                                         # объяснённое: у кластера строки есть сосед без кэша (TradFi, В-175), у нас NaN, в таблице TK-671 значение
+            ex = diff & una & np.isnan(x) & np.isfinite(y)
+            if ex.any():
+                explained[c] = int(ex.sum())
+            diff = diff & ~ex
+        n = int(diff.sum())
         if n:
             bad[c] = n
     only = [c for c in d.columns if c not in ("win", "row_id", "sym") and not c.startswith("meta_") and c + "__ref" not in m.columns]
-    say("срез: строк %d, общих столбцов %d, различных %d, столбцов без пары в таблице TK-671 %d" % (len(d), len(cols), len(bad), len(only)))
+    say("срез: строк %d, общих столбцов %d, различных %d (объяснённых «сосед без кэша» %s), столбцов без пары в таблице TK-671 %d" % (len(d), len(cols), len(bad), explained or 0, len(only)))
     for c, n in sorted(bad.items(), key=lambda kv: -kv[1])[:40]:
         say("  %s: %d строк из %d" % (c, n, len(d)))
     if only:
         say("  без пары:", ", ".join(only[:30]))
-    json.dump(dict(rows=len(d), cols=len(cols), bad=bad, only=only), open(q("res", "slicegate690.json"), "w", encoding="utf-8"), indent=1)
+    json.dump(dict(rows=len(d), cols=len(cols), bad=bad, explained=explained, only=only), open(q("res", "slicegate690.json"), "w", encoding="utf-8"), indent=1)
 
 
 def main():
@@ -400,6 +528,7 @@ def main():
     sp.add_parser("rows")
     f = sp.add_parser("feat")
     f.add_argument("--threads", type=int, default=3)
+    sp.add_parser("avail")
     sp.add_parser("asm")
     sp.add_parser("tables")
     sp.add_parser("gate")
@@ -411,7 +540,7 @@ def main():
     os.environ.setdefault("TK674_ROOT", ROOT)               # tk674_run при импорте берёт каталог из среды: писать в каталог TK-674 нельзя
     if os.environ["TK674_ROOT"] == SRC:
         raise GuardError("TK674_ROOT = каталог TK-674 (%s): результат пишется только в %s" % (SRC, ROOT))
-    {"streams": cmd_streams, "dump": cmd_dump, "rows": cmd_rows, "feat": cmd_feat, "asm": cmd_asm, "tables": cmd_tables, "gate": cmd_gate, "check": cmd_check, "slice": cmd_slice,
+    {"streams": cmd_streams, "dump": cmd_dump, "rows": cmd_rows, "feat": cmd_feat, "avail": cmd_avail, "asm": cmd_asm, "tables": cmd_tables, "gate": cmd_gate, "check": cmd_check, "slice": cmd_slice,
      "slicegate": cmd_slicegate}[a.cmd](a)
 
 
