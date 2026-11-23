@@ -69,7 +69,16 @@ def invalid_path(side):
 def load_invalid(side):
     """{cid: причина} клеток, которые движок отвергает при разборе строки (стадия `validate`); пусто, пока стадия не запускалась."""
     f = invalid_path(side)
-    return json.load(open(f, encoding="utf-8")) if os.path.exists(f) else {}
+    inv = json.load(open(f, encoding="utf-8")) if os.path.exists(f) else {}
+    for c in _cidlist("TK674_INVALID_DROP"):                         # пересчёт клеток на другой таблице (TK-690, PS-994): эти cid в этом запуске не считаются недействительными
+        inv.pop(c, None)
+    return inv
+
+
+def _cidlist(env):
+    """cid из json-файла (список) по переменной окружения; нет переменной — пусто."""
+    f = os.environ.get(env)
+    return json.load(open(f, encoding="utf-8")) if f else []
 
 
 def build_cells(side, thr=None, only=None):
@@ -181,7 +190,7 @@ def cmd_gates(a):
 
 
 # ---- константы этапа 1 ------------------------------------------------------------------------------------------------------------
-UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"      # TK674_UNI=c539 — вселенная без TradFi (В-175, §13.73.17): клетки в БД под своим именем, свой TK674_ROOT
+UNI, WIN = os.environ.get("TK674_UNI", "h775"), os.environ.get("TK674_WIN", "01.07–13.11")      # TK674_UNI=c539 — вселенная без TradFi (В-175, §13.73.17): клетки в БД под своим именем, свой TK674_ROOT
 SIDENAME = {"L": "long", "S": "short"}
 VMAX, SIGMAX = int(os.environ.get("TK674_VMAX", 400)), int(os.environ.get("TK674_SIGMAX", 26))                          # вариантов и разных проходов сигналов на вызов движка (память: 26 проходов ≈ 30 ГБ при двух сторонах)      # TK-683 (PS-990): один вызов окна-стороны перекодирует те же ≈ 1 900 суток — вызовы крупнее (TK674_VMAX / TK674_SIGMAX, с `--cap-gb` 24) вдвое быстрее, клетки те же (гейт «байт в байт»)
 VMAX_LIGHT, LIGHT_SIGS = int(os.environ.get("TK674_VMAX_LIGHT", VMAX)), 20     # TK-683 (бинарь k): лёгкие партии без фильтра (< 20 проходов сигналов) — до TK674_VMAX_LIGHT вариантов на вызов (постоянная часть вызова ≈ 4,5 с); по умолчанию = VMAX
@@ -448,6 +457,7 @@ def plan_side(side, store=None, only=None):
         raw = json.load(open(level_path(side), encoding="utf-8"))["cells"]
         cells = {k: dict(ckey=k, cid=c["cid"], patch=c["patch"], filt=[tuple(x) for x in c["filt"]], sig=tuple(tuple(x) for x in c["sig"]), pairs=[])
                  for k, c in raw.items() if c["cid"] not in inv}
+        cells = _only(cells)
         found = store.cells_lookup(SIDENAME[side], UNI, WIN, list(cells), bins=eq_bins()) if store else {}
         return cells, {}, [], {}, found
     thr = load_thr(side) if os.path.exists(thr_path()) else None
@@ -460,8 +470,15 @@ def plan_side(side, store=None, only=None):
                 raise SystemExit("X680 %s: нет отбора пар — сначала `plan` (%s)" % (side, x680_path(side)))
             only = {tuple(p["pair"].split("|")) for p in sel["taken"]}
     cells, grids, skipped, bad = build_cells(side, thr, only)
+    cells = _only(cells)
     found = store.cells_lookup(SIDENAME[side], UNI, WIN, list(cells), bins=eq_bins()) if store else {}
     return cells, grids, skipped, bad, found
+
+
+def _only(cells):
+    """TK674_ONLY=<json со списком cid>: считаются / записываются только эти клетки (пересчёт клеток TK-690 на таблице собственного счёта, PS-994)."""
+    keep = set(_cidlist("TK674_ONLY"))
+    return {k: c for k, c in cells.items() if c["cid"] in keep} if os.environ.get("TK674_ONLY") else cells
 
 
 def batches(todo):
@@ -1145,6 +1162,10 @@ def cmd_map(a):
     for side in SIDES:
         plan = json.load(open(os.path.join(ROOT, "res", "plan674%s-%s.json" % (SUF, side)), encoding="utf-8"))
         rows = store.cells_lookup(SIDENAME[side], UNI, WIN, list(plan["cells"]), bins=bins)
+        ow = os.environ.get("TK674_OVERLAY_WIN")
+        if ow:                                                   # пересчёт клеток TK-690 (PS-994): строки этих cid — из пересчёта (метка окна ow), остальные — прежние
+            over = set(_cidlist("TK674_OVERLAY_CIDS"))
+            rows.update(store.cells_lookup(SIDENAME[side], UNI, ow, [k for k, c in plan["cells"].items() if c["cid"] in over], bins=bins))
         base_ck = ax.base_ckey(side)
         brow = store.cells_lookup(SIDENAME[side], UNI, WIN, [base_ck], bins=bins).get(base_ck)
         if brow is None:

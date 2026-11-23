@@ -164,5 +164,30 @@ class SplitUnion(unittest.TestCase):
         self.assertFalse(os.path.exists(lv.level_file(4, "S", "u")))
 
 
+class Recount(unittest.TestCase):
+    """Пересчёт клеток TK-690 (PS-994): TK674_ONLY сужает клетки, TK674_INVALID_DROP снимает недействительность, без переменных — как раньше."""
+
+    def setUp(self):
+        self.f_only, self.f_drop = os.path.join(TMP, "only.json"), os.path.join(TMP, "drop.json")
+        json.dump(["c00001", "c00003"], open(self.f_only, "w"))
+        json.dump(["c00002"], open(self.f_drop, "w"))
+        json.dump({"c00002": "no_key", "c00004": "no_key"}, open(run.invalid_path("S"), "w"))
+        self.cells = {"k%05d" % i: cell(i, ("s", 0)) for i in range(5)}
+
+    def tearDown(self):
+        for v in ("TK674_ONLY", "TK674_INVALID_DROP"):
+            os.environ.pop(v, None)
+
+    def test_only(self):
+        self.assertEqual(len(run._only(self.cells)), 5)                       # без переменной — все
+        os.environ["TK674_ONLY"] = self.f_only
+        self.assertEqual(sorted(c["cid"] for c in run._only(self.cells).values()), ["c00001", "c00003"])
+
+    def test_invalid_drop(self):
+        self.assertEqual(sorted(run.load_invalid("S")), ["c00002", "c00004"])
+        os.environ["TK674_INVALID_DROP"] = self.f_drop
+        self.assertEqual(sorted(run.load_invalid("S")), ["c00004"])
+
+
 if __name__ == "__main__":
     unittest.main()

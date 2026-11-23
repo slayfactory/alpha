@@ -16,7 +16,7 @@ import tk674_axes as ax  # noqa: E402
 
 ROOT = os.environ.get("TK674_ROOT", "/data/p42-tk674")
 SIDENAME = {"L": "long", "S": "short"}
-UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"
+UNI, WIN = os.environ.get("TK674_UNI", "h775"), os.environ.get("TK674_WIN", "01.07–13.11")
 BATCH = os.environ.get("TK674_BATCH", "")           # партия остатка (PS-990): `rNN`; `u` — объединение для карты (как в tk674_run)
 WITHHOLD = {x for x in os.environ.get("TK674_WITHHOLD", "").split(",") if x}      # классы фильтра (`tk674_emptycols.filt_class`: bd, cc), клетки которых карта не читает (правило критика 23.11 п. б–в, PS-993); в m и σ остаются
 LOWTAG = os.environ.get("TK674_LOWTAG", "")         # суффикс карты нижнего уровня (карта троек шага 4 + остаток — `u`; карта пар — без суффикса)
