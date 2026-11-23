@@ -84,6 +84,12 @@ def need_pairs(sym, s, lo_d, hi_d, holes_d):
     return out
 
 
+def has_snapshot_in_hour(ts, sigma):
+    """В отсортированных секундах снимков `ts` есть хотя бы один в [σ − 3600, σ] (иначе признаки bd у строки не определены — у биржи нет данных за час до сигнала)."""
+    ts = np.asarray(ts, dtype=np.float64)
+    return bool(((ts >= sigma - 3600.0) & (ts <= sigma)).any())
+
+
 def have_pairs(zdir):
     """Пары (монета, сутки), у которых файл есть и не пуст (чтение каталогов, не обход дерева)."""
     out = set()
@@ -365,10 +371,26 @@ def cmd_controls(a):
         on_hole = np.isin(day, np.array(bd.HOLES_D, dtype=np.int64))
         covs = glob.glob(BOOK + "/coverage-*.csv") + [q("res", "xb-coverage.csv")]
         st404 = {k for k, v in coverage_status([c for c in covs if os.path.exists(c)]).items() if v == "404"}
-        no_file = np.array([((sy, day_str(a)) in st404) or ((sy, day_str(b)) in st404) for sy, a, b in zip(rws["sym"].astype(str), day, np.floor((sec - 3600.0) / 86400.0).astype(np.int64))])
-        other = nan_rows & ~on_hole & ~no_file
-        nan_rep = dict(rows=len(rws), nan_rows=int(nan_rows.sum()), on_hole=int((nan_rows & on_hole).sum()), no_file_404=int((nan_rows & ~on_hole & no_file).sum()), other=int(other.sum()))
-        say("NaN bd %s: строк %d, без bd %d — дыра 08.10 %d, сутки без файла (404) %d, прочее %d" % (w, nan_rep["rows"], nan_rep["nan_rows"], nan_rep["on_hole"], nan_rep["no_file_404"], nan_rep["other"]))
+        d2s = np.floor((sec - 3600.0) / 86400.0).astype(np.int64)
+        no_file = np.zeros(len(rws), dtype=bool)                  # одна из нужных пар (монета, сутки) — 404
+        gap = np.zeros(len(rws), dtype=bool)                      # файл есть, но снимков за час до σ у биржи нет (обрыв данных биржи)
+        gap_last = {}                                             # (сутки σ, последний снимок суток) → число монет: что именно оборвано у биржи
+        symv = rws["sym"].astype(str).to_numpy()
+        for i in np.flatnonzero(nan_rows & ~on_hole):
+            ds = sorted({day_str(day[i]), day_str(d2s[i])})
+            if any((symv[i], d_) in st404 for d_ in ds):
+                no_file[i] = True
+                continue
+            tm = bd.load_sym_fast(ZIP, symv[i], ds)
+            if tm is None or not has_snapshot_in_hour(tm[0], sec[i]):
+                gap[i] = True
+                last = None if tm is None else dt.datetime.fromtimestamp(float(tm[0][tm[0] <= sec[i]].max()) if (tm[0] <= sec[i]).any() else 0.0, dt.timezone.utc).strftime("%H:%M")
+                gap_last[(day_str(day[i]), last)] = gap_last.get((day_str(day[i]), last), 0) + 1
+        other = nan_rows & ~on_hole & ~no_file & ~gap
+        nan_rep = dict(rows=len(rws), nan_rows=int(nan_rows.sum()), on_hole=int((nan_rows & on_hole).sum()), no_file_404=int(no_file.sum()), exchange_gap_no_snapshot_hour=int(gap.sum()),
+                       gap_days_last_snapshot={"%s %s" % k: v for k, v in sorted(gap_last.items(), key=lambda kv: str(kv[0]))}, other=int(other.sum()))
+        say("NaN bd %s: строк %d, без bd %d — дыра 08.10 %d, сутки без файла (404) %d, обрыв данных биржи (файл есть, снимков за час до σ нет) %d %s, прочее %d" %
+            (w, nan_rep["rows"], nan_rep["nan_rows"], nan_rep["on_hole"], nan_rep["no_file_404"], nan_rep["exchange_gap_no_snapshot_hour"], json.dumps(nan_rep["gap_days_last_snapshot"], ensure_ascii=False), nan_rep["other"]))
         if nan_rep["other"]:
             bad.append("%s NaN bd без объяснения: %d" % (w, nan_rep["other"]))
         rep[w] = dict(nan=nan_rep, non_bd_diff=d1, features_diff_where_old_defined=d2, rows_old_all_defined=int(both.sum()), rows_new_all_defined=fully_new, allb_vs_old_diff=d3, xb_vs_allb_diff=d4, xb_vs_allb_checked=n4)

@@ -36,6 +36,15 @@ class Need(unittest.TestCase):
         self.assertEqual(st[("B", "2026-07-01")], "404")
 
 
+class Gap(unittest.TestCase):
+    def test_snapshot_in_hour(self):
+        ts = [0.0, 60.0, 9990.0]                                      # файл обрывается на 9990 с
+        self.assertTrue(xb.has_snapshot_in_hour(ts, 10000.0))
+        self.assertTrue(xb.has_snapshot_in_hour(ts, 13590.0))         # ровно σ − 3600 = 9990: снимок в окне
+        self.assertFalse(xb.has_snapshot_in_hour(ts, 13591.0))        # обрыв данных биржи: за час до σ снимков нет
+        self.assertFalse(xb.has_snapshot_in_hour([], 5.0))
+
+
 class Columns(unittest.TestCase):
     def test_split_and_plan(self):
         cols = {"bd_imb02>=-0.03": "f000", "x<=1": "f001", "x<=1&bd_imb02>=-0.03": "f002", "bd_thin5<=2&x<=1&bd_imb02>=-0.03": "f003", "bd_thin5<=2": "f004"}
