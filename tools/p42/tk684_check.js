@@ -79,6 +79,10 @@ const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'Н
     eq([d.hash, d.tab, d.pane, d.side], [`#equity/${side}/${l || '-'}/${s || '-'}`, 'equity', 'pane-equity', side], m + ' состояние');
     eq(d.pick, {long: [l || '-'], short: [s || '-']}, m + ' выбранные кнопки');
     checkTable(d, l, s, m); checkChart(d, side, l, s, m);
+    if (d.svgs === 1) {      // «Эквити» — на всю ширину окна; график +20 % (высота поля графика 360 / 432 вместо 300 / 360)
+      const gm = await page.evaluate(() => { const vb = document.querySelector('#eq-view svg[data-chart="var"]').viewBox.baseVal; return {vw: vb.width, vh: vb.height, ww: document.querySelector('.wrap').getBoundingClientRect().width, cw: document.documentElement.clientWidth}; });
+      ok(Math.abs(gm.ww - gm.cw) <= 1 && gm.vh === (gm.vw < 520 ? 360 : 432), m + ' ширина листа и высота графика: ' + JSON.stringify(gm));
+    }
     return d;
   };
   const clickVar = async (side, id) => { await page.click(`.vr-pick[data-pick="${side}"] button[data-var="${id}"]`); rep.clicks++; };
@@ -163,6 +167,8 @@ const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'Н
     await page.click(`#toptabs button[data-tab="${k}"]`); await page.waitForTimeout(250);
     const d = await page.evaluate(() => ({pane: [...document.querySelectorAll('.pane')].filter(p => !p.hidden).map(p => p.id).join(), h: [...document.querySelectorAll('.pane')].filter(p => !p.hidden)[0].innerText.length}));
     ok(d.pane === 'pane-' + k && d.h > 40, 'вкладка ' + k + ': ' + JSON.stringify(d));
+    const ww = await page.evaluate(() => [document.querySelector('.wrap').getBoundingClientRect().width, document.documentElement.clientWidth]);      // остальные вкладки — прежней ширины (не шире 1180 + поля)
+    ok(k === 'equity' ? Math.abs(ww[0] - ww[1]) <= 1 : ww[0] <= 1180 + 1 && Math.abs(ww[0] - Math.min(1180, ww[1])) <= 1, 'ширина листа вкладки ' + k + ': ' + JSON.stringify(ww));
   }
   await page.click('#toptabs button[data-tab="equity"]'); await page.waitForSelector('table[data-vtable]');
   await clickSide('both'); await state('both', dl, ds, 'возврат на «Эквити»');

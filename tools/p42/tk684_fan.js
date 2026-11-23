@@ -5,9 +5,11 @@ const FAN = {index: null, packs: {}, sets: {}, busy: 0, err: null, view: null, h
 const F_N = 0, F_USD = 1, F_SH = 2, F_DD = 3, F_GAP = 4, F_NW = 5, F_MW = 6, F_NL = 7, F_ML = 8, F_WORST = 9, F_SPLIT = 10;
 const FAN_LV = [['1', 'единички'], ['2', 'пары'], ['3', 'тройки'], ['4', 'четвёрки'], ['split', 'вход двумя частями'], ['all', 'все']];
 const FAN_SL = [['dd', 'Просадка ≤, $', F_DD, 'max', 1], ['gap', 'Перехай ≤, сут.', F_GAP, 'max', 1], ['n', 'Сделок ≥', F_N, 'min', 1], ['sum', 'Сумма ≥, $', F_USD, 'min', 1], ['sh', 'Шарп ≥', F_SH, 'min', 0.1]];
-const FAN_TOP = [0, 20, 50, 100, 500], FAN_ROWS = 30, FAN_LINES = 300, FAN_DENS_MAX = 20000, FAN_SIM_N = 50;
+const FAN_TOP = [0, 20, 50, 100, 500], FAN_ROWS = 30, FAN_LINES = 300, FAN_DENS_MAX = 12000, FAN_SIM_N = 50;
 const FAN_COL = {anchor: '#18181b', pin: '#c0265b', fav: ['#1baf7a', '#6250d6', '#b8860b', '#0e7490', '#a3369c', '#008300']};
-const FAN_DEF = () => ({lv: '2', ax: null, top: 0, by: 'sh', dd: null, gap: null, n: null, sum: null, sh: null, pin: null, sim: false});
+const FAN_DEF = () => ({lv: '2', ax: null, top: 0, by: 'sh', dd: null, gap: null, n: null, sum: null, sh: null, pin: null, sim: false, sk: null, sd: 'd'});
+// порядок таблицы по столбцу (клик по заголовку, повторный клик — наоборот): ключи — «Линия», столбцы V_COLS, «Сходство»; первый клик: имя и «меньше — лучше» (просадка, перехай) — по возрастанию, остальные — по убыванию
+const FAN_SORT_KEYS = ['name', ...V_COLS.map(c => c[0]), 'sim'], FAN_SORT_ASC = new Set(['name', 'dd', 'ddp', 'gap']);
 const FAN_TOK = /^[LS][0-5][0-9a-z]+$/;
 const fanP = side => side === 'long' ? 'L' : 'S';
 const fanTok = (P, i) => fanP(P.side) + P.level + P.ids[i].toString(36);
@@ -15,21 +17,30 @@ const fanFile = tok => tok[0] + '-' + tok[1];
 const fanNoBp = k => k.replace(/_bp(?![a-z])/g, '');      // как на вкладке «Признаки»: имена без суффикса единицы
 const fanAxName = a => a === 'split' ? 'вход двумя частями' : fanNoBp(a);
 
-async function fanFetch(name, json) {
-  const r = await fetch('data/fan/' + name + (json ? '.json.gz' : '.bin.gz'));
+// версия данных — время data/fan/index.json на момент сборки страницы (tk593_page.py): новый каталог = новые адреса, старые пакеты из кэша браузера не подмешиваются
+const FAN_V = /*__FANV__*/'';
+const fanUrl = f => 'data/fan/' + f + (FAN_V ? '?v=' + FAN_V : '');
+async function fanFetch(name, json, again) {
+  const r = await fetch(fanUrl(name + (json ? '.json.gz' : '.bin.gz')), again ? {cache: 'reload'} : undefined);
   if (!r.ok) throw new Error(name + ': HTTP ' + r.status);
   const resp = new Response(r.body.pipeThrough(new DecompressionStream('gzip')));
   return json ? resp.json() : resp.arrayBuffer();
 }
-async function fanLoad(names) {
-  if (!FAN.index) { const r = await fetch('data/fan/index.json'); if (!r.ok) throw new Error('index.json: HTTP ' + r.status); FAN.index = await r.json(); }
+async function fanLoad(names, again) {
+  if (!FAN.index) { const r = await fetch(fanUrl('index.json'), {cache: again ? 'reload' : 'no-cache'}); if (!r.ok) throw new Error('index.json: HTTP ' + r.status); FAN.index = await r.json(); }
   const I = FAN.index, D = I.days, NF = I.fields.length;
-  await Promise.all(names(I).filter(n => I.files[n] && !FAN.packs[n]).map(async n => {
-    const [buf, meta] = await Promise.all([fanFetch(n), fanFetch(n, true)]);
-    const N = I.files[n].n, cents = new Int16Array(buf, 0, N * D), F = new Float32Array(buf, N * D * 2, N * NF), ids = new Uint32Array(buf, N * D * 2 + N * NF * 4, N), cum = new Float32Array(N * D), mn = new Float32Array(N), mx = new Float32Array(N);
+  try { await Promise.all(names(I).filter(n => I.files[n] && !FAN.packs[n]).map(async n => {
+    const [buf, meta] = await Promise.all([fanFetch(n, false, again), fanFetch(n, true, again)]);
+    const N = I.files[n].n;
+    if (buf.byteLength !== N * D * 2 + N * NF * 4 + N * 4 || meta.k.length !== N) throw new Error(n + ': размер пакета не сходится с описью (' + buf.byteLength + ' байт, ' + N + ' клеток)');
+    const cents = new Int16Array(buf, 0, N * D), F = new Float32Array(buf, N * D * 2, N * NF), ids = new Uint32Array(buf, N * D * 2 + N * NF * 4, N), cum = new Float32Array(N * D), mn = new Float32Array(N), mx = new Float32Array(N);
     for (let i = 0; i < N; i++) { let c = 0, lo = 0, hi = 0; for (let d = 0; d < D; d++) { c += cents[i * D + d]; const v = c / 100; cum[i * D + d] = v; if (v < lo) lo = v; if (v > hi) hi = v; } mn[i] = lo; mx[i] = hi; }
     FAN.packs[n] = {side: I.files[n].side, level: I.files[n].level, N, cents, cum, mn, mx, F, ids, keys: meta.k, axes: meta.a, byId: null};
-  }));
+  })); } catch (e) {      // пакет из описи не нашёлся — опись устарела: один раз берём её заново и грузим по новой
+    if (again || !/HTTP 404|размер пакета/.test(String(e.message))) throw e;
+    FAN.index = null; FAN.packs = {}; FAN.sets = {};
+    return fanLoad(names, true);
+  }
 }
 // файлы стороны под выбранный уровень (база стороны лежит в уровне 0 и нужна всегда)
 const fanNames = (side, lv) => I => Object.keys(I.files).filter(n => n[0] === fanP(side) && (lv === 'all' || I.files[n].level === 0 || (lv === 'split' ? I.files[n].split > 0 : I.files[n].level === +lv)));
@@ -82,6 +93,7 @@ function fanParse(s) {
     else if (FAN_SL.some(x => x[0] === k) && v !== '' && Number.isFinite(+v)) f[k] = +v;
     else if (k === 'pin' && FAN_TOK.test(v)) f.pin = v;
     else if (k === 'sim') f.sim = v === '1';
+    else if (k === 'so') { const [c, d] = (v || '').split(':'); if (FAN_SORT_KEYS.includes(c)) { f.sk = c; f.sd = d === 'a' ? 'a' : 'd'; } }
   });
   return f;
 }
@@ -93,19 +105,36 @@ function fanHash() {
   FAN_SL.forEach(([k]) => { if (f[k] != null) out.push(k + '=' + f[k]); });
   if (f.pin) out.push('pin=' + f.pin);
   if (f.sim && f.pin) out.push('sim=1');
+  if (f.sk) out.push('so=' + f.sk + ':' + f.sd);
   return out.join(';');
 }
 
-// первые K по убыванию score без полной сортировки: порог — K-й по величине (числовая сортировка типизированного массива), потом упорядочиваются только набранные
-function fanTopK(pass, score, K) {
-  const n = pass.length; let cand = pass;
-  if (n > K) {
-    const sc = new Float64Array(n); for (let q = 0; q < n; q++) sc[q] = score[pass[q]];
-    sc.sort(); const thr = sc[n - K]; cand = [];
-    for (let q = 0; q < n; q++) if (score[pass[q]] >= thr) cand.push(pass[q]);
+// первые K по убыванию score (равные — по номеру линии) — вставкой в короткий список, без сортировки всего набора
+function fanTopK(pass, score, K) { return fanTopBy(pass, j => score[j], true, K); }
+// первые K по порядку столбца среди src без полной сортировки (вставка в короткий список): пустые значения — в конце при любом порядке, равные — по номеру линии
+function fanTopBy(src, key, desc, K) {
+  const out = [], vals = [];
+  const before = (va, ja, vb, jb) => va == null || vb == null ? va != null || (vb == null && ja < jb) : va === vb ? ja < jb : va > vb ? desc : !desc;
+  for (let q = 0; q < src.length; q++) {
+    const j = src[q], v = key(j);
+    if (out.length === K && !before(v, j, vals[K - 1], out[K - 1])) continue;
+    let pos = out.length; while (pos > 0 && before(v, j, vals[pos - 1], out[pos - 1])) pos--;
+    out.splice(pos, 0, j); vals.splice(pos, 0, v);
+    if (out.length > K) { out.pop(); vals.pop(); }
   }
-  return Array.from(cand).sort((x, y) => score[y] > score[x] ? 1 : score[y] < score[x] ? -1 : 0).slice(0, K);
+  return out;
 }
+// значение столбца таблицы для линии j набора S — как в fanM; null — значения нет
+function fanKey(S, k, score) {
+  const NF = FAN.index.fields.length;
+  if (k === 'name') return j => S.sp[j].keys[S.si[j]];
+  if (k === 'sim') return j => score[j];
+  const fi = {n: F_N, sum: F_USD, sharpe: F_SH, dd: F_DD, ddp: F_DD, gap: F_GAP, worst: F_WORST}[k];
+  if (fi != null) return j => { const v = S.sp[j].F[S.si[j] * NF + fi]; return Number.isNaN(v) ? null : v; };
+  if (k === 'mean') return j => { const F = S.sp[j].F, o = S.si[j] * NF, n = F[o + F_N]; return n ? F[o + F_USD] / n : null; };
+  return j => { const F = S.sp[j].F, o = S.si[j] * NF, nw = F[o + F_NW], nl = F[o + F_NL]; return nw && nl && F[o + F_ML] < 0 ? F[o + F_MW] / Math.abs(F[o + F_ML]) : null; };      // rr
+}
+function fanSortBy(k) { const f = ST.fan; if (f.sk === k) f.sd = f.sd === 'a' ? 'd' : 'a'; else { f.sk = k; f.sd = FAN_SORT_ASC.has(k) ? 'a' : 'd'; } setHash(); renderEquity(); }
 // видимый набор: фильтры и ползунки → порядок (сходство с образцом или Шарп / сумма) → топ N; без топа порядок нужен только строкам таблицы (head), линии рисуются все
 function fanSelect(S, side) {
   const f = ST.fan, I = FAN.index, NF = I.fields.length, D = I.days, axi = f.ax ? I.axes.findIndex(a => a.name === f.ax) : -1, buf = new Int32Array(S.n); let np = 0;
@@ -136,7 +165,8 @@ function fanSelect(S, side) {
     pass.forEach(j => { const v = S.sp[j].F[S.si[j] * NF + fi]; score[j] = Number.isNaN(v) ? -Infinity : v; });
   }
   const top = f.sim && pin ? (f.top || FAN_SIM_N) : f.top;
-  const shown = top ? fanTopK(pass, score, top) : pass, head = top ? shown.slice(0, FAN_ROWS) : fanTopK(pass, score, FAN_ROWS);
+  const shown = top ? fanTopK(pass, score, top) : pass, sk = f.sk && (f.sk !== 'sim' || (f.sim && pin)) ? f.sk : null;
+  const head = sk ? fanTopBy(shown, fanKey(S, sk, score), f.sd !== 'a', FAN_ROWS) : top ? shown.slice(0, FAN_ROWS) : fanTopK(pass, score, FAN_ROWS);      // порядок столбца — по всем линиям набора (топ N, если он задан)
   return {pass: np, shown, head, score, sim: !!(f.sim && pin), pin, axi};
 }
 
@@ -248,7 +278,11 @@ function fanTable(X) {
   add(X.anchor, 'anchor'); add(sel.pin, 'pin'); fanFavs(side).forEach(t => add(fanCell(t), 'fav'));
   sel.head.forEach(j => add({P: S.sp[j], i: S.si[j], j}, 'row'));
   const tb = h('table', {class: 'eqt fan-t', 'data-fantable': '1'});
-  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, ''), h('th', {}, 'Линия'), ...V_COLS.map(([, t]) => h('th', {class: 'num'}, t)), sel.sim ? h('th', {class: 'num'}, 'Сходство') : null])));
+  const f = ST.fan, th = (k, t, cls) => {
+    const on = f.sk === k && (k !== 'sim' || sel.sim), e = h('th', {class: cls, 'data-sort': k, 'aria-sort': on ? (f.sd === 'a' ? 'ascending' : 'descending') : 'none'}, t + (on ? (f.sd === 'a' ? ' ▲' : ' ▼') : ''));
+    e.onclick = () => fanSortBy(k); return e;
+  };
+  tb.append(h('thead', {}, h('tr', {}, [h('th', {}, ''), th('name', 'Линия', ''), ...V_COLS.map(([k, t]) => th(k, t, 'num')), sel.sim ? th('sim', 'Сходство', 'num') : null])));
   const body = h('tbody'), favs = fanFavs(side);
   rows.forEach(([c, kind, tok]) => {
     const st = fanM(c), fav = ST.fav.includes(tok), col = kind === 'anchor' ? FAN_COL.anchor : tok === ST.fan.pin ? FAN_COL.pin : fav ? FAN_COL.fav[favs.indexOf(tok) % FAN_COL.fav.length] : V_COL[side];
@@ -290,10 +324,10 @@ function fanView(side, width) {
   const sTop = h('select', {id: 'fan-top', 'aria-label': 'топ'}, FAN_TOP.map(n => h('option', {value: n}, n ? 'топ ' + n : 'все линии')));
   sTop.value = f.top; sTop.onchange = () => { ST.fan.top = +sTop.value; setHash(); renderEquity(); };
   const sBy = h('select', {id: 'fan-by', 'aria-label': 'порядок'}, [h('option', {value: 'sh'}, 'по Шарпу'), h('option', {value: 'sum'}, 'по сумме')]);
-  sBy.value = f.by; sBy.onchange = () => { ST.fan.by = sBy.value; setHash(); renderEquity(); };
+  sBy.value = f.by; sBy.onchange = () => { ST.fan.by = sBy.value; ST.fan.sk = null; setHash(); renderEquity(); };      // «порядок» — снова по Шарпу / сумме
   ctl.append(sAx, sTop, sBy);
   const cnt = h('span', {class: 'fan-cnt', id: 'fan-cnt'}), sl = h('div', {class: 'fan-sl'});
-  const X = {S, side, w: width, h: width < 520 ? 320 : 460, anchor: fanAnchor(side), cv: h('canvas', {'data-fan': 'base'}), ov: h('canvas', {'data-fan': 'over'})};
+  const X = {S, side, w: width, h: width < 520 ? 384 : 552, anchor: fanAnchor(side), cv: h('canvas', {'data-fan': 'base'}), ov: h('canvas', {'data-fan': 'over'})};
   const tblBox = h('div'), legBox = h('div');
   const refresh = () => {
     const t0 = performance.now(); X.sel = fanSelect(S, side); const t1 = performance.now(); fanDraw(); const t2 = performance.now();
