@@ -1174,9 +1174,10 @@ def cmd_map(a):
     for side in SIDES:
         plan = json.load(open(os.path.join(ROOT, "res", "plan674%s-%s.json" % (SUF, side)), encoding="utf-8"))
         rows = store.cells_lookup(SIDENAME[side], UNI, WIN, list(plan["cells"]), bins=bins)
-        ow = os.environ.get("TK674_OVERLAY_WIN")
-        if ow:                                                   # пересчёт клеток TK-690 (PS-994): строки этих cid — из пересчёта (метка окна ow), остальные — прежние
-            overlay_rows(store, side, plan, rows, bins, ow, set(_cidlist("TK674_OVERLAY_CIDS")))
+        for sfx in ("", "2"):                                    # пересчёт клеток TK-690 (PS-994; второй слой — PS-995, bd_* на xb): строки этих cid — из пересчёта (метка окна ow), остальные — прежние; клетка в карте одна
+            ow = os.environ.get("TK674_OVERLAY%s_WIN" % sfx)
+            if ow:
+                overlay_rows(store, side, plan, rows, bins, ow, set(_cidlist("TK674_OVERLAY%s_CIDS" % sfx)))
         base_ck = ax.base_ckey(side)
         brow = store.cells_lookup(SIDENAME[side], UNI, WIN, [base_ck], bins=bins).get(base_ck)
         if brow is None:
