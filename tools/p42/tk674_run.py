@@ -45,7 +45,7 @@ AUTHOR = os.environ.get("TK674_AUTHOR", "TK-674")
 PARTIAL = bool(os.environ.get("TK674_PARTIAL"))  # tables: только партии, посчитанные на диске во всех трёх окнах (счёт остановлен до конца: В-175); индекс партий — из плана + маркеров done
 if ax.X680 and LEVEL == 1:
     raise SystemExit("TK674_X680=1 — пары (TK674_LEVEL=2), тройки и четвёрки (3, 4; отбор `tk674_level.py select` по картам пар обоих шагов)")
-BATCH = os.environ.get("TK674_BATCH", "")        # партия остатка уровня (PS-988): суффикс файлов уровня / плана / партий / ftab — `rNN` (клетки за потолком `select`), `u` — объединение для карты
+BATCH = os.environ.get("TK674_BATCH", "")        # партия остатка уровня (PS-990): суффикс файлов уровня / плана / партий / ftab — `rNN` (клетки за потолком `select`), `u` — объединение для карты
 if BATCH and LEVEL <= 2:
     raise SystemExit("TK674_BATCH — только для уровней 3, 4")
 FSUF = (str(LEVEL) if LEVEL != 2 else ("x" if ax.X680 else "")) + BATCH          # таблица составных фильтров уровня (ftab674<FSUF>); режим X680 — своя таблица и суффикс bx

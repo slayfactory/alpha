@@ -99,7 +99,7 @@ class Canary(unittest.TestCase):
 
 
 class SplitUnion(unittest.TestCase):
-    """PS-988: остаток уровня партиями — упаковка комбинаций и объединение файлов уровня."""
+    """PS-990: остаток уровня партиями — упаковка комбинаций и объединение файлов уровня."""
 
     def test_fits(self):
         import tk674_level as lv
