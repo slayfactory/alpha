@@ -26,8 +26,16 @@ guard() {       # диск: свободно < MINFREE ГБ — ждём на г
   fi
 }
 release() { if [ "$HELD" = 1 ]; then rmdir "$R/slot.lock" 2>/dev/null; HELD=0; fi; }
-trap release EXIT
 say() { echo "== $(date -u +%FT%TZ) $*" >> "$LOG"; }
+finish() {      # любой выход с кодом ≠ 0 (стоп партии, упавший юнит таблиц, SIGTERM): громкая последняя строка в журнал + маркер $R/CHAIN-STOPPED (23.11: цепочка r10 стояла мёртвой > 1 ч незамеченной); юнит выходит с тем же кодом — систему видно в `systemctl is-failed`
+  local rc=$?
+  release
+  if [ "$rc" -ne 0 ]; then
+    say "!!! ЦЕПОЧКА ОСТАНОВЛЕНА rc=$rc на партии ${TAG:-?} — подробности: $LOG.${TAG:-?} / строки выше"
+    echo "$(date -u +%FT%TZ) rc=$rc партия ${TAG:-?}" > "$R/CHAIN-STOPPED"
+  fi
+}
+trap finish EXIT
 stage() { say "$TAG $*"; "$PY" tk674_run.py "$@" >> "$LOG" 2>&1 || { say "$TAG $* упал (rc=$?) — стоп"; exit 5; }; }
 TABS=()
 reap() {        # юниты tables + ccheck готовых партий: упавший — стоп (клетки на диске остаются, `tables` повторяется отдельно); пик памяти и CPU юнита — в журнал

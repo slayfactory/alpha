@@ -92,6 +92,24 @@ class Canary(unittest.TestCase):
         self.assertEqual(len({c["cid"] for _, c in got}), 6)
         self.assertEqual(run.canary_pick("S", [cell(0, (("natr_p", "9"),))], 6), [])       # другой проход — канареек нет
 
+    def test_first_batch_with_sources_carries_canary(self):
+        """r10: у первых партий нет клеток-источников — канарейки уходят в первую партию с ними, остальные идут после; нет ни у одной — порядок прежний."""
+        old = run.CANARY_N
+        run.CANARY_N = 6
+        try:
+            nosrc = [cell(i, (("natr_p", "9"),)) for i in range(500)]
+            src = [cell(i, (("natr_p", str(i % 3)),)) for i in range(500)]
+            small = [cell(i, (("natr_p", "0"),)) for i in range(100)]
+            bl, k = run.canary_first("S", [("p", nosrc), ("p", small), ("p", src)])
+            self.assertEqual((k, [len(c) for _, c in bl]), (2, [500, 500, 100]))
+            self.assertIs(bl[0][1], src)
+            bl, k = run.canary_first("S", [("p", src), ("p", nosrc)])                       # первая и так несёт — порядок не меняется
+            self.assertEqual((k, bl[0][1] is src), (0, True))
+            bl, k = run.canary_first("S", [("p", nosrc), ("f", src)])                       # источников нет ни у одной «p» — как есть (стоп в cmd_cells)
+            self.assertEqual((k, bl[0][1] is nosrc), (0, True))
+        finally:
+            run.CANARY_N = old
+
     def test_check_byte_equal_and_diff(self):
         w = types.SimpleNamespace(name="wa")
         out = os.path.join(TMP, "outcanary")

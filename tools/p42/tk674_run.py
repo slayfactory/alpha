@@ -681,6 +681,16 @@ def canary_pick(side, cur, n):
     return out
 
 
+def canary_first(side, bl):
+    """PS-990 FIX 2: канарейки несёт первая «p»-партия крупнее VMAX_STEP3 вариантов, у которой есть клетки-источники (≥ min(CANARY_N, 5)); партии без совпадающих проходов
+    (сигналы, которых нет в шагах 2–3: r10 — первые три партии по 800) идут после неё. Меняется только порядок партий — набор клеток и результат те же.
+    → (партии, сколько партий стояло перед несущей); источников нет ни у одной — партии как есть (стоп в cmd_cells)."""
+    for i, (kind, cur) in enumerate(bl):
+        if kind == "p" and len(cur) > VMAX_STEP3 and len(canary_pick(side, cur, CANARY_N)) >= min(CANARY_N, 5):
+            return [bl[i]] + bl[:i] + bl[i + 1:], i
+    return bl, 0
+
+
 def canary_check(side, w, out, canary):
     """Файлы канареек из новой (большой) партии против готовых клеток прежних партий, байт в байт; каталоги канареек из партии убираются."""
     import shutil
@@ -710,6 +720,11 @@ def cmd_cells(a):
         todo = [c for k, c in cells.items() if k not in found]
         bl = batches(todo)
         bl.sort(key=lambda kc: len({c["sig"] for c in kc[1]}) >= 20)     # дешёвые партии (< 20 проходов сигнала) — первыми; набор клеток и результат не меняются
+        cf = os.path.join(ROOT, "res", "canary674%s-%s.json" % (SUF, side))
+        if CANARY_N and not os.path.exists(cf):
+            bl, k = canary_first(side, bl)
+            if k:
+                say("canary %s: у первых %d партий нет клеток-источников (их сигналов нет в шагах 2–3) — канарейки в партии %s, остальные после" % (side, k, batch_name(*bl[0])))
         index = {}
         cols = json.load(open(os.path.join(ROOT, "res", "ftabcols674%s-%s.json" % (FSUF, side)), encoding="utf-8")) if any(k == "f" for k, _ in bl) else {}
         for kind, cur in bl:
@@ -720,7 +735,6 @@ def cmd_cells(a):
             if os.environ.get("TK674_ONLY_CHEAP") and len({c["sig"] for c in cur}) >= 20:      # дешёвые партии обеих сторон — первыми, дорогие — потом (на более быстром бинаре)
                 continue
             canary = []
-            cf = os.path.join(ROOT, "res", "canary674%s-%s.json" % (SUF, side))
             if CANARY_N and kind == "p" and len(cur) > VMAX_STEP3 and not os.path.exists(cf):      # PS-q FIX 2: первая лёгкая партия > VMAX вариантов стороны несёт канарейки
                 canary = canary_pick(side, cur, CANARY_N)
                 if len(canary) < min(CANARY_N, 5):
