@@ -265,22 +265,16 @@ def dd_batch(D):
 
 
 def relation(ck, cn, rk, rn):
-    """'subset' — одно множество сделок собственное подмножество другого, P&L общих совпадает; 'same' — те же сделки; 'other'. ck / rk — отсортированные ключи."""
-    if len(ck) <= len(rk):
-        small, sn, large, ln = ck, cn, rk, rn
-    else:
-        small, sn, large, ln = rk, rn, ck, cn
-    pos = np.searchsorted(large, small)
-    pos[pos >= len(large)] = len(large) - 1 if len(large) else 0
-    if len(large) == 0 or not np.all(large[pos] == small):
+    """'same' — те же сделки с тем же P&L; 'selection' — P&L общих сделок совпадает, наборы различаются (отбор: сделки убраны и, из-за занятой монеты,
+    часть добавлена); 'other' — P&L общих сделок меняется (выход / вход другой). ck / rk — отсортированные уникальные ключи."""
+    common, i1, i2 = np.intersect1d(ck, rk, assume_unique=True, return_indices=True)
+    if len(common) and not np.allclose(cn[i1], rn[i2], atol=1e-6):
         return "other"
-    if not np.allclose(ln[pos], sn, atol=1e-6):
-        return "other"
-    return "subset" if len(small) < len(large) else "same"
+    return "same" if len(common) == len(ck) == len(rk) else "selection"
 
 
 def null_draw(keys_large, net_large, day_large, m, rng, B, ndays):
-    """Δ Σ $ и Δ просадки у большего множества сделок с m случайно убранными (B розыгрышей без возвращения): векторы |Δ$|, |Δdd|."""
+    """Δ Σ $ и Δ просадки у большего множества сделок с m = |n_C − n_R| случайно убранными (B розыгрышей без возвращения): векторы |Δ$|, |Δdd|."""
     n = len(net_large)
     dl = np.bincount(day_large, weights=net_large, minlength=ndays)[:ndays]
     dd0 = float(dd_batch(dl[None, :])[0])
@@ -414,7 +408,7 @@ def compute_level(side, sd, k, mcount, tr=None, do_null=True, boot=True):
                 ck, cn, cd = tr.get(c, side)
                 rk, rn, rd = tr.get(r, side)
                 rel = relation(ck, cn, rk, rn)
-                if rel != "subset":
+                if rel != "selection":
                     continue
                 big = (ck, cn, cd) if len(ck) > len(rk) else (rk, rn, rd)
                 m = abs(len(ck) - len(rk))
@@ -495,6 +489,37 @@ def proxy_clusters(sd, k, obs_ref):
     return dict(nodes=len(names), edges=["%s/%s|%s/%s" % (x + y) for x, y in edges], families=fam)
 
 
+def agreement(fa, fb, names):
+    """Согласие двух разбиений на семьи: доля пар осей из `names`, у которых совпадает ответ «в одной семье / нет» (индекс Рэнда); пар, где семья есть хоть в одном, — отдельно."""
+    def fam(fs):
+        m = {}
+        for i, g in enumerate(fs):
+            for a in g:
+                m[a] = i
+        return m
+    ma, mb = fam(fa), fam(fb)
+    same = tot = both = either = 0
+    for x, y in itertools.combinations(names, 2):
+        a = x in ma and y in ma and ma[x] == ma[y]
+        b = x in mb and y in mb and mb[x] == mb[y]
+        tot += 1
+        same += a == b
+        either += a or b
+        both += a and b
+    return dict(pairs=tot, same=same, rand=same / tot if tot else None, pairs_in_family_either=either, pairs_in_family_both=both)
+
+
+def noise_check(db):
+    """Сверка метода шума с L-349: σ Шарпа клеток записи 337 × √(2 ln m), m — различные ключи стороны под c539 + h775 (L: 2,03 → 9,39; шорт 1,57 → 7,36 при m на тот момент)."""
+    cells, m = load_rows(db)
+    out = {}
+    for side in ("long", "short"):
+        for e in (333, 336, 337):
+            v = [c["sh"] for c in cells if c["side"] == side and c["entry"] == e]
+            out["%s:%d" % (side, e)] = dict(n=len(v), m=m[side], sigma_noise=noise_of(v, m[side]))
+    return out
+
+
 def run(db, out, levels, code=None, do_trades=True, do_null=True):
     os.makedirs(out, exist_ok=True)
     cells, mcount = load_rows(db)
@@ -509,9 +534,13 @@ def run(db, out, levels, code=None, do_trades=True, do_null=True):
         stats1 = None
         for k in levels:
             res, obs = compute_level(side, sd, k, mcount[side], tr, do_null)
+            if k == 1:
+                items, _ = observations(sd, 1)
+                res["clusters_proxy"] = proxy_clusters(sd, 1, collapse(items))
             if k == 1 and tr is not None:
                 st1 = {x["axis"]: x for x in res["axes"] if x["grid"] == "полная"}
                 res["clusters"] = level1_clusters(sd, side, tr, st1)
+                res["cluster_agreement"] = agreement(res["clusters"]["families"], res["clusters_proxy"]["families"], res["clusters"]["names"])
             elif k >= 2:
                 items, _ = observations(sd, k)
                 res["clusters"] = proxy_clusters(sd, k, collapse(items))
@@ -535,7 +564,12 @@ def main():
     p.add_argument("--code", default="/data/p42-tk674c/code")
     p.add_argument("--no-trades", action="store_true")
     p.add_argument("--no-null", action="store_true")
+    q = sub.add_parser("check")
+    q.add_argument("--db", default="/data/chron/chron.sqlite")
     a = ap.parse_args()
+    if a.cmd == "check":
+        print(json.dumps(noise_check(a.db), ensure_ascii=False, indent=1))
+        return
     if a.cmd == "compute":
         run(a.db, a.out, [int(x) for x in a.levels.split(",")], a.code, not a.no_trades, not a.no_null)
 

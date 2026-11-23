@@ -153,13 +153,13 @@ def test_dd_batch_matches_definition_and_null_draw():
     assert set(np.round(np.unique(a), 6)) <= {5.0, 3.0, 2.0, 1.0} and (b >= 0).all()
 
 
-def test_relation_subset_same_other():
+def test_relation_selection_same_other():
     k1, n1 = np.array([1, 2, 3, 4]), np.array([1.0, 2.0, 3.0, 4.0])
-    assert ti.relation(k1, n1, np.array([2, 4]), np.array([2.0, 4.0])) == "subset"
-    assert ti.relation(np.array([2, 4]), np.array([2.0, 4.0]), k1, n1) == "subset"
+    assert ti.relation(k1, n1, np.array([2, 4]), np.array([2.0, 4.0])) == "selection"
+    assert ti.relation(np.array([2, 4]), np.array([2.0, 4.0]), k1, n1) == "selection"
     assert ti.relation(k1, n1, k1, n1) == "same"
     assert ti.relation(k1, n1, np.array([2, 4]), np.array([2.0, 4.5])) == "other"      # P&L общей сделки изменился
-    assert ti.relation(k1, n1, np.array([2, 9]), np.array([2.0, 4.0])) == "other"      # добавлена чужая сделка
+    assert ti.relation(k1, n1, np.array([2, 9]), np.array([2.0, 4.0])) == "selection"  # убрано и добавлено, P&L общей сделки тот же (занятая монета)
 
 
 def test_affected_overlap_components():
