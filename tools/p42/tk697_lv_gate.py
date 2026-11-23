@@ -92,6 +92,31 @@ def brute_row(s, t, p, lev, natr_b, sl, ref):
     return out
 
 
+def garbage_levels(sl, t, rng, n_junk=0):
+    """`tk671_t668.garbage_levels` с устойчивой сортировкой версий цены по минуте: у уровня две версии в одну минуту (порядок файла решает, какая действует) — общий генератор сортирует пару по цене и подменяет версию без всякой утечки."""
+    g = ft.SymLevels()
+    for i in range(len(sl.born)):
+        b, e = int(sl.b[i]), int(sl.e[i])
+        segs = list(zip(sl.segm[i].tolist(), sl.segp[i].tolist()))
+        if b > t:
+            b = int(rng.integers(t + 1, t + 5000))
+            e = b + int(rng.integers(1, 3000))
+            p0 = segs[0][1] if segs else 1000
+            segs = [(b, int(max(1, p0 * rng.uniform(0.5, 1.5))))]
+        else:
+            if e > t:
+                e = int(rng.integers(t + 1, t + 6000)) if rng.random() < 0.7 else ft.U32_MAX
+            hi = max([p for _, p in segs] or [1000])
+            segs = [(m, p) if m <= t else (int(rng.integers(t + 1, t + 4000)), int(max(1, hi * rng.uniform(0.5, 1.5)))) for m, p in segs]
+            segs.sort(key=lambda x: x[0])
+        g.add(b, e, segs)
+    for _ in range(n_junk):
+        b = int(rng.integers(t + 1, t + 5000))
+        g.add(b, b + int(rng.integers(1, 3000)), [(b, int(rng.integers(1, 10 ** 9)))])
+    g.freeze()
+    return g
+
+
 class GDumps(fam.Dumps):
     """Дампы с мусором в уровнях монеты и ориентиров со штампом позже `t_g` (G-causal)."""
 
@@ -103,7 +128,7 @@ class GDumps(fam.Dumps):
         d = dict(self.base.get(side, src, full))
         for k in {self.sym, *fam.REFS}:
             if k in d:
-                d[k] = t668.garbage_levels(d[k], self.t_g, self.rng, n_junk=3)
+                d[k] = garbage_levels(d[k], self.t_g, self.rng, n_junk=3)
         return d
 
 
@@ -148,6 +173,57 @@ def refs_for_brute(series, dumps, side, src_name):
     return {r: dict(cf=series[r].cf, hmax=series[r].hmax, lmin=series[r].lmin, nat=series[r].nat, res=res.get(r), sup=sup.get(r)) for r in fam.REFS}
 
 
+def g_tf(rows, side, dumps, cache_dir, names, rng, store, k):
+    """Критик TK-697 (23.11, п. 2): бары дампа уровней — в собственном tf варианта (p30 / p60 / p240 = 30 / 60 / 240 минут), не ×60. По k строк на tf: у каждого уровня монеты строки цена члена `бар:цена` обязана равняться максимуму (у поддержки — минимуму) бара `бар`
+    собственного tf по минуткам монеты (минутки с o = 0 не считаются), а рождение уровня — не раньше конца бара первого члена `(first_bar + 1) · tf`."""
+    srcs = rows["src"].to_numpy()
+    out, ok = {}, True
+    for pre, tf in (("p30", 30), ("p60", 60), ("p240", 240)):
+        ids = [i for i, n in enumerate(names) if n.startswith(pre)]
+        cand = np.flatnonzero(np.isin(srcs, ids))
+        pick = rng.choice(cand, size=min(k, len(cand)), replace=False) if len(cand) else []
+        need = {}
+        for i in pick:
+            need.setdefault(names[int(srcs[i])], set()).add(rows["sym"].iat[i])
+        bars, checked, bad_px, bad_born, no_bars = {}, 0, 0, 0, 0
+        for src, syms in sorted(need.items()):
+            with open(os.path.join(dumps.dirs[side], src, side + "-levels.csv"), encoding="utf-8") as f:
+                next(f)
+                for line in f:
+                    sym = line.split(",", 1)[0]
+                    if sym not in syms:
+                        continue
+                    _, _lev, born, _end, fb, _segs, rest = (line.rstrip("\n").split(",", 6) + [""])[:7]
+                    if (sym, tf) not in bars:
+                        a = g6.load_arr(cache_dir, sym, store)
+                        if a is None:
+                            bars[(sym, tf)] = None
+                        else:
+                            b4 = ft.load_b42_full(os.path.join(cache_dir, sym + ".b42"))
+                            n = len(b4["o"]) // tf * tf
+                            on = (b4["o"][:n] != 0).reshape(-1, tf)
+                            hi = np.where(on, b4["h"][:n].reshape(-1, tf), np.iinfo(np.int64).min).max(axis=1)
+                            lo = np.where(on, b4["l"][:n].reshape(-1, tf), np.iinfo(np.int64).max).min(axis=1)
+                            bars[(sym, tf)] = hi if side == "long" else lo
+                    ext = bars[(sym, tf)]
+                    if ext is None:
+                        no_bars += 1
+                        continue
+                    if int(born) < (int(fb) + 1) * tf:
+                        bad_born += 1
+                    for m in rest.replace("|", ",").split(","):
+                        if not m:
+                            continue
+                        bi, px = m.split(":")
+                        checked += 1
+                        if int(bi) >= len(ext) or abs(int(px)) != int(ext[int(bi)]):
+                            bad_px += 1
+        out[pre] = dict(rows=int(len(pick)), levels_files=len(need), members=int(checked), bad_price=int(bad_px), bad_born=int(bad_born), no_coin_bars=int(no_bars), ok=bool(len(pick) > 0 and checked > 0 and bad_px == 0 and bad_born == 0))
+        ok &= out[pre]["ok"]
+    out["ok"] = bool(ok)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--rows", required=True)
@@ -156,6 +232,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--k-brute", type=int, default=600)
     ap.add_argument("--k-causal", type=int, default=150)
+    ap.add_argument("--k-tf", type=int, default=20)
     ap.add_argument("--prod", default=fam.PROD)
     ap.add_argument("--cache-dir")
     ap.add_argument("--tmp", default="/data/p42-tk697/tmp")
@@ -184,11 +261,11 @@ def main():
             cache_ref[src_name] = refs_for_brute(series, dumps, a.side, src_name)
         t = int(rows["sig_ms"].iat[i] // 60_000)
         am = g6.load_arr(cache_dir, sym, store)
-        if am is None:
-            ref_rows.append([NAN] * len(fam.COLUMNS))
-            continue
-        o_, h_, l_, c_, _ = g6.lists_of(am)
-        nb = g6.natr_at(o_, h_, l_, c_, t - 1)
+        if am is None:      # нет ряда монеты — счётчики № 2 пусты, № 7 (BTC / ETH) от монеты не зависит
+            nb = NAN
+        else:
+            o_, h_, l_, c_, _ = g6.lists_of(am)
+            nb = g6.natr_at(o_, h_, l_, c_, t - 1)
         sl = dumps.get(a.side, src_name, True).get(sym)
         ref_rows.append(brute_row(s, t, abs(int(rows["level_px_e8"].iat[i])), int(rows["level"].iat[i]), nb, sl, cache_ref[src_name]))
     bad, dmax = g6.compare(got, np.array(ref_rows))
@@ -220,7 +297,8 @@ def main():
             if strong and not same:
                 changed += 1
     res["g_causal"] = dict(k=int(len(jx)), bad=int(bad_c), control_changed=int(changed), ok=bool(bad_c == 0 and changed > 0))
-    res["ok"] = bool(res["g_brute"]["ok"] and res["g_causal"]["ok"])
+    res["g_tf"] = g_tf(rows, a.side, dumps, cache_dir, names, rng, store, a.k_tf)
+    res["ok"] = bool(res["g_brute"]["ok"] and res["g_causal"]["ok"] and res["g_tf"]["ok"])
     with open(a.out, "w", encoding="utf-8") as f:
         json.dump(res, f, ensure_ascii=False, indent=1)
     print(json.dumps({k: (v if not isinstance(v, dict) else v.get("ok")) for k, v in res.items()}))
