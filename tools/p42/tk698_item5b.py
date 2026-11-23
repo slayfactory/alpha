@@ -19,6 +19,9 @@ NPERM = 100
 SEED = 698
 MINN = 500
 META = {"win", "row_id", "sym"}
+# критик c247643fe: в таблице TK-671 эти 10 столбцов неверны на строках p30 / p240 (meta_src 0–2, 6–8): на них — NaN, читаются только строки p60 (3–5) и lx (9–11); границы корзин — тоже по ним
+BAD10 = {"age_h", "approach_dur_min", "pierce_ep", "pierce_max_bp", "touch_ep", "since_touch_h", "depth_min_bp", "depth_mean_bp", "since_touch_prior_h", "touch_prior_none"}
+BAD_SRC = [0, 1, 2, 6, 7, 8]
 
 
 def feature_names():
@@ -61,7 +64,7 @@ def main(run_key):
     fam = fam_map()
     meta = {}
     for sd in ("long", "short"):
-        meta[sd] = pq.read_table(PQ[sd], columns=["meta_abs_ms", "y_has", "y_net", "y_stop"]).to_pandas()
+        meta[sd] = pq.read_table(PQ[sd], columns=["meta_abs_ms", "meta_src", "y_has", "y_net", "y_stop"]).to_pandas()
     day = {sd: ((meta[sd]["meta_abs_ms"].to_numpy(np.int64) - L.FIRST_MS) // L.DAY_MS).astype(np.int16) for sd in meta}
     assert all(0 <= d.min() and d.max() < L.NDAYS for d in day.values()), "изоляция: сутки вне 01.07–13.11"
     has = {sd: meta[sd]["y_has"].to_numpy(bool) & np.isfinite(meta[sd]["y_net"].to_numpy()) for sd in meta}
@@ -73,10 +76,13 @@ def main(run_key):
     swaps = rng.integers(0, 2, size=(NPERM, L.NDAYS)).astype(np.int64)
     perm_side = [side ^ sw[dd] for sw in swaps]
     notes = {"rows_labeled": {"long": int(has["long"].sum()), "short": int(has["short"].sum())}, "rows_all": {sd: int(len(meta[sd])) for sd in meta},
-             "nperm": NPERM, "minn": MINN, "sum_y": {"long": float(y[side == 0].sum()), "short": float(y[side == 1].sum())}}
+             "nperm": NPERM, "minn": MINN, "masked_cols_p30_p240": sorted(BAD10), "sum_y": {"long": float(y[side == 0].sum()), "short": float(y[side == 1].sum())}}
     feat_rows, div_rows = [], []
     for k, c in enumerate(feats):
         a = {sd: pq.read_table(PQ[sd], columns=[c]).column(0).to_numpy(zero_copy_only=False).astype(np.float64) for sd in ("long", "short")}
+        if c in BAD10:
+            for sd in a:
+                a[sd][np.isin(meta[sd]["meta_src"].to_numpy(), BAD_SRC)] = np.nan
         pooled = np.concatenate([a["long"], a["short"]])
         pf = pooled[np.isfinite(pooled)]
         if len(pf) == 0:
@@ -121,6 +127,9 @@ def main(run_key):
                   "bin_min": iw, "gap_min": float(g[iw]), "short_at_min": float(m[1][iw]), "long_at_min": float(m[0][iw]),
                   "split_bins": int(((m[1] > 0) & (m[0] < 0) & ok).sum()), "bins_read": int(ok.sum()), "edges": [float(e) for e in edges], "cat": cat,
                   "nan_rows": {"long": int(n0[0][nb]), "short": int(n0[1][nb])}, "noise_max": noise_max}
+        if c in BAD10:
+            ex["masked_p30_p240"] = True
+            ex["label"] = "до исправления ТФ (TK-699, дефект f12)"
         div_rows.append((c, fam.get(c, "—"), None, None if np.isnan(rng_real) else float(rng_real), noise_hi, int((side == 1).sum()), int((side == 0).sum()), ex))
         if (k + 1) % 25 == 0:
             print("%d / %d столбцов, %.0f с" % (k + 1, len(feats), time.time() - t0), file=sys.stderr, flush=True)
