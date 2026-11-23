@@ -162,8 +162,12 @@ def side_md(d, axis=None):
             ("; оси карты расширены значением победителя набора «сетки шире»: " + ", ".join("%s += %s" % (n, ", ".join(v)) for n, v in q["ext"].items())) if q["ext"] else ""), ""]
     if d.get("select"):
         q = d["select"]
-        out += ["Отбор %s (правило поправки уровня, до счёта): активных комбинаций уровня ниже %d из %d; по правилу проходит %d, взято %d, за потолком %d новых клеток на сторону осталось %d." % (
-            unit, q["active_subs"], q["subs"], q["eligible"], q["taken"], q["cap"], q["left_out"]), ""]
+        if q["cap"] is None:                        # объединение остатка (PS-990): потолок снят
+            out += ["Отбор %s (правило поправки уровня, до счёта; потолок 20 000 снят поправкой PS-990): активных комбинаций уровня ниже %d из %d; по правилу проходит %d, взято %d (шаг 4 + партии остатка), не взято %d." % (
+                unit, q["active_subs"], q["subs"], q["eligible"], q["taken"], q["left_out"]), ""]
+        else:
+            out += ["Отбор %s (правило поправки уровня, до счёта): активных комбинаций уровня ниже %d из %d; по правилу проходит %d, взято %d, за потолком %d новых клеток на сторону осталось %d." % (
+                unit, q["active_subs"], q["subs"], q["eligible"], q["taken"], q["cap"], q["left_out"]), ""]
     if A:                                           # шум против прироста лучшей строки (FIX 3 критика L-360)
         g_best = max(r["c"]["gain"] for r in A)
         less = g_best < d["noise_max"]
@@ -203,9 +207,10 @@ def main():
     ap.add_argument("dir")
     ap.add_argument("--suf", default="", help="b — база стопа ≤ 4 %; b3, b4 — тройки, четвёрки")
     ap.add_argument("--out")
+    ap.add_argument("--sides", default="LS", help="L | S | LS: стороны отчёта (объединение остатка PS-990 лонга готово раньше шорта)")
     ap.add_argument("--axis", help="добавить раздел: все комбинации с этой осью (например split)")
     a = ap.parse_args()
-    ds = [json.load(open(os.path.join(a.dir, "map674%s-%s.json" % (a.suf, s)), encoding="utf-8")) for s in "LS"]
+    ds = [json.load(open(os.path.join(a.dir, "map674%s-%s.json" % (a.suf, s)), encoding="utf-8")) for s in a.sides]
     rebase = ds[0].get("rebase", False)
     level = ds[0].get("level", 2)
     name = {2: "всех совместимых пар" if not ds[0].get("x680") else "пар с активными осями единичек TK-680", 3: "отобранных троек", 4: "отобранных четвёрок"}[level]
@@ -215,13 +220,13 @@ def main():
                "**Найдено на этих данных; январь–май 2026 в записи не проверены, июнь 2026 (В-170) не читался.** Охраны (а)–(д) и плато (г) — §13.73 (PS-950, PS-951)%s. Торгуется одна линия — строки не складываются. "
                "Пороги меток `_q…` (TPM60, CN60, ZV6, N24 шорта) подобраны на этих данных (квантиль по всей выборке) и заморожены до проверки вне окна: `thr674.json` sha256 960e5bf4ed69…, `thr38.json` 4287f5a1dcc4… (L-312, L-313); ось SHARP исключена (порог с заглядыванием). "
                "У клеток с `bm3` стоп после 1-го тейка помечен движком «безубыток» и в счётчики стопов не входит (L-312); пересчёт с ними — `bm3-stops.md` (`tk674_bm3.py`). "
-               "Полная карта — `map674%s-L.json`, `map674%s-S.json` рядом; клетки — БД летописи (`chron.py cells-lookup`)." % (
-                   UNI_TXT, "; база стопа и справочная колонка 5 % — поправка §13.73.2" if rebase else "", a.suf, a.suf))
+               "Полная карта — %s рядом; клетки — БД летописи (`chron.py cells-lookup`)." % (
+                   UNI_TXT, "; база стопа и справочная колонка 5 % — поправка §13.73.2" if rebase else "", ", ".join("`map674%s-%s.json`" % (a.suf, x) for x in a.sides)))
     out.append("")
     for d in ds:
         out += side_md(d, a.axis)
     text = "\n".join(out).rstrip() + "\n"
-    path = a.out or os.path.join(a.dir, "pair-map%s.md" % a.suf)
+    path = a.out or os.path.join(a.dir, "pair-map%s%s.md" % (a.suf, "" if a.sides == "LS" else "-" + a.sides))
     open(path, "w", encoding="utf-8", newline="\n").write(text)
     print("записано %s: строк %d" % (path, text.count("\n")))
 

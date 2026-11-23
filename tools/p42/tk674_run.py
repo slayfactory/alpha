@@ -181,8 +181,9 @@ def cmd_gates(a):
 # ---- константы этапа 1 ------------------------------------------------------------------------------------------------------------
 UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"      # TK674_UNI=c539 — вселенная без TradFi (В-175, §13.73.17): клетки в БД под своим именем, свой TK674_ROOT
 SIDENAME = {"L": "long", "S": "short"}
-VMAX, SIGMAX = 400, 26                          # вариантов и разных проходов сигналов на вызов движка (память: 26 проходов ≈ 30 ГБ при двух сторонах)
+VMAX, SIGMAX = int(os.environ.get("TK674_VMAX", 400)), int(os.environ.get("TK674_SIGMAX", 26))                          # вариантов и разных проходов сигналов на вызов движка (память: 26 проходов ≈ 30 ГБ при двух сторонах)      # TK-683 (PS-990): один вызов окна-стороны перекодирует те же ≈ 1 900 суток — вызовы крупнее (TK674_VMAX / TK674_SIGMAX, с `--cap-gb` 24) вдвое быстрее, клетки те же (гейт «байт в байт»)
 VMAX_LIGHT, LIGHT_SIGS = int(os.environ.get("TK674_VMAX_LIGHT", VMAX)), 20     # TK-683 (бинарь k): лёгкие партии без фильтра (< 20 проходов сигналов) — до TK674_VMAX_LIGHT вариантов на вызов (постоянная часть вызова ≈ 4,5 с); по умолчанию = VMAX
+VMAX_STEP3 = 400                              # вызов крупнее прежних 400 вариантов шагов 2–3 несёт канареек (порог не зависит от TK674_VMAX)
 CANARY_N = int(os.environ.get("TK674_CANARY", "0"))     # PS-q FIX 2: клетки уже в БД — в первой лёгкой партии > VMAX вариантов каждой стороны; байт в байт или стоп
 MIN_N, MIN_MONTH = 150, (15, 15, 15, 15, 8)     # охрана (а) §13.73
 GUARD_A_C539 = {"long": (105, (11, 11, 11, 11, 6)), "short": (81, (9, 9, 9, 9, 5))}      # охрана (а) на c539: формула PS-975 разд. 3 от якорей L-334 (298 / 172 против 428 / 319), числа записаны L-335
@@ -696,7 +697,7 @@ def cmd_cells(a):
                 continue
             canary = []
             cf = os.path.join(ROOT, "res", "canary674%s-%s.json" % (SUF, side))
-            if CANARY_N and kind == "p" and len(cur) > VMAX and not os.path.exists(cf):      # PS-q FIX 2: первая лёгкая партия > VMAX вариантов стороны несёт канарейки
+            if CANARY_N and kind == "p" and len(cur) > VMAX_STEP3 and not os.path.exists(cf):      # PS-q FIX 2: первая лёгкая партия > VMAX вариантов стороны несёт канарейки
                 canary = canary_pick(side, cur, CANARY_N)
                 if len(canary) < min(CANARY_N, 5):
                     raise SystemExit("canary %s: клеток в БД с проходами партии мало (%d)" % (side, len(canary)))

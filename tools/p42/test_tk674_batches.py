@@ -44,6 +44,24 @@ class Batches(unittest.TestCase):
         self.assertLessEqual(max(len(c) for _, c in run.batches(todo)), run.VMAX)
 
 
+class BigCalls(unittest.TestCase):
+    """TK-683 (PS-990): вызовы крупнее — TK674_VMAX / TK674_SIGMAX; набор клеток не меняется, меняется состав партий."""
+
+    def test_big_calls(self):
+        todo = [cell(i, ("s", i // 10), filt=True) for i in range(6000)]       # 600 проходов по 10 вариантов с фильтром
+        old = (run.VMAX, run.SIGMAX)
+        try:
+            run.VMAX, run.SIGMAX = 2000, 104
+            bl = run.batches(todo)
+        finally:
+            run.VMAX, run.SIGMAX = old
+        self.assertEqual(sorted(c["cid"] for _, cur in bl for c in cur), sorted(c["cid"] for c in todo))
+        for _, cur in bl:
+            self.assertLessEqual(len({c["sig"] for c in cur}), 104)
+            self.assertLessEqual(len(cur), 2000 + 10)                            # VMAX + хвост последнего прохода
+        self.assertLess(len(bl), len(run.batches(todo)))                        # крупнее — меньше вызовов, чем при 400 / 26
+
+
 def put(path, obj):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     json.dump(obj, open(path, "w", encoding="utf-8"))
