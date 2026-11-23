@@ -146,6 +146,24 @@ def test_candidate4_guards_every_rule():
     bad("α по точкам", lambda x: x["alpha_k"].pop("D_S"))
 
 
+def test_real_files_chain_alpha_cells_and_universe_of_the_committed_file():
+    """Реальная цепочка репозитория tk626 → tk638 → tk641 → tk670 → tk691: исход ворот c539 (`L_mk2` не прошла G-626c — g3), α возвращена `S_base`, читается и решает `crypto`, N лонга 250 000."""
+    fz0 = fw.load_freeze(fw.FREEZE)
+    cp, cp2, cp3, cp4 = fw.candidate_path(fw.FREEZE), fw.candidate2_path(fw.FREEZE), fw.candidate3_path(fw.FREEZE), fw.candidate4_path(fw.FREEZE)
+    assert os.path.basename(cp4) == "tk691-frozen.json"
+    c = fw.load_candidate(cp, fz0, fw.FREEZE)
+    c2 = fw.load_candidate2(cp2, fz0, fw.FREEZE, c, cp)
+    c3 = fw.load_candidate3(cp3, fz0, fw.FREEZE, c, cp, c2, cp2)
+    c4 = fw.load_candidate4(cp4, fz0, fw.FREEZE, c, cp, c2, cp2, c3, cp3)
+    assert c4["not_read"] == ["L_mk2"] and c4["gates"]["L_n24"]["passed"] and c4["gates"]["D_S"]["passed"] and not c4["gates"]["L_mk2"]["passed"]
+    assert c4["alpha"] == {"S_base": 0.025, "S_mk1": 0.005, "L_base": 0.01, "L_n24": 0.005, "L_mk2": 0.0, "D_S": 0.005} and abs(sum(c4["alpha"].values()) - 0.05) <= 1e-12
+    fz = fw.apply_candidate3(fw.apply_candidate2(fw.apply_candidate(fz0, c), c2, True), c3)
+    fz, c1 = fw.apply_candidate4(fz, c, c4)
+    assert "L_mk2" not in fz["cells"] and fz["universe"]["read"] == ["crypto"] and fz["universe"]["decision"] == "crypto" and c1["filter"]["N"] == 250000 and c["filter"]["N"] == 220000
+    assert abs(fw.alpha_k(fz, "S_base", "L5") - 0.025 * 0.66) < 1e-12 and fw.alpha_k(fz, "L_mk2", "L5") == 0.0
+    assert c4["universe"]["base"]["crypto"] == fz0["universe"]["base"]["crypto"] and c4["universe"]["base"]["crypto"]["n"] == 539 and c4["ds_binary"] == c3["ds_binary"] and c4["binary"] == fz0["binary"]
+
+
 def test_alpha_returns_to_the_named_donors_when_gates_fail():
     with T.tmp() as t:
         e, c, cp, c2, cp2, c3, cp3, c4, cp4 = cand4_env(t, (False, False, False))

@@ -22,6 +22,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, "..", "..", ".claude", "skills", "alpha-research", "scripts"))      # selection_bias (через lib / tk638_post / tk674_stats)
 import retitr_full as rf  # noqa: E402
 import retitr_full_run as rr  # noqa: E402
 import tk616_forward as fw  # noqa: E402
@@ -225,7 +226,7 @@ def cmd_describe(a):
             continue
         kp = m["kpi"]
         print("%-7s n %4d  Σ %8.2f $  %6.3f $/сд  Sharpe %5.2f  просадка %6.1f $ (%4.1f %% маржи)  перехай %3d / %5.1f / %3d сут  R:R %.2f  стопов %d" % (
-            k, m["n"], m["usd"], m["mean_usd"], m["sharpe"], m["maxdd"], m["maxdd_pct"], kp["gap_longest"], kp["gap_mean"], kp["gap_tail"], m["rr"]["rr"], m["rr"]["stops"]))
+            k, m["n"], m["usd"], m["mean_usd"], m["sharpe"], m["maxdd"], m["maxdd_pct"], kp["gap_longest"], kp["gap_mean"], kp["gap_tail"], m["rr"]["rr"], m["rr"]["stops"]["n"]))
     return 0
 
 
