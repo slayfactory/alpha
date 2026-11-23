@@ -173,7 +173,7 @@ def search_values(names, maps):
         sides = per[sk]
         kind = next(iter(sides.values()))[0]["kind"]
         txt = {s: values(ax, kind, sk).replace("*", "") for s, ax in sides.items()}
-        out[n] = txt["L"] if len(set(txt.values())) == 1 or "S" not in txt else "; ".join("%s: %s" % (SIDE_RU[s], v) for s, v in sorted(txt.items()))     # стороны различаются (ls_c2n) — по сторонам
+        out[n] = next(iter(txt.values())) if len(set(txt.values())) == 1 or len(txt) == 1 else "; ".join("%s: %s" % (SIDE_RU[s], v) for s, v in sorted(txt.items()))     # стороны различаются (ls_c2n) — по сторонам
     return out
 
 
