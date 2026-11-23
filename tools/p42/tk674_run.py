@@ -179,7 +179,8 @@ def cmd_gates(a):
 UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"      # TK674_UNI=c539 — вселенная без TradFi (В-175, §13.73.17): клетки в БД под своим именем, свой TK674_ROOT
 SIDENAME = {"L": "long", "S": "short"}
 VMAX, SIGMAX = 400, 26                          # вариантов и разных проходов сигналов на вызов движка (память: 26 проходов ≈ 30 ГБ при двух сторонах)
-VMAX_LIGHT, LIGHT_SIGS = int(os.environ.get("TK674_VMAX_LIGHT", VMAX)), 20     # TK-683 (бинарь k): лёгкие партии (< 20 проходов сигналов) — до TK674_VMAX_LIGHT вариантов на вызов (постоянная часть вызова ≈ 4,5 с); по умолчанию = VMAX
+VMAX_LIGHT, LIGHT_SIGS = int(os.environ.get("TK674_VMAX_LIGHT", VMAX)), 20     # TK-683 (бинарь k): лёгкие партии без фильтра (< 20 проходов сигналов) — до TK674_VMAX_LIGHT вариантов на вызов (постоянная часть вызова ≈ 4,5 с); по умолчанию = VMAX
+CANARY_N = int(os.environ.get("TK674_CANARY", "0"))     # PS-q FIX 2: клетки уже в БД — в первой лёгкой партии > VMAX вариантов каждой стороны; байт в байт или стоп
 MIN_N, MIN_MONTH = 150, (15, 15, 15, 15, 8)     # охрана (а) §13.73
 GUARD_A_C539 = {"long": (105, (11, 11, 11, 11, 6)), "short": (81, (9, 9, 9, 9, 5))}      # охрана (а) на c539: формула PS-975 разд. 3 от якорей L-334 (298 / 172 против 428 / 319), числа записаны L-335
 
@@ -464,7 +465,7 @@ def batches(todo):
         grp = sorted(grp, key=lambda c: (c["sig"], c["cid"]))
         cur, sg = [], set()
         for c in grp:
-            if cur and (len(cur) >= (VMAX_LIGHT if len(sg) < LIGHT_SIGS else VMAX) or (c["sig"] not in sg and len(sg) >= SIGMAX)):
+            if cur and (len(cur) >= (VMAX_LIGHT if kind == "p" and len(sg) < LIGHT_SIGS else VMAX) or (c["sig"] not in sg and len(sg) >= SIGMAX)):
                 out.append((kind, cur))
                 cur, sg = [], set()
             cur.append(c)
@@ -627,6 +628,44 @@ def engine_opts(r5):
     say("движок: TICK_STORE %s, потоков %d" % (" ".join(r5.TICK_STORE), __import__("tk604_run").THREADS))
 
 
+def canary_pick(side, cur, n):
+    """До n клеток без фильтра из готовых партий шагов 2–3 (`batches674bs[x]` + `plan674bs[x]`, каталоги cells/) с проходами сигналов партии `cur`,
+    по кругу по проходам: → [(партия, клетка)]. Клетки уже в БД: в новый счёт и в m не входят."""
+    sigs = {c["sig"] for c in cur}
+    by_sig, seen = {}, set()
+    for suf in ("bsx", "bs"):
+        bf, pf = (os.path.join(ROOT, "res", "%s674%s-%s.json" % (k, suf, side)) for k in ("batches", "plan"))
+        if not (os.path.exists(bf) and os.path.exists(pf)):
+            continue
+        index, pc = json.load(open(bf, encoding="utf-8")), json.load(open(pf, encoding="utf-8"))["cells"]
+        for nm, cks in sorted(index.items()):
+            for ck in cks:
+                c = pc.get(ck)
+                sg = tuple(tuple(x) for x in c["sig"]) if c else None
+                if c and not c["filt"] and sg in sigs and c["cid"] not in seen and os.path.isdir(os.path.join(ROOT, "cells", "wa-%s" % side, nm, c["cid"])):
+                    seen.add(c["cid"])
+                    by_sig.setdefault(sg, []).append((nm, dict(c, ckey=ck)))
+    out = []
+    while len(out) < n and any(by_sig.values()):
+        for sg in sorted(by_sig):
+            if by_sig[sg] and len(out) < n:
+                out.append(by_sig[sg].pop(0))
+    return out
+
+
+def canary_check(side, w, out, canary):
+    """Файлы канареек из новой (большой) партии против готовых клеток прежних партий, байт в байт; каталоги канареек из партии убираются."""
+    import shutil
+    filecmp.clear_cache()                            # сравнение — по содержимому, без кэша по (путь, размер, время)
+    bad = []
+    for nm, c in canary:
+        new = os.path.join(out, "cn-" + c["cid"])
+        old = os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm, c["cid"])
+        bad += ["%s %s" % (c["cid"], f) for f in CMP_FILES if not filecmp.cmp(os.path.join(old, "%s-%s" % (SIDENAME[side], f)), os.path.join(new, "%s-%s" % (SIDENAME[side], f)), shallow=False)]
+        shutil.rmtree(new, ignore_errors=True)
+    return bad
+
+
 def cmd_cells(a):
     st, r5, _, _ = t._srv()
     engine_opts(r5)
@@ -652,6 +691,13 @@ def cmd_cells(a):
                 continue
             if os.environ.get("TK674_ONLY_CHEAP") and len({c["sig"] for c in cur}) >= 20:      # дешёвые партии обеих сторон — первыми, дорогие — потом (на более быстром бинаре)
                 continue
+            canary = []
+            cf = os.path.join(ROOT, "res", "canary674%s-%s.json" % (SUF, side))
+            if CANARY_N and kind == "p" and len(cur) > VMAX and not os.path.exists(cf):      # PS-q FIX 2: первая лёгкая партия > VMAX вариантов стороны несёт канарейки
+                canary = canary_pick(side, cur, CANARY_N)
+                if len(canary) < min(CANARY_N, 5):
+                    raise SystemExit("canary %s: клеток в БД с проходами партии мало (%d)" % (side, len(canary)))
+                canary_res = {}
             for w in st.TRADE_WINDOWS:
                 out = os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm)
                 done = os.path.join(ROOT, "done", "%s-%s-%s" % (w.name, side, nm))
@@ -664,8 +710,16 @@ def cmd_cells(a):
                     if c["filt"]:
                         line += " fa=%s fo=lo fv=%g" % (cols[c["ckey"].split("F=", 1)[1]], ax.FV_PASS)
                     variants.append((c["cid"], line))
+                for _nm, c in canary:
+                    variants.append(("cn-" + c["cid"], t.variant_line(r5, u, side, c["patch"])))
                 os.makedirs(out, exist_ok=True)
                 r5.tick(u, w, variants, out, one_side_env(side), t.q("log", "cells-%s-%s-%s.log" % (w.name, side, nm)), ftab=ftab)
+                if canary:
+                    bad = canary_check(side, w, out, canary)
+                    canary_res[w.name] = dict(batch=nm, variants=len(variants), canaries=[c["cid"] for _nm, c in canary], diff=bad)
+                    if bad:
+                        raise SystemExit("canary %s-%s: РАЗЛИЧИЯ в партии из %d вариантов: %s" % (w.name, side, len(variants), "; ".join(bad[:5])))
+                    say("canary %s-%s: %d клеток байт в байт в партии из %d вариантов" % (w.name, side, len(canary), len(variants)))
                 os.makedirs(os.path.dirname(done), exist_ok=True)
                 open(done, "w").write("%d\n" % len(cur))
                 say("cells %s-%s %s [%d вариантов, проходов %d] готово" % (w.name, side, nm, len(cur), len({c["sig"] for c in cur})))
@@ -673,6 +727,8 @@ def cmd_cells(a):
                 if up and calls == int(os.environ.get("TK674_THREADS_AFTER", "3")):
                     __import__("tk604_run").THREADS = up
                     say("потоки движка: %d со следующего вызова" % up)
+            if canary and len(canary_res) == len(st.TRADE_WINDOWS):
+                json.dump(canary_res, open(cf, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         json.dump(index, open(t.q("res", "batches674%s-%s.json" % (SUF, side)), "w", encoding="utf-8"))
     say("cells готово")
 
