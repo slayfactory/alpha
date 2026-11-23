@@ -7,8 +7,10 @@
       старый и новый бинарь на одном входе: 38 столбцов вне списка — байт в байт на всех строках; 10 столбцов — байт в байт на строках tf = 60
   tk699_f12tf.py gate-py  --win wa --side long --dir DIR --new new.csv [--sample 3000 --seed 699]
       эталон Python (`sigfeat_lib.level_features` / `fresh_prior_features` с `tf_min` строки) против new.csv, 10 столбцов, биты float64
-  tk699_f12tf.py merge --win wa --side long --dir DIR --csv f12.csv [--apply]
-      дельта в `asm/<win>-<side>.parquet` и `data/<side>.parquet` (строки tf ≠ 60, 10 столбцов, float32 как в tk671_assemble); без --apply — только счёт
+  tk699_f12tf.py merge --side long --runroot /data/p42-tk699/run [--wins wa,wb,wc] [--apply]
+      дельта из `<runroot>/prod-<win>-<side>/{f12.csv,eps-key.csv}` в `asm/<win>-<side>.parquet` и `data/<side>.parquet` (строки tf ≠ 60, 10 столбцов,
+      float32 как в tk671_assemble); строки tf ≠ 60 без минуток монеты (TradFi, кэш удалён TK-686 / В-175) не пересчитываются: `meta_tk699_stale` = 1;
+      без --apply — только счёт; перед записью `<файл>.bak-tk699`
 Свеча строки: источник `src` → tf (p30n* 30, p60n* и lx* 60, p240n* 240), как `rules_tf_min` в tk671_assemble.
 """
 from __future__ import annotations
@@ -46,6 +48,10 @@ def bits(x: np.ndarray) -> np.ndarray:
 
 def cmd_prep(a):
     r = pd.read_parquet(f"{PROD}/lvl-{a.win}-{a.side}/rows.parquet")
+    have = {f[:-4] for f in os.listdir(CACHE[a.win]) if f.endswith(".b42")}
+    miss = ~r["sym"].isin(have)  # минуток монеты нет (TradFi: кэш и сутки сделок удалены) — f12 не посчитать
+    n_miss = int(miss.sum())
+    r = r[~miss]
     if a.coin_mod > 1:
         coins = sorted(r["sym"].unique())
         r = r[r["sym"].isin(set(coins[a.coin_rem::a.coin_mod]))]
@@ -58,7 +64,7 @@ def cmd_prep(a):
     os.makedirs(a.out, exist_ok=True)
     r[["sym", "level", "sig_ms", "dist_e8", "level_px_e8", "born", "end", "first_bar", "natr_e8", "members", "tf_min"]].to_csv(os.path.join(a.out, "sigsx.csv"), index=False)
     r[["row_id", "sym", "sig_ms", "level_px_e8", "src", "tf_min"]].to_csv(os.path.join(a.out, "eps-key.csv"), index=False)
-    print(json.dumps(dict(rows=len(r), coins=int(r["sym"].nunique()), tf=r["tf_min"].value_counts().sort_index().to_dict())))
+    print(json.dumps(dict(rows=len(r), coins=int(r["sym"].nunique()), tf=r["tf_min"].value_counts().sort_index().to_dict(), rows_no_minutes=n_miss)))
 
 
 def link(ek: pd.DataFrame, f12: pd.DataFrame) -> pd.DataFrame:
@@ -147,50 +153,67 @@ def f32(x: np.ndarray) -> np.ndarray:
     return np.asarray(x, dtype=np.float64).astype(np.float32)
 
 
-def merge_one(path: str, new: pd.DataFrame, win: str | None, apply: bool, rep: dict, tag: str):
-    """Заменить 10 столбцов `path` на строках `new.index` (row_id; в data — только meta_win == win); остальное не трогать."""
+def merge_file(path: str, news: dict, apply: bool, rep: dict, tag: str):
+    """Заменить 10 столбцов `path` на строках `news[win]` (row_id; ключ строки — (meta_win, row_id)); остальные строки и столбцы — как были.
+    `meta_tk699_stale` = 1 у строк tf ≠ 60, которых нет в дельте (минуток монеты нет)."""
     import pyarrow as pa
     import pyarrow.parquet as pq
     t = pq.read_table(path)
     rid = t["row_id"].to_numpy()
-    sel = np.ones(len(rid), dtype=bool) if win is None else (t["meta_win"].to_pandas().to_numpy() == win)
-    pos = np.where(sel)[0]
-    pmap = pd.Series(pos, index=rid[pos])
-    hit = pmap.reindex(new.index)
-    assert hit.notna().all(), f"{tag}: строки row_id не найдены"
-    pidx = hit.to_numpy(dtype=np.int64)
-    src_all = t["meta_src"].to_numpy().astype(np.int64)
-    assert (SRC_TF[src_all[pidx]] == new["tf_min"].to_numpy()).all(), f"{tag}: источник строки ≠ tf_min"
-    rep[tag] = dict(rows_file=int(len(rid)), rows_slice=int(sel.sum()), rows_recomputed=int(len(pidx)), cols={})
+    win_col = t["meta_win"].to_pandas().to_numpy()
+    tf = SRC_TF[t["meta_src"].to_numpy().astype(np.int64)]
+    n = len(rid)
+    old = {c: t[c].to_numpy().astype(np.float32) for c in COLS10}
+    val = {c: v.copy() for c, v in old.items()}
+    done = np.zeros(n, dtype=bool)
+    for win, new in news.items():
+        sel = np.where(win_col == win)[0]
+        hit = pd.Series(sel, index=rid[sel]).reindex(new.index)
+        assert hit.notna().all(), f"{tag} {win}: строки row_id не найдены"
+        pidx = hit.to_numpy(dtype=np.int64)
+        assert (tf[pidx] == new["tf_min"].to_numpy()).all(), f"{tag} {win}: источник строки ≠ tf_min"
+        assert not done[pidx].any()
+        for c in COLS10:
+            val[c][pidx] = f32(new[c].to_numpy())
+        done[pidx] = True
+    stale = (tf != 60) & ~done
+    rep[tag] = dict(rows_file=n, rows_tf60=int((tf == 60).sum()), rows_tf_ne60=int((tf != 60).sum()), rows_recomputed=int(done.sum()),
+                    rows_stale_no_minutes=int(stale.sum()), cols={})
+    for c in COLS10:
+        ch = ~((old[c] == val[c]) | (np.isnan(old[c]) & np.isnan(val[c])))
+        assert not ch[~done].any()
+        assert (old[c][tf == 60].view(np.int32) == val[c][tf == 60].view(np.int32)).all()  # строки tf = 60 — те же биты
+        rep[tag]["cols"][c] = dict(changed=int(ch.sum()), same=int(done.sum() - ch.sum()), nan_old=int(np.isnan(old[c][done]).sum()), nan_new=int(np.isnan(val[c][done]).sum()))
+    if not apply:
+        return
     out = t
     for c in COLS10:
         j = out.schema.get_field_index(c)
-        old = out[c].to_numpy().astype(np.float32)
-        val = old.copy()
-        val[pidx] = f32(new[c].to_numpy())
-        changed = ~((old == val) | (np.isnan(old) & np.isnan(val)))
-        rep[tag]["cols"][c] = dict(changed=int(changed.sum()), same=int(len(pidx) - changed[pidx].sum()), nan_old=int(np.isnan(old[pidx]).sum()), nan_new=int(np.isnan(val[pidx]).sum()))
-        assert not changed[np.setdiff1d(np.arange(len(rid)), pidx)].any()
-        out = out.set_column(j, out.schema.field(j), pa.array(val, type=pa.float32()))
-    if apply:
-        bak = path + BAK
-        if not os.path.exists(bak):
-            shutil.copy2(path, bak)
-        tmp = path + ".tmp-tk699"
-        pq.write_table(out, tmp, compression="zstd", row_group_size=max(out.num_rows, 1))
-        os.replace(tmp, path)
-    return rep
+        out = out.set_column(j, out.schema.field(j), pa.array(val[c], type=pa.float32()))
+    mark = pa.array(stale.astype(np.int8), type=pa.int8())
+    j = out.schema.get_field_index("meta_tk699_stale")
+    out = out.append_column("meta_tk699_stale", mark) if j < 0 else out.set_column(j, "meta_tk699_stale", mark)
+    bak = path + BAK
+    if not os.path.exists(bak):
+        shutil.copy2(path, bak)
+    tmp = path + ".tmp-tk699"
+    pq.write_table(out, tmp, compression="zstd", row_group_size=max(out.num_rows, 1))
+    os.replace(tmp, path)
 
 
 def cmd_merge(a):
-    f12 = read_csv(a.csv)
-    ek = pd.read_csv(os.path.join(a.dir, "eps-key.csv"), dtype={"sym": str})
-    new = link(ek, f12)
-    assert (new["tf_min"].to_numpy() != 60).all(), "в дельте только строки tf ≠ 60"
+    wins = a.wins.split(",")
+    news = {}
+    for w in wins:
+        d = f"{a.runroot}/prod-{w}-{a.side}"
+        new = link(pd.read_csv(f"{d}/eps-key.csv", dtype={"sym": str}), read_csv(f"{d}/f12.csv"))
+        assert (new["tf_min"].to_numpy() != 60).all(), "в дельте только строки tf ≠ 60"
+        news[w] = new
     rep = {}
-    merge_one(f"{ASM}/{a.win}-{a.side}.parquet", new, None, a.apply, rep, "asm")
-    merge_one(f"{DATA}/{a.side}.parquet", new, a.win, a.apply, rep, "data")
-    print(json.dumps(dict(win=a.win, side=a.side, apply=a.apply, **rep), ensure_ascii=False, indent=1))
+    for w in wins:
+        merge_file(f"{ASM}/{w}-{a.side}.parquet", {w: news[w]}, a.apply, rep, f"asm-{w}")
+    merge_file(f"{DATA}/{a.side}.parquet", news, a.apply, rep, "data")
+    print(json.dumps(dict(side=a.side, apply=a.apply, **rep), ensure_ascii=False, indent=1))
 
 
 def main():
@@ -218,10 +241,9 @@ def main():
     p.add_argument("--seed", type=int, default=699)
     p.set_defaults(fn=cmd_gate_py)
     p = sp.add_parser("merge")
-    p.add_argument("--win", required=True, choices=("wa", "wb", "wc"))
     p.add_argument("--side", required=True, choices=("long", "short"))
-    p.add_argument("--dir", required=True)
-    p.add_argument("--csv", required=True)
+    p.add_argument("--runroot", default="/data/p42-tk699/run")
+    p.add_argument("--wins", default="wa,wb,wc")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(fn=cmd_merge)
     a = ap.parse_args()
