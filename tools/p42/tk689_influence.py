@@ -27,7 +27,7 @@ ANCHOR_ENTRY = 334
 COMPLETE_ENTRIES = (333, 334, 336, 337)       # полные сетки: наборы единичек TK-680 и карта пар TK-674; остальные записи — отбор по результату
 THR_MANY, THR_LITTLE = 0.30, 0.05              # размер r: «много» ≥ 0,30; «мало» ≥ 0,05; иначе «ничего»
 SIGN_STABLE, MONTHS_STABLE = 0.75, 4
-OVERLAP_EDGE, CORR_EDGE, MIN_AFFECTED = 0.5, 0.7, 10
+JACCARD_FAM, MIN_AFFECTED, MIN_CTX = 0.5, 10, 3
 NULL_B, NULL_SEED, NULL_MIN_SHARE = 1000, 689, 0.5
 BOOT_B, BOOT_BLOCK, BOOT_SEED = 20000, 5, 674
 METRICS = ("n", "usd", "mean", "sh", "dd", "ddp", "gap", "rr")
@@ -301,10 +301,40 @@ def affected(ck, cn, ak, an):
     return np.union1d(only, diff_pnl)
 
 
-def overlap(a, b):
+def jaccard(a, b):
     if len(a) == 0 or len(b) == 0:
         return 0.0
-    return len(np.intersect1d(a, b, assume_unique=True)) / min(len(a), len(b))
+    i = len(np.intersect1d(a, b, assume_unique=True))
+    return i / (len(a) + len(b) - i)
+
+
+def upgma(names, sims, thr):
+    """Среднее связывание (UPGMA): сливаются кластеры, пока средняя попарная близость ≥ thr; sims — {(a, b): близость}, нет пары — 0. Кластеры из ≥ 2 имён."""
+    n = len(names)
+    if n < 2:
+        return []
+    idx = {x: i for i, x in enumerate(names)}
+    sim = np.zeros((n, n))
+    for (a, b), v in sims.items():
+        sim[idx[a], idx[b]] = sim[idx[b], idx[a]] = v
+    np.fill_diagonal(sim, -np.inf)
+    size = np.ones(n)
+    members = [[i] for i in range(n)]
+    active = list(range(n))
+    while len(active) > 1:
+        sub = sim[np.ix_(active, active)]
+        k = int(np.argmax(sub))
+        i, j = divmod(k, len(active))
+        if sub[i, j] < thr:
+            break
+        a, b = active[i], active[j]
+        for c in active:
+            if c != a and c != b:
+                sim[a, c] = sim[c, a] = (size[a] * sim[a, c] + size[b] * sim[b, c]) / (size[a] + size[b])
+        size[a] += size[b]
+        members[a] += members[b]
+        active.remove(b)
+    return [sorted(names[i] for i in members[a]) for a in active if len(members[a]) >= 2]
 
 
 def components(nodes, edges):
@@ -443,70 +473,35 @@ def compute_level(side, sd, k, mcount, tr=None, do_null=True, boot=True):
     return res, obs_out
 
 
-def level1_clusters(sd, side, tr, anc_axes_stats):
-    """Уровень 1: пересечение затронутых сделок осей (среднее по парам значений |A∩B| / min), ребро ≥ OVERLAP_EDGE, среди осей не «ничего»."""
-    ak, an, ad = tr.get(sd["anchor"], side)
-    sets = defaultdict(list)
-    for c in sd["cells"]:
-        if c["k"] != 1 or len(c["axes"]) != 1:
+def clusters(sd, side, k, tr, stats, grid):
+    """Семьи осей уровня k по сделкам: для каждой опоры (контекст) — сделки, затронутые клеткой C с осью a против опоры; близость осей a, b = среднее по контекстам
+    и парам значений Жаккара затронутых сделок (k = 1: единственный контекст — якорь). Семья — среднее связывание (UPGMA), средняя близость ≥ JACCARD_FAM.
+    В кластеризацию идут оси «много» / «мало» (по stats) со средним числом затронутых сделок ≥ MIN_AFFECTED; при k ≥ 2 близость — не меньше чем по MIN_CTX общим контекстам."""
+    items = [it for it in collapse(observations(sd, k)[0]) if it[2]["grid"] == grid]
+    ok = {a for a, st in stats.items() if st["group"] in ("много", "мало")}
+    ctx, sizes = defaultdict(list), defaultdict(list)
+    for a, lab, c, r in items:
+        if a not in ok:
             continue
-        a = next(iter(c["axes"]))
         ck, cn, cd = tr.get(c, side)
-        sets[a].append(affected(ck, cn, ak, an))
-    ok = {a for a, st in anc_axes_stats.items() if st["group"] in ("много", "мало") and a in sets}
-    ok = {a for a in ok if np.mean([len(x) for x in sets[a]]) >= MIN_AFFECTED}
-    names = sorted(ok)
-    M = {}
-    for a, b in itertools.combinations(names, 2):
-        M[(a, b)] = float(np.mean([overlap(x, y) for x in sets[a] for y in sets[b]]))
-    edges = [p for p, v in M.items() if v >= OVERLAP_EDGE]
-    return dict(names=names, overlap={"%s|%s" % p: v for p, v in M.items() if v > 0.1}, edges=["%s|%s" % e for e in edges], families=components(names, edges),
-                excluded_small=sorted(a for a in anc_axes_stats if a in sets and a not in ok and anc_axes_stats[a]["group"] in ("много", "мало")))
-
-
-def proxy_clusters(sd, k, obs_ref):
-    """Уровни ≥ 2 (приближение по дневным Δ): узел = (ось, направление Δ сделок); ряд = среднее Δ по суткам по клеткам узла; ребро при корреляции ≥ CORR_EDGE."""
-    ser = defaultdict(list)
-    for a, lab, c, r in obs_ref:
-        if c["daily"] is None or r["daily"] is None:
-            continue
-        ser[(a, direction(c, r))].append(c["daily"] - r["daily"])
-    nodes = {nd: np.mean(v, axis=0) for nd, v in ser.items() if len(v) >= 2}
-    names = sorted(nodes)
-    edges = []
-    for x, y in itertools.combinations(names, 2):
-        if x[0] == y[0]:
-            continue
-        sx, sy = nodes[x], nodes[y]
-        if sx.std() > 0 and sy.std() > 0 and np.corrcoef(sx, sy)[0, 1] >= CORR_EDGE:
-            edges.append((x, y))
-    comp = components(names, edges)
-    fam = []
-    for cmp_ in comp:
-        axes = sorted({a for a, _ in cmp_})
-        if len(axes) >= 2:
-            fam.append(axes)
-    return dict(nodes=len(names), edges=["%s/%s|%s/%s" % (x + y) for x, y in edges], families=fam)
-
-
-def agreement(fa, fb, names):
-    """Согласие двух разбиений на семьи: доля пар осей из `names`, у которых совпадает ответ «в одной семье / нет» (индекс Рэнда); пар, где семья есть хоть в одном, — отдельно."""
-    def fam(fs):
-        m = {}
-        for i, g in enumerate(fs):
-            for a in g:
-                m[a] = i
-        return m
-    ma, mb = fam(fa), fam(fb)
-    same = tot = both = either = 0
-    for x, y in itertools.combinations(names, 2):
-        a = x in ma and y in ma and ma[x] == ma[y]
-        b = x in mb and y in mb and mb[x] == mb[y]
-        tot += 1
-        same += a == b
-        either += a or b
-        both += a and b
-    return dict(pairs=tot, same=same, rand=same / tot if tot else None, pairs_in_family_either=either, pairs_in_family_both=both)
+        rk, rn, rd = tr.get(r, side)
+        aff = affected(ck, cn, rk, rn)
+        ctx[r["ckey"]].append((a, aff))
+        sizes[a].append(len(aff))
+    small = {a for a in sizes if np.mean(sizes[a]) < MIN_AFFECTED}
+    acc = {}
+    for key, lst in ctx.items():
+        lst = [(a, x) for a, x in lst if a not in small]
+        for (a, x), (b, y) in itertools.combinations(lst, 2):
+            if a == b:
+                continue
+            e = acc.setdefault((a, b) if a < b else (b, a), [0.0, 0, set()])
+            e[0] += jaccard(x, y)
+            e[1] += 1
+            e[2].add(key)
+    names = sorted(a for a in sizes if a not in small)
+    sims = {p: e[0] / e[1] for p, e in acc.items() if len(e[2]) >= (1 if k == 1 else MIN_CTX)}
+    return dict(grid=grid, names=names, families=upgma(names, sims, JACCARD_FAM), small=sorted(small), pairs=len(sims))
 
 
 def noise_check(db):
@@ -534,16 +529,9 @@ def run(db, out, levels, code=None, do_trades=True, do_null=True):
         stats1 = None
         for k in levels:
             res, obs = compute_level(side, sd, k, mcount[side], tr, do_null)
-            if k == 1:
-                items, _ = observations(sd, 1)
-                res["clusters_proxy"] = proxy_clusters(sd, 1, collapse(items))
-            if k == 1 and tr is not None:
-                st1 = {x["axis"]: x for x in res["axes"] if x["grid"] == "полная"}
-                res["clusters"] = level1_clusters(sd, side, tr, st1)
-                res["cluster_agreement"] = agreement(res["clusters"]["families"], res["clusters_proxy"]["families"], res["clusters"]["names"])
-            elif k >= 2:
-                items, _ = observations(sd, k)
-                res["clusters"] = proxy_clusters(sd, k, collapse(items))
+            if tr is not None:
+                res["clusters"] = {g: clusters(sd, side, k, tr, {x["axis"]: x for x in res["axes"] if x["grid"] == g}, g) for g in ("полная", "отбор")
+                                   if any(x["grid"] == g for x in res["axes"])}
             with open(os.path.join(out, "level-%s-%d.json" % (side, k)), "w", encoding="utf-8") as f:
                 json.dump(res, f, ensure_ascii=False)
             with open(os.path.join(out, "obs-%s-%d.json" % (side, k)), "w", encoding="utf-8") as f:

@@ -166,7 +166,7 @@ def test_affected_overlap_components():
     ak, an = np.array([1, 2, 3, 4]), np.array([1.0, 1, 1, 1])
     ck, cn = np.array([1, 2, 4, 9]), np.array([1.0, 2.0, 1.0, 1.0])
     assert list(ti.affected(ck, cn, ak, an)) == [2, 3, 9]
-    assert ti.overlap(np.array([2, 3, 9]), np.array([3, 9])) == 1.0 and ti.overlap(np.array([1]), np.array([2])) == 0.0
+    assert abs(ti.jaccard(np.array([2, 3, 9]), np.array([3, 9])) - 2 / 3) < 1e-12
     assert ti.components(["a", "b", "c", "d"], [("a", "b"), ("b", "c")]) == [["a", "b", "c"]]
 
 
@@ -175,3 +175,15 @@ def test_noise_formula():
     s, n = ti.noise_of(v, 1000)
     assert abs(s - np.std(v)) < 1e-12 and abs(n - s * (2 * np.log(1000)) ** 0.5) < 1e-12
     assert ti.noise_of([1.0], 1000) == (None, None)
+
+
+def test_upgma_average_linkage_not_chain():
+    names = ["a", "b", "c", "d"]
+    sims = {("a", "b"): 0.9, ("b", "c"): 0.6, ("c", "d"): 0.9}      # цепочка a–b–c–d: компоненты дали бы одну семью, среднее связывание — две
+    fam = ti.upgma(names, sims, 0.7)
+    assert sorted(map(tuple, fam)) == [("a", "b"), ("c", "d")]
+    assert ti.upgma(["a"], {}, 0.5) == [] and ti.upgma(["a", "b"], {}, 0.5) == []
+
+
+def test_jaccard():
+    assert abs(ti.jaccard(np.array([1, 2, 3]), np.array([2, 3, 4])) - 0.5) < 1e-12 and ti.jaccard(np.array([]), np.array([1])) == 0.0
