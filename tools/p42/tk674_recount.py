@@ -58,7 +58,7 @@ def main():
     import tk674_run as run
     if len(a) < 4 or a[0] != "cmp":
         raise SystemExit(__doc__)
-    plan = json.load(open(os.path.join(run.ROOT, "res", "plan674bsx-S.json"), encoding="utf-8"))
+    plan = json.load(open(os.environ.get("TK674_CMP_PLAN") or os.path.join(run.ROOT, "res", "plan674bsx-S.json"), encoding="utf-8"))     # TK674_CMP_PLAN — файл уровня партии шага 4 (тот же вид: cells{ключ: {cid…}})
     cids = json.load(open(a[3], encoding="utf-8"))
     wa, wb = (run.WIN if x == "main" else x for x in a[1:3])
     n, same, diff, no_a, no_b = cmp_rows(run.chron_store(ro=True), run.UNI, run.SIDENAME["S"], plan, wa, wb, cids)

@@ -513,6 +513,39 @@ def plan_bd_columns_batch(cols):
     return {name: sem for sem, name in cols.items() if split_sem(sem)[1]}
 
 
+def cmd_lists(a):
+    """Списки cid партии шага 4 для пересчёта (PS-996 разд. 2): `bd-<партия>.json` — действительные клетки класса bd; `k3-<партия>.json` — 30 действительных клеток без bd (seed 674, по классам A / B / cc: по 10, нехватку
+    добирают из остальных классов; меньше 30 — стоп, код 6)."""
+    import random
+    import tk674_emptycols as ec
+    lv = json.load(open(os.path.join(a.src_res, "level674bs3%s-S.json" % a.tag), encoding="utf-8"))["cells"]
+    invf = os.path.join(a.src_res, "invalid674bs3%s-S.json" % a.tag)
+    inv = json.load(open(invf, encoding="utf-8")) if os.path.exists(invf) else {}
+    by = {"A": [], "B": [], "cc": [], "bd": []}
+    for k, c in sorted(lv.items()):
+        if c["cid"] in inv:
+            continue
+        cl = ec.filt_class(c.get("filt"))
+        if cl in by:
+            by[cl].append(c["cid"])
+    rnd = random.Random(674)
+    pick, rest = [], []
+    for cl in ("A", "B", "cc"):
+        xs = sorted(set(by[cl]))
+        rnd.shuffle(xs)
+        pick += xs[:10]
+        rest += xs[10:]
+    rnd.shuffle(rest)
+    pick += rest[:max(0, 30 - len(pick))]
+    if len(pick) < 30:
+        say("СТОП: в партии %s меньше 30 действительных клеток без bd (%d)" % (a.tag, len(pick)))
+        raise XbError(6)
+    bd = sorted(set(by["bd"]))
+    json.dump(sorted(pick), open(os.path.join(a.out_dir, "k3-%s.json" % a.tag), "w", encoding="utf-8"), ensure_ascii=False)
+    json.dump(bd, open(os.path.join(a.out_dir, "bd-%s.json" % a.tag), "w", encoding="utf-8"), ensure_ascii=False)
+    say("lists %s: K3 %d (A %d, B %d, cc %d в партии), bd-клеток %d" % (a.tag or "base", len(pick), len(by["A"]), len(by["B"]), len(by["cc"]), len(bd)))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
@@ -529,6 +562,11 @@ def main():
     p.add_argument("--src-root", default="/data/p42-tk674c")
     p.add_argument("--src-res", default="/data/p42-tk674c/res")
     p.set_defaults(f=cmd_build_batch)
+    p = sp.add_parser("lists")
+    p.add_argument("--tag", required=True)
+    p.add_argument("--src-res", default="/data/p42-tk674c/res")
+    p.add_argument("--out-dir", required=True)
+    p.set_defaults(f=cmd_lists)
     sp.add_parser("need").set_defaults(f=cmd_need)
     p = sp.add_parser("dl")
     p.add_argument("--workers", type=int, default=4)
