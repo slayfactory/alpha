@@ -460,6 +460,11 @@ def plan_side(side, store=None, only=None):
         cells = _only(cells)
         found = store.cells_lookup(SIDENAME[side], UNI, WIN, list(cells), bins=eq_bins()) if store else {}
         return cells, {}, [], {}, found
+    if os.environ.get("TK674_ONLY_PLAN"):             # пересчёт PS-994: клетки из файла плана (а не из `build_cells`, где запреты §13.73.26 / пула их отсекают) — только cid из TK674_ONLY
+        keep = set(_cidlist("TK674_ONLY"))
+        raw = json.load(open(os.environ["TK674_ONLY_PLAN"], encoding="utf-8"))["cells"]
+        cells = {k: dict(ckey=k, cid=c["cid"], patch=c["patch"], filt=[tuple(x) for x in c["filt"]], sig=tuple(tuple(x) for x in c["sig"]), pairs=[]) for k, c in raw.items() if c["cid"] in keep}
+        return cells, {}, [], {}, (store.cells_lookup(SIDENAME[side], UNI, WIN, list(cells), bins=eq_bins()) if store else {})
     thr = load_thr(side) if os.path.exists(thr_path()) else None
     if ax.X680:
         if thr is None:

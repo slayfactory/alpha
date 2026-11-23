@@ -218,5 +218,39 @@ class Overlay(unittest.TestCase):
         self.assertEqual(run.m_trials(store, "short"), (3, 3))                                          # m — только по основной метке (без пересчёта и без контроля)
 
 
+class RecountCmp(unittest.TestCase):
+    def test_cmp_rows(self):
+        import tk674_recount as rc
+        r = lambda t, u, s: dict(trades=t, usd=u, sharpe=s)                                              # noqa: E731
+        store = FakeStore({"A": {"k1": r(10, 5.0, 1.0), "k2": r(10, 5.0, 1.0), "k3": r(3, 1.0, 0.1)}, "B": {"k1": r(10, 5.0, 1.0), "k2": r(11, 6.0, 1.2)}})
+        plan = dict(cells={"k1": dict(cid="a"), "k2": dict(cid="b"), "k3": dict(cid="c")})
+        n, same, diff, no_a, no_b = rc.cmp_rows(store, run.UNI, "short", plan, "A", "B", ["a", "b", "c"])
+        self.assertEqual((n, same, len(diff), no_a, no_b), (3, 1, 1, [], ["k3"]))
+
+
+class MkPlan(unittest.TestCase):
+    def test_mkplan_inserts_cells_at_old_positions(self):
+        import tk674_recount as rc
+        cur = dict(cells={"k1": dict(cid="a")}, grids={"g": dict(vals=[[0, 1], [0]], m=[[None, "k1"]])}, n_cells=1)
+        old = dict(cells={"k1": dict(cid="a"), "k2": dict(cid="b"), "k3": dict(cid="c")}, grids={"g": dict(vals=[[0, 1], [0]], m=[["k2", "k1"]])})
+        out, n = rc.mkplan(cur, old, ["b"])
+        self.assertEqual((n, sorted(out["cells"]), out["grids"]["g"]["m"]), (1, ["k1", "k2"], [["k2", "k1"]]))
+        self.assertEqual(cur["grids"]["g"]["m"], [[None, "k1"]])                                         # исходный план не изменён
+
+    def test_only_plan_bypasses_build_cells(self):
+        pf = os.path.join(TMP, "oplan.json")
+        json.dump(dict(cells={"k9": dict(cid="z", patch={"s": 4}, filt=[["tpm60.ge", 1]], sig=[["e", 1]]), "k8": dict(cid="y", patch={}, filt=[], sig=[])}), open(pf, "w"))
+        fo = os.path.join(TMP, "oonly.json")
+        json.dump(["z"], open(fo, "w"))
+        os.environ.update(TK674_ONLY_PLAN=pf, TK674_ONLY=fo)
+        try:
+            cells, grids, sk, bad, found = run.plan_side("S", None)
+        finally:
+            os.environ.pop("TK674_ONLY_PLAN"); os.environ.pop("TK674_ONLY")
+        self.assertEqual(list(cells), ["k9"])
+        self.assertEqual(cells["k9"]["filt"], [("tpm60.ge", 1)])
+        self.assertEqual(cells["k9"]["sig"], (("e", 1),))
+
+
 if __name__ == "__main__":
     unittest.main()
