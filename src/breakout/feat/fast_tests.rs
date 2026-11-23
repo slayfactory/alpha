@@ -212,13 +212,16 @@ fn short_big_imbalance_and_sign_autocorr_hand_values() {
     assert!(ff(&w29, sig, 1, Some(10.0), 0)[fi("sac10")].is_nan());
 }
 
+/// Сторона записи по её номеру в окне.
+type Side = fn(i64) -> bool;
+
 /// TK-690: `sac10/30/60` пусты ровно когда окно не покрыто данными, записей окна < 30 или все записи одной стороны; `sacd` считает n и покупки независимо.
 #[test]
 fn sac_is_empty_exactly_for_uncovered_few_trades_or_one_side() {
     let sig = 10 * HOUR_MS;
     let ix = |k: &str| SACD.iter().position(|x| *x == k).unwrap();
     // записи за 70 с до σ шагом 100 мс; сторона — по номеру записи: чередование / все покупки / все продажи / редкие покупки
-    let cases: [(i64, fn(i64) -> bool); 8] = [
+    let cases: [(i64, Side); 8] = [
         (29, |i| i % 2 == 0),
         (30, |i| i % 2 == 0),
         (30, |_| true),
@@ -232,7 +235,7 @@ fn sac_is_empty_exactly_for_uncovered_few_trades_or_one_side() {
     for (n, side) in cases {
         for step in [100i64, 2_000] {
             let t: Vec<i64> = (0..n).map(|i| sig - 1 - i * step).rev().collect();
-            let b: Vec<bool> = (0..n).map(|i| side(i)).collect();
+            let b: Vec<bool> = (0..n).map(side).collect();
             let w = win_from(&t, &vec![1.0; t.len()], &vec![1.0; t.len()], &b);
             for gap in [3_000i64, 20_000, 40_000, 100_000] {
                 let avail_from = sig - gap;
