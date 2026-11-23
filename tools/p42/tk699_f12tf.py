@@ -10,7 +10,9 @@
   tk699_f12tf.py merge --side long --runroot /data/p42-tk699/run [--wins wa,wb,wc] [--apply]
       дельта из `<runroot>/prod-<win>-<side>/{f12.csv,eps-key.csv}` в `asm/<win>-<side>.parquet` и `data/<side>.parquet` (строки tf ≠ 60, 10 столбцов,
       float32 как в tk671_assemble); строки tf ≠ 60 без минуток монеты (TradFi, кэш удалён TK-686 / В-175) не пересчитываются: `meta_tk699_stale` = 1;
-      без --apply — только счёт; перед записью `<файл>.bak-tk699`
+      без --apply — только счёт; с --apply — новые файлы `<файл>.tk699-new` рядом со старыми, на место их ставит
+  tk699_f12tf.py swap --side long [--wins wa,wb,wc]
+      старый файл → `<файл>.bak-tk699` (жёсткая ссылка), новый → на место; в момент, согласованный с читателями `data/*.parquet` (партии TK-674c читают файл на старте)
 Свеча строки: источник `src` → tf (p30n* 30, p60n* и lx* 60, p240n* 240), как `rules_tf_min` в tk671_assemble.
 """
 from __future__ import annotations
@@ -18,7 +20,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import sys
 
 import numpy as np
@@ -33,6 +34,7 @@ COLS10 = ["age_h", "approach_dur_min", "pierce_ep", "pierce_max_bp", "touch_ep",
           "touch_prior_none"]
 CACHE = {"wa": "/data/p42-tk621/wa/cache", "wb": "/data/p42-tk621/wb/cache", "wc": "/data/p42-tk621/wc/cache"}
 BAK = ".bak-tk699"
+NEW = ".tk699-new"
 
 
 def read_csv(path: str) -> pd.DataFrame:
@@ -193,12 +195,25 @@ def merge_file(path: str, news: dict, apply: bool, rep: dict, tag: str):
     mark = pa.array(stale.astype(np.int8), type=pa.int8())
     j = out.schema.get_field_index("meta_tk699_stale")
     out = out.append_column("meta_tk699_stale", mark) if j < 0 else out.set_column(j, "meta_tk699_stale", mark)
-    bak = path + BAK
-    if not os.path.exists(bak):
-        shutil.copy2(path, bak)
-    tmp = path + ".tmp-tk699"
+    tmp = path + NEW
     pq.write_table(out, tmp, compression="zstd", row_group_size=max(out.num_rows, 1))
-    os.replace(tmp, path)
+
+
+def swap_file(path: str):
+    """Подмена: старый файл → `<файл>.bak-tk699` (жёсткая ссылка, место не занимает), новый → на место (одна атомарная замена)."""
+    assert os.path.exists(path + NEW), path + NEW
+    bak = path + BAK
+    if os.path.exists(bak):
+        raise SystemExit(f"уже есть {bak}")
+    os.link(path, bak)
+    os.replace(path + NEW, path)
+
+
+def cmd_swap(a):
+    for w in a.wins.split(","):
+        swap_file(f"{ASM}/{w}-{a.side}.parquet")
+    swap_file(f"{DATA}/{a.side}.parquet")
+    print("swap ok", a.side, a.wins)
 
 
 def cmd_merge(a):
@@ -244,8 +259,12 @@ def main():
     p.add_argument("--side", required=True, choices=("long", "short"))
     p.add_argument("--runroot", default="/data/p42-tk699/run")
     p.add_argument("--wins", default="wa,wb,wc")
-    p.add_argument("--apply", action="store_true")
+    p.add_argument("--apply", action="store_true", help="записать новые файлы <файл>.tk699-new рядом со старыми (подмена — swap)")
     p.set_defaults(fn=cmd_merge)
+    p = sp.add_parser("swap")
+    p.add_argument("--side", required=True, choices=("long", "short"))
+    p.add_argument("--wins", default="wa,wb,wc")
+    p.set_defaults(fn=cmd_swap)
     a = ap.parse_args()
     sys.exit(a.fn(a) or 0)
 
