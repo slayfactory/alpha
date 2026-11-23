@@ -8,6 +8,8 @@
   python3 tk690_run.py asm       — сборка (`tk671_assemble.merge_families`) → data/short.parquet (раскладка таблицы TK-671: win, row_id, sym, meta_*, признаки float32), legacy.parquet (float64)
   python3 tk690_run.py tables    — составные столбцы фильтров (`tk674_run._pass`, столбцы — прежние `ftabcols674x-S.json`) → ftab674xs-all/ (все строки потоков) и ftab674xs/ (строки прежней `ftab674x` дословно + новые)
   python3 tk690_run.py gate      — ворота: равенство прежней таблице на общих ключах (байт в байт, все составные столбцы), дамп ≡ счётчики cands / no_key клеток TK-674, no_key = 0 по ключам дампа
+  python3 tk690_run.py distb     — диагностика (TK690_ROOT = каталог alt, TK690_ALT=1 в rows): таблица по строкам со вторым значением dist_e8
+  python3 tk690_run.py distsens  — чувствительность к выбору dist_e8: столбцы / клетки, у которых флаг у кандидата меняется (TK690_B = каталог alt) → res/distsens690.json
   python3 tk690_run.py check     — движок: по клетке-фильтру на поток с новой таблицей → `filter_no_key` = 0 и cands те же (G-key на движке)
   python3 tk690_run.py slice <N> — проверка цепочки признаков на срезе строк существующей таблицы TK-671 (TK690_ROOT = каталог среза): признаки среза = столбцам таблицы TK-671
 Среда — как у шага 3 TK-674 (TK674_UNI=c539, TK674_REBASE=1, TK674_X680=1, TK674_X680_ROOTS, TK674_BIN); TK690_ROOT — каталог результата (по умолчанию /data/p42-tk690), TK690_SRC — каталог TK-674 (только чтение)."""
@@ -422,17 +424,68 @@ def write_nan_report(tabs):
     return summ
 
 
-def cmd_tables(a):
-    import tk674_run as run
+def build_all_tables(run, st):
+    """Таблица составных фильтров по всем строкам набора (ROOT/ftab674xs-all); возвращает (tabs, cols)."""
     import tk674_x680 as x6
     import tk680_singles as s80
-    st, _, _, _ = run.t._srv()
     tabs = stream_tabs([w.name for w in st.TRADE_WINDOWS])
     s80.add_columns(SIDE, st, tabs, **x6.column_specs(SIDE))
     cols = json.load(open(os.path.join(SRC, "res", "ftabcols674x-S.json"), encoding="utf-8"))
     out_all = os.path.join(ROOT, "ftab674xs-all")
     os.makedirs(out_all, exist_ok=True)
     run.write_ftab(SIDE, st, tabs, None, cols=cols, out=out_all)
+    return tabs, cols
+
+
+def cmd_distb(a):
+    """Диагностика (TK690_ROOT = каталог alt): таблица фильтров по строкам с вторым значением dist_e8."""
+    import tk674_run as run
+    st, _, _, _ = run.t._srv()
+    build_all_tables(run, st)
+
+
+def cmd_distsens(a):
+    """res/distsens690.json: чувствительность таблицы к выбору dist_e8 (ROOT — основной набор, TK690_B — каталог alt): столбцы, у которых флаг на ключах с расхождением меняется, и клетки, чей столбец-фильтр меняется на кандидатах потока."""
+    import tk674_axes as ax
+    bdir = os.environ["TK690_B"]
+    ss = load_streams()
+    cols = json.load(open(os.path.join(SRC, "res", "ftabcols674x-S.json"), encoding="utf-8"))
+    cells = json.load(open(os.path.join(SRC, "res", "gkey674bsx-S.json"), encoding="utf-8"))["bad"]
+    by_sk = {json.dumps(s["sigkey"]): s for s in ss}
+    flip = {}                                           # (окно, столбец) → ключи, у которых флаг у основного и у alt различается
+    nkeys = {}
+    for w in WINS:
+        h0, la, _ = read_lines(os.path.join(ROOT, "ftab674xs-all", "%s-%s.csv" % (w, SIDE)))
+        h1, lb, ob = read_lines(os.path.join(bdir, "ftab674xs-all", "%s-%s.csv" % (w, SIDE)))
+        names = h0.split(",")[2:]
+        nkeys[w] = len(ob)
+        for k in ob:
+            x, y = la[k].split(",")[2:], lb[k].split(",")[2:]
+            for i, (u, v) in enumerate(zip(x, y)):
+                if u != v:
+                    flip.setdefault((w, names[i]), set()).add(k)
+    per = {w: read_dumps(w, ss) for w in WINS}
+    amb, nflip_cols = [], set(c for _, c in flip)
+    for b in cells:
+        s = by_sk[json.dumps([list(x) for x in ax.sigkey(b["patch"])])]
+        col = cols[b["ckey"].split("F=", 1)[1]]
+        r = {}
+        for w in WINS:
+            ks = set(zip(per[w][s["vid"]]["sym"].astype(str), per[w][s["vid"]]["sig_ms"].astype(int)))
+            r[w] = len(ks & flip.get((w, col), set()))
+        if any(r.values()):
+            amb.append(dict(cid=b["cid"], vid=s["vid"], keys=r))
+    summ = dict(conflict_keys=nkeys, flip_columns=len(nflip_cols), flip_cells=len(amb), cells=len(cells), flip_key_cells=sum(sum(c["keys"].values()) for c in amb))
+    json.dump(dict(summary=summ, ambiguous=amb), open(q("res", "distsens690.json"), "w", encoding="utf-8"), ensure_ascii=False)
+    say("dist_e8: ключей с расхождением %s; столбцов фильтра с различным флагом %d; клеток, где выбор меняет флаг у кандидата %d из %d (пар клетка × ключ %d)" % (
+        nkeys, summ["flip_columns"], summ["flip_cells"], summ["cells"], summ["flip_key_cells"]))
+
+
+def cmd_tables(a):
+    import tk674_run as run
+    st, _, _, _ = run.t._srv()
+    tabs, cols = build_all_tables(run, st)
+    out_all = os.path.join(ROOT, "ftab674xs-all")
     for w in st.TRADE_WINDOWS:
         os.makedirs(os.path.join(ROOT, "ftab674xs"), exist_ok=True)
         n_common, n_add, diff = merge_tables(os.path.join(SRC, "ftab674x", "%s-%s.csv" % (w.name, SIDE)), os.path.join(out_all, "%s-%s.csv" % (w.name, SIDE)),
@@ -500,6 +553,36 @@ def cmd_gate(a):
         bad.append("ключи с той же линией уровня есть у %d потоков (< 3)" % streams_a)
     if bad:
         raise GuardError("gate: нарушений %d" % len(bad))
+
+
+def cmd_oldown(a):
+    """res/oldown690.json: в скольких клетках столбец-фильтр у общих ключей различается между прежней таблицей (строки дословно) и собственным счётом набора (`ftab674xs-all`): на общих ключах класса b / c
+    прежняя строка пуста по столбцам TK-671 («проходит») или взята с другой линии уровня."""
+    import tk674_axes as ax
+    ss = load_streams()
+    cols = json.load(open(os.path.join(SRC, "res", "ftabcols674x-S.json"), encoding="utf-8"))
+    cells = json.load(open(os.path.join(SRC, "res", "gkey674bsx-S.json"), encoding="utf-8"))["bad"]
+    by_sk = {json.dumps(s["sigkey"]): s for s in ss}
+    per, old, new, names = {}, {}, {}, {}
+    for w in WINS:
+        per[w] = read_dumps(w, ss)
+        h, old[w], _ = read_lines(os.path.join(SRC, "ftab674x", "%s-%s.csv" % (w, SIDE)))
+        _, new[w], _ = read_lines(os.path.join(ROOT, "ftab674xs-all", "%s-%s.csv" % (w, SIDE)))
+        names[w] = {n: i for i, n in enumerate(h.split(",")[2:])}
+    out = []
+    for b in cells:
+        s = by_sk[json.dumps([list(x) for x in ax.sigkey(b["patch"])])]
+        c = cols[b["ckey"].split("F=", 1)[1]]
+        r = {}
+        for w in WINS:
+            i = names[w][c]
+            ks = [k for k in set(zip(per[w][s["vid"]]["sym"].astype(str), per[w][s["vid"]]["sig_ms"].astype(int))) if k in old[w]]
+            r[w] = dict(common=len(ks), differ=sum(1 for k in ks if old[w][k].split(",")[2:][i] != new[w][k].split(",")[2:][i]))
+        out.append(dict(cid=b["cid"], vid=s["vid"], win=r))
+    n = sum(1 for c in out if any(r["differ"] for r in c["win"].values()))
+    json.dump(dict(cells_with_diff=n, cells=out), open(q("res", "oldown690.json"), "w", encoding="utf-8"), ensure_ascii=False)
+    say("прежние строки против собственного счёта: клеток с различием флага у общих ключей %d из %d; пар клетка × ключ %d из %d" % (
+        n, len(out), sum(r["differ"] for c in out for r in c["win"].values()), sum(r["common"] for c in out for r in c["win"].values())))
 
 
 def cmd_check(a):
@@ -583,6 +666,9 @@ def main():
     sp.add_parser("asm")
     sp.add_parser("tables")
     sp.add_parser("gate")
+    sp.add_parser("oldown")
+    sp.add_parser("distb")
+    sp.add_parser("distsens")
     sp.add_parser("check")
     sl = sp.add_parser("slice")
     sl.add_argument("n", type=int)
@@ -591,7 +677,7 @@ def main():
     os.environ.setdefault("TK674_ROOT", ROOT)               # tk674_run при импорте берёт каталог из среды: писать в каталог TK-674 нельзя
     if os.environ["TK674_ROOT"] == SRC:
         raise GuardError("TK674_ROOT = каталог TK-674 (%s): результат пишется только в %s" % (SRC, ROOT))
-    {"streams": cmd_streams, "dump": cmd_dump, "rows": cmd_rows, "feat": cmd_feat, "avail": cmd_avail, "asm": cmd_asm, "tables": cmd_tables, "gate": cmd_gate, "check": cmd_check, "slice": cmd_slice,
+    {"streams": cmd_streams, "dump": cmd_dump, "rows": cmd_rows, "feat": cmd_feat, "avail": cmd_avail, "asm": cmd_asm, "tables": cmd_tables, "gate": cmd_gate, "oldown": cmd_oldown, "distb": cmd_distb, "distsens": cmd_distsens, "check": cmd_check, "slice": cmd_slice,
      "slicegate": cmd_slicegate}[a.cmd](a)
 
 
