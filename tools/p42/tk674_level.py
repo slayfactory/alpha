@@ -18,6 +18,7 @@ ROOT = os.environ.get("TK674_ROOT", "/data/p42-tk674")
 SIDENAME = {"L": "long", "S": "short"}
 UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"
 BATCH = os.environ.get("TK674_BATCH", "")           # партия остатка (PS-990): `rNN`; `u` — объединение для карты (как в tk674_run)
+WITHHOLD = {x for x in os.environ.get("TK674_WITHHOLD", "").split(",") if x}      # классы фильтра (`tk674_emptycols.filt_class`: bd, cc), клетки которых карта не читает (правило критика 23.11 п. б–в, PS-993); в m и σ остаются
 LOWTAG = os.environ.get("TK674_LOWTAG", "")         # суффикс карты нижнего уровня (карта троек шага 4 + остаток — `u`; карта пар — без суффикса)
 
 
@@ -290,6 +291,15 @@ def combo_grid(side, names, thr):
     return grid, b0
 
 
+def withheld(cells):
+    """{ckey: класс} клеток, которые карта не читает (`WITHHOLD`: bd — недействительны по счётчику, cc — отложены; класс — `tk674_emptycols.filt_class`)."""
+    if not WITHHOLD:
+        return {}
+    import tk674_emptycols as ec
+    w = {k: ec.filt_class(c.get("filt")) for k, c in cells.items()}
+    return {k: v for k, v in w.items() if v in WITHHOLD}
+
+
 def cmd_map(n):
     """Карта уровня n из БД: охраны (а)–(д) относительно базы стороны, плато по соседям на шаг по каждой оси, победитель комбинации и лучшая клетка со всеми
     сдвинутыми осями; прирост над планкой нижних уровней (gain_sub). → res/map674<b><n>-<сторона>.json (тот же вид, что карта пар)."""
@@ -307,6 +317,10 @@ def cmd_map(n):
         for r_ in rows.values():
             if r_["sharpe"] is None:
                 r_["sharpe"] = float("nan")
+        rows_all, wh = rows, {}
+        if WITHHOLD:                                         # клетки классов WITHHOLD не читаются (ни в победителях, ни в плато, ни в планке), но остаются в m и в σ шума
+            wh = withheld(lv["cells"])
+            rows = {k: r_ for k, r_ in rows_all.items() if k not in wh}
         bsh = brow["sharpe"]
         gd = {k: run.guards(r, brow) for k, r in rows.items()}
         bar = {}                                             # планка нижних уровней: лучшая охранённая (а)–(д) клетка каждой подкомбинации
@@ -329,7 +343,7 @@ def cmd_map(n):
             cand = []
             for pos, k in grid.items():
                 if k is None or k not in rows:
-                    missing += int(k is not None and lv["cells"][k]["cid"] not in inv)
+                    missing += int(k is not None and k not in wh and lv["cells"][k]["cid"] not in inv)
                     continue
                 r = rows[k]
                 if r["sharpe"] != r["sharpe"] or run.is_ref5(r):
@@ -369,7 +383,7 @@ def cmd_map(n):
                 q5 = r5rows.get(x["ref5_key"])
                 x["ref5"] = dict(sharpe=q5["sharpe"], usd=q5["usd"], n=q5["trades"], maxdd=q5["extra"]["maxdd"], **run.loss_fields(q5["extra"])) if q5 else None
         m_side, m_own = run.m_trials(store, SIDENAME[side])
-        shs = np.array([r["sharpe"] for r in rows.values() if r["sharpe"] == r["sharpe"]])
+        shs = np.array([r["sharpe"] for r in rows_all.values() if r["sharpe"] == r["sharpe"]])
         sig_sh = float(shs.std()) if len(shs) > 1 else float("nan")
         by_sig = {}
         for k, r in rows.items():
@@ -379,10 +393,14 @@ def cmd_map(n):
                    rr=bx["rr"]["rr"], **run.loss_fields(bx)), pairs=out_rows, n_cells=len(rows), m=m_side, m_own=m_own, sharpe_sd=sig_sh, noise_max=sig_sh * float(np.sqrt(2 * np.log(max(m_side, 2)))),
                    g_dup=dict(groups=len(dup), cells=sum(len(v) for v in dup), examples=dup[:5]),
                    select=dict(cap=lv["cap"], eligible=lv["eligible"], taken=len(lv["taken"]), left_out=lv["left_out"], active_subs=lv["active_subs"], subs=lv["subs"]))
+        if WITHHOLD:
+            out["withheld"] = dict(classes=sorted(WITHHOLD), cells=len(wh), by_class={c_: sum(1 for v in wh.values() if v == c_) for c_ in sorted(WITHHOLD)}, n_cells_all=len(rows_all))
         json.dump(out, open(map_path(n, side, BATCH), "w", encoding="utf-8"), ensure_ascii=False)
         nw = sum(1 for p in out_rows if p["both_moved"] and p["both_moved"]["gain_sub"] > 0)
         print("== %s n=%d: комбинаций %d, клеток %d, m %d, шум ≈ %.2f; с победителем %d; все оси сдвинуты и лучше планки нижних уровней: %d" % (
             side, n, len(out_rows), len(rows), m_side, out["noise_max"], sum(1 for p in out_rows if p["winner"]), nw))
+        if WITHHOLD:
+            print("   не читаются (TK674_WITHHOLD=%s): %s клеток из %d; остаются в m и σ" % (",".join(sorted(WITHHOLD)), out["withheld"]["by_class"], len(rows_all)))
     print("map уровня %d готово" % n)
 
 
