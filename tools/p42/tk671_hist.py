@@ -19,6 +19,7 @@ import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+from tk700_win import win_choices  # noqa: E402
 import tk604_stats as st  # noqa: E402
 import tk625_feat as f5  # noqa: E402
 
@@ -79,7 +80,7 @@ def compute(rows: pd.DataFrame, win: str, side: str, procs: int = 3, **kw) -> pd
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--rows", required=True)
-    ap.add_argument("--win", required=True, choices=("wa", "wb", "wc"))
+    ap.add_argument("--win", required=True, choices=win_choices())
     ap.add_argument("--side", required=True, choices=("long", "short"))
     ap.add_argument("--out", required=True)
     ap.add_argument("--procs", type=int, default=3)

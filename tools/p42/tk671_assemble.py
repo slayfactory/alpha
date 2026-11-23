@@ -16,13 +16,18 @@ import json
 import os
 import time
 
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from tk700_win import win_choices  # noqa: E402
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.csv as pacsv
 
 SOURCES = ["p30n1", "p30n2", "p30n3", "p60n1", "p60n2", "p60n3", "p240n1", "p240n2", "p240n3", "lxD", "lxW", "lxP"]
-PROD, FAM, RUST = "/data/p42-tk671/prod", "/data/p42-tk671/fam", "/data/p42-tk671/fam/rust"
+ROOT = os.environ.get("TK671_ROOT", "/data/p42-tk671")          # TK-700: отложенная выборка — свой корень (`/data/p42-tk700/p671`), строки — только база
+PROD, FAM, RUST = ROOT + "/prod", ROOT + "/fam", ROOT + "/fam/rust"
 PY_FAMS = ["time", "bd", "fund", "t668", "coin", "hist", "bk", "mkt"]
 F12_META_END = "tick_ok"                        # f12.csv: столбцы до `tick_ok` включительно — ключи/служебные, признаки — после
 META = ["row_id", "sym", "abs_ms", "win", "side", "src", "level", "level_px_e8", "mask", "ep_start", "base_pass", "n_ep", "end"]
@@ -78,9 +83,9 @@ def rust_blocks(win, side, key):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--win", required=True, choices=("wa", "wb", "wc"))
+    ap.add_argument("--win", required=True, choices=win_choices())
     ap.add_argument("--side", required=True, choices=("long", "short"))
-    ap.add_argument("--out", default="/data/p42-tk671/asm")
+    ap.add_argument("--out", default=ROOT + "/asm")
     ap.add_argument("--skip-missing", action="store_true", help="проверочный прогон: семейства без файла пропустить (в рабочем прогоне не использовать)")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)

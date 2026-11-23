@@ -10,6 +10,7 @@
   python3 tk700_win.py show                    # геометрия окон
   python3 tk700_win.py trees [--apply]         # символические ссылки /data/p42-tk621/m0N/{cache,aggtrades,klines} на деревья TK-695 / TK-686
   python3 tk700_win.py universe [--apply]      # c539 ∩ список месяца → /data/p42-tk700/universe/<окно>.txt (+ счётчики по месяцам)
+  python3 tk700_win.py env <окно>              # присваивания для sh: T0, SIGSX (14:<до>), TREE, SYMS, LW — окна m01…m06 и ворот wa / wb / wc / wa20 (прогрев 20 суток)
 """
 from __future__ import annotations
 
@@ -42,8 +43,19 @@ LAST_DAY = datetime.date(2026, 7, 1)                            # T0 + 50 у и�
 D0 = datetime.date(2026, 1, 1)
 
 
+# окна ворот (Июль–ноябрь, читать можно): T0 прежних окон; `wa20` — wa с прогревом 20 суток (T0 = 11.06; сутки до 17.06 — дерево w0 /data/p42-tk625/h775/w0)
+GATE_T0 = {"wa": "2026-06-17", "wb": "2026-07-25", "wc": "2026-09-01", "wa20": "2026-06-11"}
+GATE_SYMS = "/data/p42-tk621/universe/symbols-all.txt"
+GATE_SIGSX_HI = 73                                              # зачётные сутки движка 14…73 (`START_DAY` + `COUNT_DAYS` − 1), как у двойников TK-671
+
+
 def winset():
     return os.environ.get(WINSET_ENV, "")
+
+
+def win_choices(base=("wa", "wb", "wc")):
+    """Допустимые окна скриптов подготовки: прежние wa / wb / wc, а при `TK700_WINSET=h1` — окна отложенной выборки m01…m06 (таблицы окон `tk604_stats` тогда подменены на H1)."""
+    return NAMES if winset() == "h1" else tuple(base)
 
 
 def spec(name):
@@ -74,7 +86,7 @@ def sigsx_arg(name):
 
 def tree_dir(name):
     """Каталог, который читают скрипты (`<TREE_ROOT>/<окно>`): ссылки на cache / aggtrades / klines."""
-    return os.path.join(TREE_ROOT, name)
+    return TREE_ROOT + "/" + name
 
 
 def tree_targets(name):
@@ -86,7 +98,8 @@ def tree_targets(name):
 
 
 def read_symbols(path):
-    t = open(path, encoding="utf-8").read().strip()
+    with open(path, encoding="utf-8") as f:
+        t = f.read().strip()
     if t.startswith("["):
         return json.loads(t)
     return t.replace(",", " ").split()
@@ -99,7 +112,7 @@ def universe(name, c539=None):
 
 
 def universe_file(name):
-    return os.path.join(ROOT, "universe", name + ".txt")
+    return ROOT + "/universe/" + name + ".txt"
 
 
 def apply(st):
@@ -135,7 +148,8 @@ def token_ok(env=None):
     if not p or not nonce or not os.path.exists(p):
         return False
     try:
-        j = json.load(open(p, encoding="utf-8"))
+        with open(p, encoding="utf-8") as f:
+            j = json.load(f)
     except Exception:
         return False
     return j.get("nonce") == nonce and j.get("state") == "started"
@@ -178,6 +192,24 @@ def install_fence():
 
 # ---- служебные команды ------------------------------------------------------------------------------------------------------------
 
+def env_of(name):
+    """Переменные для sh-драйверов подготовки: окно ворот или месяц H1."""
+    if name in GATE_T0:
+        t0 = GATE_T0[name]
+        tree = tree_dir(name)
+        syms, sigsx = GATE_SYMS, "%d:%d" % (GRID_START_DAY, GATE_SIGSX_HI)
+    else:
+        s = spec(name)
+        t0, tree, syms, sigsx = s["t0"], tree_dir(name), universe_file(name), sigsx_arg(name)
+    lw = (7 - datetime.date.fromisoformat(t0).weekday()) % 7
+    return {"T0": t0, "SIGSX": sigsx, "TREE": tree, "SYMS": syms, "LW": str(lw)}
+
+
+def cmd_env(name):
+    for k, v in env_of(name).items():
+        print("%s=%s" % (k, v))
+
+
 def cmd_show():
     check_spec()
     for n, mt, t0, lo, hi, root, _ in _SPEC:
@@ -218,9 +250,11 @@ def cmd_universe(apply_):
 
 if __name__ == "__main__":
     a = sys.argv[1:]
-    if not a or a[0] not in ("show", "trees", "universe"):
+    if not a or a[0] not in ("show", "trees", "universe", "env"):
         raise SystemExit(__doc__)
-    if a[0] == "show":
+    if a[0] == "env":
+        cmd_env(a[1])
+    elif a[0] == "show":
         cmd_show()
     elif a[0] == "trees":
         cmd_trees("--apply" in a)
