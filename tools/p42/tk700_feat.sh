@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # TK-700 (srv): Rust-признаки на строках БАЗЫ окна и стороны — f12 (бинарь TK-699 с tf_min) → all (flow + deriv) → tcount → tsize → tox; как tk671_feat.sh, но окно из tk700_win.py env и корень TK671_ROOT.
-# Использование: tk700_feat.sh <окно m01…m06|wa|wb|wc> <side long|short> <потоки>
+# Использование: tk700_feat.sh <окно m01…m06|wa|wb|wc> <side long|short> <потоки> [шаги: f12 tcount tsize tox all; по умолчанию все — `all` (flow + deriv) последним: ему нужны докачанные metrics / premium / funding]
 # Входы: $TK671_ROOT/prod/lvl-<окно>-<side>/rows.parquet (строки базы, tk700_prep.py base); выход: $TK671_ROOT/fam/rust/<окно>-<side>/{f12,all,tcount,tsize,tox,eps-key}.csv + steps.log.
 # Данные deriv: метрики / премия / фандинг — TK700_DL (по умолчанию /data/p42-tk700/dl; для wa / wb / wc — прежние корни TK-600).
 # Для окон отложенной выборки движок и охрана P&L не нужны: alpha-feat читает только сутки сделок, минутки и тики. Значения исходов не считаются.
 set -uo pipefail
-WIN=${1:?окно}; SIDE=${2:?сторона}; TH=${3:-2}
+WIN=${1:?окно}; SIDE=${2:?сторона}; TH=${3:-2}; STEPS=" ${4:-f12 tcount tsize tox all} "
+has() { [[ "$STEPS" == *" $1 "* ]]; }
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=${TK671_ROOT:-/data/p42-tk700/p671}; export TK671_ROOT=$ROOT
 PY=${TK700_PY:-/data/tk592/venv/bin/python}
@@ -28,21 +29,28 @@ $PY "$HERE/tk700_prep.py" feat-in --rows "$ROOT/prod/lvl-$WIN-$SIDE/rows.parquet
 tm prep $rc $S
 [ $rc -eq 0 ] || exit 1
 awk -v s=$SIDE 'NR==1{print $0",side";next}{print $0","s}' eps-ts.csv > eps-tox.csv
-S=$(date +%s)
-$F12 f12 --sigsx sigsx.csv --side "$SIDE" --out f12.csv --cache $W/cache --trades $W/aggtrades --base-date $T0 --days 80 --threads "$TH" --store $STORE > f12.log 2>&1; rc=$?; tm f12 $rc $S
-[ $rc -eq 0 ] || exit 1
-$PY - <<'PY'
+if has f12; then
+  S=$(date +%s)
+  $F12 f12 --sigsx sigsx.csv --side "$SIDE" --out f12.csv --cache $W/cache --trades $W/aggtrades --base-date $T0 --days 80 --threads "$TH" --store $STORE > f12.log 2>&1; rc=$?; tm f12 $rc $S
+  [ $rc -eq 0 ] || exit 1
+fi
+for m in tcount tsize; do
+  has $m || continue
+  S=$(date +%s)
+  $BT $m --eps eps-ts.csv --out $m.csv --base-date $T0 --trades $W/aggtrades --store $STORE --threads "$TH" > $m.log 2>&1; rc=$?; tm $m $rc $S
+done
+if has tox; then
+  S=$(date +%s)
+  $TOX tox --eps eps-tox.csv --out tox.csv --base-date $T0 --trades $W/aggtrades --store $STORE --threads "$TH" > tox.log 2>&1; rc=$?; tm tox $rc $S
+fi
+if has all; then
+  $PY - <<'PY'
 import pandas as pd
 d = pd.read_csv("f12.csv", usecols=["sym", "sig_ms", "side", "turn24h"])
 d["ep_id"] = ["e%d" % i for i in range(len(d))]
 d[["ep_id", "sym", "side", "sig_ms", "turn24h"]].to_csv("eps-flow.csv", index=False)
 PY
-S=$(date +%s)
-$BT all --eps eps-flow.csv --out all.csv --base-date $T0 --trades $W/aggtrades --store $STORE --threads "$TH" > all.log 2>&1; rc=$?; tm all_flow_deriv $rc $S
-for m in tcount tsize; do
   S=$(date +%s)
-  $BT $m --eps eps-ts.csv --out $m.csv --base-date $T0 --trades $W/aggtrades --store $STORE --threads "$TH" > $m.log 2>&1; rc=$?; tm $m $rc $S
-done
-S=$(date +%s)
-$TOX tox --eps eps-tox.csv --out tox.csv --base-date $T0 --trades $W/aggtrades --store $STORE --threads "$TH" > tox.log 2>&1; rc=$?; tm tox $rc $S
-echo "feat $WIN $SIDE done" >> steps.log
+  $BT all --eps eps-flow.csv --out all.csv --base-date $T0 --trades $W/aggtrades --store $STORE --threads "$TH" > all.log 2>&1; rc=$?; tm all_flow_deriv $rc $S
+fi
+echo "feat $WIN $SIDE done:$STEPS" >> steps.log

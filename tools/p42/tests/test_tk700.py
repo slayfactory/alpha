@@ -159,5 +159,51 @@ class Lock(unittest.TestCase):
         self.assertNotEqual(dst, dst2)
 
 
+class Holdout(unittest.TestCase):
+    """Фильтры и ftab раннера: те же правила, что `tk674_run._pass` (пустое значение проходит, «определён и не проходит» — исключён)."""
+
+    def setUp(self):
+        import numpy as np
+        self.np = np
+        nan = float("nan")
+        self.tab = {"sym": np.array(["A", "B", "C", "D", "E"], dtype=object), "ms": np.array([1, 2, 3, 4, 5], dtype=np.int64),
+                    "tpm60": np.array([0.1, 0.5, nan, 0.9, 0.3]), "n24": np.array([1e5, 5e5, 2e5, nan, 3e5]), "m24": np.array([0.0, 0.0, 1.0, 0.0, 0.0]),
+                    "cons60": np.array([0.0, 0.0, 1.0, nan, 0.0]), "mv5": np.array([2.0, 0.5, 3.0, 1.0, nan])}
+
+    def test_le_ge_nan_passes(self):
+        import tk700_holdout as h
+        self.assertEqual(h.passes(self.tab, [("tpm60", "<=", 0.5)]).tolist(), [True, True, True, False, True])       # NaN (C) проходит
+        self.assertEqual(h.passes(self.tab, [("tpm60", ">=", 0.5)]).tolist(), [False, True, True, True, False])
+
+    def test_n24_uses_m24(self):
+        import tk700_holdout as h
+        # C: m24 = 1 (значение неопределено) — проходит при любом пороге; D: n24 пусто — проходит; A: 1e5 < 2.5e5 — исключён
+        self.assertEqual(h.passes(self.tab, [("n24", ">=", 2.5e5)]).tolist(), [False, True, True, True, True])
+
+    def test_sharp_legacy(self):
+        import tk700_holdout as h
+        self.assertEqual(h.passes(self.tab, [("sharp", "==", 1.0)]).tolist(), [True, False, False, True, True])       # D: cons60 пусто, E: mv5 пусто → проходят
+
+    def test_conjunction_and_missing_column(self):
+        import tk700_holdout as h
+        self.assertEqual(h.passes(self.tab, [("tpm60", "<=", 0.5), ("n24", ">=", 2.5e5)]).tolist(), [False, True, True, False, True])
+        with self.assertRaises(SystemExit):
+            h.passes(self.tab, [("nope", "<=", 1.0)])
+
+    def test_filter_cols_deterministic(self):
+        import tk700_holdout as h
+        c1 = dict(filter=[["b", ">=", 1.0]], id="x")
+        c2 = dict(filter=[["a", "<=", 2.0], ["b", ">=", 1.0]], id="y")
+        self.assertEqual(h.filter_cols([c1, c2]), h.filter_cols([c2, c1]))
+        self.assertEqual(sorted(h.filter_cols([c1, c2]).values()), ["f000", "f001"])
+
+    def test_split_ckey(self):
+        import tk700_freeze as fz
+        line, parts = fz.split_ckey("a=1 b=2 F=n24>=250000&tpm60<=0.5")
+        self.assertEqual(line, "a=1 b=2")
+        self.assertEqual(sorted(parts), [["n24", ">=", 250000.0], ["tpm60", "<=", 0.5]])
+        self.assertEqual(fz.split_ckey("a=1")[1], [])
+
+
 if __name__ == "__main__":
     unittest.main()
