@@ -366,15 +366,17 @@ sudo bash -c 'set -a; . /etc/alpha/bybit.env; set +a; /opt/alpha/alpha-collector
 
 Цепочка: `collector-day-upload.timer` (каждый час, :17) → бокс `alpha/collect/<биржа>/<день>/` (sha256 каждого файла) →
 **`collector-offload-delete.timer` (каждый час, :47)** удаляет на srv закрытые сутки, сверенные на боксе. Скрипт
-`/opt/day-upload/offload-delete.py --keep-hours 37 --sample 20 --go` (репо `tools/srv-offload-delete.py`, юниты
+`/opt/day-upload/offload-delete.py --keep-hours 0 --sample 20 --go` (с 23.11, TK-694, В-180; до того 37 — репо `tools/srv-offload-delete.py`, юниты
 `tools/collector-offload-delete.{service,timer}`; до TK-608 — раз в сутки в 02:30 и «оставить 3 суток»).
-- **Что остаётся на srv:** текущие сутки (≈ 17 ГБ к концу дня) и сутки, в которых есть данные моложе 37 ч (живой счёт `arb-live`
-  читает окно 36 ч назад, `arb_daemon.py`: 24 ч окна + прогрев 90 мин). Итого в среднем текущие + 1–2 закрытых суток.
+- **Что остаётся на srv (с 23.11):** только текущие сутки (≈ 17 ГБ к концу дня): закрытые сутки уходят следующим :47 после выгрузки на бокс
+  (`--keep-hours 0`). До 23.11 держались ещё 37 ч под окно `arb-live` (36 ч, `arb_daemon.py`); `arb-live` и `arb-turnover` остановлены
+  (В-180) — вернуть вкладку: `systemctl enable --now arb-turnover; systemctl start arb-live`, и `--keep-hours 37` в
+  `/etc/systemd/system/collector-offload-delete.service` + `systemctl daemon-reload`.
 - **Удаление суток — только при всех условиях:** `.ok` в `/data/upload-state/<биржа>/` равен локальным файлам (размер + mtime), на
   боксе совпали имена, размеры, число файлов и сумма байт, у случайных 20 файлов sha256 пересчитан заново и равен `sha256sum` на
   боксе, нет файла моложе 15 мин. Коллекторы не трогаются (останавливать/перезапускать не нужно).
 - **Журнал:** `journalctl -u collector-offload-delete` (строки `DEL`/`SKIP`, байты, `свободно сейчас`). План без удаления:
-  `systemd-run --wait --pipe -p Nice=19 -p IOSchedulingClass=idle python3 /opt/day-upload/offload-delete.py --keep-hours 37`.
+  `systemd-run --wait --pipe -p Nice=19 -p IOSchedulingClass=idle python3 /opt/day-upload/offload-delete.py --keep-hours 0`.
   Выключить: `systemctl disable --now collector-offload-delete.timer`.
 - **Вернуть сутки с бокса:** `rsync -a box:alpha/collect/<биржа>/<день>/ /data/collect/<биржа>/data/<день>/` (для `bybit` корень —
   `/data/turbo-probe/soak-bybit/data`).
@@ -383,6 +385,12 @@ sudo bash -c 'set -a; . /etc/alpha/bybit.env; set +a; /opt/alpha/alpha-collector
   сверки; отказывает на защищённых каталогах и на занятых (запущенный юнит / процесс). Запуск только через `systemd-run`.
   Манифест 18.11 — `docs/findings/srv-offload-2026-11-18.md` (каталог → путь на боксе `/home/offload-srv-2026-11-18/<каталог>`).
 - **Подкаталоги и `/root`, часть оставить (TK-675, 22.11):** `tools/srv-offload-paths.py spec.json --manifest M.jsonl [--preflight] [--delete]` — по очереди, как выше, плюс `exclude`; перед переносом сырья — `--preflight` (симлинки окон счёта на сырьё). Манифест — `docs/findings/srv-offload-2026-11-22.md` (путь → `/home/offload-srv-2026-11-22/<путь>`).
+
+- **Сырьё aggTrades-zip → пустышки (TK-694, 23.11):** `tools/srv-zip-stub.py` — у zip с действительным `.tk` склада тиков (размер + mtime = заголовок)
+  данные уходят на бокс, а на месте остаётся разрежённый файл того же размера и mtime (0 блоков): движок, отпечаток кэша сигналов и `store-fill`
+  читают у zip только `size` + `mtime`. `manifest ЛОК=БОКС … --store СКЛАД --out M.jsonl` (sha256 локально, на боксе и по `.CHECKSUM` / `.sha256`),
+  `stub M.jsonl --store СКЛАД --go`, `restore M.jsonl [--only ПОДСТРОКА]` (с бокса, sha256 и mtime из манифеста). Тесты `tools/tests/test_srv_zip_stub.py`.
+  Манифест 23.11 (путь, байты, mtime_ns, sha256, путь на боксе) — `offload-srv-2026-11-23/zipstub.manifest.jsonl` на боксе; описание — `kb/task/TK-694.md`.
 
 ## VPS София — диск (TK-075)
 
