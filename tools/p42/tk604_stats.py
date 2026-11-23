@@ -661,3 +661,11 @@ def mde_cell(sigma, n_cov, f_cov, f_all, coef=2.49):
         return float("nan"), float("nan")
     d_min = coef * sigma / (f_cov * (1 - f_cov) * n_cov) ** 0.5
     return float(d_min), float(f_all * d_min)
+
+
+# ---- TK-700: окна отложенной выборки январь–июнь 2026 — только по явной переменной TK700_WINSET=h1 (в конце модуля: подмена таблиц окон и изоляции, охрана P&L) -----------------
+if os.environ.get("TK700_WINSET") == "h1":
+    import sys as _sys
+    _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import tk700_win as _tk700_win
+    _tk700_win.apply(_sys.modules[__name__])
