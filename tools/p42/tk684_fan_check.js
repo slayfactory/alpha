@@ -121,7 +121,7 @@ const MS_MAX = 250;      // кадр на самом большом наборе
   await setSl('dd', 1e9);
   await page.selectOption('#fan-top', '100'); await ready(); await page.selectOption('#fan-by', 'sum'); await ready(); d = await dom();
   let want = await page.evaluate(() => window.__T.count('short', 'all', {by: 1}));
-  eq([d.n, d.mode, d.rows[1].name], [100, 'lines', want.best.key], 'топ 100 по сумме');
+  eq([d.n, d.mode, d.rows[1].name], [100, 'lines', want.best.key.replace(/_bp(?![a-z])/g, '')], 'топ 100 по сумме');
   ok(d.hash.includes('top=100') && d.hash.includes('by=sum'), 'топ в хеше: ' + d.hash);
   await shot('top100');
   await page.selectOption('#fan-top', '0'); await ready();

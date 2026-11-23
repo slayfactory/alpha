@@ -5,14 +5,15 @@ const FAN = {index: null, packs: {}, sets: {}, busy: 0, err: null, view: null, h
 const F_N = 0, F_USD = 1, F_SH = 2, F_DD = 3, F_GAP = 4, F_NW = 5, F_MW = 6, F_NL = 7, F_ML = 8, F_WORST = 9, F_SPLIT = 10;
 const FAN_LV = [['1', 'единички'], ['2', 'пары'], ['3', 'тройки'], ['4', 'четвёрки'], ['split', 'вход двумя частями'], ['all', 'все']];
 const FAN_SL = [['dd', 'Просадка ≤, $', F_DD, 'max', 1], ['gap', 'Перехай ≤, сут.', F_GAP, 'max', 1], ['n', 'Сделок ≥', F_N, 'min', 1], ['sum', 'Сумма ≥, $', F_USD, 'min', 1], ['sh', 'Шарп ≥', F_SH, 'min', 0.1]];
-const FAN_TOP = [0, 20, 50, 100, 500], FAN_ROWS = 30, FAN_LINES = 300, FAN_SIM_N = 50;
+const FAN_TOP = [0, 20, 50, 100, 500], FAN_ROWS = 30, FAN_LINES = 300, FAN_DENS_MAX = 20000, FAN_SIM_N = 50;
 const FAN_COL = {anchor: '#18181b', pin: '#c0265b', fav: ['#1baf7a', '#6250d6', '#b8860b', '#0e7490', '#a3369c', '#008300']};
 const FAN_DEF = () => ({lv: '2', ax: null, top: 0, by: 'sh', dd: null, gap: null, n: null, sum: null, sh: null, pin: null, sim: false});
 const FAN_TOK = /^[LS][0-5][0-9a-z]+$/;
 const fanP = side => side === 'long' ? 'L' : 'S';
 const fanTok = (P, i) => fanP(P.side) + P.level + P.ids[i].toString(36);
 const fanFile = tok => tok[0] + '-' + tok[1];
-const fanAxName = a => a === 'split' ? 'вход двумя частями' : a;
+const fanNoBp = k => k.replace(/_bp(?![a-z])/g, '');      // как на вкладке «Признаки»: имена без суффикса единицы
+const fanAxName = a => a === 'split' ? 'вход двумя частями' : fanNoBp(a);
 
 async function fanFetch(name, json) {
   const r = await fetch('data/fan/' + name + (json ? '.json.gz' : '.bin.gz'));
@@ -57,7 +58,7 @@ function fanVariant(tok) {
   const c = fanCell(tok); if (!c) return null;
   const D = FAN.index.days, NF = FAN.index.fields.length, F = c.P.F, o = c.i * NF, d = [], v = [], t = [];
   for (let k = 0; k < D; k++) { const x = c.P.cents[c.i * D + k] / 100; if (x) { d.push(k); v.push(x); t.push(V.start_ms + (k + 1) * 86400e3 - 1); } }
-  return {id: tok, side: c.P.side, group: 'fan', label: c.P.keys[c.i], key: c.P.keys[c.i], status: c.P.level ? 'подобрано на этих данных' : '', d, v, t, m: fanM(c),
+  return {id: tok, side: c.P.side, group: 'fan', label: fanNoBp(c.P.keys[c.i]), key: c.P.keys[c.i], status: c.P.level ? 'подобрано на этих данных' : '', d, v, t, m: fanM(c),
     agg: {n: F[o + F_N], sum: F[o + F_USD], nw: F[o + F_NW], sw: F[o + F_NW] * F[o + F_MW], nl: F[o + F_NL], sl: F[o + F_NL] * F[o + F_ML], worst: F[o + F_WORST]}};
 }
 // догрузить пакеты токенов (образец, избранное, выбранные в «Вариантах») и перерисовать вид
@@ -167,21 +168,23 @@ function fanDraw() {
     // сетка — два столбца на сутки; столбец → доля пути внутри суток (одна линия = одна запись на столбец)
     const gw = Math.min(Math.round(pw), D * 2), gh = Math.round(ph), cnt = new Uint32Array(gw * gh), mix = axv ? new Float32Array(gw * gh * 3) : null, ky = gh / (hi - lo);
     const xa = new Int32Array(D + 1), fr = new Float64Array(gw), shown = sel.shown;
+    // очень много линий: плотность по выборке — по одной из каждых stp подряд (место внутри блока меняется), с весом блока; счётчики и границы осей — по всем
+    const stp = Math.max(1, Math.ceil(shown.length / FAN_DENS_MAX)), ns = Math.ceil(shown.length / stp);
     for (let d = 0; d <= D; d++) xa[d] = Math.min(Math.ceil(d * gw / D), gw);
     for (let d = 0; d < D; d++) for (let x = xa[d]; x < xa[d + 1]; x++) fr[x] = (x - d * gw / D) / (gw / D);
-    for (let s = 0; s < shown.length; s++) {
-      const j = shown[s], b = S.sp[j].cum, o = S.si[j] * D; let y0 = hi * ky;
+    for (let s = 0; s < ns; s++) {
+      const s0 = s * stp, wt = Math.min(stp, shown.length - s0), j = shown[s0 + ((s * 2654435761) >>> 0) % wt], b = S.sp[j].cum, o = S.si[j] * D; let y0 = hi * ky;
       if (mix) {
         const c = colOf(j);
         for (let d = 0; d < D; d++) {
           const y1 = (hi - b[o + d]) * ky, dy = y1 - y0;
-          for (let x = xa[d], xe = xa[d + 1]; x < xe; x++) { const q = ((y0 + dy * fr[x]) | 0) * gw + x; cnt[q]++; mix[q * 3] += c[0]; mix[q * 3 + 1] += c[1]; mix[q * 3 + 2] += c[2]; }
+          for (let x = xa[d], xe = xa[d + 1]; x < xe; x++) { const q = ((y0 + dy * fr[x]) | 0) * gw + x; cnt[q] += wt; mix[q * 3] += c[0] * wt; mix[q * 3 + 1] += c[1] * wt; mix[q * 3 + 2] += c[2] * wt; }
           y0 = y1;
         }
       } else {
         for (let d = 0; d < D; d++) {
           const y1 = (hi - b[o + d]) * ky, dy = y1 - y0;
-          for (let x = xa[d], xe = xa[d + 1]; x < xe; x++) cnt[((y0 + dy * fr[x]) | 0) * gw + x]++;
+          for (let x = xa[d], xe = xa[d + 1]; x < xe; x++) cnt[((y0 + dy * fr[x]) | 0) * gw + x] += wt;
           y0 = y1;
         }
       }
@@ -228,7 +231,7 @@ function fanNearest(ev) {
 }
 function fanTip(c, ev) {
   const mm = fanM(c), D = FAN.index.days;
-  tip.innerHTML = `<div class="t">${c.P.keys[c.i]}</div>` + (c.d == null ? '' : `<div class="r"><span>${fday(V.start_ms + c.d * 86400e3)}</span><span>${money(c.P.cum[c.i * D + c.d])} $</span></div>`)
+  tip.innerHTML = `<div class="t">${fanNoBp(c.P.keys[c.i])}</div>` + (c.d == null ? '' : `<div class="r"><span>${fday(V.start_ms + c.d * 86400e3)}</span><span>${money(c.P.cum[c.i * D + c.d])} $</span></div>`)
     + [['Сделок', V_FMT.n(mm.n)], ['Сумма, $', V_FMT.sum(mm.sum)], ['Шарп (год)', mm.sharpe == null ? '—' : V_FMT.sharpe(mm.sharpe)], ['Просадка, $', V_FMT.dd(mm.dd)], ['Перехай, сут.', mm.gap]].map(([k, v]) => `<div class="r"><span>${k}</span><span>${v}</span></div>`).join('');
   tip.style.display = 'block'; moveTip(ev);
 }
@@ -252,7 +255,7 @@ function fanTable(X) {
     const star = h('button', {class: 'fan-star', 'data-fav': tok, 'aria-pressed': String(fav), title: fav ? 'убрать из избранного' : 'в избранное'}, fav ? '★' : '☆');
     star.onclick = ev => { ev.stopPropagation(); fanFav(tok); };
     const tr = h('tr', {'data-tok': tok, 'data-kind': kind, class: (kind === 'anchor' ? 'base' : '') + (tok === ST.fan.pin ? ' pin' : '')}, [h('td', {class: 'fan-s'}, star),
-      h('td', {'data-f': 'name'}, [h('span', {class: 'sw', style: `border-color:${col}`}), h('span', {class: 'fan-nm'}, kind === 'anchor' ? V_BY.get(V.default[side]).label : c.P.keys[c.i])]),
+      h('td', {'data-f': 'name'}, [h('span', {class: 'sw', style: `border-color:${col}`}), h('span', {class: 'fan-nm'}, kind === 'anchor' ? V_BY.get(V.default[side]).label : fanNoBp(c.P.keys[c.i]))]),
       ...V_COLS.map(([k, lab]) => h('td', {class: 'num', 'data-f': k, 'data-lab': lab, 'data-v': st[k] == null ? '' : st[k]}, st[k] == null ? '—' : V_FMT[k](st[k]))),
       sel.sim ? h('td', {class: 'num', 'data-f': 'sim', 'data-lab': 'Сходство'}, c.j == null ? '' : num(sel.score[c.j], 2)) : null]);
     tr.onclick = () => fanPin(tok);
@@ -280,7 +283,8 @@ function fanView(side, width) {
   if (f.ax && !S.ax.includes(I.axes.findIndex(a => a.name === f.ax))) f.ax = null;
   // признак: № со вкладки «Признаки» (по имени), цвет линий — по значению
   const ftN = new Map(FEAT.sets.flatMap(s => s.groups.flatMap(g => g.features.map(x => [x.name.toLowerCase(), x.n]))));
-  const axs = S.ax.map(i => ({name: I.axes[i].name, n: ftN.get(I.axes[i].name.toLowerCase())})).sort((a, b) => (a.n || 1e9) - (b.n || 1e9) || a.name.localeCompare(b.name));
+  const axN = nm => ftN.get(nm.toLowerCase()) || ftN.get(nm.toLowerCase().replace(/@.*$/, '').replace(/\.(ge|le)$/, ''));
+  const axs = S.ax.map(i => ({name: I.axes[i].name, n: axN(I.axes[i].name)})).sort((a, b) => (a.n || 1e9) - (b.n || 1e9) || a.name.localeCompare(b.name));
   const sAx = h('select', {id: 'fan-ax', 'aria-label': 'признак'}, [h('option', {value: ''}, 'признак: все'), ...axs.map(a => h('option', {value: a.name}, (a.n ? '№ ' + a.n + ' · ' : '') + fanAxName(a.name)))]);
   sAx.value = f.ax || ''; sAx.onchange = () => { ST.fan.ax = sAx.value || null; setHash(); renderEquity(); };
   const sTop = h('select', {id: 'fan-top', 'aria-label': 'топ'}, FAN_TOP.map(n => h('option', {value: n}, n ? 'топ ' + n : 'все линии')));
@@ -296,7 +300,7 @@ function fanView(side, width) {
     cnt.textContent = `линий ${ints(X.sel.shown.length)} из ${ints(S.n)}`;
     const items = [[swLine(FAN_COL.anchor, 3), 'база']];
     if (X.sel.pin) items.push([swLine(FAN_COL.pin, 3), 'образец']);
-    fanFavs(side).forEach((t, k) => { const c = fanCell(t); if (c) items.push([swLine(FAN_COL.fav[k % FAN_COL.fav.length], 2), c.P.keys[c.i]]); });
+    fanFavs(side).forEach((t, k) => { const c = fanCell(t); if (c) items.push([swLine(FAN_COL.fav[k % FAN_COL.fav.length], 2), fanNoBp(c.P.keys[c.i])]); });
     if (X.sel.axi >= 0) I.axes[X.sel.axi].vals.forEach((v, k, a) => { const c = fanHue(k, a.length); items.push([swLine(`rgb(${c[0]},${c[1]},${c[2]})`, 2), fanAxName(I.axes[X.sel.axi].name) + ' ' + v]); });
     legBox.replaceChildren(legend(items)); tblBox.replaceChildren(fanTable(X));
     X.cv.dataset.ms = (performance.now() - t0).toFixed(1); X.cv.dataset.msSel = (t1 - t0).toFixed(1); X.cv.dataset.msDraw = (t2 - t1).toFixed(1);      // весь кадр: отбор, холст, таблица
@@ -312,7 +316,7 @@ function fanView(side, width) {
   });
   box.append(sl, h('div', {class: 'fan-row'}, cnt));
   if (f.pin) {
-    const pinned = fanCell(f.pin), bar = h('div', {class: 'fan-pin', 'data-pinbar': f.pin}, [h('span', {class: 'sw', style: `border-color:${FAN_COL.pin}`}), h('b', {}, pinned ? pinned.P.keys[pinned.i] : f.pin)]);
+    const pinned = fanCell(f.pin), bar = h('div', {class: 'fan-pin', 'data-pinbar': f.pin}, [h('span', {class: 'sw', style: `border-color:${FAN_COL.pin}`}), h('b', {}, pinned ? fanNoBp(pinned.P.keys[pinned.i]) : f.pin)]);
     const btn = (t, attr, fn, on) => { const b = h('button', {'data-act': attr, 'aria-pressed': on == null ? null : String(on)}, t); b.onclick = fn; bar.append(b); };
     btn('похожие', 'sim', () => { ST.fan.sim = !ST.fan.sim; setHash(); renderEquity(); }, f.sim);
     btn(ST.fav.includes(f.pin) ? 'убрать из избранного' : 'в избранное', 'fav', () => fanFav(f.pin));

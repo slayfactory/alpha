@@ -56,7 +56,7 @@ def test_variants_list():
     assert not set(ids) & {"shape", "bases", "where", "curve", "comp", "short", "long", "both"}          # слова хеша вкладки
     groups = [g["id"] for g in v["groups"]]
     for x in v["variants"]:
-        assert x["side"] in ("long", "short") and x["group"] in groups and "{w}" in x["dir"]
+        assert x["side"] in ("long", "short") and x["group"] in groups and ("{w}" in x["dir"] if "dir" in x else "chron" in x)      # каталог сделок — dir или строка летописи (chron)
         assert len(x["label"].replace("·", " ").split()) <= 6 and not re.search(r"TK-|L-\d|В-\d|бп", x["label"]), x["label"]
         assert "ref" in x or "chron" in x
     for s in ("long", "short"):
@@ -81,3 +81,6 @@ def test_fan_axes_of():
     assert fan.axes_of({"s": 4.0, "e2": 0.3}, []) == ([("e2", "0.3")], False)                          # e2 без e2t — обычная ось
     assert fan.axes_of({"s": 4.0, "e2": 0.5, "e2t": 1.0}, []) == ([("split", "e2=0.5 e2t=1")], True)    # раздельный вход — одна ось
     assert fan.axes_of({"s": 3.0}, [["q", 100], "tu_60"]) == ([("q", "100"), ("tu", "60")], False)      # фильтры: пара и «имя_значение»
+    assert fan.axes_of({"s": 4.0, "a": 1, "cw": 60, "cl": 0, "ch": 10.5, "cm": 0.5, "e": 0.3}, []) == ([("cw", "ch=10.5 cl=0 cm=0.5 cw=60"), ("a", "1"), ("e", "0.3")], False)    # cw + cl / ch / cm — одна ось (TK-696)
+    assert fan.axes_of({"s": 4.0, "e2": 0, "e2t": 2, "n_bounce": 1, "natr_min": 0.6, "nf": 1}, []) == ([("nf", "natr_min=0.6 nf=1"), ("split", "e2=0 e2t=2"), ("n_bounce", "1")], True)    # L-384 место 1: три оси
+    assert fan.axes_of({"s": 4.0, "e1t": 2, "e2": 0, "natr_min": 0.6}, []) == ([("e1t", "e1t=2 e2=0"), ("natr_min", "0.6")], False)    # natr_min без nf — своя ось
