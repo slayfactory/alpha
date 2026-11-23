@@ -32,8 +32,8 @@ const E_E8: i64 = 300_000;
 const TAU_PM: i64 = 200;
 /// Полоса проторговки 0,5 % (в 1e-5).
 const B_PM: i64 = 500;
-/// Таймфрейм баров уровня, минут.
-const TF: i64 = 60;
+/// Свеча уровня по умолчанию, минут: у строк `sigsx` без поля `tf_min` (дампы движка с `tf_min = 60`).
+pub const DEFAULT_TF_MIN: i64 = 60;
 const START_DAY: i64 = 14;
 /// Сетка суток по умолчанию (`SIGFEAT_DAYS`: у ftab TK-599 — 80, у TK-594/`ep_u0` — 74); длина `.b42` обязана ей соответствовать (`F12Cfg::days`).
 pub const DAYS_TOTAL: i64 = 80;
@@ -384,6 +384,8 @@ pub struct Sig {
     pub born: i64,
     pub first_bar: i64,
     pub natr_e8: i64,
+    /// Размер свечи уровня, минут (`cfg.tf_min` варианта движка: 30 / 60 / 240): `first_bar` и бары членов — в этих свечах (TK-699).
+    pub tf_min: i64,
     /// `(бар, цена)` членов версии уровня.
     pub members: Vec<(i64, i64)>,
 }
@@ -439,15 +441,22 @@ impl Refs {
     }
 }
 
-fn runs_and_touch(fr: &Fr, a: i64, t: i64, r: i64, bars: &[i64]) -> (i64, f64, i64, Option<i64>) {
+fn runs_and_touch(
+    fr: &Fr,
+    a: i64,
+    t: i64,
+    r: i64,
+    bars: &[i64],
+    tf: i64,
+) -> (i64, f64, i64, Option<i64>) {
     let m = fr.m;
     let band = r - r.abs() * TAU_PM / 100_000;
     let (mut pierce, mut touch) = (Runs::default(), Runs::default());
     let (mut pmax, mut last_touch): (Option<i64>, Option<i64>) = (None, None);
     let (mut hour, mut hour_excl) = (i64::MIN, false);
     for x in a.max(0)..t.min(m.n() as i64) {
-        if x.div_euclid(TF) != hour {
-            hour = x.div_euclid(TF);
+        if x.div_euclid(tf) != hour {
+            hour = x.div_euclid(tf);
             hour_excl = bars.contains(&hour);
         }
         let xu = x as usize;
@@ -477,6 +486,7 @@ fn level_features(
     born: i64,
     first_bar: i64,
     dist: i64,
+    tf: i64,
     out: &mut Vals,
 ) {
     let m = fr.m;
@@ -498,11 +508,11 @@ fn level_features(
     } else {
         (lpr - lpx) / lpr * 1e4
     });
-    out.push((t - first_bar * TF) as f64 / 60.0);
+    out.push((t - first_bar * tf) as f64 / 60.0);
     out.push((t - born) as f64 / 60.0);
     out.push(dist as f64 / 1e4);
     let (pierce_ep, pierce_max, touch_ep, last_touch) =
-        runs_and_touch(fr, first_bar * TF, t, r, &bars);
+        runs_and_touch(fr, first_bar * tf, t, r, &bars, tf);
     out.push(pierce_ep as f64);
     out.push(pierce_max);
     out.push(touch_ep as f64);
@@ -510,7 +520,7 @@ fn level_features(
         Some(x) => (t - x) as f64 / 60.0,
         None => {
             let mb = bars.iter().copied().max().unwrap_or(0);
-            (t - (mb + 1) * TF) as f64 / 60.0
+            (t - (mb + 1) * tf) as f64 / 60.0
         }
     });
     // глубина отскоков между соседними членами
@@ -518,8 +528,8 @@ fn level_features(
     ms.sort_unstable();
     let mut depths: Vec<f64> = Vec::new();
     for (i, &(b, p_)) in ms.iter().enumerate() {
-        let lo = (b + 1) * TF;
-        let hi = ms.get(i + 1).map_or(born, |x| x.0 * TF).min(t);
+        let lo = (b + 1) * tf;
+        let hi = ms.get(i + 1).map_or(born, |x| x.0 * tf).min(t);
         if hi <= lo {
             continue;
         }
@@ -551,11 +561,19 @@ fn level_features(
 }
 
 /// `fresh_prior_features`: последнее касание ДО начала текущего подхода.
-fn fresh_prior_features(fr: &Fr, t: i64, r: i64, bars: &[i64], first_bar: i64, out: &mut Vals) {
+fn fresh_prior_features(
+    fr: &Fr,
+    t: i64,
+    r: i64,
+    bars: &[i64],
+    first_bar: i64,
+    tf: i64,
+    out: &mut Vals,
+) {
     let m = fr.m;
     // `abs(R)·(E_E8+1)/SCALE` — частное Python (одно округление), не `f64`-деление округлённого числителя
     let p_lo = r as f64 - ratio_f64(r.unsigned_abs() as u128 * (E_E8 + 1) as u128, SCALE as u128);
-    let lo = (first_bar * TF).max(0);
+    let lo = (first_bar * tf).max(0);
     let band = r - r.abs() * TAU_PM / 100_000;
     // a0 — минута после последней «ухода» (low ≤ p_lo или high ≥ R) среди минут с данными
     let a0 = (lo..t)
@@ -568,7 +586,7 @@ fn fresh_prior_features(fr: &Fr, t: i64, r: i64, bars: &[i64], first_bar: i64, o
     out.push((t - a0) as f64);
     let touch = (lo..a0.min(t)).rev().find(|&x| {
         let xu = x as usize;
-        m.o[xu] != 0 && !bars.contains(&x.div_euclid(TF)) && fr.h(xu) >= band
+        m.o[xu] != 0 && !bars.contains(&x.div_euclid(tf)) && fr.h(xu) >= band
     });
     match touch {
         Some(x) => {
@@ -577,7 +595,7 @@ fn fresh_prior_features(fr: &Fr, t: i64, r: i64, bars: &[i64], first_bar: i64, o
         }
         None => {
             let mb = bars.iter().copied().max().unwrap_or(0);
-            out.push((t - (mb + 1) * TF) as f64 / 60.0);
+            out.push((t - (mb + 1) * tf) as f64 / 60.0);
             out.push(1.0);
         }
     }
@@ -727,9 +745,10 @@ pub fn episode_features(
         sig.born,
         sig.first_bar,
         sig.dist_e8,
+        sig.tf_min,
         &mut out,
     );
-    fresh_prior_features(&fr, t, r, &bars, sig.first_bar, &mut out);
+    fresh_prior_features(&fr, t, r, &bars, sig.first_bar, sig.tf_min, &mut out);
     sparse_features(&c.m, c.first_valid as i64, t, &mut out);
     tick_sparse_features(pre, sig_abs, &mut out);
     approach_features(
@@ -1141,8 +1160,18 @@ fn parse_members(b: &str) -> Result<Vec<(i64, i64)>> {
 }
 
 /// `<side>-sigsx.csv` (`read_sigsx`): строки по монетам, внутри монеты — порядок `(level, sig_ms)`; столбцы по позиции
-/// (`sym, level, sig_ms, dist_e8, level_px_e8, born, end, first_bar, natr_e8, members`; в заголовке бинаря `natr_e8` нет).
+/// (`sym, level, sig_ms, dist_e8, level_px_e8, born, end, first_bar, natr_e8, members[, tf_min]`; в заголовке бинаря `natr_e8` нет).
+/// `tf_min` — свеча уровня строки (30 / 60 / 240): `first_bar` и бары членов считаны в ней; нет поля — `DEFAULT_TF_MIN`.
 pub fn read_sigsx(path: &Path, coins: Option<&[String]>) -> Result<BTreeMap<String, Vec<Sig>>> {
+    read_sigsx_tf(path, coins, DEFAULT_TF_MIN)
+}
+
+/// `read_sigsx`, у строк без поля `tf_min` — свеча `default_tf` (дамп движка одного варианта).
+pub fn read_sigsx_tf(
+    path: &Path,
+    coins: Option<&[String]>,
+    default_tf: i64,
+) -> Result<BTreeMap<String, Vec<Sig>>> {
     let mut rd = csv::ReaderBuilder::new()
         .has_headers(true)
         .flexible(true) // в заголовке бинаря прогона `natr_e8` нет — 9 имён при 10 полях строк
@@ -1161,6 +1190,14 @@ pub fn read_sigsx(path: &Path, coins: Option<&[String]>) -> Result<BTreeMap<Stri
             continue;
         }
         let int = |i: usize| parse_i64(f(i).as_bytes()).with_context(ctx);
+        let tf_min = if f(10).is_empty() {
+            default_tf
+        } else {
+            int(10)?
+        };
+        if tf_min <= 0 {
+            bail!("{}: tf_min {tf_min} ≤ 0", ctx());
+        }
         by.entry(sym.to_string()).or_default().push(Sig {
             level: int(1)?,
             sig_ms: int(2)?,
@@ -1169,6 +1206,7 @@ pub fn read_sigsx(path: &Path, coins: Option<&[String]>) -> Result<BTreeMap<Stri
             born: int(5)?,
             first_bar: int(7)?,
             natr_e8: int(8)?,
+            tf_min,
             members: parse_members(f(9)).with_context(ctx)?,
         });
     }
@@ -1190,6 +1228,8 @@ pub struct F12Cfg {
     pub coins: Option<Vec<String>>,
     /// Суток в сетке минуток (`SIGFEAT_DAYS` Python): `N_MIN = days · 1440` — длина `.b42`, область `emp_coin`.
     pub days: i64,
+    /// Свеча уровня у строк `sigsx` без поля `tf_min` (дамп движка одного варианта: 30 / 60 / 240).
+    pub tf_min: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -1296,7 +1336,7 @@ pub fn run(cfg: &F12Cfg, src: &dyn PxSrc) -> Result<Summary> {
     };
     let base_ms = parse_date(&cfg.base_date)? * DAY_MS;
     let n_min = (cfg.days * 1440) as usize;
-    let by = read_sigsx(&cfg.sigsx, cfg.coins.as_deref())?;
+    let by = read_sigsx_tf(&cfg.sigsx, cfg.coins.as_deref(), cfg.tf_min)?;
     if by.is_empty() {
         bail!("пустой вход: {}", cfg.sigsx.display());
     }
