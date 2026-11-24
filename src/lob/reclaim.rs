@@ -119,6 +119,7 @@ impl ReclaimWatch {
     }
 }
 
+#[cfg(test)]
 /// Момент входа `t0` (нс) по готовой ленте или `None` — свёртка `ReclaimWatch` (для разборов и тестов).
 pub fn reclaim_t0(
     trades: &[TradeTick],
@@ -132,6 +133,7 @@ pub fn reclaim_t0(
     trades.iter().find_map(|&t| w.feed(t))
 }
 
+#[cfg(test)]
 /// Момент входа `t0` (нс) Г-135 по готовой ленте или `None` — свёртка `ReclaimWatch::postsweep` (разборы и тесты).
 pub fn postsweep_t0(
     trades: &[TradeTick],

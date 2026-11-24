@@ -192,6 +192,29 @@ pub fn parse_e9(s: &str) -> Option<i64> {
     Some(if neg { -v } else { v })
 }
 
+/// Обратное к [`parse_e9`]: целое 1e-9 → десятичная строка без хвостовых нулей
+/// (`1_500_000_000` → `"1.5"`), как её принимает API Bybit для `qty` / `price`
+/// и читает человек в `instruments.csv`. Одна копия на крейт (TK-702).
+pub fn format_e9(v: i64) -> String {
+    let neg = v < 0;
+    let v = v.unsigned_abs();
+    let int_part = v / 1_000_000_000;
+    let frac_part = v % 1_000_000_000;
+    let mut s = if frac_part == 0 {
+        int_part.to_string()
+    } else {
+        let mut frac = format!("{frac_part:09}");
+        while frac.ends_with('0') {
+            frac.pop();
+        }
+        format!("{int_part}.{frac}")
+    };
+    if neg {
+        s.insert(0, '-');
+    }
+    s
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TopicKind {
     /// Поток стакана и его глубина из имени топика

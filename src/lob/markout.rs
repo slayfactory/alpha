@@ -46,7 +46,7 @@
 //! уровень.
 
 use crate::book::Side;
-use crate::lob::levels::{LevelRecord, TouchRecord};
+use crate::lob::levels::TouchRecord;
 
 /// Горизонты замера, мс: 100 мс, 1 с, 10 с, 60 с.
 pub const HORIZONS_MS: [i64; 4] = [100, 1_000, 10_000, 60_000];
@@ -183,24 +183,6 @@ pub fn distance_bps_at_birth(mids: &[MidSample], birth_ms: i64, price_tick: i64)
     raw_return_bps(mid2x, price_tick.saturating_mul(2)).map(f64::abs)
 }
 
-/// Markout уровня на всех горизонтах: база строго до смерти, будущее —
-/// как есть на `t0 + h`, где `t0` — метка базы. Нет базы или нет будущего
-/// на горизонте — `None` на этом горизонте, а не ноль: отсутствие данных
-/// не есть нулевой сдвиг.
-pub fn markouts_for_level(level: &LevelRecord, mids: &[MidSample]) -> [Option<f64>; 4] {
-    let Some((base_ts, base2x)) = base_before(mids, level.death_ms) else {
-        return [None, None, None, None];
-    };
-    std::array::from_fn(|i| {
-        // Индекс доказуемо в границах (`from_fn` идёт ровно по `0..4` при
-        // длине 4), но `get` здесь бесплатен и тотален: недостижимая ветвь
-        // даёт пропуск горизонта, а не панику.
-        let h = *HORIZONS_MS.get(i)?;
-        let fut2x = future_asof(mids, base_ts, h)?;
-        markout_bps(level.side, base2x, fut2x)
-    })
-}
-
 /// Markout касания: знак «в сторону отскока» — ровно минус `markout_bps`,
 /// та же арифметика `signed_return_bps`. Бид: середина вверх — плюс (цена
 /// отошла от бида); аск: середина вниз — плюс. Почему не тот же знак, что у
@@ -265,14 +247,6 @@ pub fn long_markouts_for_touch(touch: &TouchRecord, mids: &[MidSample]) -> [Opti
 /// для всех читателей.
 pub fn within_touch(duration_ms: i64) -> [bool; 4] {
     std::array::from_fn(|i| HORIZONS_MS.get(i).is_some_and(|&h| h <= duration_ms))
-}
-
-/// Markout касания без горизонтов внутри касания: `None` там, где
-/// `within_touch` — для средних по корзинам (В-45 (2)); в CSV идут оба.
-pub fn markouts_for_touch_outside(touch: &TouchRecord, mids: &[MidSample]) -> [Option<f64>; 4] {
-    let m = markouts_for_touch(touch, mids);
-    let inside = within_touch(touch.duration_ms);
-    std::array::from_fn(|i| if inside[i] { None } else { m[i] })
 }
 
 /// Подход к уровню: сдвиг середины за `back_ms` до касания в bps, знак «к

@@ -20,7 +20,7 @@ import tk680_axes as a80  # noqa: E402
 COLS_FILE = os.path.join(HERE, "tk680_cols.json")     # имена столбцов покрытия (docs/findings/p42-titration-coverage-2026-11-22/cols.json)
 ENGNAME = {"L": "long", "S": "short"}
 OPS = {"le": "<=", "ge": ">="}
-THR_NAME = {"hist": "thr680h.json", "grid": "thr680g.json", "ctx": "thr680c.json", "t681": "thr680t.json", "new": "thr680n.json"}.get(a80.SET, "thr680.json")     # пороги набора «история пробоев» (§13.73.8) — свой файл, заморозка thr680.json не трогается
+THR_NAME = {"hist": "thr680h.json", "grid": "thr680g.json", "ctx": "thr680c.json", "t681": "thr680t.json", "new": "thr680n.json", "t697": "thr680p.json", "t697b": "thr680q.json", "t701": "thr680r.json", "t697k": "thr680k.json"}.get(a80.SET, "thr680.json")     # пороги набора «история пробоев» (§13.73.8) — свой файл, заморозка thr680.json не трогается
 
 
 def cosig15(sym, ms):
@@ -43,6 +43,12 @@ def coverage_cols():
         return list(a80.CTX_COLS)
     if a80.SET == "t681":
         return list(a80.FAST_NAMES)
+    if a80.SET == "t697":
+        return list(a80.T697_NAMES)
+    if a80.SET == "t697b":
+        return list(a80.T697B_NAMES)
+    if a80.SET == "t701":
+        return list(a80.T701_NAMES)
     return json.load(open(COLS_FILE, encoding="utf-8"))
 
 
@@ -66,6 +72,65 @@ def fast_join(side, df):
     if m["f_sym"].isna().any() or not (m["f_sym"].to_numpy() == m["sym"].to_numpy()).all() or not (m["f_ms"].to_numpy() == m["meta_sig_ms"].to_numpy()).all():
         raise SystemExit("FAST %s: строки кандидатов не совпадают с fast.csv (монета / sig_ms / нет пары)" % side)
     return m.drop(columns=["f_sym", "f_ms"])
+
+
+def t697_join(side, df):
+    """Набор t697: к строкам df (win, row_id, sym, meta_sig_ms) — 40 столбцов семейств m697 / h697 / l697 (`/data/p42-tk697/fam`); ключ окно + row_id, строки сверяются по монете и sig_ms rows.parquet TK-671."""
+    import pandas as pd
+    parts = []
+    for w in a80.T681_WINS:
+        fam = pd.read_parquet(a80.T697_ROWS % (w, ENGNAME[side]), columns=["row_id", "sym", "sig_ms"]).rename(columns={"sym": "f_sym", "sig_ms": "f_ms"}).set_index("row_id")
+        n = len(fam)
+        for f, cols in a80.T697_FAMS.items():
+            x = pd.read_parquet(a80.T697_FAM % (f, w, ENGNAME[side]))
+            if list(x.columns) != cols or len(x) != n or not x.index.equals(fam.index):
+                raise SystemExit("семейство %s %s %s: столбцы или строки не совпали с rows.parquet / списком поправки" % (f, w, side))
+            fam = fam.join(x, how="left", validate="one_to_one")
+        fam = fam.reset_index()
+        fam.insert(0, "win", w)
+        parts.append(fam)
+    m = df.merge(pd.concat(parts, ignore_index=True), on=["win", "row_id"], how="left", validate="one_to_one")
+    if m["f_sym"].isna().any() or not (m["f_sym"].to_numpy() == m["sym"].to_numpy()).all() or not (m["f_ms"].to_numpy() == m["meta_sig_ms"].to_numpy()).all():
+        raise SystemExit("t697 %s: строки кандидатов не совпадают с rows.parquet (монета / sig_ms / нет пары)" % side)
+    m = m.drop(columns=["f_sym", "f_ms"])
+    ext = []                                        # критик 23.11 FIX 2: сигналы базы без строки таблицы (следующие сигналы того же уровня) — строки из `tk697_ext.py`, ключ (sym, sig_ms) не пересекается с таблицей
+    for w in a80.T681_WINS:
+        e = pd.read_parquet(a80.T697_EXT % (w, ENGNAME[side])).reset_index().rename(columns={"sig_ms": "meta_sig_ms"}).drop(columns="src")
+        e["win"], e["meta_base_pass"] = w, 1
+        ext.append(e)
+    return pd.concat([m] + ext, ignore_index=True)
+
+
+def t697b_join(side):
+    """Набор t697b: строки сигналов базы со столбцами `btc_mv15`, `mk_btc_s60` (`tk697_b.py`, файл на окно и сторону, ключ (sym, sig_ms)); все сигналы базы h775, строка таблицы TK-671 не нужна —
+    значения столбцов зависят только от монеты и минуты сигнала. Дубли ключа — ошибка; порядок и состав столбцов сверяются со списком поправки."""
+    import pandas as pd
+    parts = []
+    for w in a80.T681_WINS:
+        x = pd.read_parquet(a80.T697B_FAM % (w, ENGNAME[side])).reset_index(drop=True).rename(columns={"sig_ms": "meta_sig_ms"})
+        if list(x.columns) != ["sym", "meta_sig_ms"] + a80.T697B_NAMES:
+            raise SystemExit("t697b %s %s: столбцы файла ≠ списку поправки" % (w, side))
+        if x.duplicated(["sym", "meta_sig_ms"]).any():
+            raise SystemExit("t697b %s %s: дубли (sym, sig_ms)" % (w, side))
+        x["win"], x["meta_base_pass"] = w, 1
+        parts.append(x)
+    return pd.concat(parts, ignore_index=True)
+
+
+def t701_join(side):
+    """Набор t701: строки сигналов базы со столбцами `tfv60`, `pre_n5`, `oi_c1` (`tk701_sig.py`, файл на окно и сторону, ключ (sym, sig_ms)); все сигналы базы h775, строка таблицы TK-671 не нужна —
+    значения столбцов зависят только от монеты и минуты сигнала. Дубли ключа — ошибка; порядок и состав столбцов сверяются со списком поправки."""
+    import pandas as pd
+    parts = []
+    for w in a80.T681_WINS:
+        x = pd.read_parquet(a80.T701_FAM % (w, ENGNAME[side])).reset_index(drop=True).rename(columns={"sig_ms": "meta_sig_ms"})
+        if list(x.columns) != ["sym", "meta_sig_ms"] + a80.T701_NAMES:
+            raise SystemExit("t701 %s %s: столбцы файла ≠ списку поправки" % (w, side))
+        if x.duplicated(["sym", "meta_sig_ms"]).any():
+            raise SystemExit("t701 %s %s: дубли (sym, sig_ms)" % (w, side))
+        x["win"], x["meta_base_pass"] = w, 1
+        parts.append(x)
+    return pd.concat(parts, ignore_index=True)
 
 
 def add_columns(side, st, tabs, cl=None, ctx=None, hist=None):
@@ -93,13 +158,15 @@ def add_columns(side, st, tabs, cl=None, ctx=None, hist=None):
             v[keep] = cosig15(sym[keep], ms[keep])
             tabs[w.name]["cosig15"] = v
     extra = set()
+    fam = {"t697": a80.T697_FAM_NAMES, "t697b": a80.T697B_NAMES, "t701": a80.T701_NAMES}.get(a80.SET, ())     # наборы t697 / t697b / t701: столбцы семейств — из своих файлов, не из таблицы TK-671
+    have |= set(fam)
     if hist:
         extra = set(pq.ParquetFile(a80.HIST_EXTRA % ENGNAME[side]).schema.names) - have
         have |= extra
         rid = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["row_id"])["row_id"].to_numpy()
     cl = a80.column_list(coverage_cols()) if cl is None else cl
     srcs = lambda src: src if isinstance(src, tuple) else (src,)
-    fast = {x for _, src, _ in cl for x in srcs(src) if x in a80.FAST_NAMES and x not in have}     # столбцы TK-681, которых нет в таблице TK-671 (X680: sac10 / sac60 / accdv1_300 стороны S)
+    fast = set(fam) or {x for _, src, _ in cl for x in srcs(src) if x in a80.FAST_NAMES and x not in have}     # столбцы TK-681, которых нет в таблице TK-671 (X680: sac10 / sac60 / accdv1_300 стороны S)
     have |= fast
     absent = [name for name, src, _ in cl if not all(x in have for x in srcs(src)) and name not in tabs[st.TRADE_WINDOWS[0].name]]
     cl = [c for c in cl if c[0] not in absent]
@@ -114,7 +181,7 @@ def add_columns(side, st, tabs, cl=None, ctx=None, hist=None):
     df = df[df["meta_base_pass"] > 0].copy()
     df["win"], df["sym"] = df["win"].astype(str), df["sym"].astype(str)
     if fast:
-        df = fast_join(side, df)
+        df = t701_join(side) if a80.SET == "t701" else t697b_join(side) if a80.SET == "t697b" else (t697_join(side, df) if a80.SET == "t697" else fast_join(side, df))
     df["_pri"] = (df["meta_base_pass"] != 1).astype(int)
     df = df.sort_values("_pri", kind="stable").drop_duplicates(["win", "sym", "meta_sig_ms"])
     rep = {}
@@ -140,6 +207,14 @@ def add_columns(side, st, tabs, cl=None, ctx=None, hist=None):
     return rep
 
 
+def _win_cover(tabs, st, sel, cname):
+    """Набор t697 (критик 23.11, PS-993 (в)/(д)): определённость столбца по окнам — {окно: [определён, кандидатов]} по кандидатам базы в отборе `sel`; охрана 70 % читает минимум по окнам."""
+    import numpy as np
+    if a80.SET not in ("t697", "t697b", "t701"):
+        return None
+    return {w.name: [int(np.isfinite(tabs[w.name][cname][sel[w.name]]).sum()), int(sel[w.name].sum())] for w in st.TRADE_WINDOWS}
+
+
 def _thresholds(v, cname=None):
     """[(метка, порог ≤), …], [(метка, порог ≥), …] столбца по значениям кандидатов базы в зачётном диапазоне."""
     import numpy as np
@@ -151,6 +226,8 @@ def _thresholds(v, cname=None):
         return list(a80.CTX_COLS[cname]), []
     if a80.SET == "hist":                           # числа пробоев: пороги заданы поправкой §13.73.8, не данными
         return list(a80.HIST_THR[0]), list(a80.HIST_THR[1])
+    if a80.SET == "t697" and cname in a80.T697_COUNT:      # счётчики уровней: пороги — числа (поправка TK-697), как у ok10_*
+        return list(a80.HIST_THR[0]), list(a80.HIST_THR[1])
     if len(u) <= 4:
         return [("v%s" % ax.num(x), float(x)) for x in u[:-1]], [("v%s" % ax.num(x), float(x)) for x in u[1:]]
     out, seen = [], set()
@@ -159,6 +236,8 @@ def _thresholds(v, cname=None):
         if x not in seen:
             seen.add(x)
             out.append(("q%d" % q, x))
+    if a80.SET == "t697b" and a80.T697B_ZERO[1] not in seen:      # TK-697 вторая поправка: порог 0 (знак хода BTC) к квантилям; по возрастанию порога — соседи плато
+        out = sorted(out + [a80.T697B_ZERO], key=lambda t: t[1])
     return out, list(out)
 
 
@@ -200,6 +279,9 @@ def select_from():
                     cn = a["axis"].split(".")[0]
                     allv = np.concatenate([(np.where(tabs[w.name]["m24"].astype(bool), np.nan, tabs[w.name]["n24"]) if cn == "n24" else tabs[w.name][cn])[sel[w.name]] for w in st.TRADE_WINDOWS])
                     a["n"], a["n_all"] = int(np.isfinite(allv).sum()), int(len(allv))
+                    nw = _win_cover(tabs, st, sel, cn)
+                    if nw:
+                        a["n_win"] = nw
         found = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(out["cells"]), bins=bins)
         out.update(n_cells=len(out["cells"]), n_have=len(found), n_new=len(out["cells"]) - len(found))
         json.dump(out, open(run.level_path(side), "w", encoding="utf-8"), ensure_ascii=False)
@@ -238,6 +320,9 @@ def cmd_select():
             axes.append(dict(axis=name, kind="key", base=base, vals=[[lab, base_ck if lab == base else put(name, lab, patch)] for lab, patch in vals]))
         tabs = run.feat_tabs(side, st, u, eps)
         sc = {w.name: r54.in_scored_range(w, tabs[w.name]["ms"]) for w in st.TRADE_WINDOWS}
+        if a80.SET in ("t697", "t697b", "t701") and run.UNI != "h775":     # TK-697: пороги — по кандидатам базы состава c539 (крипто-монеты), как охрана покрытия в `select_from`
+            crypto = sorted(u.coins())
+            sc = {w.name: sc[w.name] & np.isin(np.asarray(tabs[w.name]["sym"]).astype(str), crypto) for w in st.TRADE_WINDOWS}
         thr_out[side] = {}
         absent = tabs[st.TRADE_WINDOWS[0].name]["absent680"]
         skipped += [[c, "в таблице TK-671 нет"] for c in absent]
@@ -252,7 +337,8 @@ def cmd_select():
             if not le and not ge:
                 skipped.append([cname, "одно значение у кандидатов базы"])
                 continue
-            thr_out[side][cname] = dict(n=int(len(fin)), n_all=int(len(allv)), le=le, ge=ge)
+            nw = _win_cover(tabs, st, sc, cname)
+            thr_out[side][cname] = dict(n=int(len(fin)), n_all=int(len(allv)), le=le, ge=ge, **({"n_win": nw} if nw else {}))
             for d in dirs:
                 vals = []
                 for lab, x in (le if d == "le" else ge):
@@ -262,7 +348,7 @@ def cmd_select():
                     vals.append([lab, put("%s.%s" % (cname, d), lab, {}, (cname, OPS[d], x)), x, cut])
                 if vals:
                     vals = (vals + [["off", base_ck]]) if d == "le" else ([["off", base_ck]] + vals)      # «off» рядом с самым мягким порогом
-                    axes.append(dict(axis="%s.%s" % (cname, d), kind="col", base="off", vals=vals, n=int(len(fin)), n_all=int(len(allv))))
+                    axes.append(dict(axis="%s.%s" % (cname, d), kind="col", base="off", vals=vals, n=int(len(fin)), n_all=int(len(allv)), **({"n_win": nw} if nw else {})))
         found = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(cells), bins=bins)
         nk = sum(1 for c in cells.values() if not c["filt"])
         sigs = {tuple(tuple(x) for x in c["sig"]) for k, c in cells.items() if k not in found and c["sig"]}
@@ -361,7 +447,7 @@ def cmd_map():
         lv = json.load(open(run.level_path(side), encoding="utf-8"))
         inv = run.load_invalid(side)
         base_ck = ax.base_ckey(side)
-        nank = _nan_keys(side) if a80.SET in ("hist", "t681") else None
+        nank = _nan_keys(side) if a80.SET in ("hist", "t681", "t697", "t697b", "t701") else None
         rows = store.cells_lookup(ENGNAME[side], run.UNI, run.WIN, list(lv["cells"]) + [base_ck], bins=bins)
         brow = rows[base_ck]
         bsh, busd = brow["sharpe"], brow["usd"]
@@ -407,8 +493,11 @@ def cmd_map():
             wr = run.rep_cell(win, bsh)
             active = bool(wr and wr["sharpe"] > bsh and wr["usd"] >= busd)
             low = bool(a.get("n_all") and a["n"] / a["n_all"] < a80.COVER_MIN)       # §13.73.14: столбец определён менее чем у COVER_MIN кандидатов — активным не бывает
+            nw = a.get("n_win")
+            if nw:                                  # t697 (PS-993 (в)/(д)): охрана — минимум доли по окнам (окно без кандидатов не считается)
+                low = any(n_all and n / n_all < a80.COVER_MIN for n, n_all in nw.values())
             return dict(axis=a["axis"], kind=a["kind"], base=a["base"], cells=cells, guarded=len(full), winner=wr, active=active and not low, gain=(wr["sharpe"] - bsh) if wr else None,
-                        n=a.get("n"), n_all=a.get("n_all"), low_cover=low)
+                        n=a.get("n"), n_all=a.get("n_all"), low_cover=low, **({"n_win": nw} if nw else {}))
 
         out_axes = []
         for a in lv["axes"]:
@@ -487,7 +576,9 @@ def cmd_md(d, out=None):
         for a in m["axes"]:
             note = " — активная" if a["active"] else ""
             if a.get("n_all"):
-                note += "; определён у %d из %d кандидатов базы (%s %%)%s" % (a["n"], a["n_all"], ("%.0f" % (100.0 * a["n"] / a["n_all"])), ", активным не бывает (определён менее чем у %d %% кандидатов)" % round(100 * a80.COVER_MIN) if a.get("low_cover") else "")
+                note += "; определён у %d из %d кандидатов базы (%s %%)%s" % (a["n"], a["n_all"], ("%.0f" % (100.0 * a["n"] / a["n_all"])), ", активным не бывает (определён менее чем у %d %% кандидатов%s)" % (round(100 * a80.COVER_MIN), " хотя бы в одном окне" if a.get("n_win") else "") if a.get("low_cover") else "")
+                if a.get("n_win"):
+                    note += "; по окнам: " + ", ".join("%s %d из %d (%.0f %%)" % (w, n, n_all, 100.0 * n / n_all if n_all else 0.0) for w, (n, n_all) in a["n_win"].items())
             if "old_active" in a:                      # §13.73.9: вердикт по прежней сетке рядом
                 note += "; по прежней сетке — %s%s" % ("активная (%s)" % a["old_winner"] if a["old_active"] else "не активная",
                                                        ", смена — от новых соседей плато" if a["old_active"] != a["active"] else "")

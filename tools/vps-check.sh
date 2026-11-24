@@ -40,8 +40,9 @@ SRC=/opt/alpha-compute/wave2-src$TAG-$$   # TK-169: свой каталог на
 # при свободном месте < порога (SWEEP_SHARED_FLOOR_GB), иначе живёт
 TGT=/opt/alpha-compute/shared-target
 ARCR=/opt/alpha-compute/wave2$TAG.tgz
-# TK-169: при красном — все строки ^error/^warning (+2 контекста), а не хвост (повторные сборки ради текста); true — grep без совпадений не ломает pipefail
-ERRS='L=$(mktemp); tee $L | tail -N; grep -A2 -e ^error -e ^warning $L | head -150; rm -f $L; true'
+# TK-169: при красном — все строки ^error/^warning (+2 контекста), а не хвост (повторные сборки ради текста); true — grep без совпадений не ломает pipefail;
+# TK-702: VPS_ERR_LINES — потолок строк (по умолчанию 150; при сотнях ошибок после массового удаления — 3000)
+ERRS='L=$(mktemp); tee $L | tail -N; grep -A2 -e ^error -e ^warning $L | head -'${VPS_ERR_LINES:-150}'; rm -f $L; true'
 tl() { echo "| { ${ERRS/N/$1}; }"; }
 J=3; TL10="$(tl 10)"; TL15="$(tl 15)"; TL25="$(tl 25)"; TL5="| tail -5"
 GREP_T="| grep -E \"^test result|FAILED|panicked|^error|^warning: unused\" | tail -40"
@@ -99,6 +100,8 @@ set -o pipefail; $B1 2>&1 | tail -3 && rb_install $TGT/release/alpha $BIN_OUT-pl
   # TK-132 (А1 §0): настоящая метрика — clippy cognitive_complexity (порог 15) и too_many_lines; код не меняется,
   # clippy.toml пишется только в одноразовую копию дерева на VPS. Вывод: «функция @ файл:строка», по алфавиту
   complexity) CMD="echo cognitive-complexity-threshold = 15 > clippy.toml && cargo clippy --release $FEAT --target-dir $TGT --all-targets -j 3 -- -W clippy::cognitive_complexity -W clippy::too_many_lines 2>&1 | grep -E -A1 \"cognitive complexity of|too many lines\" | grep -E \"cognitive complexity of|too many lines|-->\" | paste - - | sed -E \"s/ *--> */ @ /\" | sort | tail -150" ;;
+  # TK-702: мёртвый код крейта — pub(crate) на всех модулях, публичны только входы CLI (tools/dead-probe.sh, одноразовая копия дерева)
+  deadcode) CMD="bash tools/dead-probe.sh $TGT-dead $J" ;;
   *) echo "неизвестно: $WHAT"; exit 2 ;;
 esac
 # shellcheck disable=SC2029

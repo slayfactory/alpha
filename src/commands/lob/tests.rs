@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use super::parts::day_of_binlog_name;
+use super::parts::{day_format_ok, day_of_binlog_name};
 use super::test_support::write_session_json as write_session_json_value;
 use super::*;
 use crate::commands::record::instruments_csv_path;
@@ -424,6 +424,18 @@ fn day_of_binlog_name_parses_dated_names_only() {
     assert_eq!(day_of_binlog_name("SOLUSDT.binlog"), None);
     assert_eq!(day_of_binlog_name("2026-09-08.binlog"), None, "без символа");
     assert_eq!(day_of_binlog_name("SOLUSDT-2026-09-08.csv"), None);
+}
+
+/// Формат суток строгий: `YYYY-MM-DD`, десять знаков, дефисы на местах.
+#[test]
+fn day_format_ok_is_strict() {
+    assert!(day_format_ok("2026-03-01"));
+    assert!(!day_format_ok("01.03.2026"), "формат суток строгий");
+    assert!(!day_format_ok("2026-3-01"));
+    assert!(!day_format_ok("2026-03-01x"));
+    assert!(!day_format_ok("2026/03/01"));
+    assert!(!day_format_ok("20a6-03-01"));
+    assert!(!day_format_ok(""));
 }
 
 #[test]

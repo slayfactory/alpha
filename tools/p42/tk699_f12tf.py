@@ -13,6 +13,9 @@
       без --apply — только счёт; с --apply — новые файлы `<файл>.tk699-new` рядом со старыми, на место их ставит
   tk699_f12tf.py swap --side long [--wins wa,wb,wc]
       старый файл → `<файл>.bak-tk699` (жёсткая ссылка), новый → на место; в момент, согласованный с читателями `data/*.parquet` (партии TK-674c читают файл на старте)
+  tk699_f12tf.py verify --side long [--out FILE]
+      после подмены: старый файл (`.bak-tk699`; у data/ ещё `.pre-f12`) против текущего — схема (новый только `meta_tk699_stale`), все столбцы вне 10 — биты в биты, 10 столбцов — строк изменено / те же,
+      строки tf = 60 и stale — те же биты; запись `/data/p42-tk699/run/swap-verify-<сторона>.json`
 Свеча строки: источник `src` → tf (p30n* 30, p60n* и lx* 60, p240n* 240), как `rules_tf_min` в tk671_assemble.
 """
 from __future__ import annotations
@@ -234,6 +237,58 @@ def cmd_merge(a):
     print(json.dumps(dict(side=a.side, apply=a.apply, **rep), ensure_ascii=False, indent=1))
 
 
+def _bits(a):
+    """Массив столбца → сравнимое представление: числа — биты (NaN равны по битам), остальное — Arrow-равенство."""
+    import pyarrow as pa
+    if pa.types.is_floating(a.type):
+        v = a.to_numpy(zero_copy_only=False)
+        return v.view({2: np.uint16, 4: np.uint32, 8: np.uint64}[v.dtype.itemsize])
+    if pa.types.is_integer(a.type) or pa.types.is_boolean(a.type):
+        return a.to_numpy(zero_copy_only=False)
+    return None
+
+
+def verify_file(new: str, old: str, rep: dict, tag: str):
+    import pyarrow.parquet as pq
+    fn, fo = pq.ParquetFile(new), pq.ParquetFile(old)
+    cn, co = fn.schema_arrow.names, fo.schema_arrow.names
+    r = dict(old=old, new=new, rows_old=fo.metadata.num_rows, rows_new=fn.metadata.num_rows, cols_old=len(co), cols_new=len(cn), added=[c for c in cn if c not in co],
+             removed=[c for c in co if c not in cn], order_same=[c for c in cn if c in co] == co, type_diff=[c for c in co if c in cn and fn.schema_arrow.field(c).type != fo.schema_arrow.field(c).type])
+    src_n = pq.read_table(new, columns=["meta_src"])["meta_src"].to_numpy().astype(np.int64)
+    src_o = pq.read_table(old, columns=["meta_src"])["meta_src"].to_numpy().astype(np.int64)
+    r["meta_src_equal"] = bool(np.array_equal(src_n, src_o))
+    tf60 = SRC_TF[src_o] == 60
+    stale = pq.read_table(new, columns=["meta_tk699_stale"])["meta_tk699_stale"].to_numpy().astype(bool) if "meta_tk699_stale" in cn else np.zeros(len(src_n), dtype=bool)
+    r.update(rows_tf60=int(tf60.sum()), rows_stale=int(stale.sum()))
+    eq, ne = [], []
+    f12 = {}
+    for c in co:
+        a, b = pq.read_table(old, columns=[c])[c], pq.read_table(new, columns=[c])[c]
+        ba, bb = _bits(a), _bits(b)
+        same_rows = (ba == bb) if ba is not None else None
+        if c in COLS10:
+            f12[c] = dict(rows_changed=int((~same_rows).sum()), rows_same=int(same_rows.sum()), changed_in_tf60=int((~same_rows[tf60]).sum()), changed_in_stale=int((~same_rows[stale]).sum()))
+            continue
+        ok = (bool(same_rows.all()) if same_rows is not None else False) or bool(a.equals(b))
+        (eq if ok else ne).append(c)
+    r.update(non_f12_equal=len(eq), non_f12_not_equal=ne, f12=f12)
+    rep[tag] = r
+    print("%s: строк %d / %d, столбцов %d -> %d (добавлено %s), вне 10 столбцов байт в байт %d из %d, различаются %s; 10 столбцов: в строках tf = 60 изменено %d, в stale %d" % (
+        tag, r["rows_old"], r["rows_new"], r["cols_old"], r["cols_new"], r["added"], len(eq), len(eq) + len(ne), ne, sum(v["changed_in_tf60"] for v in f12.values()),
+        sum(v["changed_in_stale"] for v in f12.values())), flush=True)
+
+
+def cmd_verify(a):
+    rep = {}
+    for w in ("wa", "wb", "wc"):
+        verify_file(f"{ASM}/{w}-{a.side}.parquet", f"{ASM}/{w}-{a.side}.parquet{BAK}", rep, f"asm-{w}")
+    verify_file(f"{DATA}/{a.side}.parquet", f"{DATA}/{a.side}.parquet{BAK}", rep, "data")
+    verify_file(f"{DATA}/{a.side}.parquet", f"{DATA}/{a.side}.parquet.pre-f12", rep, "data-vs-pre-f12")
+    out = a.out or f"/data/p42-tk699/run/swap-verify-{a.side}.json"
+    json.dump(dict(side=a.side, **rep), open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print("запись:", out)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
@@ -264,6 +319,11 @@ def main():
     p.add_argument("--wins", default="wa,wb,wc")
     p.add_argument("--apply", action="store_true", help="записать новые файлы <файл>.tk699-new рядом со старыми (подмена — swap)")
     p.set_defaults(fn=cmd_merge)
+    p = sp.add_parser("verify")
+    p.add_argument("--side", required=True, choices=("long", "short"))
+    p.add_argument("--out")
+    p.set_defaults(fn=cmd_verify)
+
     p = sp.add_parser("swap")
     p.add_argument("--side", required=True, choices=("long", "short"))
     p.add_argument("--wins", default="wa,wb,wc")

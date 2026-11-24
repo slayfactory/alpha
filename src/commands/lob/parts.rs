@@ -250,6 +250,27 @@ pub(crate) fn session_days_in_dir(dir: &Path) -> std::collections::BTreeSet<Stri
 /// символу, а команда получает путь к файлу. `None` — имя не по раскладке
 /// записи (старый недатированный формат, чужой файл).
 pub(crate) fn symbol_of_binlog_name(name: &str) -> Option<&str> {
+    split_binlog_name(name).map(|(symbol, _)| symbol)
+}
+
+/// Строка суток обязана быть `YYYY-MM-DD`: десять знаков, дефисы на местах,
+/// остальное — цифры. Календарная проверка (тридцать февралей) не нужна:
+/// сутки приходят из ротации по UTC, а не из рук пользователя; ей же
+/// `session_days_in_dir` отсеивает имена файлов, у которых хвост не сутки.
+pub(crate) fn day_format_ok(day: &str) -> bool {
+    let b = day.as_bytes();
+    b.len() == 10
+        && b.get(4) == Some(&b'-')
+        && b.get(7) == Some(&b'-')
+        && b.get(..4).is_some_and(|s| s.iter().all(u8::is_ascii_digit))
+        && b.get(5..7)
+            .is_some_and(|s| s.iter().all(u8::is_ascii_digit))
+        && b.get(8..10)
+            .is_some_and(|s| s.iter().all(u8::is_ascii_digit))
+}
+
+/// Имя `<SYMBOL>-<день>[-pN].binlog[.zst]` → `(символ, сутки)`; `None` — имя не по раскладке.
+fn split_binlog_name(name: &str) -> Option<(&str, &str)> {
     let stem = strip_binlog_suffix(name)?;
     let stem = match stem.rsplit_once("-p") {
         Some((head, num)) if num.parse::<u32>().is_ok() => head,
@@ -258,7 +279,7 @@ pub(crate) fn symbol_of_binlog_name(name: &str) -> Option<&str> {
     let split = stem.len().checked_sub(11)?;
     let head = stem.get(..split)?;
     let day = stem.get(split..)?.strip_prefix('-')?;
-    (!head.is_empty() && crate::lob::watch::day_format_ok(day)).then_some(head)
+    (!head.is_empty() && day_format_ok(day)).then_some((head, day))
 }
 
 /// Сутки из имени `<SYMBOL>-<день>[-pN].binlog[.zst]` без знания символа:
@@ -268,13 +289,5 @@ pub(crate) fn symbol_of_binlog_name(name: &str) -> Option<&str> {
 /// в каталоге «лишние» сутки от того, что часть уже упакована (T46).
 #[cfg(test)]
 pub(crate) fn day_of_binlog_name(name: &str) -> Option<&str> {
-    let stem = strip_binlog_suffix(name)?;
-    let stem = match stem.rsplit_once("-p") {
-        Some((head, num)) if num.parse::<u32>().is_ok() => head,
-        _ => stem,
-    };
-    let split = stem.len().checked_sub(11)?;
-    let head = stem.get(..split)?;
-    let day = stem.get(split..)?.strip_prefix('-')?;
-    (!head.is_empty() && crate::lob::watch::day_format_ok(day)).then_some(day)
+    split_binlog_name(name).map(|(_, day)| day)
 }

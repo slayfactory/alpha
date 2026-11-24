@@ -37,9 +37,7 @@
 //! Модуль не хранит состояния и не выделяет память.
 
 use crate::lob::cells::joint_product_interval;
-use crate::lob::levels::LevelRecord;
-use crate::lob::markout::{base_before, markout_bps, sample_asof, MidSample};
-use crate::stats::{count_f64, count_f64_u64};
+use crate::stats::count_f64_u64;
 use std::collections::BTreeMap;
 
 /// Комиссия мейкера, bps: 0.014 % — условия счёта владельца (скриншот
@@ -82,101 +80,15 @@ pub const ROUNDTRIP_FEES_BPS: f64 = (MAKER_FEE_BPS + TAKER_FEE_BPS) * (1.0 - FEE
 /// Только читается; вердикт G3 его не использует.
 pub const GREEN_NET_BPS: f64 = 3.0;
 
-/// Одно наблюдение для колонки «после издержек»: markout и его же издержки.
-/// `spread_ticks_exit = ask_exit − bid_exit` в тиках; `mid2x_base` — удвоенная
-/// середина базы (`bid + ask` в тиках, см. `markout::mid_double_tick`).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Observation {
-    /// Подписанный markout `m` в bps (Decision 14).
-    pub m_bps: f64,
-    /// Наблюдённый спред в момент выхода, в тиках.
-    pub spread_ticks_exit: i64,
-    /// Удвоенная середина базы в тиках.
-    pub mid2x_base: i64,
-}
-
-/// Наблюдение `net` для уровня на горизонте `horizon_ms`: markout от базы
-/// Decision 11 (последний срез строго до смерти) до среза «как есть» на
-/// `base + horizon` и спред того же среза выхода. Одна конструкция на всех
-/// читателей (`lob pilot`, `lob dashboard`; до таска 33 каждый нёс свою
-/// копию петли `base_before` → срез выхода → `Observation`). `None` — нет
-/// базы, нет среза на горизонте или середина не положительна.
-pub fn observation_at(
-    level: &LevelRecord,
-    mids: &[MidSample],
-    horizon_ms: i64,
-) -> Option<Observation> {
-    let (base_ts, base2x) = base_before(mids, level.death_ms)?;
-    let exit = sample_asof(mids, base_ts, horizon_ms)?;
-    let m_bps = markout_bps(
-        level.side,
-        base2x,
-        crate::lob::markout::mid_double_tick(exit.bid_tick, exit.ask_tick),
-    )?;
-    Some(Observation {
-        m_bps,
-        spread_ticks_exit: exit.ask_tick - exit.bid_tick,
-        mid2x_base: base2x,
-    })
-}
-
-/// Проскальзывание Decision 15 в bps: `(spread + 2) / mid2x * 10^4`.
-/// `None` при неположительной базе, отрицательном спреде или переполнении
-/// входа за пределы `i128` (практически недостижимо, проверка — страховка).
-/// Целые до деления: числитель складывается в целых, деление одно.
-pub fn slippage_bps(spread_ticks_exit: i64, mid2x_base: i64) -> Option<f64> {
-    if mid2x_base <= 0 || spread_ticks_exit < 0 {
-        return None;
-    }
-    let num = (i128::from(spread_ticks_exit) + 2) * 10_000;
-    // Числитель — тики единиц–десятков × 10⁴ (~1e5–1e6), знаменатель —
-    // удвоенная середина в e9 (~1e13–1e14): оба точны в f64 (< 2^53).
-    #[allow(clippy::cast_precision_loss)]
-    let (num_f, den_f) = (num as f64, mid2x_base as f64);
-    Some(num_f / den_f)
-}
-
-/// Полные издержки круга в bps: 7.5 комиссий плюс проскальзывание.
-/// `None` — проскальзывание не посчиталось (см. `slippage_bps`).
-pub fn cost_bps(spread_ticks_exit: i64, mid2x_base: i64) -> Option<f64> {
-    slippage_bps(spread_ticks_exit, mid2x_base).map(|s| ROUNDTRIP_FEES_BPS + s)
-}
-
-/// Чистый результат наблюдения в bps: `m − cost`. `None` при неконечном `m`
-/// или при `None` издержек: отсутствие данных не есть нулевая издержка.
-pub fn net_bps(m_bps: f64, spread_ticks_exit: i64, mid2x_base: i64) -> Option<f64> {
-    if !m_bps.is_finite() {
-        return None;
-    }
-    cost_bps(spread_ticks_exit, mid2x_base).map(|c| m_bps - c)
-}
-
-/// Средний net среза наблюдений — одна колонка «после издержек».
-/// Считается из понаблюдательных net, а не из средних входов: при разных
-/// ценах средний вес тика отличается, и константная издержка дала бы другой
-/// вердикт на тех же данных (H6). `None` — срез пуст или хотя бы одно
-/// наблюдение не посчиталось: молча выкидывать его значило бы пересчитывать
-/// выборку задним числом (то же правило, что неконечный markout в 5.2).
-pub fn mean_net_bps(observations: &[Observation]) -> Option<f64> {
-    if observations.is_empty() {
-        return None;
-    }
-    let mut sum = 0.0;
-    for o in observations {
-        sum += net_bps(o.m_bps, o.spread_ticks_exit, o.mid2x_base)?;
-    }
-    Some(sum / count_f64(observations.len()))
-}
-
 // ---------------------------------------------------------------------------
 // `net_fill` (таск 03, истории 19–22, §6): «вот это и есть окупается».
 // ---------------------------------------------------------------------------
 
 /// Одно наблюдение для `net_fill`: `net` после издержек (см. `net_bps`),
 /// признак исполнения входа за 2 с (R06) и сутки как целый кластер для
-/// совместного бутстрапа — тот же смысл кластера, что у
-/// `stats::wild_cluster_bootstrap_t` (сравнение и группировка по целому,
-/// не по `f64`, A1).
+/// совместного бутстрапа — тот же смысл кластера, что в
+/// `cells::joint_product_interval` (сравнение и группировка по целому, не
+/// по `f64`, A1).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FillObservation {
     /// Сутки UTC как целый кластер.
@@ -189,51 +101,9 @@ pub struct FillObservation {
     pub filled: bool,
 }
 
-/// Точечный `net_fill` в bps — по наблюдению, буквально `Σ netᵢ·fillᵢ / N`
-/// (R07): НЕ произведение отдельно посчитанных средних `net` и доли `fill`
-/// — `fill` коррелирует с исходом (бриф), и подмена суммы произведением
-/// агрегатов дала бы другое число на тех же данных. `None` — срез пуст или
-/// хотя бы один `net_bps` не конечен: молча пропускать наблюдение значило
-/// бы пересчитывать выборку задним числом (то же правило, что в
-/// `mean_net_bps`).
-pub fn net_fill_bps(observations: &[FillObservation]) -> Option<f64> {
-    if observations.is_empty() {
-        return None;
-    }
-    let mut sum = 0.0;
-    for o in observations {
-        if !o.net_bps.is_finite() {
-            return None;
-        }
-        let fill_indicator = if o.filled { 1.0 } else { 0.0 };
-        sum += o.net_bps * fill_indicator;
-    }
-    Some(sum / count_f64(observations.len()))
-}
-
-/// Доля исполнений (`fill`), R06: печатается отдельной колонкой всегда, а
-/// не только в вердикте (см. `format_fill_column`). `None` — срез пуст.
-pub fn fill_rate(observations: &[FillObservation]) -> Option<f64> {
-    if observations.is_empty() {
-        return None;
-    }
-    let filled = observations.iter().filter(|o| o.filled).count();
-    Some(count_f64(filled) / count_f64(observations.len()))
-}
-
-/// Готовая колонка `fill` для CSV/отчёта — R06 требует её печатать всегда,
-/// а не только внутри вердикта. Проводка в писатель `shortlist`/`commands`
-/// (task 06/10) — эта функция лишь форматирует уже посчитанное число,
-/// колонки не изобретает.
-pub fn format_fill_column(rate: Option<f64>) -> String {
-    match rate {
-        Some(v) => format!("{v:.4}"),
-        None => "none".to_string(),
-    }
-}
-
 /// Итог совместного интервала `net_fill` (R08/R50): точка (тождественно
-/// `net_fill_bps` на тех же данных — алгебраическое тождество, не оценка:
+/// прямой формуле `Σ netᵢ·fillᵢ / N` на тех же данных — алгебраическое
+/// тождество, не оценка:
 /// `Σᵢ netᵢ·fillᵢ = Σ_{fillᵢ=1} netᵢ`, значит `mean(net|fill=1)·fill_rate
 /// = (Σ_{fill=1}netᵢ/n_filled)·(n_filled/N) = Σ netᵢ·fillᵢ/N`) и нижняя
 /// граница — то, что сравнивается с нулём («окупается», бриф).
@@ -255,14 +125,14 @@ pub struct NetFillInterval {
 
 /// Нижняя граница интервала `net_fill` совместным ресэмплингом пары
 /// `(net, fill)`: один вес Уэбба на обе серии в одной реплике, произведение
-/// считается на реплику (R08/R50) — расширение `cells::disjoint_contrast`
-/// (`cells::joint_product_interval`), а не второй бутстрап. Наблюдения
-/// группируются по `day_cluster` в `BTreeMap`, как `stats::group_by_cluster`:
+/// считается на реплику (R08/R50) через `cells::joint_product_interval`,
+/// а не второй бутстрап. Наблюдения группируются по `day_cluster` в
+/// `BTreeMap` (по целому, не по `f64`):
 /// порядок обхода детерминирован и не зависит от порядка входного среза
 /// (ARCHITECTURE.md A2). Разложение на два ряда — среднее `net` там, где
 /// `fill = true` (числитель `Σnetᵢ`, знаменатель `n_filled`), и доля `fill`
 /// (числитель `n_filled` тех же суток, знаменатель `n_total`) — таково, что
-/// их произведение на наблюдённых данных равно точке `net_fill_bps` (см.
+/// их произведение на наблюдённых данных равно точке `Σ netᵢ·fillᵢ / N` (см.
 /// `NetFillInterval`), а на репликах — совместному ресэмплингу с общим
 /// весом на сутки, как того требует критерий.
 ///
