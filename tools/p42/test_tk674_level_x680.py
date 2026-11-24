@@ -47,5 +47,33 @@ class LevelX680(unittest.TestCase):
         self.assertEqual((act, n_sub), ({frozenset("abc"): 0.4}, 1))
 
 
+class FakeStore:
+    def __init__(self, tables):
+        self.tables = tables
+
+    def cells_lookup(self, side, uni, win, keys, bins=None):
+        return {k: dict(self.tables[win][k]) for k in keys if k in self.tables.get(win, {})}
+
+
+class OverlayRows(unittest.TestCase):
+    def run_overlay(self, win):
+        import unittest.mock as um
+        import tk674_emptycols as ec
+        cells = {"k1": dict(filt="bd"), "k2": dict(filt="bd"), "k3": dict(filt="A"), "k4": dict(filt="bd")}
+        rows = {"k1": dict(sharpe=1.0), "k2": dict(sharpe=2.0), "k3": dict(sharpe=3.0)}
+        store = FakeStore({"TK690-xb": {"k1": dict(sharpe=9.0), "k3": dict(sharpe=7.0)}})
+        with um.patch.object(lv, "OVERLAY_WIN", win), um.patch.object(ec, "filt_class", lambda f: f):
+            info, miss = lv.overlay_rows(store, "S", cells, rows, None)
+        return info, miss, rows
+
+    def test_bd_rows_replaced_missing_not_read_other_classes_untouched(self):
+        info, miss, rows = self.run_overlay("TK690-xb")
+        self.assertEqual(rows["k1"]["sharpe"], 9.0)                        # bd: строка метки
+        self.assertEqual(rows["k3"]["sharpe"], 3.0)                        # класс A не в OVERLAY_CLASSES — прежняя строка
+        self.assertEqual(rows["k2"]["sharpe"], 2.0)                        # bd без строки метки: в rows остаётся, но в miss — карта её не читает
+        self.assertEqual(miss, {"k2": "overlay"})                          # k4 нет в rows (не в БД) — не считается
+        self.assertEqual((info["cells"], info["found"], info["missing"]), (2, 1, 1))
+
+
 if __name__ == "__main__":
     unittest.main()

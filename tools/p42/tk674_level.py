@@ -22,6 +22,9 @@ WITHHOLD = {x for x in os.environ.get("TK674_WITHHOLD", "").split(",") if x}    
 SPLIT_MAX = int(os.environ.get("TK674_SPLIT_MAX", "0"))                      # `split`: не больше стольких новых клеток стороны во всех партиях вместе (0 — без предела); граница — по целой комбинации, ранг отбора не меняется
 SPLIT_FIRST = int(os.environ.get("TK674_SPLIT_FIRST", "1"))                  # `split`: номер первой партии (сквозная нумерация после партий другой стороны, у которой файлы уровня уже есть)
 LOWTAG = os.environ.get("TK674_LOWTAG", "")         # суффикс карты нижнего уровня (карта троек шага 4 + остаток — `u`; карта пар — без суффикса)
+OVERLAY_WIN = os.environ.get("TK674_OVERLAY_WIN", "")                          # `map`: у клеток классов OVERLAY_CLASSES строки берутся по этой метке окна БД (bd, пересчитанные на ftab674xb: `TK690-xb`, L-386), прежние строки этих клеток не читаются
+OVERLAY_CLASSES = {x for x in os.environ.get("TK674_OVERLAY_CLASSES", "bd").split(",") if x}
+MAPSFX = os.environ.get("TK674_MAPSFX", "")         # `map`: добавка к имени файла карты (BATCH + MAPSFX), чтобы не затирать прежнюю карту; нижний уровень следующей карты — `TK674_LOWTAG=<BATCH><MAPSFX>`
 
 
 def axis_combos(side, n):
@@ -306,6 +309,18 @@ def withheld(cells):
     return {k: v for k, v in w.items() if v in WITHHOLD}
 
 
+def overlay_rows(store, side, cells, rows, bins):
+    """`TK674_OVERLAY_WIN`: строки клеток классов `OVERLAY_CLASSES` заменяются строками этой метки окна (на месте, в `rows`); клетка без строки метки не читается
+    (остаётся в m и σ по прежней строке). → (сводка, {ckey: "overlay"} не читаемых)."""
+    import tk674_emptycols as ec
+    keys = [k for k, c in cells.items() if k in rows and ec.filt_class(c.get("filt")) in OVERLAY_CLASSES]
+    got = store.cells_lookup(SIDENAME[side], UNI, OVERLAY_WIN, keys, bins=bins)
+    for k in keys:
+        if k in got:
+            rows[k] = got[k]
+    return dict(win=OVERLAY_WIN, classes=sorted(OVERLAY_CLASSES), cells=len(keys), found=len(got), missing=len(keys) - len(got)), {k: "overlay" for k in keys if k not in got}
+
+
 def cmd_map(n):
     """Карта уровня n из БД: охраны (а)–(д) относительно базы стороны, плато по соседям на шаг по каждой оси, победитель комбинации и лучшая клетка со всеми
     сдвинутыми осями; прирост над планкой нижних уровней (gain_sub). → res/map674<b><n>-<сторона>.json (тот же вид, что карта пар)."""
@@ -318,14 +333,16 @@ def cmd_map(n):
         lv = json.load(open(run.level_path(side), encoding="utf-8"))
         inv = run.load_invalid(side)
         rows = store.cells_lookup(SIDENAME[side], UNI, WIN, list(lv["cells"]), bins=bins)
+        ovi, ovmiss = overlay_rows(store, side, lv["cells"], rows, bins) if OVERLAY_WIN else (None, {})
         base_ck = ax.base_ckey(side)
         brow = store.cells_lookup(SIDENAME[side], UNI, WIN, [base_ck], bins=bins)[base_ck]
         for r_ in rows.values():
             if r_["sharpe"] is None:
                 r_["sharpe"] = float("nan")
-        rows_all, wh = rows, {}
+        rows_all, wh = rows, dict(ovmiss)
         if WITHHOLD:                                         # клетки классов WITHHOLD не читаются (ни в победителях, ни в плато, ни в планке), но остаются в m и в σ шума
-            wh = withheld(lv["cells"])
+            wh.update(withheld(lv["cells"]))
+        if wh:
             rows = {k: r_ for k, r_ in rows_all.items() if k not in wh}
         bsh = brow["sharpe"]
         gd = {k: run.guards(r, brow) for k, r in rows.items()}
@@ -401,12 +418,16 @@ def cmd_map(n):
                    select=dict(cap=lv["cap"], eligible=lv["eligible"], taken=len(lv["taken"]), left_out=lv["left_out"], active_subs=lv["active_subs"], subs=lv["subs"]))
         if WITHHOLD:
             out["withheld"] = dict(classes=sorted(WITHHOLD), cells=len(wh), by_class={c_: sum(1 for v in wh.values() if v == c_) for c_ in sorted(WITHHOLD)}, n_cells_all=len(rows_all))
-        json.dump(out, open(map_path(n, side, BATCH), "w", encoding="utf-8"), ensure_ascii=False)
+        if ovi:
+            out["overlay"] = ovi
+        json.dump(out, open(map_path(n, side, BATCH + MAPSFX), "w", encoding="utf-8"), ensure_ascii=False)
         nw = sum(1 for p in out_rows if p["both_moved"] and p["both_moved"]["gain_sub"] > 0)
         print("== %s n=%d: комбинаций %d, клеток %d, m %d, шум ≈ %.2f; с победителем %d; все оси сдвинуты и лучше планки нижних уровней: %d" % (
             side, n, len(out_rows), len(rows), m_side, out["noise_max"], sum(1 for p in out_rows if p["winner"]), nw))
         if WITHHOLD:
             print("   не читаются (TK674_WITHHOLD=%s): %s клеток из %d; остаются в m и σ" % (",".join(sorted(WITHHOLD)), out["withheld"]["by_class"], len(rows_all)))
+        if ovi:
+            print("   строки по метке %s у классов %s: клеток %d, найдено %d, не найдено %d (не читаются)" % (ovi["win"], ",".join(ovi["classes"]), ovi["cells"], ovi["found"], ovi["missing"]))
     print("map уровня %d готово" % n)
 
 
