@@ -76,7 +76,7 @@ pub struct LatencyArgs {
     pub out: Option<PathBuf>,
 }
 
-fn parse_side(s: &str) -> anyhow::Result<OrderSide> {
+pub(super) fn parse_side(s: &str) -> anyhow::Result<OrderSide> {
     match s.to_ascii_lowercase().as_str() {
         "buy" => Ok(OrderSide::Buy),
         "sell" => Ok(OrderSide::Sell),
