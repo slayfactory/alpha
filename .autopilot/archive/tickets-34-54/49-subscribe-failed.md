@@ -1,7 +1,7 @@
 # 49 — Отказ подписки биржей (A8.3)
 
 **Требования:** директива владельца 2026-09-17 («коллектор при любых обстоятельствах»), подтикет A8.3
-в `docs/plan/dev-plan-2026-09-17.md` §Дополнения; порядок — A8.3 → A8.2 → A8.1b → A8.4–A8.6 → A8.7.
+в `docs/archive/plan/dev-plan-2026-09-17.md` §Дополнения; порядок — A8.3 → A8.2 → A8.1b → A8.4–A8.6 → A8.7.
 **Blocked by:** — (независим от A8.1)
 **Зона:** `src/bybit/ws.rs` (`Event::SubscribeFailed`, разбор ответа, `topic_symbol`),
 `src/bybit/conn.rs` (`ConnEvent::SubscribeFailed`, привязка к инструменту в `handle_raw`),
@@ -9,7 +9,7 @@
 (путь одно-символьной записи), `src/commands/record/gaps.rs` (вариант `GapKind`), `src/commands/lob/
 verify.rs` (`GapTally` — шов), `src/commands/lob/session.rs` + `session/summary.rs` (счётчик),
 `src/commands/lob/backtest.rs` + `session/sink.rs` (неполные матчи), тесты, `CLAUDE.md`,
-`docs/COMMANDS.md`, `docs/plan/dev-plan-2026-09-17.md`.
+`docs/COMMANDS.md`, `docs/archive/plan/dev-plan-2026-09-17.md`.
 **Не трогать:** `bybit/rest.rs`, `trade_ws.rs` (приватный поток), `lob/*` (логика разметки), горячий
 путь `write_market_event` (только ветка «служебное — не записывать»).
 **Волна:** 13
@@ -77,7 +77,7 @@ verify.rs` (`GapTally` — шов), `src/commands/lob/session.rs` + `session/sum
 - [x] `cargo test --release --target-dir target-ci` — **795 passed, 0 failed, 5 ignored**; clippy
       `-D warnings` и `fmt --check` чисто
 - [x] доки: `CLAUDE.md` (швы включают `subscribe_failed`, состояние A8), `docs/COMMANDS.md` (строка
-      `lob session` — счётчик, строка `lob verify` — швы), `docs/plan/dev-plan-2026-09-17.md`
+      `lob session` — счётчик, строка `lob verify` — швы), `docs/archive/plan/dev-plan-2026-09-17.md`
       (A8.3 сделан + заметка), `//!`/доккомментарии в коде
 - [x] **GC**: одна сборка за раз, `--target-dir target-ci`
 

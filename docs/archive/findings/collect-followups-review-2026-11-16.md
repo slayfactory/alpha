@@ -1,6 +1,6 @@
 # G-022: проверка доработок коллекторов после пул-фикса (16.11.2026)
 
-Ветка `bb/g-022-collect-followups-v1-thr_ifxhk34kt4` @ 66062689 (отчёт `docs/findings/collect-followups-2026-11-16.md`), против боевого 9c44e141. Проверяющий и Судья порогов. Время — UTC. Замеры — на srv под `systemd-run` (`Nice=19`, IO idle), только чтение боевых файлов; скрипты `/tmp/rvj/*.py` на srv. Гейт `vps-check all` заново не гонялся; тесты страницы прогнаны на srv.
+Ветка `bb/g-022-collect-followups-v1-thr_ifxhk34kt4` @ 66062689 (отчёт `docs/archive/findings/collect-followups-2026-11-16.md`), против боевого 9c44e141. Проверяющий и Судья порогов. Время — UTC. Замеры — на srv под `systemd-run` (`Nice=19`, IO idle), только чтение боевых файлов; скрипты `/tmp/rvj/*.py` на srv. Гейт `vps-check all` заново не гонялся; тесты страницы прогнаны на srv.
 
 ## Вердикт
 
