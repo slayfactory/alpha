@@ -1,10 +1,10 @@
 # 51 — Диск полон → снова свободен (A8.4)
 
 **Требования:** директива владельца 2026-09-17 («коллектор при любых обстоятельствах»), подтикет A8.4
-в `docs/plan/dev-plan-2026-09-17.md` §Дополнения; порядок — A8.1b ✔ → **A8.4** → A8.5 → A8.6 → A8.7.
+в `docs/archive/plan/dev-plan-2026-09-17.md` §Дополнения; порядок — A8.1b ✔ → **A8.4** → A8.5 → A8.6 → A8.7.
 **Blocked by:** — (механика уже была в `FrameSink`; тикет закрывает её **проверкой и артефактом**)
 **Зона:** `src/commands/lob/session/tests.rs` (тест `a_full_disk_needs_no_restart_when_space_comes_back`,
-двойник `FullThenFreeFile`), `docs/COMMANDS.md`, `docs/plan/dev-plan-2026-09-17.md`.
+двойник `FullThenFreeFile`), `docs/COMMANDS.md`, `docs/archive/plan/dev-plan-2026-09-17.md`.
 **Волна:** 13
 **Status:** done (2026-09-18)
 
@@ -38,7 +38,7 @@
 - [x] `cargo test --release --target-dir target-ci` — **798 passed, 0 failed, 5 ignored**; clippy
       `-D warnings`, fmt чисто
 - [x] доки: `docs/COMMANDS.md` (строка `lob session` — поведение при полном диске),
-      `docs/plan/dev-plan-2026-09-17.md` (A8.4 сделан + заметка)
+      `docs/archive/plan/dev-plan-2026-09-17.md` (A8.4 сделан + заметка)
 - [x] **GC**: одна сборка за раз, `--target-dir target-ci`
 
 ## Что осталось за тикетом

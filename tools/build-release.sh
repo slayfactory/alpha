@@ -3,7 +3,7 @@
 #   tools/build-release.sh [--features f1,f2]              # запускать на VPS в чистом дереве master
 # Доставка на счёт: DELIVER_TO=root@host (+ SSH_KEY, KNOWN_HOSTS) — бинарник и строка манифеста уходят в REMOTE_BIN (по умолч. /data/bin),
 # строка пишется с удалённым путём; без DELIVER_TO скрипт печатает, что сделать руками (alsched читает манифест на calc).
-# Манифест: $MANIFEST (по умолчанию /data/bin/MANIFEST.tsv; колонки — tools/compute/manifest.py). BUILD_DRY=1 — проверки без сборки.
+# Манифест: $MANIFEST (по умолчанию /data/bin/MANIFEST.tsv; колонки — manifest.py, удалён в TK-703: git show archive/tools-pre-cleanup-2026-11-24:tools/compute/manifest.py). BUILD_DRY=1 — проверки без сборки.
 set -euo pipefail
 FEAT=""; PROFILE=release      # PGO-сборки здесь нет: обычный release (профиль в манифесте = то, что собрано)
 while [ $# -gt 0 ]; do case "$1" in --features) FEAT="$2"; shift 2;; *) echo "неизвестно: $1"; exit 2;; esac; done
