@@ -206,6 +206,43 @@ class Holdout(unittest.TestCase):
         self.assertEqual(fz.split_ckey("a=1")[1], [])
 
 
+class Mass(unittest.TestCase):
+    """Массовый прогон клеток (В-183): партии, кластерная выборка, замок по запуску."""
+
+    def test_batches_limits(self):
+        import tk700_mass as ms
+        cells = [dict(cid=i, sig="s%02d" % (i // 3)) for i in range(30)]                  # 10 ключей по 3 клетки
+        b = ms.make_batches(cells, vmax=7, sigmax=2)
+        self.assertEqual([c["cid"] for x in b for c in x], list(range(30)))
+        for x in b:
+            self.assertLessEqual(len(x), 7)
+            self.assertLessEqual(len({c["sig"] for c in x}), 2)
+        self.assertEqual(ms.bkey_of(b[0]), ms.bkey_of(list(b[0])))
+        self.assertNotEqual(ms.bkey_of(b[0]), ms.bkey_of(b[1]))
+
+    def test_pick_sigs_whole_groups(self):
+        import tk700_mass as ms
+        cells = [dict(cid=i, sig="s%02d" % (i // 3)) for i in range(30)]
+        p1, p2 = ms.pick_sigs(cells, 3, 5), ms.pick_sigs(cells, 3, 5)
+        self.assertEqual(p1, p2)
+        self.assertEqual(len(p1), 9)
+        self.assertEqual(len({c["sig"] for c in p1}), 3)
+
+    def test_run_lock_attempts(self):
+        import tk700_mass as ms
+        with tempfile.TemporaryDirectory() as d:
+            m = {"lock": d}
+            key, _p, nonce, att = ms.claim_run(m, "r1", {})
+            self.assertEqual(att, 1)
+            with self.assertRaises(SystemExit):                                           # та же попытка ещё идёт (pid жив)
+                ms.claim_run(m, "r1", {})
+            lk.set_state(d, key, nonce, "started")
+            lk.set_state(d, key, nonce, "done")
+            _k2, _p2, _n2, att2 = ms.claim_run(m, "r1", {})                                # повторный запуск того же run-id — новая попытка, отказа «одно чтение» нет
+            self.assertEqual(att2, 2)
+            self.assertEqual(ms.claim_run(m, "r2", {})[3], 1)
+
+
 class Warm20(unittest.TestCase):
     """Ворота прогрева: строки эталона (T0 = 17.06) сдвигаются на 6 суток к координатам wa20 (T0 = 11.06)."""
     HEAD = "sym,level,sig_ms,dist_e8,level_px_e8,born,end,first_bar,natr_e8,members\n"
@@ -231,6 +268,21 @@ class Warm20(unittest.TestCase):
             c = wm.compare(self._write(d, "n.csv", new), self._write(d, "r.csv", ref), 60)
             self.assertFalse(c["ok"])
             self.assertEqual((c["only_new"], c["only_ref"]), (1, 1))
+
+    def test_end_edge_and_base_keys(self):
+        with tempfile.TemporaryDirectory() as d:
+            sh_ms, sh_min = wm.T0_SHIFT_MS, wm.T0_SHIFT_MIN
+            fb = sh_min // 60
+            ref = ["AUSDT,3,1209600592,100,500,20100,20280,326,70,332:6099\n"]
+            new = ["AUSDT,9,%d,100,500,%d,4294967295,%d,70,%d:6099\n" % (1209600592 + sh_ms, 20100 + sh_min, 326 + fb, 332 + fb)]      # другой `end` (край данных)
+            n, r = self._write(d, "n.csv", new), self._write(d, "r.csv", ref)
+            c = wm.compare(n, r, 60, None, {("AUSDT", str(1209600592 + sh_ms))})
+            self.assertFalse(c["ok"])
+            self.assertEqual((c["only_new_ex_end"], c["only_ref_ex_end"]), (0, 0))        # без `end` строки совпали
+            self.assertEqual(c["diff_on_base"], 2)
+            c = wm.compare(n, r, 60, None, set())
+            self.assertEqual(c["diff_on_base"], 0)
+
 
     def test_before_day20_ignored(self):
         with tempfile.TemporaryDirectory() as d:
