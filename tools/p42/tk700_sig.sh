@@ -5,6 +5,7 @@
 #                          → <out>/dumps/<источник>/<side>-{sigsx,levels}.csv
 #   all                  — 12 источников (оба направления, P42_LEVELS=1) + L_ind / S_ind / D_ind ОДНИМ вызовом движка: фаза 1 (чтение тиков) общая; сигналы источников от выходных ключей (rf / rs / tt …) не зависят — те же дампы, что у sig-long / sig-short / ind по отдельности
 #                          (сверяется на wa с `prod/siglv-wa-*` TK-671 байт в байт) → <out>/dumps/<вариант>/<side>-{sigsx,levels}.csv
+#   base                 — варианты L_base / S_base (дамп кандидатов, как tk625_run `cmd_eng`, но P42_SIGSX_ONLY=1) → <out>/dumps/{L_base,S_base}/<side>-sigsx.csv: строки таблиц TK-654 / TK-634 (класс B, дыра G-key; `tk700_gkey.sh`)
 #   ind                  — варианты баз L_ind / S_ind / D_ind (фильтры двойников tk671_twin.sh) → <out>/dumps/<вариант>/<side>-sigsx.csv: ключи (sym, sig_ms) строк базы вместо сделок / entryrej двойников
 # Использование: tk700_sig.sh <окно m01…m06|wa|wb|wc|wa20> <all|sig-long|sig-short|ind> <каталог выхода> [потоки]
 # Переменные: TK671_BIN (бинарь), TK700_SIGSX (<от>:<до>, по умолчанию из окна), TK700_SIGCACHE, TK700_SYMS (файл контрактов, по умолчанию из окна)
@@ -48,7 +49,13 @@ D_ind %s lx=1 tf=60 %s
     LB="lat=4 latx=4 pk=1 pb=1 fh=4 fk=120 fm=50 fb=0.5 ew=5 ex=0 rf=0.2 rs=20 t24=12"
     SB="lat=4 latx=4 pk=1 pb=1 fh=4 fk=120 fm=50 fb=0.5 ew=5 ex=0 tt=20 tb=0.1 rf=0.2 rs=2 bm=1 e=0.15 e2=0.05 t24=12"
     printf 'L_ind %s %s\nS_ind %s %s\nD_ind %s lx=1 tf=60 %s\n' "$LB" "$IND" "$SB" "$IND" "$SB" "$IND" > "$OUT/variants.txt" ;;
-  *) echo "режим: all | sig-long | sig-short | ind" >&2; exit 2 ;;
+  base)
+    LB="lat=4 latx=4 pk=1 pb=1 fh=4 fk=120 fm=50 fb=0.5 ew=5 ex=0 rf=0.2 rs=20 t24=12"
+    SB="lat=4 latx=4 pk=1 pb=1 fh=4 fk=120 fm=50 fb=0.5 ew=5 ex=0 tt=20 tb=0.1 rf=0.2 rs=2 bm=1 e=0.15 e2=0.05 t24=12"
+    printf 'L_base %s
+S_base %s
+' "$LB" "$SB" > "$OUT/variants.txt" ;;
+  *) echo "режим: all | sig-long | sig-short | ind | base" >&2; exit 2 ;;
 esac
 S=$(date +%s)
 P42_T0=$T0 P42_SIGSX_ONLY=1 P42_SIGSX=$SIGSX "$BIN" breakout tick --cache "$TREE/cache" --trades "$TREE/aggtrades" --variants "$OUT/variants.txt" --symbols "$COINS" --out "$OUT/dumps" \

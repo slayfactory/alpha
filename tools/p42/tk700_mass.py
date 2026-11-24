@@ -41,6 +41,8 @@ COVER_MIN = ho.COVER_MIN
 COLS_B = {"tpm60", "cons60", "mv5", "pierce_ep", "spread_tau", "zv6h", "n24", "m24"}          # TK-654: ключи у всех кандидатов дампа в БД, на H1 только на строках базы
 COLS_H = {"age_h", "pierce_ep", "pierce_max_bp", "touch_ep", "since_touch_h", "depth_min_bp", "depth_mean_bp", "approach_dur_min", "since_touch_prior_h", "touch_prior_none"}   # `--allow-diff` ворот строк базы
 EXCLUDED = "cc_* / clu_* / bd_*"
+GKEY = "/data/p42-tk700/gkey"                                                                      # таблицы кандидатов TK-654 по окнам H1 (`tk700_gkey.py table`)
+GCOLS = ("mv5", "tpm60", "pierce_ep", "spread_tau", "cons60", "zv6h", "n24", "m24")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS mass_run(run_id TEXT PRIMARY KEY, cellset TEXT, dry INTEGER, wins TEXT, bin_md5 TEXT, params TEXT, created TEXT, state TEXT);
 CREATE TABLE IF NOT EXISTS mass_batch(run_id TEXT, win TEXT, side TEXT, bkey TEXT, n_var INTEGER, n_sig INTEGER, n_filt INTEGER, ftab_rows INTEGER, engine_s REAL, cpu_s REAL, post_s REAL,
@@ -113,7 +115,42 @@ def covered(tab, share_cache, feat):
     return worst
 
 
-def cell_window(st, p8, w, side, vdir, filtered):
+def load_tabs_b(m, side, root=GKEY):
+    """Таблицы кандидатов для класса B — как в БД Jul–Nov: строки = кандидаты дампа базы окна (`tk700_gkey.py`, столбцы TK-654 у каждого) ∪ строки базы asm; столбцы asm — по ключу (sym, sig_ms), нет строки — пусто (проходит);
+    столбцы TK-654 при совпадении имён — из таблицы кандидатов (в БД они были оттуда)."""
+    import numpy as np
+    import pandas as pd
+    base = ho.load_tabs(m, side)
+    out = {}
+    for w in m["st"].TRADE_WINDOWS:
+        g = pd.read_parquet(os.path.join(root, w.name, "tab-%s.parquet" % side))
+        b = base[w.name]
+        kb = {(x, int(t)): i for i, (x, t) in enumerate(zip(b["sym"], b["ms"]))}
+        kg = {(x, int(t)): i for i, (x, t) in enumerate(zip(g["sym"], g["sig_ms"]))}
+        keys = sorted(set(kb) | set(kg))
+        n = len(keys)
+        ib = np.array([kb.get(k, -1) for k in keys], dtype=np.int64)
+        ig = np.array([kg.get(k, -1) for k in keys], dtype=np.int64)
+        tab = {"sym": np.array([k[0] for k in keys], dtype=object), "ms": np.array([k[1] for k in keys], dtype=np.int64)}
+        for c, v in b.items():
+            if c not in ("sym", "ms"):
+                col = np.full(n, np.nan)
+                col[ib >= 0] = v[ib[ib >= 0]]
+                tab[c] = col
+        for c in GCOLS:
+            col = np.full(n, np.nan)
+            col[ig >= 0] = g[c].to_numpy(np.float64)[ig[ig >= 0]]
+            tab[c] = col
+        out[w.name] = tab
+    return out
+
+
+def tabs_for(m, side, classes):
+    """Таблицы окон: для класса B (дыра G-key закрыта) — кандидаты дампа, иначе строки базы asm."""
+    return load_tabs_b(m, side) if "B" in classes else ho.load_tabs(m, side)
+
+
+def cell_window(st, p8, w, side, vdir, filtered, strict_key=False):
     """(n, Σ $, ошибки, заметки, сутки, P&L по суткам, сделок по суткам) одной клетки в одном окне: сделки по дате входа в диапазоне окна (как `tk604_stats.splice`)."""
     import numpy as np
     eng = p8.ENG[ho.SIDE_LETTER[side]]
@@ -129,7 +166,12 @@ def cell_window(st, p8, w, side, vdir, filtered):
     ssum = sum(dl.get(i, 0.0) for i in range(first, last + 1))
     nsum = float(t.net[sel].sum())
     if abs(ssum - nsum) > max(1e-4, 2e-6 * len(sel)):
-        errs.append("G7 Σdaily %+.6f≠Σnet %+.6f" % (ssum, nsum))
+        # окно H1 режет сделки на границах (вход до начала зачёта — сутки 14–19 прогрева, выход после конца месяца): Σ посуточного ряда окна ≠ Σ сделок по дате входа по построению;
+        # ошибка — только если не сходится весь прогон (все сутки против всех сделок), иначе заметка с разностью
+        if len(t) and abs(sum(dl.values()) - float(t.net.sum())) > max(1e-4, 2e-6 * len(t)):
+            errs.append("G7 Σdaily %+.6f≠Σnet %+.6f (весь прогон)" % (sum(dl.values()), float(t.net.sum())))
+        else:
+            notes.append("граница Σdaily−Σnet %+.4f" % (ssum - nsum))
     if len(t) and int(t.exit_ms.max()) + w.t0_ms >= st.LAST_MS:
         errs.append("G-tape")
     if filtered:
@@ -138,6 +180,8 @@ def cell_window(st, p8, w, side, vdir, filtered):
         fc = r4.filter_counters(meta)
         if fc is None:
             errs.append("G-key: нет счётчиков фильтра")
+        elif fc["no_key"] and strict_key:
+            errs.append("G-key no_key %s (класс B: ключи TK-654 должны быть у всех кандидатов)" % fc["no_key"])
         elif fc["no_key"]:
             notes.append("no_key=%s" % fc["no_key"])                         # кандидаты движка без строки базы: как в БД Jul–Nov — не сбой (класс A); B — после достройки G-key
     val = (t.gross - t.fees)[sel]
@@ -164,7 +208,7 @@ def cmd_plan(a):
         cells = keep_classes(load_cells(db, a.cellset, side), classes, unbuilt)
         if a.sigs:
             cells = pick_sigs(cells, a.sigs, a.seed)
-        tabs = ho.load_tabs(m, side)
+        tabs = tabs_for(m, side, classes)
         bt = make_batches(cells, a.vmax, a.sigmax)
         print("%s: клеток %d, ключей сигналов %d, партий на окно %d (vmax %d, sigmax %d)" % (side, len(cells), len({c["sig"] for c in cells}), len(bt), a.vmax, a.sigmax))
         for w in st.TRADE_WINDOWS:
@@ -317,7 +361,7 @@ def cmd_run(a):
             other = db.execute("SELECT count(*) FROM cell WHERE cellset=? AND side=? AND bin!=?", (a.cellset, side, md5s[side])).fetchone()[0]
             if other:
                 raise SystemExit("набор %s: %d клеток стороны %s не бинаря %s" % (a.cellset, other, side, md5s[side]))
-            tabs = ho.load_tabs(m, side)
+            tabs = tabs_for(m, side, classes)
             for w in st.TRADE_WINDOWS:
                 if w.name not in wins:
                     continue
@@ -361,7 +405,7 @@ def cmd_run(a):
                     cw, days = [], []
                     if rc == 0:
                         for c in cur:
-                            n, usd, errs, notes, ds, pn, ct = cell_window(st, p8, w, side, os.path.join(out, "k%d" % c["cid"]), bool(c["filter"]))
+                            n, usd, errs, notes, ds, pn, ct = cell_window(st, p8, w, side, os.path.join(out, "k%d" % c["cid"]), bool(c["filter"]), strict_key="B" in classes and cell_class(c["feats"], unbuilt) == "B")
                             cw.append((a.run_id, c["cid"], w.name, n, usd, ";".join(errs), ";".join(notes)))
                             days += [(a.run_id, c["cid"], d, p, k) for d, p, k in zip(ds, pn, ct)]
                     db.executemany("INSERT OR REPLACE INTO mass_cw VALUES(?,?,?,?,?,?,?)", cw)
