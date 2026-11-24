@@ -398,10 +398,12 @@ fn from_store_equals_px_qty_formula() {
     for qty_dec in 0u8..=18 {
         for n in [0usize, 1, 2, 1000] {
             let ticks: Vec<Tick> = (0..n)
-                .map(|_| Tick {
-                    px: (rnd() % 100_000_000_000_000) as i64 + 1,
-                    off: (rnd() % 86_400_000) as u32,
-                    bm: rnd() & 1 == 1,
+                .map(|_| {
+                    Tick::new(
+                        (rnd() % 100_000_000_000_000) as i64 + 1,
+                        (rnd() % 86_400_000) as u32,
+                        rnd() & 1 == 1,
+                    )
                 })
                 .collect();
             let qty: Vec<u64> = (0..n)
@@ -426,8 +428,8 @@ fn from_store_equals_px_qty_formula() {
                     (d.px_f64(i) * d.qty_f64(i)).to_bits(),
                     "dec {qty_dec} i {i}"
                 );
-                assert_eq!(got.t[i], 20_000 * 86_400_000 + i64::from(d.ticks[i].off));
-                assert_eq!(got.buy[i], !d.ticks[i].bm);
+                assert_eq!(got.t[i], 20_000 * 86_400_000 + i64::from(d.ticks[i].off()));
+                assert_eq!(got.buy[i], !d.ticks[i].bm());
             }
         }
     }

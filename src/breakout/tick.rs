@@ -28,7 +28,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Счётчик опции `pk` (§13.11, диагностика): уровни, убитые минутным проколом > τ, которых запрет ложного пробоя к этой минуте не убил.
 pub static PK_MINUTE_KILLED: AtomicU64 = AtomicU64::new(0);
@@ -55,11 +55,48 @@ pub fn mul_div(a: i64, b: i64, d: i64) -> i128 {
 
 /// Одна агрегированная сделка: цена ×1e8, время — мс от начала суток файла, `bm` = `is_buyer_maker`
 /// (агрессор — продавец).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// TK-683: 12 байт вместо 16 — `bm` лежит в старшем бите `off` (мс суток < 2^27), выравнивание 4: сутки сделок занимают на четверть
+/// меньше памяти (`--cap-gb` вмещает на треть больше суток). На поле `px` нельзя брать ссылку (не выровнено) — только копия.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(C, packed(4))]
 pub struct Tick {
     pub px: i64,
-    pub off: u32,
-    pub bm: bool,
+    ob: u32,
+}
+
+impl Tick {
+    const BM: u32 = 1 << 31;
+
+    #[inline(always)]
+    pub fn new(px: i64, off: u32, bm: bool) -> Tick {
+        debug_assert!(off < Self::BM);
+        Tick {
+            px,
+            ob: off | (u32::from(bm) << 31),
+        }
+    }
+
+    #[inline(always)]
+    pub fn off(&self) -> u32 {
+        self.ob & !Self::BM
+    }
+
+    #[inline(always)]
+    pub fn bm(&self) -> bool {
+        self.ob & Self::BM != 0
+    }
+}
+
+impl std::fmt::Debug for Tick {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let px = self.px;
+        f.debug_struct("Tick")
+            .field("px", &px)
+            .field("off", &self.off())
+            .field("bm", &self.bm())
+            .finish()
+    }
 }
 
 /// Источник сделок: сутки монеты (0 = 01.09) по времени; `None` — файла нет.
@@ -266,11 +303,7 @@ fn parse_rows(
             unsorted = true;
         }
         prev = off;
-        v.push(Tick {
-            px,
-            off,
-            bm: b.first() == Some(&b't'),
-        });
+        v.push(Tick::new(px, off, b.first() == Some(&b't')));
         if let Some(c) = col.as_deref_mut() {
             c.push(p, px, q);
         }
@@ -280,18 +313,58 @@ fn parse_rows(
         st.unsorted_files += 1;
         match col {
             Some(c) => c.sort_with(&mut v),
-            None => v.sort_by_key(|x| x.off),
+            None => v.sort_by_key(|x| x.off()),
         }
     }
     Ok(v)
 }
 
-type GcdMap = HashMap<(String, usize), Option<Arc<GcdSteps>>>;
+/// TK-683: ячейка суток — грузит один поток, остальные ждут его результат (потоки вариантов идут по одним и тем же сигналам
+/// и раньше разбирали одни и те же сутки каждый сам).
+type DaySlot = Arc<OnceLock<Option<Arc<Vec<Tick>>>>>;
+type GcdMap = HashMap<(String, usize), Arc<OnceLock<Option<Arc<GcdSteps>>>>>;
 
 struct Lru {
-    map: HashMap<(String, usize), Option<Arc<Vec<Tick>>>>,
+    /// Было ли вытеснение суток (память под сутки исчерпана).
+    evicted: bool,
+    map: HashMap<(String, usize), DaySlot>,
     order: VecDeque<(String, usize)>,
     bytes: usize,
+}
+
+impl Lru {
+    /// Вытеснение сверх `cap`: самые старые сутки уходят из `map`.
+    ///
+    /// TK-683: сутки, которые сейчас держит вариант или которые ещё грузятся, не вытесняются (память они не вернут, а в счёте
+    /// `bytes` перестанут быть) — уходят в конец очереди; за один вызов очередь обходится не больше одного раза.
+    fn shrink(&mut self, cap: usize) {
+        let mut left = self.order.len();
+        while self.bytes > cap && self.order.len() > 1 && left > 0 {
+            left -= 1;
+            self.evicted = true;
+            let Some(k) = self.order.pop_front() else {
+                break;
+            };
+            let busy = self.map.get(&k).is_some_and(|s| match s.get() {
+                Some(Some(v)) => Arc::strong_count(v) > 1,
+                Some(None) => false,
+                None => true,
+            });
+            if busy {
+                self.order.push_back(k);
+                continue;
+            }
+            if let Some(old) = self.map.remove(&k) {
+                if let Some(Some(v)) = old.get() {
+                    self.bytes = self.bytes.saturating_sub(day_bytes(v));
+                }
+            }
+        }
+    }
+}
+
+fn day_bytes(v: &Arc<Vec<Tick>>) -> usize {
+    v.len() * std::mem::size_of::<Tick>()
 }
 
 /// Итог `ZipSrc::fold_day`: нет файла zip / склад не дал сутки (промах, отступления, повреждение) / сутки свёрнуты.
@@ -311,6 +384,12 @@ pub struct ZipSrc {
     pub stat: Mutex<LoadStat>,
     /// TK-607 (L1): склад разобранных суток; без него — прежний путь (`unzip` + CSV).
     store: Option<Arc<TickStore>>,
+    /// TK-683: каталог файлов ступеней НОД суток (`<каталог>/<МОНЕТА>/<день>-<размер>-<mtime zip>.gcd`): тик монеты (`tick_at`) берёт НОД
+    /// прежних суток, не разбирая их сделки. Имя файла несёт отпечаток zip — другой zip даёт другой файл.
+    gcd_dir: Option<PathBuf>,
+    /// TK-683: время потоков в `day`, нс: разбор суток (загрузчик) и ожидание чужого разбора (вместе с ожиданием разрешения на счёт).
+    pub load_ns: AtomicU64,
+    pub wait_ns: AtomicU64,
 }
 
 impl ZipSrc {
@@ -319,6 +398,7 @@ impl ZipSrc {
             dir,
             cap_bytes,
             lru: Mutex::new(Lru {
+                evicted: false,
                 map: HashMap::new(),
                 order: VecDeque::new(),
                 bytes: 0,
@@ -326,12 +406,68 @@ impl ZipSrc {
             gcds: Mutex::new(HashMap::new()),
             stat: Mutex::new(LoadStat::default()),
             store: None,
+            gcd_dir: None,
+            load_ns: AtomicU64::new(0),
+            wait_ns: AtomicU64::new(0),
         }
     }
 
     pub fn with_store(mut self, store: Arc<TickStore>) -> ZipSrc {
         self.store = Some(store);
         self
+    }
+
+    pub fn with_gcd_dir(mut self, dir: PathBuf) -> ZipSrc {
+        self.gcd_dir = Some(dir);
+        self
+    }
+
+    /// Файл ступеней НОД суток; `None` — каталог не задан или zip суток нет.
+    fn gcd_file(&self, name: &str, day: usize) -> Option<PathBuf> {
+        let dir = self.gcd_dir.as_ref()?;
+        let date = day_string(day);
+        let zip = self
+            .dir
+            .join(name)
+            .join(format!("{name}-aggTrades-{date}.zip"));
+        let m = SrcMeta::of(&fs::metadata(zip).ok()?)?;
+        Some(dir.join(name).join(format!(
+            "{date}-{}-{}-{}.gcd",
+            m.size, m.mtime_s, m.mtime_ns
+        )))
+    }
+
+    /// TK-683: память под сутки (`cap_bytes`) уже исчерпана — загрузка впрок (разогрев) бесполезна.
+    pub fn evicted(&self) -> bool {
+        self.lru.lock().is_ok_and(|g| g.evicted)
+    }
+
+    /// Сутки, уже лежащие в памяти (без загрузки).
+    fn loaded(&self, sym: &str, day: usize) -> Option<Arc<Vec<Tick>>> {
+        let g = self.lru.lock().ok()?;
+        g.map.get(&(sym.to_string(), day))?.get()?.clone()
+    }
+
+    /// Файл ступеней НОД не от этих суток (другой zip с тем же размером и временем): запуск помечается ошибкой загрузки и завершится отказом,
+    /// файл переписывается по сделкам.
+    fn gcd_foreign(&self, sym: &str, day: usize) {
+        eprintln!(
+            "ОШИБКА: файл ступеней НОД {sym} день {day} не от этих суток — пересчитан по сделкам"
+        );
+        if let Ok(mut g) = self.stat.lock() {
+            g.errors += 1;
+        }
+    }
+
+    /// Запись — через временный файл и переименование: соседний процесс видит файл целиком или не видит вовсе.
+    fn gcd_write(&self, p: &std::path::Path, s: &GcdSteps) {
+        let tmp = p.with_extension(format!("{}.tmp", std::process::id()));
+        let ok = p.parent().is_some_and(|d| fs::create_dir_all(d).is_ok())
+            && fs::write(&tmp, s.to_bytes()).is_ok()
+            && fs::rename(&tmp, p).is_ok();
+        if !ok {
+            let _ = fs::remove_file(&tmp);
+        }
     }
 
     /// Сутки монеты со склада или из zip. `full` — вместе с количеством (TK-609, `read_day`); без него — путь движка: со склада
@@ -434,54 +570,111 @@ impl ZipSrc {
 impl TradeSrc for ZipSrc {
     fn day(&self, sym: &str, day: usize) -> Option<Arc<Vec<Tick>>> {
         let key = (sym.to_string(), day);
-        if let Ok(g) = self.lru.lock() {
-            if let Some(v) = g.map.get(&key) {
-                return v.clone();
-            }
-        }
-        let loaded = match self.load_day(sym, day, false) {
-            Ok(v) => v.map(|d| Arc::new(d.ticks)),
-            Err(e) => {
-                eprintln!("ОШИБКА загрузки {sym} день {day}: {e:#}");
-                if let Ok(mut g) = self.stat.lock() {
-                    g.errors += 1;
+        let slot: DaySlot = match self.lru.lock() {
+            Ok(mut g) => match g.map.get(&key) {
+                Some(slot) => slot.clone(),
+                None => {
+                    let slot = DaySlot::default();
+                    g.map.insert(key.clone(), slot.clone());
+                    g.order.push_back(key.clone());
+                    slot
                 }
-                None
+            },
+            Err(_) => DaySlot::default(),
+        };
+        let mut fresh = false;
+        let loaded = match slot.get() {
+            Some(v) => v.clone(),
+            None => {
+                // ожидающий чужой загрузки разрешение на счёт не держит (`P42_WIDE`); загрузчик берёт его на время разбора
+                let t0 = std::time::Instant::now();
+                let paused = super::pause(day);
+                let v = slot
+                    .get_or_init(|| {
+                        paused.work(|| {
+                            fresh = true;
+                            match self.load_day(sym, day, false) {
+                                Ok(v) => v.map(|d| Arc::new(d.ticks)),
+                                Err(e) => {
+                                    eprintln!("ОШИБКА загрузки {sym} день {day}: {e:#}");
+                                    if let Ok(mut g) = self.stat.lock() {
+                                        g.errors += 1;
+                                    }
+                                    None
+                                }
+                            }
+                        })
+                    })
+                    .clone();
+                drop(paused);
+                let ns = t0.elapsed().as_nanos() as u64;
+                if fresh { &self.load_ns } else { &self.wait_ns }.fetch_add(ns, Ordering::Relaxed);
+                v
             }
         };
-        if let Ok(mut g) = self.lru.lock() {
-            let sz = loaded
-                .as_ref()
-                .map_or(0, |a| a.len() * std::mem::size_of::<Tick>());
-            if g.map.insert(key.clone(), loaded.clone()).is_none() {
-                g.order.push_back(key);
-                g.bytes += sz;
-            }
-            while g.bytes > self.cap_bytes && g.order.len() > 1 {
-                if let Some(k) = g.order.pop_front() {
-                    if let Some(Some(a)) = g.map.remove(&k) {
-                        g.bytes = g
-                            .bytes
-                            .saturating_sub(a.len() * std::mem::size_of::<Tick>());
-                    }
+        if !fresh {
+            return loaded;
+        }
+        // TK-683: ступени НОД этих суток, взятые из файла до загрузки сделок, сверяются с ними (число сделок, первая цена)
+        if let Some(v) = &loaded {
+            let known = self
+                .gcds
+                .lock()
+                .ok()
+                .and_then(|g| g.get(&key).cloned())
+                .and_then(|s| s.get().cloned().flatten());
+            if known.is_some_and(|s| !s.fits(v)) {
+                self.gcd_foreign(sym, day);
+                let fixed = Arc::new(GcdSteps::of(v));
+                if let Some(p) = self.gcd_file(sym, day) {
+                    self.gcd_write(&p, &fixed);
+                }
+                if let Ok(mut g) = self.gcds.lock() {
+                    g.insert(key.clone(), Arc::new(OnceLock::from(Some(fixed))));
                 }
             }
+        }
+        if let Ok(mut g) = self.lru.lock() {
+            // ячейку могли вытеснить, пока сутки грузились: тогда её объём не в счёте
+            if g.map.get(&key).is_some_and(|s| Arc::ptr_eq(s, &slot)) {
+                g.bytes += loaded.as_ref().map_or(0, day_bytes);
+            }
+            g.shrink(self.cap_bytes);
         }
         loaded
     }
 
     fn gcd_steps(&self, sym: &str, day: usize) -> Option<Arc<GcdSteps>> {
-        let key = (sym.to_string(), day);
-        if let Ok(g) = self.gcds.lock() {
-            if let Some(v) = g.get(&key) {
-                return v.clone();
-            }
+        let slot = match self.gcds.lock() {
+            Ok(mut g) => g.entry((sym.to_string(), day)).or_default().clone(),
+            Err(_) => Default::default(),
+        };
+        if let Some(v) = slot.get() {
+            return v.clone();
         }
-        let steps = self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v)));
-        if let Ok(mut g) = self.gcds.lock() {
-            g.insert(key, steps.clone());
-        }
-        steps
+        let paused = super::pause(day);
+        slot.get_or_init(|| {
+            paused.work(|| {
+                let file = self.gcd_file(sym, day);
+                let saved = file
+                    .as_ref()
+                    .and_then(|p| fs::read(p).ok())
+                    .and_then(|b| GcdSteps::from_bytes(&b));
+                if let Some(s) = saved {
+                    // сутки уже в памяти — файл сверяется с ними; сутки, загруженные позже, сверяет `day`
+                    match self.loaded(sym, day) {
+                        Some(v) if !s.fits(&v) => self.gcd_foreign(sym, day),
+                        _ => return Some(Arc::new(s)),
+                    }
+                }
+                let steps = self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v)));
+                if let (Some(p), Some(s)) = (&file, &steps) {
+                    self.gcd_write(p, s);
+                }
+                steps
+            })
+        })
+        .clone()
     }
 }
 
@@ -605,7 +798,6 @@ pub fn candidates(sym: &Sym, levels: &[Level], cfg: &SigCfg, side: Side, out: &m
 /// со следующей минуты уровень снова даёт кандидатов, память касания (`pend`) и метка `pk` сброшены. Минута, снявшая приостановку, сама проверяется
 /// убийцами заново (широкая минута с откатом и новым проколом — новая приостановка). Повторное срабатывание убийцы на приостановленном уровне
 /// ни время приостановки, ни счётчик не меняет.
-#[allow(clippy::needless_range_loop)] // t индексирует сразу несколько рядов монеты
 pub fn candidates_fg(
     sym: &Sym,
     levels: &[Level],
@@ -614,34 +806,125 @@ pub fn candidates_fg(
     out: &mut Vec<Cand>,
     fgc: &mut [u64; 4],
 ) {
+    let mut outs = [std::mem::take(out)];
+    let mut fg = [[0u64; 4]];
+    candidates_group(sym, levels, &[cfg], side, &mut outs, &mut fg);
+    let [o] = outs;
+    *out = o;
+    for (a, b) in fgc.iter_mut().zip(fg[0]) {
+        *a += b;
+    }
+}
+
+/// TK-683: ключ состояния уровня в `candidates_group` — `SigCfg` без полей, от которых зависит только выдача кандидата
+/// (живость, обороты, зона входа, «свежий уровень», цвет, `ap`). Задания с равным ключом и стороной делят один проход по минутам.
+pub fn level_state_key(cfg: &SigCfg) -> SigCfg {
+    SigCfg {
+        natr_min_pm: 0,
+        t1h_u: 0,
+        t24_u: 0,
+        track_pm: 0,
+        e_pm: 0,
+        color: false,
+        ap: 0,
+        fr_h_min: 0,
+        fr_k: 0,
+        fr_share: 0,
+        fr_b_pm: 0,
+        nf: 0,
+        ev: 0,
+        ea_m: 0,
+        el_pm: 0,
+        eh_pm: 0,
+        ..cfg.clone()
+    }
+}
+
+/// Условие выдачи кандидата одного задания группы (`candidates_group`).
+struct Emit<'a> {
+    cfg: &'a SigCfg,
+    /// Номер задания в группе.
+    k: usize,
+    /// TK-681 (`nf`): ряд фильтра живости — NATR `natr_p` или источник волатильности.
+    live: &'a [i32],
+    /// TK-681 (`ev`): ряд зоны входа.
+    evol: Option<&'a [i32]>,
+    natr_min: i64,
+    /// Зона входа ×1e8: постоянная, при `ev ≠ 0` — её верхняя граница (зажим `eh`, `track`); `None` — границы нет.
+    dmax0: Option<i64>,
+    /// Нижняя граница зоны входа при `dmax0` для текущей версии цены уровня.
+    zone_lo0: i64,
+}
+
+/// `candidates_fg` для группы заданий `cfgs` с одним состоянием уровня (`level_state_key` и сторона равны): состояние (запрет, ложный пробой,
+/// приостановка) ведётся один раз, кандидаты выдаются каждому заданию по его условию — в `outs[k]`, счётчики `fg` — в `fgc[k]`.
+/// Результат каждого задания тот же, что у отдельного прохода; счётчики `pk` / `pb` растут на число заданий группы.
+#[allow(clippy::needless_range_loop)] // t индексирует сразу несколько рядов монеты
+pub fn candidates_group(
+    sym: &Sym,
+    levels: &[Level],
+    cfgs: &[&SigCfg],
+    side: Side,
+    outs: &mut [Vec<Cand>],
+    fgc: &mut [[u64; 4]],
+) {
     let s = side.s();
+    let Some(&cfg) = cfgs.first() else {
+        return;
+    };
     let Some(natr) = sym.natr_for(cfg.natr_p) else {
         return;
     };
-    // TK-681 (`nf`): ряд фильтра живости — NATR `natr_p` или источник волатильности; (`ev`): ряд зоны входа
-    let live = if cfg.nf == 0 {
-        natr
-    } else {
-        let Some(v) = sym.vol_for(cfg.nf) else {
-            return;
-        };
-        v
+    // задание без ряда источника (`nf`, `ev`) кандидатов и счётчиков не даёт
+    let mut em: Vec<Emit> = cfgs
+        .iter()
+        .enumerate()
+        .filter_map(|(k, &c)| {
+            let live = if c.nf == 0 { natr } else { sym.vol_for(c.nf)? };
+            let track = c.track_pm * 1000;
+            let (evol, dmax0) = if c.ev == 0 {
+                (None, Some((c.e_pm * 1000).min(track)))
+            } else {
+                let ub = (c.eh_pm >= 0 && track >= 0).then(|| (c.eh_pm * 1000).min(track));
+                (Some(sym.vol_for(c.ev)?), ub)
+            };
+            Some(Emit {
+                cfg: c,
+                k,
+                live,
+                evol,
+                natr_min: c.natr_min_pm * 1000,
+                dmax0,
+                zone_lo0: i64::MIN,
+            })
+        })
+        .collect();
+    if em.is_empty() {
+        return;
+    }
+    let n_jobs = em.len() as u64;
+    let mut fg = [0u64; 4];
+    let zone_lo_of = |lp: i64, dmax: i64| lp - mul_div(lp.abs(), dmax + 1, SCALE) as i64 - 1;
+    // пороги, зависящие только от цены версии уровня, считаются при смене версии, а не на каждой минуте:
+    // нижние границы зон входа заданий (возвращается наименьшая), порог возврата `ban`, порог прокола `pk`
+    let marks = |lp: i64, em: &mut [Emit]| {
+        let mut zone_min = i64::MAX;
+        for e in em.iter_mut() {
+            e.zone_lo0 = e.dmax0.map_or(i64::MIN, |d| zone_lo_of(lp, d));
+            zone_min = zone_min.min(e.zone_lo0);
+        }
+        (
+            zone_min,
+            lp - mul_div(lp.abs(), cfg.f_pm, 100_000) as i64,
+            lp + mul_div(lp.abs(), cfg.lv.tau_pm, 100_000) as i64,
+        )
     };
-    let evol = if cfg.ev == 0 {
-        None
-    } else {
-        let Some(v) = sym.vol_for(cfg.ev) else {
-            return;
-        };
-        Some(v)
-    };
-    let dmax0 = (cfg.e_pm * 1000).min(cfg.track_pm * 1000);
-    let natr_min = cfg.natr_min_pm * 1000;
     for (li, lv) in levels.iter().enumerate() {
         let end = (lv.end as usize).min(N_MIN);
         let mut seg = 0;
         let mut price = lv.segs[0].1;
         let mut far = lv.far_edge(0, s);
+        let (mut zone_min, mut back, mut pk_thr) = marks(s * price, &mut em);
         let mut pend: Option<usize> = None;
         let mut forbidden = false;
         let mut pk_dead = false;
@@ -652,6 +935,7 @@ pub fn candidates_fg(
                 seg += 1;
                 price = lv.segs[seg].1;
                 far = lv.far_edge(seg, s);
+                (zone_min, back, pk_thr) = marks(s * price, &mut em);
             }
             if sym.o[t] == 0 {
                 continue;
@@ -662,30 +946,34 @@ pub fn candidates_fg(
             } else {
                 (-sym.l[t], -sym.h[t])
             };
-            // зона входа минуты: постоянная или от волатильности закрытой минутки `t−1` (`ev`); нет значения — кандидата нет
-            let dmax = match evol {
-                None => Some(dmax0),
-                Some(v) if t > 0 => cfg.zone_e8(i64::from(v[t - 1])),
-                Some(_) => None,
-            };
-            if let (true, Some(dmax)) = (t >= START_MIN && !forbidden && lo < lp, dmax) {
-                let zone_lo = lp - mul_div(lp.abs(), dmax + 1, SCALE) as i64 - 1;
-                let nv = i64::from(live[t - 1]);
-                if hi >= zone_lo
-                    && nv >= 0
-                    && nv >= natr_min
-                    && sym.pq[t] - sym.pq[t - 60] >= cfg.t1h_u
-                    && (cfg.t24_u == 0 || sym.pq[t] - sym.pq[t - 1440] >= cfg.t24_u)
-                {
-                    if fresh_ok(sym, cfg, lv, s, lp, t) {
-                        out.push(Cand {
-                            t: t as u32,
-                            level: li as u32,
-                            lp,
-                            far: far.unwrap_or(lp),
-                        });
-                    } else {
-                        FR_REJECTED.fetch_add(1, Ordering::Relaxed);
+            // минута ниже самой широкой зоны группы кандидата не даёт ни одному заданию
+            if t >= START_MIN && !forbidden && lo < lp && hi >= zone_min {
+                for e in &em {
+                    // зона входа минуты: постоянная или от волатильности закрытой минутки `t−1` (`ev`); нет значения — кандидата нет
+                    let zone_lo = match e.evol {
+                        None => e.zone_lo0,
+                        Some(v) => match e.cfg.zone_e8(i64::from(v[t - 1])) {
+                            Some(dmax) => zone_lo_of(lp, dmax),
+                            None => continue,
+                        },
+                    };
+                    let nv = i64::from(e.live[t - 1]);
+                    if hi >= zone_lo
+                        && nv >= 0
+                        && nv >= e.natr_min
+                        && sym.pq[t] - sym.pq[t - 60] >= e.cfg.t1h_u
+                        && (e.cfg.t24_u == 0 || sym.pq[t] - sym.pq[t - 1440] >= e.cfg.t24_u)
+                    {
+                        if fresh_ok(sym, e.cfg, lv, s, lp, t) {
+                            outs[e.k].push(Cand {
+                                t: t as u32,
+                                level: li as u32,
+                                lp,
+                                far: far.unwrap_or(lp),
+                            });
+                        } else {
+                            FR_REJECTED.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
             }
@@ -700,7 +988,7 @@ pub fn candidates_fg(
                     forbidden = false;
                     pk_dead = false;
                     pend = None;
-                    fgc[3] += 1;
+                    fg[3] += 1;
                 }
             }
             if let Some(tc) = pend {
@@ -711,39 +999,41 @@ pub fn candidates_fg(
             if hi > lp && pend.is_none() {
                 pend = Some(t);
             }
-            if cfg.ban && pend.is_some() {
-                let back = lp - mul_div(lp.abs(), cfg.f_pm, 100_000) as i64;
-                if s * sym.c[t] < back {
-                    if cfg.fg_m > 0 && susp.is_none() {
-                        susp = Some(t);
-                        fgc[2] += 1;
-                    }
-                    forbidden = true;
+            if cfg.ban && pend.is_some() && s * sym.c[t] < back {
+                if cfg.fg_m > 0 && susp.is_none() {
+                    susp = Some(t);
+                    fg[2] += 1;
                 }
+                forbidden = true;
             }
             // §13.11 (`pk`): прокол цены версии больше чем на τ убивает уровень навсегда, со следующей минуты
-            if cfg.lv.pk && !pk_dead && hi > lp + mul_div(lp.abs(), cfg.lv.tau_pm, 100_000) as i64 {
+            if cfg.lv.pk && !pk_dead && hi > pk_thr {
                 pk_dead = true;
                 if !forbidden {
-                    PK_MINUTE_KILLED.fetch_add(1, Ordering::Relaxed);
+                    PK_MINUTE_KILLED.fetch_add(n_jobs, Ordering::Relaxed);
                 }
                 if cfg.fg_m > 0 && susp.is_none() {
                     susp = Some(t);
-                    fgc[0] += 1;
+                    fg[0] += 1;
                 }
                 forbidden = true;
             }
             // §13.13 (`pb`): сделка минуты на уровне или за ним (high ≥ цены версии) убивает уровень со следующей минуты
             if cfg.pb && hi >= lp {
                 if !forbidden {
-                    PB_KILLED.fetch_add(1, Ordering::Relaxed);
+                    PB_KILLED.fetch_add(n_jobs, Ordering::Relaxed);
                 }
                 if cfg.fg_m > 0 && susp.is_none() {
                     susp = Some(t);
-                    fgc[1] += 1;
+                    fg[1] += 1;
                 }
                 forbidden = true;
             }
+        }
+    }
+    for e in &em {
+        for (a, b) in fgc[e.k].iter_mut().zip(fg) {
+            *a += b;
         }
     }
 }
@@ -785,8 +1075,8 @@ pub fn minute_range(ticks: &[Tick], t: usize) -> (usize, usize) {
     let start = ((t % 1440) as i64 * MIN_MS) as u32;
     let end = start + MIN_MS as u32;
     (
-        ticks.partition_point(|x| x.off < start),
-        ticks.partition_point(|x| x.off < end),
+        ticks.partition_point(|x| x.off() < start),
+        ticks.partition_point(|x| x.off() < end),
     )
 }
 
@@ -811,12 +1101,37 @@ pub fn signals_for_coin(
 ) {
     let mut lev: HashMap<(LevelCfg, Side), Vec<Level>> = HashMap::new();
     let mut by_day: BTreeMap<usize, Vec<(usize, Cand)>> = BTreeMap::new();
+    // TK-683: задания с одним состоянием уровня (`level_state_key`, сторона) идут по минутам одним проходом
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut group_of: HashMap<(SigCfg, Side), usize> = HashMap::new();
     for (j, (cfg, side)) in jobs.iter().enumerate() {
+        let g = *group_of
+            .entry((level_state_key(cfg), *side))
+            .or_insert_with(|| {
+                groups.push(Vec::new());
+                groups.len() - 1
+            });
+        groups[g].push(j);
+    }
+    let mut cands: Vec<Vec<Cand>> = jobs.iter().map(|_| Vec::new()).collect();
+    for g in &groups {
+        let (cfg, side) = &jobs[g[0]];
         let levels = lev
             .entry((cfg.lv.clone(), *side))
             .or_insert_with(|| build_levels_far(sym, &cfg.lv, *side));
-        let mut cs = Vec::new();
-        candidates_fg(sym, levels, cfg, *side, &mut cs, &mut ctrs[j].fg);
+        let cfgs: Vec<&SigCfg> = g.iter().map(|&j| &jobs[j].0).collect();
+        let mut outs_g: Vec<Vec<Cand>> = g.iter().map(|_| Vec::new()).collect();
+        let mut fg = vec![[0u64; 4]; g.len()];
+        candidates_group(sym, levels, &cfgs, *side, &mut outs_g, &mut fg);
+        for ((&j, cs), f) in g.iter().zip(outs_g).zip(fg) {
+            cands[j] = cs;
+            for (a, b) in ctrs[j].fg.iter_mut().zip(f) {
+                *a += b;
+            }
+        }
+    }
+    // порядок кандидатов суток — по номеру задания, как при отдельных проходах
+    for (j, cs) in cands.into_iter().enumerate() {
         ctrs[j].cands += cs.len() as u64;
         for c in cs {
             by_day.entry(c.t as usize / 1440).or_default().push((j, c));
@@ -847,7 +1162,7 @@ pub fn signals_for_coin(
                     ws = true;
                 }
                 outs[j].push(TSig {
-                    ms: day as i64 * DAY_MS + i64::from(ticks[k].off),
+                    ms: day as i64 * DAY_MS + i64::from(ticks[k].off()),
                     sym: si,
                     level: c.level,
                     dist,
@@ -1528,7 +1843,11 @@ impl<'a> Cursor<'a> {
             if let Some(v) = &self.cur {
                 if let Some(tk) = v.get(self.idx) {
                     self.idx += 1;
-                    return Some((self.day as i64 * DAY_MS + i64::from(tk.off), tk.px, tk.bm));
+                    return Some((
+                        self.day as i64 * DAY_MS + i64::from(tk.off()),
+                        tk.px,
+                        tk.bm(),
+                    ));
                 }
             }
             self.cur = None;
@@ -1895,23 +2214,23 @@ pub fn tape_last_side(
     cap_ms: i64,
 ) -> Option<(i64, i64)> {
     let t_off = t_abs - day as i64 * DAY_MS;
-    let hi = ticks.partition_point(|x| i64::from(x.off) <= t_off);
+    let hi = ticks.partition_point(|x| i64::from(x.off()) <= t_off);
     for tk in ticks[..hi].iter().rev() {
-        let age = t_off - i64::from(tk.off);
+        let age = t_off - i64::from(tk.off());
         if age > cap_ms {
             return None;
         }
-        if tk.bm == taker_bm {
+        if tk.bm() == taker_bm {
             return Some((tk.px, age));
         }
     }
     let v = src.day(name, day.checked_sub(1)?)?;
     for tk in v.iter().rev() {
-        let age = t_off + DAY_MS - i64::from(tk.off);
+        let age = t_off + DAY_MS - i64::from(tk.off());
         if age > cap_ms {
             return None;
         }
-        if tk.bm == taker_bm {
+        if tk.bm() == taker_bm {
             return Some((tk.px, age));
         }
     }
@@ -2235,6 +2554,9 @@ impl PxGcd {
 
 /// TK-683: НОД каждого начала суток без повторного прохода по сделкам. НОД разностей к первой цене при добавлении сделок только
 /// делится, поэтому меняется считаные разы: хранятся ступени (число сделок, после которого НОД стал таким; НОД).
+const GCD_MAGIC: [u8; 4] = *b"GC42";
+const GCD_HEAD_LEN: usize = 4 + 8 + 8 + 4;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GcdSteps {
     p0: i64,
@@ -2266,6 +2588,50 @@ impl GcdSteps {
             n: ticks.len(),
             steps,
         }
+    }
+
+    /// Ступени посчитаны по этим суткам? Сверка файла ступеней с загруженными сделками: число сделок и первая цена.
+    pub fn fits(&self, ticks: &[Tick]) -> bool {
+        self.n == ticks.len() && ticks.first().is_none_or(|t| t.px == self.p0)
+    }
+
+    /// Запись в файл ступеней (`ZipSrc::gcd_file`): метка, первая цена, число сделок, ступени; числа — little-endian.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(GCD_HEAD_LEN + 16 * self.steps.len());
+        b.extend_from_slice(&GCD_MAGIC);
+        b.extend_from_slice(&self.p0.to_le_bytes());
+        b.extend_from_slice(&(self.n as u64).to_le_bytes());
+        b.extend_from_slice(&(self.steps.len() as u32).to_le_bytes());
+        for &(k, g) in &self.steps {
+            b.extend_from_slice(&(k as u64).to_le_bytes());
+            b.extend_from_slice(&g.to_le_bytes());
+        }
+        b
+    }
+
+    /// Разбор `to_bytes`; запись другой длины или с чужой меткой — `None` (сутки будут разобраны заново).
+    pub fn from_bytes(b: &[u8]) -> Option<GcdSteps> {
+        let num = |i: usize| -> Option<[u8; 8]> { b.get(i..i + 8)?.try_into().ok() };
+        if b.get(..4)? != GCD_MAGIC {
+            return None;
+        }
+        let k = u32::from_le_bytes(b.get(20..24)?.try_into().ok()?) as usize;
+        if b.len() != GCD_HEAD_LEN + 16 * k {
+            return None;
+        }
+        let mut steps = Vec::with_capacity(k);
+        for i in 0..k {
+            let at = GCD_HEAD_LEN + 16 * i;
+            steps.push((
+                usize::try_from(u64::from_le_bytes(num(at)?)).ok()?,
+                i64::from_le_bytes(num(at + 8)?),
+            ));
+        }
+        Some(GcdSteps {
+            p0: i64::from_le_bytes(num(4)?),
+            n: usize::try_from(u64::from_le_bytes(num(12)?)).ok()?,
+            steps,
+        })
     }
 
     /// То же, что `PxGcd::of(&ticks[..k])`.
@@ -2307,7 +2673,7 @@ pub fn tick_at(
     };
     let part = src.day(name, day).map_or(PxGcd::default(), |v| {
         let off = t - day as i64 * DAY_MS;
-        let k = v.partition_point(|x| i64::from(x.off) < off);
+        let k = v.partition_point(|x| i64::from(x.off()) < off);
         src.gcd_steps(name, day)
             .map_or(PxGcd::default(), |s| s.prefix(k))
     });

@@ -13,7 +13,7 @@ use super::tick::{
     cons_range, exit_natr, old_entry, run_tick_xb, signals_for_coin, sort_tsigs, tape_last_side,
     Cursor, EntryRej, TSig, TickCtr, TickResult, TradeSrc, ZipSrc, DAY_MS,
 };
-use super::{par_map, Side};
+use super::{par_map, par_map_wide, Side};
 use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -21,6 +21,9 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
+
+/// TK-683: сколько вариантов вызова проходится по монетам для разогрева суток сделок перед фазой 2.
+const WARM_VARIANTS: usize = 16;
 
 fn mean(v: &[f64]) -> f64 {
     if v.is_empty() {
@@ -497,7 +500,26 @@ pub fn run(
 ) -> Result<()> {
     let t0 = Instant::now();
     let only: Option<Vec<String>> = symbols.map(|s| s.split(',').map(str::to_string).collect());
-    let syms = data::load_all(cache, threads, only.as_deref())?;
+    // TK-683: склад сделок (обход каталога) и отпечаток кэша сигналов (метаданные всех суток) — пока грузятся минутки, а не после них
+    let files = data::cache_files(cache, only.as_deref())?;
+    let (syms, store, sigcache) = std::thread::scope(|sc| {
+        let h_store = sc.spawn(|| {
+            store
+                .as_ref()
+                .map(|o| TickStore::open(o).map(Arc::new))
+                .transpose()
+        });
+        let h_sig = sc.spawn(|| {
+            let names: Vec<&str> = files.iter().map(|f| f.0.as_str()).collect();
+            sig_cache
+                .as_ref()
+                .map(|o| SigCache::open(o, cache, trades, &names))
+                .transpose()
+        });
+        let syms = data::load_files(&files, threads);
+        (syms, h_store.join(), h_sig.join())
+    });
+    let syms = syms?;
     eprintln!("{}", mem_line("после загрузки минуток"));
     eprintln!(
         "загружено символов {} за {:.1} с",
@@ -546,6 +568,8 @@ pub fn run(
         Some(t)
     };
     fs::create_dir_all(out)?;
+    // TK-683: время этапов вызова — в журнал (на результат не влияет)
+    let t_parsed = t0.elapsed().as_secs_f64();
     // задания фазы 1: различные (SigCfg, сторона)
     let mut job_idx: HashMap<(SigCfg, Side), usize> = HashMap::new();
     let mut jobs: Vec<(SigCfg, Side)> = Vec::new();
@@ -560,12 +584,16 @@ pub fn run(
         }
     }
     let store = store
-        .map(|o| TickStore::open(&o).map(Arc::new))
-        .transpose()
+        .map_err(|_| anyhow::anyhow!("поток открытия склада сделок упал"))?
         .context("склад сделок")?;
+    let t_store = t0.elapsed().as_secs_f64();
     let mut src = ZipSrc::new(trades.to_path_buf(), cap_gb << 30);
     if let Some(st) = &store {
         src = src.with_store(Arc::clone(st));
+    }
+    // TK-683: ступени НОД суток — рядом с кэшем сигналов (тот же каталог, подкаталог `gcd`)
+    if let Some(o) = &sig_cache {
+        src = src.with_gcd_dir(o.dir.join("gcd"));
     }
     eprintln!(
         "фаза 1: монет {}, заданий сигналов {}",
@@ -573,11 +601,10 @@ pub fn run(
         jobs.len()
     );
     // TK-607 (L2): задания с записью в кэше сигналов фазу 1 не проходят; остальные считаются как прежде
-    let names: Vec<&str> = syms.iter().map(|s| s.name.as_str()).collect();
-    let sigcache = sig_cache
-        .map(|o| SigCache::open(&o, cache, trades, &names))
-        .transpose()
+    let sigcache = sigcache
+        .map_err(|_| anyhow::anyhow!("поток открытия кэша сигналов упал"))?
         .context("кэш сигналов")?;
+    let t_sc_open = t0.elapsed().as_secs_f64();
     let keys: Vec<Option<String>> = jobs
         .iter()
         .map(|(cfg, side)| sigcache.as_ref().and_then(|c| c.key(cfg, *side)))
@@ -595,6 +622,10 @@ pub fn run(
             None => todo.push(j),
         }
     }
+    let t_sc_read = t0.elapsed().as_secs_f64();
+    eprintln!(
+        "этапы до фазы 1, с от старта: варианты и таблица {t_parsed:.2}, склад сделок {t_store:.2}, кэш сигналов открыт {t_sc_open:.2}, прочитан {t_sc_read:.2}"
+    );
     if !todo.is_empty() {
         let tjobs: Vec<(SigCfg, Side)> = todo.iter().map(|&j| jobs[j].clone()).collect();
         let idx: Vec<usize> = (0..syms.len()).collect();
@@ -665,10 +696,79 @@ pub fn run(
     let tasks: Vec<(usize, Side)> = (0..vs.len())
         .flat_map(|i| sides.iter().map(move |&sd| (i, sd)))
         .collect();
+    // TK-683: разогрев суток сделок. Потоки вариантов идут по сигналам в одном порядке и ждут разбора одних и тех же суток по цепочке
+    // (на партии из 400 вариантов — две трети времени фазы 2). До фазы 2 несколько вариантов, взятых равномерно по списку, проходятся
+    // по монетам параллельно (исходы отбрасываются): разные потоки разбирают разные сутки. На результат вариантов разогрев не влияет;
+    // мало заданий на поток — лишние проходы не окупаются.
+    if threads > 1 && tasks.len() >= 4 * threads && std::env::var_os("P42_SIGSX_ONLY").is_none() {
+        let t1 = std::time::Instant::now();
+        let n_scout = WARM_VARIANTS.min(tasks.len());
+        let mut split: HashMap<usize, Vec<Vec<TSig>>> = HashMap::new();
+        let mut scouts: Vec<(usize, Side, usize)> = Vec::new();
+        for k in 0..n_scout {
+            let (vi, side) = tasks[k * tasks.len() / n_scout];
+            if let Some(&j) = job_idx.get(&(vs[vi].1.sig.clone(), side)) {
+                split.entry(j).or_insert_with(|| {
+                    let mut by_sym: Vec<Vec<TSig>> = vec![Vec::new(); syms.len()];
+                    for s in &sigs[j] {
+                        by_sym[s.sym as usize].push(*s);
+                    }
+                    by_sym.retain(|v| !v.is_empty());
+                    by_sym
+                });
+                scouts.push((vi, side, j));
+            }
+        }
+        let items: Vec<(usize, Side, &Vec<TSig>)> = scouts
+            .iter()
+            .flat_map(|&(vi, side, j)| split[&j].iter().map(move |v| (vi, side, v)))
+            .collect();
+        par_map(&items, threads, |&(vi, side, v)| {
+            // память под сутки кончилась — дальше разогрев только вытеснял бы загруженное
+            if src.evicted() {
+                return;
+            }
+            let p = &vs[vi].1;
+            run_tick_xb(&syms, v, side, &p.exit, &p.port, &src, p.mk, p.ek, p.xb);
+        });
+        eprintln!(
+            "разогрев суток сделок: {:.1} с, вариантов {}, проходов по монетам {}{}",
+            t1.elapsed().as_secs_f64(),
+            scouts.len(),
+            items.len(),
+            if src.evicted() {
+                " (прерван: память под сутки исчерпана)"
+            } else {
+                ""
+            }
+        );
+    }
     let done = std::sync::atomic::AtomicUsize::new(0);
     let total = tasks.len();
-    let parts = par_map(
+    let (run_ns, write_ns) = (
+        std::sync::atomic::AtomicU64::new(0),
+        std::sync::atomic::AtomicU64::new(0),
+    );
+    let t_ph2 = std::time::Instant::now();
+    let warm_ns = (
+        src.load_ns.load(std::sync::atomic::Ordering::Relaxed),
+        src.wait_ns.load(std::sync::atomic::Ordering::Relaxed),
+    );
+    // TK-683: `P42_WIDE=<рабочих фазы 2>` (не меньше `threads`): сутки, не помещающиеся в `--cap-gb`, каждая волна вариантов разбирает
+    // заново — чем шире волна, тем меньше разборов; считают одновременно по-прежнему `threads` рабочих. На результат не влияет.
+    let wide = match std::env::var("P42_WIDE") {
+        Ok(v) => v
+            .parse::<usize>()
+            .with_context(|| format!("P42_WIDE={v}"))?
+            .max(threads),
+        Err(_) => threads,
+    };
+    if wide > threads {
+        eprintln!("фаза 2: рабочих {wide}, считают одновременно {threads} (P42_WIDE)");
+    }
+    let parts = par_map_wide(
         &tasks,
+        wide,
         threads,
         |&(vi, side)| -> Result<(usize, Side, String, serde_json::Value)> {
             let (id, p) = &vs[vi];
@@ -697,6 +797,7 @@ pub fn run(
                 _ => &sigs[j],
             };
             // `P42_SIGSX_ONLY` (§13.18, v20): сетка суток длиннее окна сделок (COUNT_DAYS), портфель не считается — только сигналы и дампы.
+            let t_run = std::time::Instant::now();
             let r = if std::env::var_os("P42_SIGSX_ONLY").is_some() {
                 TickResult::empty()
             } else {
@@ -704,7 +805,16 @@ pub fn run(
                     &syms, port_sigs, side, &p.exit, &p.port, &src, p.mk, p.ek, p.xb,
                 )
             };
+            run_ns.fetch_add(
+                t_run.elapsed().as_nanos() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            let t_write = std::time::Instant::now();
             write_outputs(&dir, &syms, side, &r)?;
+            write_ns.fetch_add(
+                t_write.elapsed().as_nanos() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
             if p.exit.tape_entry() {
                 write_entry_rej(&dir, &syms, side, &r)?;
             }
@@ -847,6 +957,21 @@ pub fn run(
         ls.files,
         ls.errors
     );
+    {
+        use std::sync::atomic::Ordering::Relaxed;
+        let s = |ns: u64| ns as f64 / 1e9;
+        eprintln!(
+            "фаза 2: стена {:.1} с; по потокам, с: варианты (портфель и исходы, с сутками) {:.1}, из них разбор суток {:.1} и ожидание суток и разрешения {:.1}; запись основных файлов {:.1}",
+            t_ph2.elapsed().as_secs_f64(),
+            s(run_ns.load(Relaxed)),
+            s(src.load_ns.load(Relaxed) - warm_ns.0),
+            s(src.wait_ns.load(Relaxed) - warm_ns.1),
+            s(write_ns.load(Relaxed))
+        );
+    }
+    if src.evicted() {
+        eprintln!("сутки сверх памяти: были вытеснения");
+    }
     if let Some(st) = &store {
         eprintln!("{}", st.summary());
     }
