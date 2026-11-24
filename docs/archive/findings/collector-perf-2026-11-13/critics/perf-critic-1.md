@@ -1,4 +1,4 @@
-# Critic 1: collector turbo plan (branch bb/g-022-collector-perf-v1 @ a4c81da3, docs/findings/collector-perf-2026-11-13.md)
+# Critic 1: collector turbo plan (branch bb/g-022-collector-perf-v1 @ a4c81da3, docs/archive/findings/collector-perf-2026-11-13.md)
 
 **Verdict: ДОРАБОТАТЬ.** The measurements (§1) are solid and correctly scaled. The direction (no per-frame hand-off, one reactor, batched kernel crossings) is right. But the plan's central lever is mis-sized. Its batching window W = 0.5–1 ms limits reactor wakeups, while recv calls, ACKs and kernel crossings scale with **(socket, read) pairs**. At 31.3k frames/s over 146 sockets (≈ 214 frames/s/socket), a 1 ms window holds ≈ 0.2 frames per socket. S2 as written therefore cuts wakeups and leaves most recv/ACK cost in place. The plan also has no gate at all on the `rx` column and on which lane counts as the first arrival. In addition, S1 and S2 duplicate each other, and the checklist omits the clock and kernel-entry facts that explain this box's costs.
 

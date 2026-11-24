@@ -3769,7 +3769,7 @@
     "universe": "566 (60 d from 01.09)",
     "stop_base": "5 %",
     "verdict": "descriptive, no verdict or selection; tl=1 letter-of-order, tl=2 adds market fill on gap",
-    "source": "docs/findings/p42-trail-limit-2026-11-18.md:40-46"
+    "source": "docs/archive/findings/p42-trail-limit-2026-11-18.md:40-46"
    },
    {
     "task": "TK-674",

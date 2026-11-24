@@ -57,7 +57,7 @@
 только чтение: версия
 формата, записи/кадры/**группы-сообщения**, `ev`, блочные сделки, мёртвые поля v2; `--reencode` —
 замер A/B формата на тех же записях, `--rewrite-out` — переписать v2 в v3 (пороги и числа — тикеты
-43/44, `docs/findings/binlog-v3-2026-09-13.md`). `lob session` → `<SYMBOL>-<день>.binlog`, `gaps.csv`, `clock.csv`,
+43/44, `docs/archive/findings/binlog-v3-2026-09-13.md`). `lob session` → `<SYMBOL>-<день>.binlog`, `gaps.csv`, `clock.csv`,
 `session.json`. `lob verify` → `verify-<SYMBOL>.status` (`ok`/`fail`, без `ok` сутки не читаются):
 целостность (`gaps`, инварианты книги) ровно ноль, «цена ни разу не держалась» — доля меньше
 0.1 % сделок (В-56, план §11); строки `gaps.csv` — по смыслу (В-59): потери целостности
@@ -189,7 +189,7 @@ SNXX даёт 843 (20 %) и DRAM 758 (18 %), у плюсовых монет 2–
 обороту** — BTC, ETH, XRP, SOL, ZEC; блеклистов не добавлялось, этих инструментов в списке просто
 нет): 100 строк, `window_secs = 3600`, без метки `# debug`, `k = 1.0` (заглушка, В-30), первая
 HYPE, дальше LSK, NEAR, DOGE, AKE, ENA, …, NBIS. Прежний топ-50 (В-50, коммит `3da0b3f`) — история;
-разбор переезда и замеров — `docs/findings/deploy-2026-09-15-ovh-singapore.md`.
+разбор переезда и замеров — `docs/archive/findings/deploy-2026-09-15-ovh-singapore.md`.
 
 Коллектор **работает** на **новом сервере** `139.99.91.22` (OVH `vps-cab27b0c.vps.ovh.ca`, регион
 `os-sgp2`, Ubuntu 26.04, 2 vCPU / 3.7 ГБ; вход по SSH-ключу `id_rsa`, `ubuntu`): бинарник и исходники
@@ -230,7 +230,7 @@ gaps 0, `connect_failed=0`, `gap_rows_failed=0`, parse p99 102 мкс, queue p99
 1.35 ГБ/сутки. `verify` в боевом корне **гоняется таймером** `alpha-verify.timer` (A2, 2026-09-17):
 00:20 UTC, `tools/verify-day.sh`, маркеры `verify-<SYM>.status` в корне, сводка в
 `/opt/alpha/verify/<день>.log`; первый прогон за 09-16 — 94 `ok` / 6 `fail` при 100 монетах.
-Разбор — `docs/findings/deploy-2026-09-15-ovh-singapore.md`.
+Разбор — `docs/archive/findings/deploy-2026-09-15-ovh-singapore.md`.
 
 Местная запись остановлена: олвейс-он **`data/always-on/20260912T201737Z/`** (2026-09-12T20:47Z →
 2026-09-13T16:22Z на боевой десятке, 0 разрывов, 209.6 млн записей, 928.2 МБ на диске) —
@@ -239,7 +239,7 @@ gaps 0, `connect_failed=0`, `gap_rows_failed=0`, parse p99 102 мкс, queue p99
 5 %, уровень 3 хуже; дальше байты двигает только смена кодека), ворота раскатки пройдены
 (`verify`/`levels` на v3 совпали с v2 побайтово, живой 5-мин смоук — v3, `resyncs = 0`);
 раскатка на живой процесс и переезд на сервер — решение владельца, ранбук —
-`docs/COMMANDS.md` («Коллектор на сервере»). Разбор — `docs/findings/binlog-v3-2026-09-13.md`.
+`docs/COMMANDS.md` («Коллектор на сервере»). Разбор — `docs/archive/findings/binlog-v3-2026-09-13.md`.
 Боевых `profiles-*`/`backtest-*`/`shortlist-*` ещё нет.
 
 **2026-09-18, бэктестер:** найдена и починена гонка отмены/исполнения в единой стратегии

@@ -3,6 +3,7 @@
 
   python tools/docs_archive.py plan  <путь>... [--keep ФАЙЛ] [--freeze ФАЙЛ] [--tsv ВЫХОД]
   python tools/docs_archive.py apply <путь>... [--keep ФАЙЛ] [--freeze ФАЙЛ] [--tsv ВЫХОД]
+  python tools/docs_archive.py lists <каталог> [--branches ТК,...]   # пересобрать keep.txt и freeze.txt
 
 Путь — файл или каталог под git. docs/<X> -> docs/archive/<X> (как docs/archive/findings). Не переносятся:
   - файлы из --keep (по строке на путь; каталог = всё под ним): закреплены летописью (`file:`-ссылки БД, источники чисел);
@@ -121,15 +122,41 @@ def rewrite(f, t, moves, fset, freeze):
     return out
 
 
+def lists(out, prefixes):
+    """keep.txt — пути, закреплённые летописью (`file:`-ссылки и источники чисел из БД на srv);
+    freeze.txt — файлы, которые правят открытые ветки `bb/<префикс>-*` (diff против master), и два служебных."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    import chron
+    keep = set()
+    for _, d, _ in chron.call("links_all"):
+        if d.startswith("file:"):
+            keep.add(re.sub(r":\d+(-\d+)?$", "", d[5:].split("#", 1)[0].rstrip("/")))
+    for src, _ in chron.call("metrics_sources"):
+        keep.add(re.sub(r":\d+(-\d+)?$", "", src))
+    freeze = {"docs/plan/coord-handoff.md", "docs/plan/BUSINESS-TASK.md"}
+    for pre in prefixes:
+        for br in git("branch", "--list", "bb/%s-*" % pre, "--format=%(refname:short)").split():
+            freeze |= set(git("-c", "core.quotepath=false", "diff", "--name-only", "master..." + br).splitlines())
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "keep.txt").write_text("".join(p + "\n" for p in sorted(keep)), encoding="utf-8")
+    (out / "freeze.txt").write_text("".join(p + "\n" for p in sorted(freeze)), encoding="utf-8")
+    print("keep %d путей, freeze %d файлов → %s" % (len(keep), len(freeze), out))
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["plan", "apply"])
+    ap.add_argument("cmd", choices=["plan", "apply", "lists"])
     ap.add_argument("paths", nargs="+")
+    ap.add_argument("--branches", default="tk-674,tk-683,tk-690,tk-692,tk-697,tk-699,tk-700,tk-701,page-8090-audit,critic-viking-map")
     ap.add_argument("--keep")
     ap.add_argument("--freeze")
     ap.add_argument("--tsv")
     args = ap.parse_args()
     args.paths = [p.rstrip("/") for p in args.paths]
+    if args.cmd == "lists":
+        lists(args.paths[0], args.branches.split(","))
+        return 0
     files, fset, moves, texts, freeze, skipped = build(args)
     changed = {}
     for f, t in texts.items():

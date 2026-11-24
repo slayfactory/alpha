@@ -1,6 +1,6 @@
 # Проверка TK-535: независимый клиент A/B (16.11.2026)
 
-Проверяется `docs/findings/independent-client-ab-2026-11-16.md` (ветка `bb/tk-535-independent-client-ab-v2-thr_eys7bmufjm` @ 04068f02). Время — UTC. Все числа «измерено» — пересчитаны своими скриптами по сырью на srv, без `analyze.py`/выходов исполнителя: `tools/indep_ab/review/recompute_q1.py`, `recompute_q2.py`, `queue_split.py`; выходы — `/data/indep-ab/review/{q1,q2,queue_split}.txt` (юниты `systemd-run`, Nice 19, IO idle).
+Проверяется `docs/archive/findings/independent-client-ab-2026-11-16.md` (ветка `bb/tk-535-independent-client-ab-v2-thr_eys7bmufjm` @ 04068f02). Время — UTC. Все числа «измерено» — пересчитаны своими скриптами по сырью на srv, без `analyze.py`/выходов исполнителя: `tools/indep_ab/review/recompute_q1.py`, `recompute_q2.py`, `queue_split.py`; выходы — `/data/indep-ab/review/{q1,q2,queue_split}.txt` (юниты `systemd-run`, Nice 19, IO idle).
 
 ## Вердикт: принять с правками
 

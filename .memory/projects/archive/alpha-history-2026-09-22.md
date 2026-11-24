@@ -787,7 +787,7 @@ R4 (`frontrun_best_px` → `frontrun_tick` в тикете), R5 (отказ `--d
   bbr, `netdev_max_backlog=25000`, `tcp_fastopen=3`, `tcp_slow_start_after_idle=0`, выключенные
   `unattended-upgrades`/apt-таймеры; привязка к ядру и `nice -5` отклонены (p99 хуже). Профиль
   `perf`: ядро/сисколлы ~25 %, libc memset 9.1 %, приложение ~17 % (`Book::apply` 5.1 %).
-- Разбор — `docs/findings/deploy-2026-09-15-ovh-singapore.md`; детали окружения —
+- Разбор — `docs/archive/findings/deploy-2026-09-15-ovh-singapore.md`; детали окружения —
   `skills/ovh-vps-singapore.md`. Дополнения к `CLAUDE.md` («Состояние») внесены.
 
 ## T45 — два потока глубины (2026-09-15, в проде)
