@@ -242,6 +242,35 @@ class Mass(unittest.TestCase):
             self.assertEqual(att2, 2)
             self.assertEqual(ms.claim_run(m, "r2", {})[3], 1)
 
+    def test_fam_of(self):
+        import tk700_mass as ms
+        self.assertEqual([ms.fam_of(c) for c in ("ok10_d7", "cosig15", "cc_1h", "bd_imb02", "sac10", "accdv1_300", "kyle1m")], ["hist", "mkt", "cc", "bd", "fast", "fast", "fast"])
+
+    def test_need_counts_by_family(self):
+        import argparse
+        import contextlib
+        import io
+        import sqlite3
+        import tk700_cells as cl
+        import tk700_mass as ms
+        with tempfile.TemporaryDirectory() as d:
+            cov = os.path.join(d, "cov.json")
+            json.dump({"not_built": ["ok10_d3", "sac10"], "uncovered": ["cc_1h"]}, open(cov, "w"))
+            db = os.path.join(d, "m.sqlite")
+            c = cl.connect(db)
+            rows = [("long", "ok10_d3"), ("long", ""), ("short", "sac10,cc_1h"), ("short", "tpm60"), ("short", "sac10")]
+            c.executemany("INSERT INTO cell(cellset, cid, side, ckey, feats) VALUES('t', ?, ?, 'k', ?)", [(i, s_, f) for i, (s_, f) in enumerate(rows)])
+            c.commit()
+            c.close()
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                ms.cmd_need(argparse.Namespace(cellset="t", cov=cov, db=db))
+            text = out.getvalue()
+            self.assertIn("long: клеток 2, со столбцом вне H1 (не построен / не покрыт) 1", text)
+            self.assertIn("short: клеток 3, со столбцом вне H1 (не построен / не покрыт) 2", text)
+            self.assertIn("'fast': 2", text)
+            self.assertIn("'cc+fast': 1", text)
+
 
 class Warm20(unittest.TestCase):
     """Ворота прогрева: строки эталона (T0 = 17.06) сдвигаются на 6 суток к координатам wa20 (T0 = 11.06)."""

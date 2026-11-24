@@ -2,9 +2,10 @@
 """TK-700 (В-183): массовый прогон клеток c539 движком по месяцам январь–июнь 2026 (посуточный P&L каждой клетки → TK-692). Замок — только на запуск (run-id), одного чтения нет.
 
   python3 tk700_mass.py plan  --cellset all1 [--dry] [--wins m01,…] [--sides long,short]         # клетки, охват по окнам, партии, без движка
-  python3 tk700_mass.py run   --run-id R --cellset all1 [--dry] [--wins …] [--sides …] [--vmax 400 --sigmax 26] [--sigs N --seed S] [--max-batches K] [--threads 2] [--cap-gb 6]
+  python3 tk700_mass.py run   --run-id R --cellset all1 [--dry] [--wins …] [--sides …] [--vmax 400 --sigmax 26] [--sigs N --seed S] [--max-batches K] [--only-skipped R0] [--threads 2] [--cap-gb 6]
   python3 tk700_mass.py check --run-id R                                                         # dry: сверка с числами БД (сделки, Σ $, посуточный ряд) по клеткам набора
   python3 tk700_mass.py timing --run-id R [--cells 10000]                                          # время движка по партиям → минуты на 10 000 клеток в месяц
+  python3 tk700_mass.py need  --cellset all1 [--cov /data/p42-tk700/cov/cov.json]                  # клетки по столбцам: не построены / не покрыты (`tk700_cov.py`) — без движка
 
 БД результатов `/data/p42-tk700/mass/mass.sqlite` (ключ — run_id): `mass_run`, `mass_batch` (время, ЦП, память партии), `mass_cw` (клетка × окно: сделки, Σ $, ошибки охраны),
 `mass_day` (клетка × сутки: P&L = gross − fees по дате входа, число сделок; сутки — от `D0` окна из `mass_run.params`), `mass_skip` (пара клетка × окно не считалась: охват ниже 0,7 / нет строк базы).
@@ -106,8 +107,9 @@ def covered(tab, share_cache, feat):
 def cell_window(st, p8, w, side, vdir, filtered):
     """(n, Σ $, ошибки, сутки, P&L по суткам, сделок по суткам) одной клетки в одном окне: сделки по дате входа в диапазоне окна (как `tk604_stats.splice`)."""
     import numpy as np
-    t = st.read_trades_csv(os.path.join(vdir, p8.ENG[side] + "-trades.csv"))
-    dl = st.read_daily_csv(os.path.join(vdir, p8.ENG[side] + "-daily.csv"))
+    eng = p8.ENG[ho.SIDE_LETTER[side]]
+    t = st.read_trades_csv(os.path.join(vdir, eng + "-trades.csv"))
+    dl = st.read_daily_csv(os.path.join(vdir, eng + "-daily.csv"))
     errs = []
     if len(t) and np.abs(t.net - (t.gross - t.fees + t.funding)).max() > 2e-6:
         errs.append("net≠gross−fees+funding")
@@ -170,6 +172,45 @@ def cmd_plan(a):
     return 0
 
 
+def fam_of(col):
+    """Семейство столбца для `need`: hist (ok10_d*), mkt (cosig15), fast (FAST TK-681), cc (кластеры монет), bd (глубина книги)."""
+    if col.startswith("ok10_d"):
+        return "hist"
+    if col == "cosig15":
+        return "mkt"
+    if col.startswith(("cc_", "clu_")):
+        return "cc"
+    if col.startswith("bd_"):
+        return "bd"
+    return "fast"
+
+
+def cmd_need(a):
+    """Сколько клеток набора использует не построенные / не покрытые на H1 столбцы (`cov.json` из `tk700_cov.py`) — по сторонам, семействам и столбцам."""
+    cov = json.load(open(a.cov, encoding="utf-8"))
+    bad_cols = set(cov["not_built"]) | set(cov["uncovered"])
+    db = connect(a.db)
+    tot, fam, per = {}, {}, {}
+    for side, feats in db.execute("SELECT side, feats FROM cell WHERE cellset=?", (a.cellset,)):
+        cols = {x for f in (feats.split(",") if feats else []) for x in need_cols(f)} & bad_cols
+        tot[side] = tot.get(side, 0) + 1
+        fs = {fam_of(x) for x in cols}
+        for f in fs:
+            fam[side, f] = fam.get((side, f), 0) + 1
+        if cols:
+            fam[side, "любое"] = fam.get((side, "любое"), 0) + 1
+            if len(fs) > 1:
+                fam[side, "+".join(sorted(fs))] = fam.get((side, "+".join(sorted(fs))), 0) + 1
+        for x in cols:
+            per[side, x] = per.get((side, x), 0) + 1
+    for side in sorted(tot):
+        print("%s: клеток %d, со столбцом вне H1 (не построен / не покрыт) %d (%.1f %%)" % (side, tot[side], fam.get((side, "любое"), 0), 100.0 * fam.get((side, "любое"), 0) / tot[side]))
+        print("   по семействам (клеток с хотя бы одним):", {k[1]: v for k, v in sorted(fam.items(), key=lambda t: -t[1]) if k[0] == side and "+" not in k[1] and k[1] != "любое"})
+        print("   по сочетаниям:", {k[1]: v for k, v in sorted(fam.items(), key=lambda t: -t[1]) if k[0] == side and "+" in k[1]})
+        print("   по столбцам:", dict(sorted(((x, n) for (s_, x), n in per.items() if s_ == side), key=lambda t: -t[1])[:40]))
+    return 0
+
+
 def claim_run(m, run_id, info):
     """Замок запуска: ключ — sha256 «run_id#попытка» (повторный запуск того же run-id — новая попытка, дубль одновременной попытки отказан)."""
     for att in range(1, 100):
@@ -196,7 +237,7 @@ def cmd_run(a):
     sides = a.sides.split(",")
     md5s = {s: hashlib.md5(open(BINS[s], "rb").read()).hexdigest() for s in sides}
     md5 = json.dumps(md5s)
-    params = dict(vmax=a.vmax, sigmax=a.sigmax, sigs=a.sigs, seed=a.seed, threads=a.threads, cap_gb=a.cap_gb, sides=sides, D0=st.D0.isoformat(), max_batches=a.max_batches)
+    params = dict(vmax=a.vmax, sigmax=a.sigmax, sigs=a.sigs, seed=a.seed, threads=a.threads, cap_gb=a.cap_gb, sides=sides, D0=st.D0.isoformat(), max_batches=a.max_batches, only_skipped=a.only_skipped)
     row = db.execute("SELECT cellset, dry FROM mass_run WHERE run_id=?", (a.run_id,)).fetchone()
     if row and (row[0] != a.cellset or row[1] != int(a.dry)):
         raise SystemExit("run-id %s уже занят набором %s (dry=%s)" % (a.run_id, row[0], row[1]))
@@ -223,12 +264,15 @@ def cmd_run(a):
                 if w.name not in wins:
                     continue
                 tab, cache = tabs[w.name], {}
+                redo = {r[0] for r in db.execute("SELECT cid FROM mass_skip WHERE run_id=? AND win=?", (a.only_skipped, w.name))} if a.only_skipped else None
                 if not len(tab["sym"]):
                     db.executemany("INSERT OR REPLACE INTO mass_skip VALUES(?,?,?,?)", [(a.run_id, c["cid"], w.name, "нет строк базы") for c in cells])
                     db.commit()
                     continue
                 runnable, skips = [], []
                 for c in cells:
+                    if redo is not None and c["cid"] not in redo:
+                        continue                                            # только пары, пропущенные в запуске R0 (столбцы построены позже)
                     bad = [(f, covered(tab, cache, f)) for f in c["feats"] if covered(tab, cache, f) < COVER_MIN]
                     (skips.append((a.run_id, c["cid"], w.name, "охват %s" % ",".join("%s %.2f" % x for x in bad))) if bad else runnable.append(c))
                 db.executemany("INSERT OR REPLACE INTO mass_skip VALUES(?,?,?,?)", skips)
@@ -374,9 +418,12 @@ def cmd_timing(a):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
-    for n in ("plan", "run", "check", "timing"):
+    for n in ("plan", "run", "check", "timing", "need"):
         s = sp.add_parser(n)
         s.add_argument("--db", default=MASS_DB)
+        if n == "need":
+            s.add_argument("--cellset", required=True)
+            s.add_argument("--cov", default="/data/p42-tk700/cov/cov.json")
         if n in ("plan", "run"):
             s.add_argument("--cellset", required=True)
             s.add_argument("--dry", action="store_true")
@@ -392,8 +439,9 @@ def main(argv=None):
             s.add_argument("--threads", type=int, default=2)
             s.add_argument("--cap-gb", type=int, default=6)
             s.add_argument("--max-batches", type=int, default=0)
+            s.add_argument("--only-skipped", default="", help="run-id прежнего запуска: считать только пары клетка × окно из его mass_skip (после достройки столбцов)")
     a = ap.parse_args(argv)
-    return {"plan": cmd_plan, "run": cmd_run, "check": cmd_check, "timing": cmd_timing}[a.cmd](a)
+    return {"plan": cmd_plan, "run": cmd_run, "check": cmd_check, "timing": cmd_timing, "need": cmd_need}[a.cmd](a)
 
 
 if __name__ == "__main__":

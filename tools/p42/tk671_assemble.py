@@ -73,7 +73,9 @@ def rust_blocks(win, side, key):
     al = al.drop(columns=["ep_id"])
     al.index = f12_rid
     out["flow_deriv"] = al
-    for n in ("tcount", "tsize", "tox"):
+    for n in ("tcount", "tsize", "tox", "fast"):
+        if n == "fast" and not os.path.exists(f"{d}/fast.csv"):
+            continue                                    # FAST TK-681 — по необходимости (TK-700: `tk700_feat.sh … fast`); таблицы TK-671 без него
         x = read_csv(f"{d}/{n}.csv")
         assert len(x) == len(ek) and (x["sym"].to_numpy() == ek["sym"].to_numpy()).all() and (x["sig_ms"].to_numpy() == ek["sig_ms"].to_numpy()).all(), f"{n}: ключи не совпали с eps-key"
         out[n] = x.drop(columns=["sym", "sig_ms"])
@@ -105,7 +107,7 @@ def main():
         if "row_id" in f.columns:
             f = f.set_index("row_id")
         fams[n] = f
-    order = [n for n in ["rules", "f12", "flow_deriv", "tcount", "tsize", "tox"] + PY_FAMS if n in fams]
+    order = [n for n in ["rules", "f12", "flow_deriv", "tcount", "tsize", "tox", "fast"] + PY_FAMS if n in fams]
     cov = dict(win=a.win, side=a.side, rows=len(rows), families={}, dups=[], renamed=[])
     cols, seen = {}, {}
     for n in order:

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # TK-700 (srv): Rust-признаки на строках БАЗЫ окна и стороны — f12 (бинарь TK-699 с tf_min) → all (flow + deriv) → tcount → tsize → tox; как tk671_feat.sh, но окно из tk700_win.py env и корень TK671_ROOT.
-# Использование: tk700_feat.sh <окно m01…m06|wa|wb|wc> <side long|short> <потоки> [шаги: f12 tcount tsize tox all; по умолчанию все — `all` (flow + deriv) последним: ему нужны докачанные metrics / premium / funding]
+# Использование: tk700_feat.sh <окно m01…m06|wa|wb|wc> <side long|short> <потоки> [шаги: f12 tcount tsize tox fast all; по умолчанию все — `all` (flow + deriv) последним: ему нужны докачанные metrics / premium / funding]
 # Входы: $TK671_ROOT/prod/lvl-<окно>-<side>/rows.parquet (строки базы, tk700_prep.py base); выход: $TK671_ROOT/fam/rust/<окно>-<side>/{f12,all,tcount,tsize,tox,eps-key}.csv + steps.log.
 # Данные deriv: метрики / премия / фандинг — TK700_DL (по умолчанию /data/p42-tk700/dl; для wa / wb / wc — прежние корни TK-600).
 # Для окон отложенной выборки движок и охрана P&L не нужны: alpha-feat читает только сутки сделок, минутки и тики. Значения исходов не считаются.
 set -uo pipefail
-WIN=${1:?окно}; SIDE=${2:?сторона}; TH=${3:-2}; STEPS=" ${4:-f12 tcount tsize tox all} "
+WIN=${1:?окно}; SIDE=${2:?сторона}; TH=${3:-2}; STEPS=" ${4:-f12 tcount tsize tox fast all} "
 has() { [[ "$STEPS" == *" $1 "* ]]; }
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=${TK671_ROOT:-/data/p42-tk700/p671}; export TK671_ROOT=$ROOT
@@ -13,6 +13,7 @@ PY=${TK700_PY:-/data/tk592/venv/bin/python}
 F12=${TK700_F12:-/data/p42-tk699/bin/alpha-feat-tf}
 BT=/data/p42-tk639/bin/alpha-feat
 TOX=/data/p42-tk671/bin/alpha-feat-tox-ed78ac4c408073f5f7343538c99b1cf3
+FAST=${TK700_FAST:-/data/p42-tk681/bin/alpha-feat-tk681}     # FAST TK-681: 50 столбцов (короткие окна токсичного потока, ускорение ленты), вход — как у tox
 STORE=/data/p42-tk599/tick-store
 eval "$(python3 "$HERE/tk700_win.py" env "$WIN")"
 W=$TREE
@@ -42,6 +43,10 @@ done
 if has tox; then
   S=$(date +%s)
   $TOX tox --eps eps-tox.csv --out tox.csv --base-date $T0 --trades $W/aggtrades --store $STORE --threads "$TH" > tox.log 2>&1; rc=$?; tm tox $rc $S
+fi
+if has fast; then
+  S=$(date +%s)
+  $FAST fast --eps eps-tox.csv --out fast.csv --base-date $T0 --trades $W/aggtrades --store $STORE --threads "$TH" > fast.log 2>&1; rc=$?; tm fast $rc $S
 fi
 if has all; then
   $PY - <<'PY'

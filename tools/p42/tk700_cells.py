@@ -68,6 +68,8 @@ def cmd_extract(a):
     n_all = 0
     for id_, side, ckey, bin_, trades, usd, line, daily in src.execute(sql, args):
         n_all += 1
+        if not ckey:
+            continue
         k = (side, ckey)
         pref = 1 if bin_ == bins.get(side) else 0
         if k not in best or (pref, id_) > (best[k][0], best[k][1]):

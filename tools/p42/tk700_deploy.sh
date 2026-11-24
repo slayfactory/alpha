@@ -4,3 +4,5 @@
 set -euo pipefail
 KEY=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o BatchMode=yes -o ConnectTimeout=15)
 tar -C tools/p42 --exclude=__pycache__ -cf - . | ssh "${KEY[@]}" root@5.231.25.224 "mkdir -p /data/p42-tk700/code && tar -C /data/p42-tk700/code -xf - && ls /data/p42-tk700/code | wc -l"
+# lib.py (tk638_post) импортирует selection_bias из скилла alpha-research
+tar -C .claude/skills/alpha-research/scripts -cf - selection_bias.py | ssh "${KEY[@]}" root@5.231.25.224 "tar -C /data/p42-tk700/code -xf -"
