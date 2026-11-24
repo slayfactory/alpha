@@ -246,6 +246,25 @@ class Mass(unittest.TestCase):
         import tk700_mass as ms
         self.assertEqual([ms.fam_of(c) for c in ("ok10_d7", "cosig15", "cc_1h", "bd_imb02", "sac10", "accdv1_300", "kyle1m")], ["hist", "mkt", "cc", "bd", "fast", "fast", "fast"])
 
+    def test_cell_class(self):
+        import tk700_mass as ms
+        bad = {"ok10_d3", "sac10", "kyle1m"}
+        cl = lambda *f: ms.cell_class(list(f), bad)                                   # noqa: E731
+        self.assertEqual(cl(), "A")
+        self.assertEqual(cl("f12_x", "n24"), "B")                                      # n24 → n24 / m24 (TK-654)
+        self.assertEqual(cl("sharp"), "B")                                             # sharp → cons60 / mv5
+        self.assertEqual(cl("ok10_d3"), "C")
+        self.assertEqual(cl("approach_dur_min"), "H")
+        self.assertEqual(cl("pierce_ep"), "B")                                         # и в TK-654, и в истории уровня — B раньше H
+        self.assertEqual(cl("bd_imb02", "n24"), "X")                                   # исключённое — первым
+        self.assertEqual(cl("cc_1h"), "X")
+        self.assertEqual(cl("sac10"), "P")                                             # FAST не построен → P; после cov без него — A
+        self.assertEqual(ms.cell_class(["sac10"], set()), "A")
+        cells = [dict(cid=i, feats=f) for i, f in enumerate([[], ["n24"], ["sac10"], ["ok10_d3"]])]
+        self.assertEqual([c["cid"] for c in ms.keep_classes(cells, {"A"}, bad)], [0])
+        self.assertEqual([c["cid"] for c in ms.keep_classes(cells, {"A", "P"}, bad)], [0, 2])
+        self.assertEqual(len(ms.keep_classes(cells, set(), bad)), 4)
+
     def test_need_counts_by_family(self):
         import argparse
         import contextlib

@@ -6,10 +6,14 @@
   python3 tk700_mass.py check --run-id R                                                         # dry: сверка с числами БД (сделки, Σ $, посуточный ряд) по клеткам набора
   python3 tk700_mass.py timing --run-id R [--cells 10000]                                          # время движка по партиям → минуты на 10 000 клеток в месяц
   python3 tk700_mass.py need  --cellset all1 [--cov /data/p42-tk700/cov/cov.json]                  # клетки по столбцам: не построены / не покрыты (`tk700_cov.py`) — без движка
+  python3 tk700_mass.py classes --cellset all1 [--cov …]                                         # клетки по классам A / B / C / H / X / P (см. `cell_class`) — без движка
+  … plan / run … --class A[,B,…]                                                                  # только клетки этих классов (по умолчанию все, как раньше)
 
 БД результатов `/data/p42-tk700/mass/mass.sqlite` (ключ — run_id): `mass_run`, `mass_batch` (время, ЦП, память партии), `mass_cw` (клетка × окно: сделки, Σ $, ошибки охраны),
 `mass_day` (клетка × сутки: P&L = gross − fees по дате входа, число сделок; сутки — от `D0` окна из `mass_run.params`), `mass_skip` (пара клетка × окно не считалась: охват ниже 0,7 / нет строк базы).
 Партии — как TK-674: ≤ vmax вариантов и ≤ sigmax ключей прохода сигналов, клетки отсортированы по (sig, cid); готовая партия (run_id, окно, сторона, bkey) при повторном запуске пропускается.
+Классы клеток (решение координатора 24.11, В-172): A — каждый столбец фильтра построен и посчитан на тех же строках, что в Jul–Nov; B — столбцы TK-654 (в БД есть у ВСЕХ кандидатов дампа, на H1 пока только на строках базы: дыра G-key — считать после достройки); C — hist ok10_*;
+H — столбцы истории уровня из `--allow-diff` ворот (H1 ≠ таблица TK-671 по построению); X — исключены (cc_* / clu_* / bd_*, правило TK-674); P — иной столбец не построен (`cov.json`); покрытие < 0,7 в окне — пропуск пары клетка × окно (`mass_skip`), класс не меняет.
 `--dry` — окна wa / wb / wc (Jul–Nov), числа БД сверяются (`check`); без `--dry` — окна m01…m06 (H1), движок только с жетоном замка запуска (`tk700_lock`)."""
 from __future__ import annotations
 
@@ -34,11 +38,14 @@ OUT_ROOT = "/data/p42-tk700/mass/out"
 BINS = {"long": "/data/p42-tk683/bin/alpha-tk683k-plain.c400af11", "short": "/data/p42-tk683/bin/alpha-tk683l-plain.562f6899"}     # бинарь строк БД своей стороны
 VMAX, SIGMAX = 400, 26
 COVER_MIN = ho.COVER_MIN
+COLS_B = {"tpm60", "cons60", "mv5", "pierce_ep", "spread_tau", "zv6h", "n24", "m24"}          # TK-654: ключи у всех кандидатов дампа в БД, на H1 только на строках базы
+COLS_H = {"age_h", "pierce_ep", "pierce_max_bp", "touch_ep", "since_touch_h", "depth_min_bp", "depth_mean_bp", "approach_dur_min", "since_touch_prior_h", "touch_prior_none"}   # `--allow-diff` ворот строк базы
+EXCLUDED = "cc_* / clu_* / bd_*"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS mass_run(run_id TEXT PRIMARY KEY, cellset TEXT, dry INTEGER, wins TEXT, bin_md5 TEXT, params TEXT, created TEXT, state TEXT);
 CREATE TABLE IF NOT EXISTS mass_batch(run_id TEXT, win TEXT, side TEXT, bkey TEXT, n_var INTEGER, n_sig INTEGER, n_filt INTEGER, ftab_rows INTEGER, engine_s REAL, cpu_s REAL, post_s REAL,
                                       rc INTEGER, maxrss_mb REAL, utc TEXT, PRIMARY KEY(run_id, win, side, bkey));
-CREATE TABLE IF NOT EXISTS mass_cw(run_id TEXT, cid INTEGER, win TEXT, n INTEGER, usd REAL, errs TEXT, PRIMARY KEY(run_id, cid, win)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS mass_cw(run_id TEXT, cid INTEGER, win TEXT, n INTEGER, usd REAL, errs TEXT, note TEXT, PRIMARY KEY(run_id, cid, win)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS mass_day(run_id TEXT, cid INTEGER, day INTEGER, pnl REAL, n INTEGER, PRIMARY KEY(run_id, cid, day)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS mass_skip(run_id TEXT, cid INTEGER, win TEXT, why TEXT, PRIMARY KEY(run_id, cid, win)) WITHOUT ROWID;
 """
@@ -48,6 +55,8 @@ def connect(path=MASS_DB):
     import tk700_cells as cl
     c = cl.connect(path)
     c.executescript(SCHEMA)
+    if "note" not in {r[1] for r in c.execute("PRAGMA table_info(mass_cw)")}:
+        c.execute("ALTER TABLE mass_cw ADD COLUMN note TEXT")                # прежние запуски (dry*, probe*) — без заметок
     return c
 
 
@@ -105,12 +114,12 @@ def covered(tab, share_cache, feat):
 
 
 def cell_window(st, p8, w, side, vdir, filtered):
-    """(n, Σ $, ошибки, сутки, P&L по суткам, сделок по суткам) одной клетки в одном окне: сделки по дате входа в диапазоне окна (как `tk604_stats.splice`)."""
+    """(n, Σ $, ошибки, заметки, сутки, P&L по суткам, сделок по суткам) одной клетки в одном окне: сделки по дате входа в диапазоне окна (как `tk604_stats.splice`)."""
     import numpy as np
     eng = p8.ENG[ho.SIDE_LETTER[side]]
     t = st.read_trades_csv(os.path.join(vdir, eng + "-trades.csv"))
     dl = st.read_daily_csv(os.path.join(vdir, eng + "-daily.csv"))
-    errs = []
+    errs, notes = [], []
     if len(t) and np.abs(t.net - (t.gross - t.fees + t.funding)).max() > 2e-6:
         errs.append("net≠gross−fees+funding")
     d = st.abs_day(w, t.entry_ms)
@@ -127,8 +136,10 @@ def cell_window(st, p8, w, side, vdir, filtered):
         meta = json.load(open(os.path.join(vdir, "meta.json"), encoding="utf-8"))[side]
         import tk604_run as r4
         fc = r4.filter_counters(meta)
-        if fc is None or fc["no_key"]:
-            errs.append("G-key no_key %s" % (fc,))
+        if fc is None:
+            errs.append("G-key: нет счётчиков фильтра")
+        elif fc["no_key"]:
+            notes.append("no_key=%s" % fc["no_key"])                         # кандидаты движка без строки базы: как в БД Jul–Nov — не сбой (класс A); B — после достройки G-key
     val = (t.gross - t.fees)[sel]
     ds = d[sel]
     if len(ds):
@@ -139,7 +150,7 @@ def cell_window(st, p8, w, side, vdir, filtered):
         days, pnl, cnt = [int(base + i) for i in nz], [float(s[i]) for i in nz], [int(k[i]) for i in nz]
     else:
         days, pnl, cnt = [], [], []
-    return int(len(sel)), float(val.sum()), errs, days, pnl, cnt
+    return int(len(sel)), float(val.sum()), errs, notes, days, pnl, cnt
 
 
 def cmd_plan(a):
@@ -147,8 +158,10 @@ def cmd_plan(a):
     m = ho.modes(a.dry)
     st = m["st"]
     wins = a.wins.split(",") if a.wins else m["wins"]
+    classes = set(a.cls.split(",")) if a.cls else set()
+    unbuilt = bad_columns(a.cov)[0] if classes else set()
     for side in a.sides.split(","):
-        cells = load_cells(db, a.cellset, side)
+        cells = keep_classes(load_cells(db, a.cellset, side), classes, unbuilt)
         if a.sigs:
             cells = pick_sigs(cells, a.sigs, a.seed)
         tabs = ho.load_tabs(m, side)
@@ -211,6 +224,47 @@ def cmd_need(a):
     return 0
 
 
+def bad_columns(cov_path):
+    """Столбцы осей, не построенные на H1 (`cov.json` из `tk700_cov.py`), и sha файла. Не покрытые (доля < 0,7 в каком-то месяце: sac10) классом не отсекаются — охрана охвата по окнам (`covered` → `mass_skip`), как в поиске TK-674."""
+    raw = open(cov_path, "rb").read()
+    return set(json.loads(raw)["not_built"]), hashlib.sha256(raw).hexdigest()[:12]
+
+
+def cell_class(feats, bad):
+    """Класс клетки по столбцам её фильтра (`need_cols`): X — cc_* / clu_* / bd_* (исключены); C — hist ok10_*; B — столбцы TK-654; H — история уровня (`--allow-diff`); P — иной столбец не построен на H1 (`bad`); A — всё построено."""
+    cols = {x for f in feats for x in need_cols(f)}
+    if any(x.startswith(("cc_", "clu_", "bd_")) for x in cols):
+        return "X"
+    if any(x.startswith("ok10_") for x in cols):
+        return "C"
+    if cols & COLS_B:
+        return "B"
+    if cols & COLS_H:
+        return "H"
+    if cols & bad:
+        return "P"
+    return "A"
+
+
+def keep_classes(cells, classes, bad):
+    """Клетки нужных классов (`classes` — множество букв; пусто = все)."""
+    return [c for c in cells if not classes or cell_class(c["feats"], bad) in classes]
+
+
+def cmd_classes(a):
+    bad, sha = bad_columns(a.cov)
+    db = connect(a.db)
+    tot = {}
+    for side, feats in db.execute("SELECT side, feats FROM cell WHERE cellset=?", (a.cellset,)):
+        k = (side, cell_class(feats.split(",") if feats else [], bad))
+        tot[k] = tot.get(k, 0) + 1
+    print("классы клеток %s (cov.json sha %s; не построено / не покрыто на H1: %d столбцов)" % (a.cellset, sha, len(bad)))
+    for side in sorted({k[0] for k in tot}):
+        n = sum(v for k, v in tot.items() if k[0] == side)
+        print("  %-5s всего %d: %s" % (side, n, ", ".join("%s %d (%.1f %%)" % (c, tot.get((side, c), 0), 100.0 * tot.get((side, c), 0) / max(1, n)) for c in "ABCHXP")))
+    return 0
+
+
 def claim_run(m, run_id, info):
     """Замок запуска: ключ — sha256 «run_id#попытка» (повторный запуск того же run-id — новая попытка, дубль одновременной попытки отказан)."""
     for att in range(1, 100):
@@ -229,15 +283,18 @@ def claim_run(m, run_id, info):
 
 
 def cmd_run(a):
+    m = ho.modes(a.dry)                                                     # до tk638_post: он тянет tk604_stats, а окна H1 подменяются переменной среды при первом импорте
     import tk638_post as p8
     db = connect(a.db)
-    m = ho.modes(a.dry)
     st = m["st"]
     wins = a.wins.split(",") if a.wins else m["wins"]
     sides = a.sides.split(",")
     md5s = {s: hashlib.md5(open(BINS[s], "rb").read()).hexdigest() for s in sides}
     md5 = json.dumps(md5s)
-    params = dict(vmax=a.vmax, sigmax=a.sigmax, sigs=a.sigs, seed=a.seed, threads=a.threads, cap_gb=a.cap_gb, sides=sides, D0=st.D0.isoformat(), max_batches=a.max_batches, only_skipped=a.only_skipped)
+    classes = set(a.cls.split(",")) if a.cls else set()
+    unbuilt, cov_sha = bad_columns(a.cov) if classes else (set(), "")
+    params = dict(vmax=a.vmax, sigmax=a.sigmax, sigs=a.sigs, seed=a.seed, threads=a.threads, cap_gb=a.cap_gb, sides=sides, D0=st.D0.isoformat(), max_batches=a.max_batches, only_skipped=a.only_skipped,
+                  classes=sorted(classes), excluded=EXCLUDED if classes else "", cov_sha=cov_sha)
     row = db.execute("SELECT cellset, dry FROM mass_run WHERE run_id=?", (a.run_id,)).fetchone()
     if row and (row[0] != a.cellset or row[1] != int(a.dry)):
         raise SystemExit("run-id %s уже занят набором %s (dry=%s)" % (a.run_id, row[0], row[1]))
@@ -253,7 +310,8 @@ def cmd_run(a):
     try:
         for side in sides:
             binary = BINS[side]
-            cells = load_cells(db, a.cellset, side)
+            cells = keep_classes(load_cells(db, a.cellset, side), classes, unbuilt)
+            print("%s: клеток к счёту %d (классы %s)" % (side, len(cells), ",".join(sorted(classes)) or "все"), flush=True)
             if a.sigs:
                 cells = pick_sigs(cells, a.sigs, a.seed)
             other = db.execute("SELECT count(*) FROM cell WHERE cellset=? AND side=? AND bin!=?", (a.cellset, side, md5s[side])).fetchone()[0]
@@ -303,10 +361,10 @@ def cmd_run(a):
                     cw, days = [], []
                     if rc == 0:
                         for c in cur:
-                            n, usd, errs, ds, pn, ct = cell_window(st, p8, w, side, os.path.join(out, "k%d" % c["cid"]), bool(c["filter"]))
-                            cw.append((a.run_id, c["cid"], w.name, n, usd, ";".join(errs)))
+                            n, usd, errs, notes, ds, pn, ct = cell_window(st, p8, w, side, os.path.join(out, "k%d" % c["cid"]), bool(c["filter"]))
+                            cw.append((a.run_id, c["cid"], w.name, n, usd, ";".join(errs), ";".join(notes)))
                             days += [(a.run_id, c["cid"], d, p, k) for d, p, k in zip(ds, pn, ct)]
-                    db.executemany("INSERT OR REPLACE INTO mass_cw VALUES(?,?,?,?,?,?)", cw)
+                    db.executemany("INSERT OR REPLACE INTO mass_cw VALUES(?,?,?,?,?,?,?)", cw)
                     db.executemany("INSERT OR REPLACE INTO mass_day VALUES(?,?,?,?,?)", [(r, c, d, p, k) for r, c, d, p, k in days])
                     db.execute("INSERT OR REPLACE INTO mass_batch VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (a.run_id, w.name, side, bk, len(cur), len({c["sig"] for c in cur}), len(cols), sum(kept.values()) if kept else 0,
                                                                                                          t1 - t0, cpu, time.time() - t2, rc, resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024.0, now()))
@@ -418,17 +476,19 @@ def cmd_timing(a):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
-    for n in ("plan", "run", "check", "timing", "need"):
+    for n in ("plan", "run", "check", "timing", "need", "classes"):
         s = sp.add_parser(n)
         s.add_argument("--db", default=MASS_DB)
-        if n == "need":
-            s.add_argument("--cellset", required=True)
+        if n in ("need", "classes", "plan", "run"):
             s.add_argument("--cov", default="/data/p42-tk700/cov/cov.json")
+        if n in ("need", "classes"):
+            s.add_argument("--cellset", required=True)
         if n in ("plan", "run"):
             s.add_argument("--cellset", required=True)
             s.add_argument("--dry", action="store_true")
             s.add_argument("--wins", default="")
             s.add_argument("--sides", default="long,short")
+            s.add_argument("--class", dest="cls", default="", help="только клетки этих классов (A,B,C,H,X,P через запятую; см. `cell_class`); пусто — все")
             s.add_argument("--vmax", type=int, default=VMAX)
             s.add_argument("--sigmax", type=int, default=SIGMAX)
             s.add_argument("--sigs", type=int, default=0)
@@ -441,7 +501,7 @@ def main(argv=None):
             s.add_argument("--max-batches", type=int, default=0)
             s.add_argument("--only-skipped", default="", help="run-id прежнего запуска: считать только пары клетка × окно из его mass_skip (после достройки столбцов)")
     a = ap.parse_args(argv)
-    return {"plan": cmd_plan, "run": cmd_run, "check": cmd_check, "timing": cmd_timing, "need": cmd_need}[a.cmd](a)
+    return {"plan": cmd_plan, "run": cmd_run, "check": cmd_check, "timing": cmd_timing, "need": cmd_need, "classes": cmd_classes}[a.cmd](a)
 
 
 if __name__ == "__main__":
