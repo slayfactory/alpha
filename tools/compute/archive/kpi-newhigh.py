@@ -287,7 +287,7 @@ def hourly_underwater(closes):
 
 def _episodes(ev, dmin=None, rb=None):
     """Список эпизодов отката (пик → дно → возврат) при заданных порогах — детектор вынесен из `drawdown_stats`,
-    чтобы `docs/research/reviews/scripts/kpi-fall-check.py` (эталон Судьи, меняет модульные DD_MIN_USD/REBOUND_FRAC
+    чтобы `docs/archive/research/reviews/scripts/kpi-fall-check.py` (эталон Судьи, меняет модульные DD_MIN_USD/REBOUND_FRAC
     для чувствительности) продолжал работать без правок."""
     dmin = DD_MIN_USD if dmin is None else dmin
     rb = REBOUND_FRAC if rb is None else rb

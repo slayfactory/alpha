@@ -64,7 +64,7 @@
 
 ## Удалено / df после
 
-Решение Судьи — `docs/research/reviews/tk320-cleanup-list-2026-10-19.md`: 10 корней, `bin/` и `alpha-*` остаются. Исполнено 19–20.10
+Решение Судьи — `docs/archive/research/reviews/tk320-cleanup-list-2026-10-19.md`: 10 корней, `bin/` и `alpha-*` остаются. Исполнено 19–20.10
 (`/root/tk0320/delete.log`, `del.rc` = done; юнит `tk0s-tk320-del` снят по RuntimeMax после 3 корней, остальные 7 — `del2`).
 
 | корень | было, ГБ (du до) | осталось | итог |

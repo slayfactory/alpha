@@ -54,7 +54,7 @@ tools/compute/regrun.sh	ЯДРО	tools/registry/guard.py,tools/registry/regrun.s
 tools/compute/run-grid.sh	ЯДРО	docs/COMMANDS.md,tools/systemd/alpha-grid-nightly.service,tools/systemd/deck/alpha-grid-nightly.service
 tools/compute/sched-deploy.sh	ЗАМЫКАНИЕ	sched_cfg.py
 tools/compute/sched_cfg.py	ЗАМЫКАНИЕ	alsched.py,sched-deploy.sh
-tools/compute/sched_sim.py	АРХИВ	docs/archive/findings/alpha-review-B2-infra-2026-10-10.md,docs/archive/findings/alpha-review-summary-2026-10-10.md,docs/research/reviews/tk133-p3-sched-2026-10-10.md
+tools/compute/sched_sim.py	АРХИВ	docs/archive/findings/alpha-review-B2-infra-2026-10-10.md,docs/archive/findings/alpha-review-summary-2026-10-10.md,docs/archive/research/reviews/tk133-p3-sched-2026-10-10.md
 tools/compute/sets-check.sh	ЗАМЫКАНИЕ	_env.sh,sets.txt
 tools/compute/sets-nightly.txt	ЗАМЫКАНИЕ	nightly-grid.sh,sets-check.sh,sets.txt
 tools/compute/sets.txt	ЗАМЫКАНИЕ	_env.sh,approach-scan.sh,nightly-grid.sh,oos-frozen.sh
