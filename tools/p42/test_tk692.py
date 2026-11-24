@@ -276,3 +276,11 @@ def test_load_pool_rejects_gap_in_months(tmp_path):
     con = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
     with pytest.raises(SystemExit):
         w.load_pool(con, ["r-m01", "r-m03"], "all1", "short")
+
+
+def test_report_prints_table(tmp_path, capsys):
+    out = run_cli(str(tmp_path), 2)
+    capsys.readouterr()
+    assert w.main(["report", "--out", out, "--rid", "T-m02", "--db", os.path.join(str(tmp_path), "mass.sqlite")]) == 0
+    txt = capsys.readouterr().out
+    assert "| month | select |" in txt and "случайная c1" in txt and "Следующий выбор" in txt and "ключ: k" in txt

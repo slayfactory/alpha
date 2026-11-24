@@ -523,6 +523,46 @@ def cmd_verdict(a):
     return 0
 
 
+def cmd_report(a):
+    """Таблица месяца из БД результатов: по стороне и шагу — выбранная линия, базы, случайные (c1 / c2); при `--db` — ключи выбранных клеток последнего шага."""
+    out = sqlite3.connect("file:%s?mode=ro" % a.out, uri=True)
+    src = sqlite3.connect("file:%s?mode=ro" % a.db, uri=True) if a.db else None
+    for side, in out.execute("SELECT DISTINCT side FROM tk692_sum WHERE rid=? ORDER BY side", (a.rid,)).fetchall():
+        print("### %s %s (E = %d; ряд вне выборки, ставка 500 $, маржа 250 $)" % (a.rid, side, a.emb))
+        print("| шаг | ряд | суток | сд. | Σ $ | $/сд. | Шарп | просадка $ (% маржи) | перехай (долгий / средний / хвост) | примечание |")
+        print("|---|---|---|---|---|---|---|---|---|---|")
+        for step in STEPS:
+            rows = out.execute("SELECT series, days, n, sum, per_trade, sharpe, dd, ddp, gap_longest, gap_mean, gap_tail, top_day_share, extra FROM tk692_sum WHERE rid=? AND side=? AND step=? AND emb=? ORDER BY series='select' DESC, series",
+                               (a.rid, side, step, a.emb)).fetchall()
+            for ser, days, n, tot, pt, sh, dd, ddp, gl, gm, gt, top, extra in rows:
+                ex = json.loads(extra or "{}")
+                if tot is None:
+                    print("| %s | %s | — | — | — | — | — | — | — | ждёт повтора: %s |" % (step, ser, ex.get("how", "")))
+                    continue
+                note = []
+                if ser == "select":
+                    note.append("смен %d из %d шагов, разных %d" % (ex.get("changes", 0), ex.get("steps", 0), ex.get("distinct", 0)))
+                    if ex.get("skipped_steps"):
+                        note.append("шагов с пропуском месяца %d" % ex["skipped_steps"])
+                else:
+                    note.append("cid %s, %s" % (ex.get("cid"), ex.get("how")))
+                if top == top and top is not None and top > 0.5:
+                    note.append("макс. сутки %.0f %% Σ" % (top * 100))
+                print("| %s | %s | %d | %d | %+.2f | %+.2f | %.2f | %.2f (%.1f %%) | %d / %.1f / %d | %s |" % (step, ser, days, n, tot, pt, sh, dd, ddp, gl, gm, gt, "; ".join(note)))
+            for kind in ("c1", "c2"):
+                r = {k: v for k, v in out.execute("SELECT stat, value FROM tk692_rand WHERE rid=? AND side=? AND step=? AND emb=? AND kind=?", (a.rid, side, step, a.emb, kind))}
+                if r:
+                    print("| %s | случайная %s | | | среднее %+.2f [p10 %+.2f; p90 %+.2f] | | среднее %.2f | | | доля не ниже выбранной: Σ %.3f, Шарп %.3f |" % (
+                        step, kind, r["sum_mean"], r["sum_p10"], r["sum_p90"], r["sharpe_mean"], r["p_sum"], r["p_sharpe"]))
+        lastb = out.execute("SELECT step, b, cid, w, score, sum_w, n_w, m, noise, n_dup FROM tk692_pick WHERE rid=? AND side=? AND emb=? AND e=b AND cid IS NOT NULL ORDER BY step", (a.rid, side, a.emb)).fetchall()
+        for step, b, cid, wd, sc, sw, nw, m, noise, dup in lastb:
+            ck = src.execute("SELECT ckey FROM cell WHERE cellset=? AND cid=?", ("all1", cid)).fetchone() if src else None
+            print("\nСледующий выбор (%s, граница b = %d, окно %d сут.): cid %d, Шарп окна %.2f при шуме %.2f, Σ %.1f $, сделок %d, клеток в наборе %d, дублей %d%s" % (
+                step, b, wd, cid, sc, noise, sw, nw, m, dup, ("\n  ключ: " + ck[0]) if ck else ""))
+        print()
+    return 0
+
+
 def print_report(rid, side, rep, ncell):
     print("== %s %s: %d клеток" % (rid, side, ncell))
     for item in rep:
@@ -552,6 +592,12 @@ def main(argv=None):
     v.add_argument("--out", required=True)
     v.add_argument("--rid", required=True)
     v.set_defaults(fn=cmd_verdict)
+    q = sub.add_parser("report")
+    q.add_argument("--out", required=True)
+    q.add_argument("--rid", required=True)
+    q.add_argument("--emb", type=int, default=1)
+    q.add_argument("--db", default="")
+    q.set_defaults(fn=cmd_report)
     a = ap.parse_args(argv)
     return a.fn(a)
 
