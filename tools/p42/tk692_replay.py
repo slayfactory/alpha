@@ -132,11 +132,12 @@ def month_runs(ref, runs):
     return out
 
 
-def base_cid_set(out, rid, side):
+def base_cid_set(out, rid, side, extra=False):
+    """cid клеток баз ряда: из набора (extra=False) или баз вне набора (extra=True, `base`)."""
     s = set()
     for (ex,) in out.execute("SELECT extra FROM tk692_sum WHERE rid=? AND side=? AND series<>'select'", (rid, side)):
         c = json.loads(ex or "{}").get("cid")
-        if c is not None:
+        if c is not None and (int(c) >= BASE_CID0) == extra:
             s.add(int(c))
     return s
 
@@ -147,6 +148,28 @@ def need_for(out, rid, side, nm):
 
 
 # ───────────────────────────── повтор движком ─────────────────────────────
+
+def engine_run(mm, path, run_id, cellset, side, wins, cls, threads, cap_gb, dry=False):
+    """`tk700_mass run` с перехватом сделок каждой клетки окна: [(cid, окно, t0_ms, сутки входа, таблица сделок)]."""
+    got = []
+    orig = mm.cell_window
+
+    def hook(st, p8, w, side_, vdir, filtered, strict_key=False):
+        res = orig(st, p8, w, side_, vdir, filtered, strict_key)
+        eng = p8.ENG[mm.ho.SIDE_LETTER[side_]]
+        t = st.read_trades_csv(os.path.join(vdir, eng + "-trades.csv"))
+        got.append((int(os.path.basename(vdir)[1:]), w.name, int(w.t0_ms), np.asarray(st.abs_day(w, t.entry_ms)), t))
+        return res
+    mm.cell_window = hook
+    try:
+        rc = mm.main(["run", "--db", path, "--run-id", run_id, "--cellset", cellset, "--wins", ",".join(wins), "--sides", side, "--class", cls, "--vmax", "800", "--sigmax", "26",
+                      "--threads", str(threads), "--cap-gb", str(cap_gb)] + (["--dry"] if dry else []))
+    finally:
+        mm.cell_window = orig
+    if rc:
+        raise SystemExit("движок: код %s" % rc)
+    return got
+
 
 def cmd_replay(a):
     runs = {}
@@ -190,20 +213,7 @@ def cmd_replay(a):
     stops = {r[0]: stop_pct(r[2], r[3]) for r in rows}                      # проверка: у каждой клетки есть ось s до запуска движка
     print("повтор %s: клеток %d, окна %s, стопы %s" % (run_id, len(cids), ",".join(wins), sorted(set(stops.values()))), flush=True)
 
-    got = []
-    orig = mm.cell_window
-
-    def hook(st, p8, w, side, vdir, filtered, strict_key=False):
-        res = orig(st, p8, w, side, vdir, filtered, strict_key)
-        eng = p8.ENG[mm.ho.SIDE_LETTER[side]]
-        t = st.read_trades_csv(os.path.join(vdir, eng + "-trades.csv"))
-        got.append((int(os.path.basename(vdir)[1:]), w.name, int(w.t0_ms), np.asarray(st.abs_day(w, t.entry_ms)), t))
-        return res
-    mm.cell_window = hook
-    rc = mm.main(["run", "--db", path, "--run-id", run_id, "--cellset", "sel", "--wins", ",".join(wins), "--sides", a.side, "--class", a.cls, "--vmax", "800", "--sigmax", "26",
-                  "--threads", str(a.threads), "--cap-gb", str(a.cap_gb)])
-    if rc:
-        raise SystemExit("движок: код %s" % rc)
+    got = engine_run(mm, path, run_id, "sel", a.side, wins, a.cls, a.threads, a.cap_gb)
     ok_all = True
     wanted = set(miss)
     for cid, win, t0_ms, dd, t in got:
@@ -237,6 +247,89 @@ def cmd_replay(a):
     return 0 if ok_all else 1
 
 
+# ───────────────────────────── базы без клетки в наборе (§5 ступень 3, §9 (б)) ─────────────────────────────
+
+BASE_CID0 = W.BASE_CID0
+
+
+def base_line(side, ckey):
+    """Строка движка базы: BASE_LINE стороны + оси ключа, которых там нет или у которых другое значение; ключ строки обязан совпасть с ключом базы."""
+    import tk674_axes as ax
+    L = "L" if side == "long" else "S"
+    have = dict(t.split("=", 1) for t in ax.BASE_LINE(L).split())
+    over = [t for t in ckey.split() if have.get(t.split("=", 1)[0]) != t.split("=", 1)[1]]
+    line = ax.BASE_LINE(L) + (" " + " ".join(over) if over else "")
+    if ax.canon(line) != ckey:
+        raise SystemExit("база %r: ключ строки %r не совпал" % (ckey, ax.canon(line)))
+    return line
+
+
+def cmd_base(a):
+    """Повтор базы (клетки нет в наборе): `--dry` — окна Jul–Nov, ворота n и Σ $ против опубликованных (PS-1007 §5); без — месяцы m01…, сделки в `rp_trade` (клетка `base-<метка>`)."""
+    labels = {lb: (ck, n0, u0) for lb, ck, n0, u0 in W.BASES[a.side]}
+    if a.label not in labels:
+        raise SystemExit("база %s не из PS-1007 §5 (%s)" % (a.label, ",".join(labels)))
+    ckey, n0, usd0 = labels[a.label]
+    cid = BASE_CID0 + [lb for lb, *_ in W.BASES[a.side]].index(a.label) + 1
+    ref = ro(a.db)
+    if not a.dry and not a.runs:
+        raise SystemExit("--runs нужен без --dry (число месяцев)")
+    runs = month_runs(ref, a.runs.split(",")) if not a.dry else {}
+    nm = len(runs)
+    rp = rp_connect(a.rp)
+    cs = "base-%s" % a.label
+    if not a.dry:
+        gate = rp.execute("SELECT ok FROM rp_gate WHERE side=? AND cid=? AND month=-1 ORDER BY run_id DESC", (a.side, cid)).fetchone()
+        if not gate or not gate[0]:
+            raise SystemExit("ворота базы %s (dry, Jul–Nov) не пройдены или не посчитаны: сначала `base --dry`" % a.label)
+        done = {m for (m,) in rp.execute("SELECT month FROM rp_done WHERE side=? AND cellset=? AND cid=?", (a.side, cs, cid))}
+        todo = [m for m in range(nm) if m not in done]
+        if not todo:
+            print("база %s: месяцы %d уже посчитаны" % (a.label, nm))
+            return 0
+        wins = [W.MONTHS[m] for m in todo]
+    else:
+        wins = ["wa", "wb", "wc"]
+    sys.path.insert(0, TK700)
+    line = base_line(a.side, ckey)
+    import tk700_cells as cl                                                # noqa: E402
+    import tk700_mass as mm                                                 # noqa: E402
+    run_id = "tk692-rpb-%s-%s-%s%s" % (a.side, a.label, "dry-" if a.dry else "", time.strftime("%m%d%H%M%S"))
+    os.makedirs(RP_DIR, exist_ok=True)
+    path = os.path.join(RP_DIR, run_id + ".sqlite")
+    db = mm.connect(path)
+    import hashlib
+    md5 = hashlib.md5(open(mm.BINS[a.side], "rb").read()).hexdigest()
+    db.execute("INSERT INTO cellset VALUES('sel', ?, ?)", (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), json.dumps(dict(base=a.label, tk="TK-692"))))
+    db.execute("INSERT INTO cell VALUES('sel',?,?,?,?,?,?,?,?,?,?,?,?)", (cid, a.side, ckey, line, cl.sig_of(line), "[]", "", n0, usd0, "", 0, md5))
+    db.commit()
+    print("база %s %s: cid %d, окна %s, строка %s" % (a.side, a.label, cid, ",".join(wins), line), flush=True)
+    got = engine_run(mm, path, run_id, "sel", a.side, wins, a.cls, a.threads, a.cap_gb, dry=a.dry)
+    rows = db.execute("SELECT win, n, usd, errs FROM mass_cw WHERE run_id=? AND cid=?", (run_id, cid)).fetchall()
+    if a.dry:
+        n = sum(r[1] for r in rows)
+        usd = sum(r[2] for r in rows)
+        ok = len(rows) == 3 and not any(r[3] for r in rows) and n == n0 and abs(usd - usd0) <= 0.02
+        why = "n %d (ждали %d), Σ %.4f $ (ждали %.2f)%s" % (n, n0, usd, usd0, "; ошибки %s" % [r[3] for r in rows if r[3]] if any(r[3] for r in rows) else "")
+        rp.execute("INSERT OR REPLACE INTO rp_gate VALUES(?,?,?,?,?,?,?,?,?,?,?)", (run_id, a.side, cid, -1, n0, n, usd0, usd, abs(usd - usd0), int(ok), "" if ok else why))
+        rp.commit()
+        print("ворота базы %s (Jul–Nov): %s — %s" % (a.label, "PASS" if ok else "FAIL", why), flush=True)
+        return 0 if ok else 1
+    bad = [r for r in rows if r[3]]
+    if bad or len(rows) != len(wins):
+        print("ошибки движка: %s, окон %d из %d" % (bad, len(rows), len(wins)), flush=True)
+        return 1
+    for c, win, t0_ms, dd, t in got:
+        m = W.MONTHS.index(win)
+        sel = np.nonzero((dd >= W.MONTH_START[m]) & (dd < W.MONTH_START[m + 1]))[0]
+        rp.executemany("INSERT INTO rp_trade VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                       [(a.side, cs, cid, m, t.sym[i], int(dd[i]), int(t.entry_ms[i]) + t0_ms, int(t.exit_ms[i]) + t0_ms, float(t.gross[i] - t.fees[i]), float(t.fees[i]), float(t.net[i]), t.kind[i]) for i in sel])
+        rp.execute("INSERT OR REPLACE INTO rp_done VALUES(?,?,?,?,?)", (a.side, cs, cid, m, run_id))
+        print("  %s: сделок %d, Σ %.2f $" % (win, len(sel), float((t.gross - t.fees)[sel].sum())), flush=True)
+    rp.commit()
+    return 0
+
+
 # ───────────────────────────── R:R, стоп, утечка ─────────────────────────────
 
 def cmd_rr(a):
@@ -258,6 +351,18 @@ def cmd_rr(a):
         tr[cid] = dict(day=arr[:, 0].astype(np.int64), exit=arr[:, 1].astype(np.int64), val=arr[:, 2], fees=arr[:, 3])
         ckey, line = ref.execute("SELECT ckey, line FROM cell WHERE cellset=? AND side=? AND cid=?", (a.cellset, a.side, cid)).fetchone()
         stops[cid] = stop_pct(ckey, line)
+    for label, ex in out.execute("SELECT DISTINCT series, extra FROM tk692_sum WHERE rid=? AND side=? AND series<>'select'", (a.rid, a.side)).fetchall():
+        cid = json.loads(ex or "{}").get("cid")
+        if cid is None or int(cid) < BASE_CID0:
+            continue
+        cid, cs = int(cid), "base-%s" % label
+        got = {m for (m,) in rp.execute("SELECT month FROM rp_done WHERE side=? AND cellset=? AND cid=?", (a.side, cs, cid))}
+        if got != set(range(nm)):
+            raise SystemExit("повтор базы %s не покрывает месяцы 0…%d: %s" % (label, nm - 1, sorted(got)))
+        rows = rp.execute("SELECT entry_day, exit_ms, val, fees FROM rp_trade WHERE side=? AND cellset=? AND cid=? ORDER BY entry_ms", (a.side, cs, cid)).fetchall()
+        arr = np.array(rows, float).reshape(-1, 4)
+        tr[cid] = dict(day=arr[:, 0].astype(np.int64), exit=arr[:, 1].astype(np.int64), val=arr[:, 2], fees=arr[:, 3])
+        stops[cid] = stop_pct(dict((lb, ck) for lb, ck, *_ in W.BASES[a.side])[label])
     nrow = 0
     for step in W.STEPS:
         for emb in W.EMBARGOS:
@@ -301,21 +406,25 @@ def cmd_rr(a):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
-    for n in ("replay", "rr"):
+    for n in ("replay", "rr", "base"):
         s = sp.add_parser(n)
-        s.add_argument("--rid", required=True)
+        if n != "base":
+            s.add_argument("--rid", required=True)
         s.add_argument("--side", required=True, choices=("long", "short"))
-        s.add_argument("--runs", required=True, help="run-id месяцев TK-700 через запятую (как --runs-long / --runs-short)")
+        s.add_argument("--runs", default="", required=n != "base", help="run-id месяцев TK-700 через запятую (как --runs-long / --runs-short)")
         s.add_argument("--cellset", default="all1")
         s.add_argument("--db", default=MASS_DB)
         s.add_argument("--out", default=OUT_DB)
         s.add_argument("--rp", default=RP_DB)
-        if n == "replay":
+        if n == "base":
+            s.add_argument("--label", required=True)
+            s.add_argument("--dry", action="store_true", help="окна Jul–Nov, ворота n и Σ $ базы против опубликованных")
+        if n in ("replay", "base"):
             s.add_argument("--class", dest="cls", default="A")
             s.add_argument("--threads", type=int, default=1)
             s.add_argument("--cap-gb", type=int, default=6)
     a = ap.parse_args(argv)
-    return {"replay": cmd_replay, "rr": cmd_rr}[a.cmd](a)
+    return {"replay": cmd_replay, "rr": cmd_rr, "base": cmd_base}[a.cmd](a)
 
 
 if __name__ == "__main__":

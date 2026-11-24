@@ -4,7 +4,7 @@
 Читает посуточные P&L клеток `mass_day` / `mass_cw` (TK-700, `mass.sqlite`, только чтение); движок не запускает. Правило отбора, охрана, шаги, базы и вердикт — в PS-1007 (летопись); числа r охраны — L-335.
 
   python3 tk692_walk.py run --db /data/p42-tk700/mass/mass.sqlite --out /data/p42-tk692/tk692.sqlite --pool A --cellset all1 \\
-      --runs-long h1-jan-A --runs-short h1-jan-A-short [--sides long,short]       # run-id месяцев m01…, по стороне
+      --runs-long h1-jan-A --runs-short h1-jan-A-short [--sides long,short] [--extra /data/p42-tk692/replay.sqlite]       # run-id месяцев m01…, по стороне
   python3 tk692_walk.py verdict --out /data/p42-tk692/tk692.sqlite --rid A-m06          # Holm и граница разницы к якорю (после июня)
 
 Сутки `day` — от D0 = 01.01.2026; месяц `m01…m06`; `through` — последний загруженный месяц. Формулы — как в `tk684_metrics` (Шарп: среднее ÷ σ(ddof = 1) × √365 по всем суткам, нули включены)."""
@@ -228,6 +228,30 @@ def line_changes(pool, picks):
     return sum(1 for a, c in zip(hs, hs[1:]) if a != c), len(set(hs))
 
 
+BASE_CID0 = 9_000_000                                               # cid баз вне набора (повтор движком, `tk692_replay.py base`): 9_000_000 + номер базы в BASES[side]
+
+
+def extra_base(path, side, label, nd):
+    """Ряд базы без клетки в наборе из повтора движком (§5 ступень 3): (P&L по суткам, сделок по суткам, cid) или None, если нет ворот Jul–Nov или повтор не покрыл все загруженные месяцы."""
+    if not path or not os.path.exists(path):
+        return None
+    cid = BASE_CID0 + [lb for lb, *_ in BASES[side]].index(label) + 1
+    con = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+    try:
+        ok = con.execute("SELECT ok FROM rp_gate WHERE side=? AND cid=? AND month=-1 ORDER BY run_id DESC", (side, cid)).fetchone()
+        got = {m for (m,) in con.execute("SELECT month FROM rp_done WHERE side=? AND cellset=? AND cid=?", (side, "base-" + label, cid))}
+        if not ok or not ok[0] or got != set(range(month_of(nd - 1) + 1)):
+            return None
+        x, n = np.zeros(nd), np.zeros(nd, np.int32)
+        for d, p_, k in con.execute("SELECT entry_day, sum(val), count(*) FROM rp_trade WHERE side=? AND cellset=? AND cid=? GROUP BY entry_day", (side, "base-" + label, cid)):
+            x[d], n[d] = p_, k
+        return x, n, cid
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        con.close()
+
+
 def base_series(pool, idx, days):
     """Ряд клетки-базы на сутках `days` (с учётом пропуска месяцев); None — клетки нет."""
     if idx is None:
@@ -449,14 +473,18 @@ def process_side(con, out, rid, pool, side, args):
                     out.execute("INSERT OR REPLACE INTO tk692_rand VALUES(?,?,?,?,?,?,?)", (rid, side, step, emb, kind, k2, v))
             for label, (ck, n0, usd0) in ckeys.items():
                 idx, how, fam = pool.resolve_base(ck, n0, usd0)
-                if idx is None:
+                xb = extra_base(getattr(args, "extra", ""), side, label, pool.nd) if idx is None else None
+                if idx is None and xb is None:
                     out.execute("INSERT OR REPLACE INTO tk692_sum VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                 (rid, side, step, emb, label, 0, 0, None, None, None, None, None, None, None, None, None, json.dumps(dict(waiting="повтор движком", how=how, fam=fam))))
                     continue
-                bs = base_series(pool, idx, days)
+                if xb is not None:
+                    bs, bcid, how, fam = (xb[0][days], xb[1][days], False), xb[2], "replay(%s)" % how, []
+                else:
+                    bs, bcid = base_series(pool, idx, days), int(pool.cids[idx])
                 stb = series_stats(bs[0], bs[1])
                 bd = boot_sums(pnl - bs[0], args.nboot, np.random.default_rng([SEED, 7, STEPS.index(step), emb]))
-                ext = dict(cid=int(pool.cids[idx]), how=how, fam=fam, miss=bs[2], diff=float((pnl - bs[0]).sum()), boot_lo={str(k): float(np.percentile(bd, 100 * 0.05 / k)) for k in range(1, 25)})
+                ext = dict(cid=bcid, how=how, fam=fam, miss=bs[2], diff=float((pnl - bs[0]).sum()), boot_lo={str(k): float(np.percentile(bd, 100 * 0.05 / k)) for k in range(1, 25)})
                 out.execute("INSERT OR REPLACE INTO tk692_sum VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", sum_row(rid, side, step, emb, label, stb, ext))
             report.append((side, step, emb, st, extra))
     return report
@@ -584,6 +612,7 @@ def main(argv=None):
     r.add_argument("--cellset", default="all1")
     r.add_argument("--runs-long", default="")
     r.add_argument("--runs-short", default="")
+    r.add_argument("--extra", default="", help="replay.sqlite повтора движком (`tk692_replay.py base`): ряды баз, которых нет в наборе (§5 ступень 3)")
     r.add_argument("--sides", default="long,short")
     r.add_argument("--nrand", type=int, default=NRAND)
     r.add_argument("--nboot", type=int, default=NBOOT)

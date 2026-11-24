@@ -53,3 +53,35 @@ def test_series_stats_rr_selects_trade_days_and_stop():
     assert r == pytest.approx(m684.rr([2.0, -1.0, 4.0, -3.0]))
     assert sl == pytest.approx(rp.STAKE * np.mean([3.0, 3.0, 3.0, 4.0]) / 100.0 + np.mean([0.5, 0.5, 0.5, 1.0]))
     assert rp.series_stats_rr(tr, {1: 3.0}, {9: {0}}) == (None, None, 0)
+
+
+def test_base_cid_set_splits_set_and_extra():
+    import sqlite3
+    out = sqlite3.connect(":memory:")
+    out.execute("CREATE TABLE tk692_sum(rid, side, series, extra)")
+    out.executemany("INSERT INTO tk692_sum VALUES('r','short',?,?)", [("anchor", '{"cid": 9000001}'), ("frozen-L384", '{"cid": 7}'), ("x", '{"waiting": 1}'), ("select", '{"cid": 5}')])
+    assert rp.base_cid_set(out, "r", "short") == {7}
+    assert rp.base_cid_set(out, "r", "short", extra=True) == {9000001}
+
+
+def test_extra_base_requires_gate_and_all_months(tmp_path):
+    import sqlite3
+    import tk692_walk as w
+    path = str(tmp_path / "rp.sqlite")
+    con = rp.rp_connect(path)
+    cid = w.BASE_CID0 + 1
+    nd = 59                                                            # январь + февраль
+    assert w.extra_base(path, "short", "anchor", nd) is None           # нет ворот
+    con.execute("INSERT INTO rp_gate VALUES('g','short',?,-1,172,172,133.93,133.94,0.01,1,'')", (cid,))
+    con.executemany("INSERT INTO rp_done VALUES('short','base-anchor',?,?,'r')", [(cid, 0)])
+    con.executemany("INSERT INTO rp_trade VALUES('short','base-anchor',?,0,'X',?,0,0,?,0,0,'be')", [(cid, 3, 2.0), (cid, 3, -0.5), (cid, 40, 9.0)])
+    con.commit()
+    assert w.extra_base(path, "short", "anchor", nd) is None           # февраль не покрыт
+    con.execute("INSERT INTO rp_done VALUES('short','base-anchor',?,1,'r')", (cid,))
+    con.commit()
+    x, n, c = w.extra_base(path, "short", "anchor", nd)
+    assert c == cid and x[3] == 1.5 and n[3] == 2 and x[40] == 9.0 and n[40] == 1 and x.sum() == 10.5
+    con.execute("UPDATE rp_gate SET ok=0")
+    con.commit()
+    assert w.extra_base(path, "short", "anchor", nd) is None           # ворота не пройдены
+    sqlite3.connect(path).close()
