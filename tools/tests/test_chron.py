@@ -17,6 +17,7 @@ TOOLS = Path(__file__).resolve().parent.parent
 ROOT = TOOLS.parent
 sys.path.insert(0, str(TOOLS))
 import chron  # noqa: E402
+import chron_site  # noqa: E402
 
 
 def entry(title="заголовок", **kw):
@@ -464,7 +465,7 @@ class TestMetrics(Base):
         self.assertEqual(self.st.metrics_coverage()[0]["outcome_gap"], 0)
         rc, out = self.cli("show", "L-%d" % a)
         self.assertIn("снята: числа добавлены (было «нет чисел»): предрегистрация — итога нет", out)
-        page = chron.Site(self.db, None).entry(a)
+        page = chron_site.Site(self.db, None).entry(a)
         self.assertIn("снята: числа добавлены · <s>нет чисел: предрегистрация", page)
         self.assertNotIn("<b>Нет чисел", page)
         gc.collect()  # связь Site (ro) держит файл на Windows
@@ -492,7 +493,7 @@ class TestMetrics(Base):
         self.assertEqual(self.st.check_db(), [])
         rc, out = self.cli("show", "L-%d" % a)
         self.assertIn("(строка 65) → #", out)
-        page = chron.Site(self.db, None).entry(a)
+        page = chron_site.Site(self.db, None).entry(a)
         self.assertIn("заменено строк: 1", page)
         gc.collect()
 
@@ -694,7 +695,7 @@ class TestCells(Base):
         self.assertEqual(self.st.metrics_facets()["uni"], ["h775"])
         self.assertEqual([c["rows"] for c in self.st.metrics_coverage() if c["project"] == "П-42"], [1])
         self.assertEqual(self.st.get("L-%d" % b)["metrics_total"], 4)
-        site = chron.Site(self.db, None)
+        site = chron_site.Site(self.db, None)
         self.assertIn("4 строк", site.metrics_page({"cells": ["1"]}))
         self.assertIn("1 строк", site.metrics_page({}))
         self.assertIn("Числа (4)", site.entry(b))
