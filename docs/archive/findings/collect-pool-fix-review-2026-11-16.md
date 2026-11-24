@@ -1,6 +1,6 @@
 # Проверка пул-фикса коллекторов G-022 перед выкладкой (16.11.2026)
 
-Проверяется ветка `bb/g-022-collect-pool-fix-v1-thr_p3xe532pjz` @ 7009bcf4 (код 9c44e141), отчёт `docs/findings/collect-pool-fix-2026-11-16.md`, передача `docs/plan/G-022-collect-pool-fix-handoff-2026-11-16.md`; причины — `docs/findings/collect-gap-audit-2026-11-16.md` (§3.1, §3.2), внешние стоянки — `docs/findings/health-red-review-2026-11-16.md` (A.5, A.6). На srv — только чтение и разбор под `systemd-run` (`Nice=19`), скрипты — `/tmp/rv_*.py`; на Софии ничего не запускалось; боевые процессы не трогались.
+Проверяется ветка `bb/g-022-collect-pool-fix-v1-thr_p3xe532pjz` @ 7009bcf4 (код 9c44e141), отчёт `docs/findings/collect-pool-fix-2026-11-16.md`, передача `docs/archive/plan/G-022-collect-pool-fix-handoff-2026-11-16.md`; причины — `docs/findings/collect-gap-audit-2026-11-16.md` (§3.1, §3.2), внешние стоянки — `docs/findings/health-red-review-2026-11-16.md` (A.5, A.6). На srv — только чтение и разбор под `systemd-run` (`Nice=19`), скрипты — `/tmp/rv_*.py`; на Софии ничего не запускалось; боевые процессы не трогались.
 
 ## Вердикт
 

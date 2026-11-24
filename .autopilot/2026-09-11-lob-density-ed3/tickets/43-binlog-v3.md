@@ -107,7 +107,7 @@ SUI 6.65 при 383–837 записях на кадр; три поля из в�
 4. `binlog-stats`: печатает версию файла, число групп (v3), блочные сделки, счётчики мёртвых полей
    v2; флаг `--reencode` — замер M1/M1b/M1i/M2/M3/M4 на одном файле (только чтение).
 5. Одна сборка на всю партию (`--target-dir target-ci`), затем тесты, clippy `-D warnings`, fmt.
-6. Замер на живом v1-файле (только чтение) → `docs/findings/binlog-v3-2026-09-13.md`
+6. Замер на живом v1-файле (только чтение) → `docs/archive/findings/binlog-v3-2026-09-13.md`
    (M1…M6, полевой бюджет, решение по M1b/M1i).
 7. Документация: `docs/COMMANDS.md` (строка `binlog-stats --reencode`), `CLAUDE.md` (раскладка
    формата), `docs/plan/PLAN.md` (точка остановки), `docs/plan/SETTLED.md` — В-48 (формат v3 и
@@ -127,6 +127,6 @@ SUI 6.65 при 383–837 записях на кадр; три поля из в�
 - [ ] тест: `max_frame_bytes_on_disk` покрывает худший случай (каждая запись — своя группа)
 - [ ] тест: аллокаций ноль на запись после прогрева (существующий гейт `write_path_allocates_nothing_*`)
 - [ ] живьём на `data/always-on/20260912T201737Z` (только чтение): M1, M1b, M1i, M2, M3, M4, M5, M6
-      — числа в `docs/findings/binlog-v3-2026-09-13.md`
+      — числа в `docs/archive/findings/binlog-v3-2026-09-13.md`
 - [ ] `cargo test --release --target-dir target-ci`, clippy `-D warnings`, fmt; **одна** сборка
 - [ ] коллектор не тронут: процесс жив, `session.json` не переписан, `data/always-on/**` только читался

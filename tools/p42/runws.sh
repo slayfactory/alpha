@@ -7,7 +7,8 @@
 # Использование: bash tools/p42/runws.sh 544|566 [бинарь на srv]
 set -euo pipefail
 U="${1:?544|566}"; BIN="${2:-/data/p42v2/bin/alpha-p42-v15}"; SRV=/data/p42-t$U; TH=6; NAME=ws
-K=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15)
+. "$(dirname "${BASH_SOURCE[0]}")/../_ssh.sh"
+K=("${SSH_ID[@]}" -o ConnectTimeout=15)
 H=root@5.231.25.224
 EXTRA=""
 if [ "$U" = 566 ]; then EXTRA=$'b0ap lat=4 latx=4 ap=1\nb0pb lat=4 latx=4 pb=1\nb0ws_pool0 lat=4 latx=4 ap=1 pb=1 natr_min=0 t1h=0'; fi

@@ -2,7 +2,7 @@
 
 Пути убранных скриптов и таблиц — в теге `archive/smartmoney-2026-10` (`docs/archive/findings/SMARTMONEY-ARCHIVE.md`).
 
-Протокол: `docs/research/P-TK454-sancho-trades-2026-10-30.md` (утверждён Судьёй). Скрипты: `tools/sancho_channel_report.py`, `tools/sancho_channel_summary.py` (сводки), `tools/sancho_trades_p1.py`, `tools/sancho_trades_tv_merge.py`, `tools/sancho_deposit_claims.py`. Данные: `sancho-trades-p1-all-*.csv`, `sancho-trades-handtv-*.csv`, `sancho-deposit-claims-*.csv`.
+Протокол: `docs/archive/research/P-TK454-sancho-trades-2026-10-30.md` (утверждён Судьёй). Скрипты: `tools/sancho_channel_report.py`, `tools/sancho_channel_summary.py` (сводки), `tools/sancho_trades_p1.py`, `tools/sancho_trades_tv_merge.py`, `tools/sancho_deposit_claims.py`. Данные: `sancho-trades-p1-all-*.csv`, `sancho-trades-handtv-*.csv`, `sancho-deposit-claims-*.csv`.
 
 ## За 10 секунд
 - **Извлечено:** 141 пост → 109 цепочек (сделок); у 108 есть строка в таблице (1103 — пост-итог без картинки и без цены, сверять нечего); уровни входа/стопа/цели прочитаны у **88** из 108 (17 цепочек — на снимке нет бокса позиции, ещё 3 без символа/уровней).

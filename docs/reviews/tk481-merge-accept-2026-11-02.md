@@ -16,5 +16,5 @@
 | 3 passed | docs/archive/findings/tk481-merge-2026-11-02.md:10 |
 
 Замечание к CEO (не к исполнителю): на ветке `tk479-statarb` после слияния лежат три коммита TK-480 (протокол П-32,
-`docs/research/P-32-statarb.md`), которых нет в master. Перед тегом `archive/tk479-statarb` и удалением ветки их нужно
+`docs/archive/research/P-32-statarb.md`), которых нет в master. Перед тегом `archive/tk479-statarb` и удалением ветки их нужно
 влить в master (или оставить под тегом), иначе протокол уйдёт из ствола.

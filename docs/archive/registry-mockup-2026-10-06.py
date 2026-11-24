@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Макет страницы реестра (TK-068): один HTML, данные из docs/registry/runs.jsonl (до 150 строк, богатые первыми). Только макет."""
+"""Макет страницы реестра (TK-068): один HTML, данные из docs/archive/registry/runs.jsonl (до 150 строк, богатые первыми). Только макет."""
 import json, os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 import registry as R
