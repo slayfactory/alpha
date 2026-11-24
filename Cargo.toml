@@ -49,6 +49,14 @@ test-reactor = []
 [dev-dependencies]
 tempfile = "3"
 
+# TK-706: профиль бинаря пробоя (`breakout tick`): fat LTO + один модуль кодогенерации (на H1 −23,5 % ЦП против `release`, хеш дерева вывода тот же).
+# `panic = "abort"` сюда НЕ входит: крейт общий с коллекторами (`collector/runner.rs`, `shard.rs` терпят упавший поток через `join`) — решение после замера
+# LTO с abort и без (docs/findings/p42-engine-speedup-2026-11-25.md §3.1). Сборка: `cargo build --profile p42 --bin alpha` (бинарь — `target/p42/alpha`).
+[profile.p42]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
 # Локальная копия крейта hftbacktest 0.9.4 с одним исправлением
 # (`PartialFillExchange`: нога, исполненная ровно до нуля, оставалась в карте биржи
 # и роняла прогон `InvalidOrderStatus` при следующей сделке по той же цене) —
