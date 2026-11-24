@@ -17,8 +17,11 @@ systemctl set-property --runtime tk700.slice CPUQuota=${QUOTA:-700%} MemoryMax=4
 
 # WAIT_FIRST="юнит …" — подождать юниты предыдущего месяца, прежде чем начинать первый
 [ -n "${WAIT_FIRST:-}" ] && while busy $WAIT_FIRST; do sleep 30; done
+# HOLD_FILE=<путь> — не стартовать, пока файл существует (чужое окно «srv целиком»: файл снимает его владелец); проверяется перед КАЖДЫМ месяцем
+[ -n "${HOLD_FILE:-}" ] && while [ -e "$HOLD_FILE" ]; do sleep 30; done
 for M in "$@"; do
   N=${MON[$M]}
+  [ -n "${HOLD_FILE:-}" ] && while [ -e "$HOLD_FILE" ]; do sleep 30; done
   echo "$(date -u +%FT%TZ) месяц $M ($N): старт"
   systemd-run --unit=tk700-$N-lite --slice=tk700.slice -p CPUWeight=400 -p Nice=5 -p MemoryMax=18G /bin/bash -c "
     $RUN h1-$N-A --cellset all1 --wins $M --sides long --class A --threads 3 $ARGS >> $LOG/h1-$N-A.log 2>&1
