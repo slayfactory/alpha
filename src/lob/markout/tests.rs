@@ -123,48 +123,8 @@ fn a_non_monotonic_series_is_backed_by_documented_behaviour_not_a_guess() {
     assert_eq!(sample_asof(&mids, 0, 5000).map(|s| s.ts_ms), Some(1700));
 }
 
-fn level(side: Side, death_ms: i64) -> LevelRecord {
-    LevelRecord {
-        side,
-        price_tick: 1000,
-        birth_ms: 0,
-        death_ms,
-        lifetime_ms: death_ms,
-        size_max: 200,
-        time_to_max_ms: 0,
-        size_monotonic: true,
-        repeat_count: 0,
-        repriced: false,
-        death: crate::lob::levels::DeathKind::BelowFraction,
-        traded_lots: 0,
-        rpi_lots: 0,
-    }
-}
-
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-9
-}
-
-/// Линейный тренд: середина растёт на 2 единицы удвоенной шкалы за
-/// 100 мс от базы 20000. Ожидаемые `m` для стороны аска:
-/// 1.0, 10.0, 100.0, 600.0 bps — точное значение формулы.
-#[test]
-fn linear_trend_gives_exact_markouts() {
-    let mids = vec![
-        sample(0, 20_000),
-        sample(100, 20_002),
-        sample(1_000, 20_020),
-        sample(10_000, 20_200),
-        sample(60_000, 21_200),
-    ];
-    let lv = level(Side::Ask, 50);
-    let got = markouts_for_level(&lv, &mids);
-    let want = [1.0, 10.0, 100.0, 600.0];
-    for (i, h) in HORIZONS_MS.iter().enumerate() {
-        let v = got[i].expect("будущее есть на каждом горизонте");
-        assert!(close(v, want[i]), "горизонт {h}: got {v}, want {}", want[i]);
-    }
-    assert_eq!(HORIZONS_MS, [100, 1_000, 10_000, 60_000]);
 }
 
 /// Для съеденного уровня база обязана браться до сделок: срез ровно
@@ -181,10 +141,8 @@ fn eaten_base_is_taken_before_the_killing_trades() {
         !close(m_from_base, m_from_death),
         "базы обязаны различаться"
     );
-    let lv = level(Side::Ask, 1_000);
     let fut = future_asof(&mids, base.0, 100).unwrap();
     assert_eq!(fut, 20_200);
-    let _ = markouts_for_level(&lv, &mids);
 }
 
 /// Зеркальное движение: бид вниз и аск вверх на ту же величину дают
@@ -257,10 +215,9 @@ fn touch(side: Side, start_ms: i64) -> TouchRecord {
 }
 
 /// В-45 (2): горизонт не длиннее касания — `within_touch`, граница
-/// включительна (`HORIZONS_MS[i] ≤ duration_ms`); `markouts_for_touch_outside`
-/// гасит такие горизонты в `None`, остальные — как у `markouts_for_touch`.
+/// включительна (`HORIZONS_MS[i] ≤ duration_ms`).
 #[test]
-fn horizons_not_longer_than_the_touch_are_within_it_and_dropped_from_outside_markouts() {
+fn horizons_not_longer_than_the_touch_are_within_it() {
     assert_eq!(within_touch(0), [false; 4]);
     assert_eq!(within_touch(99), [false; 4]);
     assert_eq!(
@@ -277,16 +234,15 @@ fn horizons_not_longer_than_the_touch_are_within_it_and_dropped_from_outside_mar
     t.duration_ms = 10_000;
     t.end_ms = 15_000;
     let all = markouts_for_touch(&t, &mids);
-    let outside = markouts_for_touch_outside(&t, &mids);
     assert!(all.iter().all(Option::is_some), "{all:?}");
-    assert_eq!(outside, [None, None, None, all[3]]);
 }
 
 /// Критерий приёмки таска 35: середина после касания выше — бид-касание
-/// даёт `m > 0` (знак «в сторону отскока», противоположный смерти: тот же
-/// тренд для смерти бида даёт `m < 0`); аск на том же тренде — `m < 0`.
+/// даёт `m > 0` (знак «в сторону отскока»); аск на том же тренде — `m < 0`.
 /// База — последний срез строго до `start_ms`, как у смерти; будущее —
-/// как есть на `t0 + h` — точные значения линейного тренда.
+/// как есть на `t0 + h` — точные значения линейного тренда: середина растёт
+/// на 2 единицы удвоенной шкалы за 100 мс от базы 20000, ожидаемые `m`
+/// 1.0, 10.0, 100.0, 600.0 bps.
 #[test]
 fn a_bid_touch_followed_by_a_rising_mid_has_positive_markout() {
     let mids = vec![
@@ -299,17 +255,18 @@ fn a_bid_touch_followed_by_a_rising_mid_has_positive_markout() {
     let bid = touch(Side::Bid, 50);
     let got = markouts_for_touch(&bid, &mids);
     let want = [1.0, 10.0, 100.0, 600.0];
+    assert_eq!(HORIZONS_MS, [100, 1_000, 10_000, 60_000]);
     for (i, h) in HORIZONS_MS.iter().enumerate() {
         let v = got[i].expect("будущее есть на каждом горизонте");
         assert!(v > 0.0 && close(v, want[i]), "горизонт {h}: got {v}");
     }
-    let death = markouts_for_level(&level(Side::Bid, 50), &mids);
-    for (t, d) in got.iter().zip(death) {
-        assert!(close(t.unwrap(), -d.unwrap()), "касание — минус смерть");
-    }
     let ask = markouts_for_touch(&touch(Side::Ask, 50), &mids);
-    for v in ask {
-        assert!(v.unwrap() < 0.0, "аск на росте — против отскока");
+    for (i, v) in ask.iter().enumerate() {
+        let v = v.unwrap();
+        assert!(
+            v < 0.0 && close(v, -want[i]),
+            "аск на росте — против отскока"
+        );
     }
     assert_eq!(
         touch_markout_bps(Side::Bid, 0, 1),

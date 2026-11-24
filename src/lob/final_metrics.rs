@@ -24,9 +24,6 @@
 //! посчитаны в одних единицах, множитель annualization сокращается в разности
 //! `SR − SR0` только при общем масштабе, поэтому здесь его нет вовсе.
 
-use std::path::Path;
-
-use crate::lob::backtest::{roundtrip_net_bps, Fill};
 use crate::stats::count_f64;
 
 /// Постоянная Эйлера–Маскерони γ: вес между двумя квантилями в формуле
@@ -191,23 +188,6 @@ pub fn normal_inv_cdf(p: f64) -> f64 {
 // DSR.
 // ---------------------------------------------------------------------------
 
-/// Ожидаемый Sharpe лучшего из испытаний под нулём (Bailey — López de Prado,
-/// 2014): `SR0 = √V · ((1−γ)·q(1−1/N) + γ·q(1−1/(N·e)))`, где `V` — выборочная
-/// дисперсия Sharpe пробных прогонов, `N` — их число (длина среза: пилотные
-/// прогоны и перезапуски входят сюда через `runs.csv`, см. шапку модуля).
-/// Одно испытание — отбора не было, ожидание ноль. `None` — испытаний нет или
-/// их Sharpe неконечны.
-pub fn expected_sharpe_under_null(trial_sharpes: &[f64]) -> Option<f64> {
-    if trial_sharpes.iter().any(|s| !s.is_finite()) {
-        return None;
-    }
-    match trial_sharpes.len() {
-        0 => None,
-        1 => Some(0.0),
-        n => expected_sharpe_under_null_with_variance(n, trial_sharpe_variance(trial_sharpes)?),
-    }
-}
-
 /// Выборочная дисперсия среза пробных Шарпов (делитель `n−1`) — параметр `V`
 /// формулы `SR0`. `None` — меньше двух испытаний, неконечные значения или
 /// неконечная дисперсия.
@@ -240,63 +220,6 @@ pub fn expected_sharpe_under_null_with_variance(n: usize, v: f64) -> Option<f64>
     let q1 = normal_inv_cdf(1.0 - 1.0 / nf);
     let q2 = normal_inv_cdf(1.0 - 1.0 / (nf * std::f64::consts::E));
     Some(v.sqrt() * ((1.0 - EULER_MASCHERONI) * q1 + EULER_MASCHERONI * q2))
-}
-
-/// Синтетическая выборка длины `n` с точным нулевым средним и точной
-/// выборочной дисперсией `1.0` (делитель `n−1`, как в `expected_sharpe_
-/// under_null`): один элемент `(n−1)/√n`, остальные `n−1` — `−1/√n`. Сумма
-/// нулевая по построению, сумма квадратов даёт дисперсию ровно `1` —
-/// проверено тестом ниже, а не принято на веру.
-fn unit_variance_trials(n: usize) -> Vec<f64> {
-    if n < 2 {
-        return vec![0.0; n];
-    }
-    let nf = count_f64(n);
-    let mut trials = vec![-1.0 / nf.sqrt(); n];
-    trials[0] = (nf - 1.0) / nf.sqrt();
-    trials
-}
-
-/// `SR0` для гейта G-POWER-A (`PLAN.md` §6): до первой сессии сбора пробных
-/// Sharpe не существует, только их число `n` из шага отбора
-/// (`shortlist::nominal_grid_size`/`total_trials`). `expected_sharpe_
-/// under_null` требует сам срез, а не только его длину — здесь ему
-/// передаётся синтетический срез с выборочной дисперсией, принятой равной
-/// единице: стандартное допущение под нулевой гипотезой, когда дисперсия
-/// пробных Sharpe ещё не измерена (Bailey — López de Prado, 2014, тот же
-/// параметр `V`, стоящий здесь `1` за неимением измерения — не занижает и не
-/// завышает поправку сам по себе, единица — нейтральный масштаб). Формула
-/// SR0 не дублируется: это обёртка, не вторая реализация. `None` — `n = 0`.
-pub fn expected_sharpe_under_null_for_trial_count(n: usize) -> Option<f64> {
-    if n == 0 {
-        return None;
-    }
-    expected_sharpe_under_null(&unit_variance_trials(n))
-}
-
-/// Deflated Sharpe Ratio: вероятность, что истинный Sharpe положителен с
-/// поправкой на `N` испытаний, `Φ((SR − SR0)·√(T−1) / √(1 − skew·SR +
-/// (kurt−1)/4·SR²))`. `num_obs` — число покруговых наблюдений `T` (не число
-/// испытаний). `None` — не считается наблюдаемый ряд, нет испытаний,
-/// знаменатель неположителен или любой вход неконечен: отсутствие данных не
-/// есть нулевой DSR.
-pub fn dsr(
-    observed_sr: f64,
-    num_obs: usize,
-    skew: f64,
-    kurtosis: f64,
-    trial_sharpes: &[f64],
-) -> Option<f64> {
-    if !observed_sr.is_finite() || !skew.is_finite() || !kurtosis.is_finite() || num_obs < 2 {
-        return None;
-    }
-    dsr_with_sr0(
-        observed_sr,
-        num_obs,
-        skew,
-        kurtosis,
-        expected_sharpe_under_null(trial_sharpes)?,
-    )
 }
 
 /// DSR при `SR0` из числа испытаний `n_trials` и дисперсии их Шарпов `v`,
@@ -338,38 +261,6 @@ fn dsr_with_sr0(
     Some(normal_cdf(
         (observed_sr - sr0) * (count_f64(num_obs - 1)).sqrt() / denom_sq.sqrt(),
     ))
-}
-
-/// DSR прямо по покруговым net: моменты считаются здесь, испытания —
-/// параметром (см. `dsr`). `None` — см. обе функции ниже.
-pub fn dsr_from_returns(returns: &[f64], trial_sharpes: &[f64]) -> Option<f64> {
-    let m = moments(returns)?;
-    dsr(m.mean / m.std, m.n, m.skew, m.kurtosis, trial_sharpes)
-}
-
-/// Требуемый Шарп на наблюдение для гейта G-POWER-A: наименьший `x`, при
-/// котором `dsr(x, num_obs, 0.0, 3.0, …)` (с `SR0` из
-/// `expected_sharpe_under_null_for_trial_count(n_trials)`) достигает
-/// `dsr_target`. Скошенность `0` и эксцесс `3.0` — нормальный ряд (`Moments`
-/// нормирует так же — нормальный ряд даёт `3.0`, не `0.0`); до сбора данных
-/// другой оценки формы распределения нет.
-///
-/// `dsr` вырождается при этих `skew`/`kurtosis` в `Φ((x−SR0)·√(T−1) /
-/// √(1+0.5·x²)) = dsr_target`, `z = Φ⁻¹(dsr_target)` — квадратное уравнение
-/// `(T−1−0.5·z²)·x² − 2·(T−1)·SR0·x + ((T−1)·SR0² − z²) = 0`; решение —
-/// больший корень (тот, где `x − SR0` того же знака, что `z`), численный
-/// поиск здесь не нужен. `None` — `num_obs < 2`, `dsr_target` вне `(0, 1)`,
-/// `n_trials` без `SR0` или коэффициент при `x²` неположителен (`z` слишком
-/// велик относительно `T`).
-pub fn required_sharpe_for_dsr(n_trials: usize, num_obs: usize, dsr_target: f64) -> Option<f64> {
-    if num_obs < 2 || !dsr_target.is_finite() || !(0.0..1.0).contains(&dsr_target) {
-        return None;
-    }
-    required_sharpe_for_sr0(
-        expected_sharpe_under_null_for_trial_count(n_trials)?,
-        num_obs,
-        dsr_target,
-    )
 }
 
 /// Требуемый Шарп при `SR0` из `n_trials` и измеренной дисперсии `v` (T-26) —
@@ -418,80 +309,12 @@ fn required_sharpe_for_sr0(sr0: f64, num_obs: usize, dsr_target: f64) -> Option<
 /// именованной константой в её собственном модуле).
 pub const DSR_TARGET: f64 = 0.95;
 
-/// DSR наблюдаемого Шарпа при известном числе испытаний, без явного среза
-/// пробных Шарпов — та же нейтральная замена `V = 1` (единичная дисперсия
-/// пробных Шарпов), что уже несёт `expected_sharpe_under_null_for_trial_count`
-/// для гейта G-POWER-A, применённая к полному `dsr()`, а не только к его
-/// `SR0`. Не вторая формула: тот же `dsr()`, тот же синтетический срез
-/// `unit_variance_trials(n_trials)`, только явно параметризованный числом
-/// испытаний вместо готового среза — ровно то, что нужно вердикту таска 13,
-/// когда пробные Шарпы всех `N` испытаний физически не посчитаны (это заняло
-/// бы `N` дополнительных прогонов бэктеста), а их число уже есть в
-/// `runs.csv`. `None` — см. `dsr`/`expected_sharpe_under_null_for_trial_count`.
-pub fn dsr_for_trial_count(
-    observed_sr: f64,
-    num_obs: usize,
-    skew: f64,
-    kurtosis: f64,
-    n_trials: usize,
-) -> Option<f64> {
-    dsr(
-        observed_sr,
-        num_obs,
-        skew,
-        kurtosis,
-        &unit_variance_trials(n_trials),
-    )
-}
-
 // ---------------------------------------------------------------------------
 // Джекнайф-по-суткам (A03): устойчивость точечной оценки к исключению одних
 // суток-кластера. Не бутстрап и не гейт — диагностика рядом с вердиктом
 // (`PLAN.md` В-2: «джекнайф-по-суткам чувствительность» печатается всегда,
 // когда есть за что: вердикт при `G = G_MIN` не назовёшь честным без неё).
 // ---------------------------------------------------------------------------
-
-/// Одна точка джекнайфа: оценка при исключённых сутках `excluded_day` вместо
-/// самого значения — воспроизводимость важнее произвольной сортировки.
-#[derive(Debug, Clone, PartialEq)]
-pub struct JackknifeSensitivity {
-    /// Точечные оценки без одних суток, по одной на исключённые сутки.
-    pub leave_one_out: Vec<(String, f64)>,
-    /// Наименьшая из оценок.
-    pub min: f64,
-    /// Наибольшая из оценок.
-    pub max: f64,
-    /// Размах `max - min`: чем он шире, тем меньше можно доверять точечной
-    /// оценке на границе `G = G_MIN` (одни сутки решают исход).
-    pub range: f64,
-}
-
-/// Джекнайф-по-суткам из уже посчитанных оценок «без суток X» (вызывающий —
-/// `commands::lob::shortlist` — считает их отдельными прогонами
-/// `run_profiles_with_fill_model` на времянке без одних суток; этот модуль
-/// формул повторного счёта не вводит, только сводит готовые числа).
-/// `None` — меньше двух оценок: без исключения одних суток чувствительность
-/// не из чего мерить (единственная оценка «без суток X» ничем не
-/// отличается от точечной оценки на всех сутках).
-pub fn jackknife_sensitivity(leave_one_out: &[(String, f64)]) -> Option<JackknifeSensitivity> {
-    if leave_one_out.len() < 2 || leave_one_out.iter().any(|(_, v)| !v.is_finite()) {
-        return None;
-    }
-    let min = leave_one_out
-        .iter()
-        .map(|(_, v)| *v)
-        .fold(f64::INFINITY, f64::min);
-    let max = leave_one_out
-        .iter()
-        .map(|(_, v)| *v)
-        .fold(f64::NEG_INFINITY, f64::max);
-    Some(JackknifeSensitivity {
-        leave_one_out: leave_one_out.to_vec(),
-        min,
-        max,
-        range: max - min,
-    })
-}
 
 // ---------------------------------------------------------------------------
 // PBO.
@@ -686,46 +509,6 @@ pub const fn min_obs_for_cpcv(params: CpcvParams) -> usize {
     params.folds * (params.purge + params.embargo + 2)
 }
 
-/// Средний OOS Sharpe по складкам CPCV на итоговых покруговых net: каждая
-/// складка по очереди тестовая, защитные зоны из скоринга выброшены, складка
-/// без дисперсии пропускается (см. `moments`), а не обнуляет среднее.
-/// `None` — складок меньше двух, ряд пуст, складка короче двух наблюдений
-/// после сброса или ни одна складка не посчиталась: параметры несовместны со
-/// входом, а не «эффекта нет».
-pub fn cpcv_mean_oos_sharpe(per_trade_net: &[f64], params: CpcvParams) -> Option<f64> {
-    let CpcvParams {
-        folds,
-        purge,
-        embargo,
-    } = params;
-    if folds < 2 || per_trade_net.is_empty() {
-        return None;
-    }
-    let fold_len = per_trade_net.len() / folds;
-    let kept = fold_len.checked_sub(purge)?.checked_sub(embargo)?;
-    if kept < 2 {
-        return None;
-    }
-    let mut sum = 0.0;
-    let mut scored = 0usize;
-    for k in 0..folds {
-        let base = k * fold_len;
-        // Границы доказаны выше: `kept = fold_len - purge - embargo ≥ 2`,
-        // откуда `base + purge + kept = base + fold_len - embargo ≤ len`
-        // (k < folds, fold_len = len / folds). Срез тотален по построению.
-        #[allow(clippy::indexing_slicing)]
-        let fold = &per_trade_net[base + purge..base + fold_len - embargo];
-        if let Some(s) = sharpe_ratio(fold) {
-            sum += s;
-            scored += 1;
-        }
-    }
-    if scored == 0 {
-        return None;
-    }
-    Some(sum / count_f64(scored))
-}
-
 /// Средний OOS Sharpe **процедуры отбора** по складкам CPCV (задача §6.4
 /// п. 4, `SETTLED.md` В-19: «PBO и CPCV проверяют процедуру отбора, а не
 /// выбранный профиль»). Вход — та же матрица «испытания × периоды», что у
@@ -796,88 +579,6 @@ pub fn cpcv_selection_oos_sharpe(
 // ---------------------------------------------------------------------------
 // Вход от бэктеста, сводный отчёт, число испытаний из runs.csv.
 // ---------------------------------------------------------------------------
-
-/// Покруговые net в bps из закрытых кругов бэктеста (потребитель
-/// `backtest::roundtrip_net_bps`: формула круга одна, здесь только порядок).
-/// `None` — кругов нет или хотя бы один не посчитался (то же правило, что
-/// `pnl_curve_bps`: молча выкидывать круг значило бы пересчитывать выборку
-/// задним числом).
-pub fn per_trade_net_bps(fills: &[Fill]) -> Option<Vec<f64>> {
-    if fills.is_empty() {
-        return None;
-    }
-    let mut out = Vec::with_capacity(fills.len());
-    for f in fills {
-        out.push(roundtrip_net_bps(f)?);
-    }
-    Some(out)
-}
-
-/// Три числа шага 7.3 в отчёте: DSR итоговой кривой с поправкой на испытания,
-/// PBO по матрице испытаний и средний OOS Sharpe CPCV.
-#[derive(Debug, Clone, PartialEq)]
-pub struct FinalMetrics {
-    /// Число испытаний (длина среза пробных Sharpe, источник — `runs.csv`).
-    pub trials: usize,
-    /// Deflated Sharpe Ratio итоговой кривой (`None` — не посчитался).
-    pub dsr: Option<f64>,
-    /// Вероятность переобучения (`None` — не посчиталась).
-    pub pbo: Option<f64>,
-    /// Средний OOS Sharpe CPCV (`None` — не посчитался).
-    pub cpcv_oos_sharpe: Option<f64>,
-}
-
-/// Собрать три числа из абстрактного итогового прогона: покруговые net,
-/// Sharpe пробных прогонов (поправка DSR), матрица «испытания × периоды» для
-/// PBO и параметры CPCV. PBO гонится на фиксированных 8 блоках (полный
-/// перебор из 35 сплитов, см. `REPORT_PBO_PARTITIONS`).
-pub fn final_metrics(
-    per_trade_net: &[f64],
-    trial_sharpes: &[f64],
-    pbo_trials: &[Vec<f64>],
-    cpcv: CpcvParams,
-) -> FinalMetrics {
-    FinalMetrics {
-        trials: trial_sharpes.len(),
-        dsr: dsr_from_returns(per_trade_net, trial_sharpes),
-        pbo: pbo(pbo_trials, REPORT_PBO_PARTITIONS),
-        cpcv_oos_sharpe: cpcv_mean_oos_sharpe(per_trade_net, cpcv),
-    }
-}
-
-impl FinalMetrics {
-    /// Строки отчёта: все три числа с числом испытаний; отсутствие числа
-    /// печатается как `none`, а не ноль (см. правило `None` выше).
-    pub fn summary_lines(&self) -> Vec<String> {
-        vec![format!(
-            "final_metrics: trials={} dsr={} pbo={} cpcv_oos_sharpe={}",
-            self.trials,
-            fmt_opt(self.dsr),
-            fmt_opt(self.pbo),
-            fmt_opt(self.cpcv_oos_sharpe),
-        )]
-    }
-}
-
-/// Печать опционального числа: `none`, если данных нет.
-fn fmt_opt(v: Option<f64>) -> String {
-    match v {
-        Some(x) if x.is_finite() => format!("{x:.4}"),
-        Some(_) => "nonfinite".to_string(),
-        None => "none".to_string(),
-    }
-}
-
-/// Число испытаний для DSR/PBO из журнала `runs.csv` (шаг 7.1).
-///
-/// Тонкая обёртка: формат строк и правило «что считается испытанием» живут в
-/// `lob::runs`, здесь только связь «журнал → число». `None` — журнал не
-/// читается или строка битая (считать нельзя, а не ноль); отсутствие файла —
-/// `Some(0)` (прогонов ещё не было). Вызывающий код обязан проверить `None`
-/// до подстановки в DSR/PBO, а не подменять его единицей.
-pub fn trials_from_runs_csv(path: &Path) -> Option<usize> {
-    crate::lob::runs::trials_from_runs_csv(path)
-}
 
 #[cfg(test)]
 mod tests;

@@ -40,6 +40,31 @@ def get(url, tries=6):
     return -1, str(err).encode()
 
 
+def get_file(url, part, tries=6):
+    """Поточная загрузка в `part` с sha256 на лету (память — один блок на поток, а не весь zip: у BTCUSDT сутки до 300 МБ): (код, байт, sha256 | текст ошибки)."""
+    url = urllib.parse.quote(url, safe=":/")
+    for a in range(tries):
+        try:
+            h, n = hashlib.sha256(), 0
+            with urllib.request.urlopen(url, timeout=120) as r, open(part, "wb") as f:
+                while True:
+                    b = r.read(1 << 20)
+                    if not b:
+                        break
+                    h.update(b)
+                    f.write(b)
+                    n += len(b)
+            return 200, n, h.hexdigest()
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return 404, 0, ""
+            err = e.code
+        except OSError as e:
+            err = str(e)
+        time.sleep(1 + 2 * a)
+    return -1, 0, str(err)
+
+
 def one(row):
     kind, sym, day, size, _etag = row
     if kind == "aggTrades":
@@ -55,19 +80,17 @@ def one(row):
                 cnt["skipped"] += 1
             return
         os.makedirs(os.path.dirname(dst), exist_ok=True)
-        c, body = get(f"{BASE}/{rel}")
+        part = dst + ".part"
+        c, n, got = get_file(f"{BASE}/{rel}", part)
         if c != 200:
-            raise RuntimeError(f"http {c}")
-        if len(body) != int(size):
-            raise RuntimeError(f"size {len(body)} != listed {size}")
+            raise RuntimeError(f"http {c} {got}".strip())
+        if n != int(size):
+            raise RuntimeError(f"size {n} != listed {size}")
         c, ck = get(f"{BASE}/{rel}.CHECKSUM")
         want = ck.split()[0].decode() if c == 200 and ck else ""
-        got = hashlib.sha256(body).hexdigest()
         if want != got:
             raise RuntimeError(f"sha256 {got} != {want or 'no checksum'}")
-        with open(dst + ".part", "wb") as f:
-            f.write(body)
-        os.replace(dst + ".part", dst)
+        os.replace(part, dst)
         if kind == "klines":
             with zipfile.ZipFile(dst) as z:
                 names = z.namelist()
@@ -82,8 +105,10 @@ def one(row):
             f.write(f"{got}  {os.path.basename(dst)}\n")
         with lock:
             cnt["done"] += 1
-            cnt["bytes"] += len(body)
+            cnt["bytes"] += n
     except Exception as e:  # noqa: BLE001
+        if os.path.exists(dst + ".part"):
+            os.remove(dst + ".part")
         with lock:
             cnt["miss"] += 1
             with open(OUT + "/log/miss.tsv", "a") as f:

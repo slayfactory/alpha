@@ -6,7 +6,8 @@
 # на srv (id — первая строка вывода раннера); раннер выкладывается версией /opt/rbuild/run-srv.<md5>.sh.
 set -euo pipefail
 BIN_OUT="${1:?BIN_OUT на srv}"; MODE="${2:-build}"; FILTER="${3:-}"; BIN_NAME="${BIN_NAME:-alpha}"
-K=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15 -o ServerAliveInterval=30)
+. "$(dirname "${BASH_SOURCE[0]}")/../_ssh.sh"
+K=("${SSH_ID[@]}" -o ConnectTimeout=15 -o ServerAliveInterval=30)
 H=root@5.231.25.224
 RB="${RBUILD_DIR:-/opt/rbuild}"
 cd "$(dirname "$0")/../.."

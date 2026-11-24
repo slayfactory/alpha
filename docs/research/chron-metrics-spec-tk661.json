@@ -223,7 +223,7 @@
   },
   {
    "entry": 77,
-   "src": "docs/findings/p42-flow-deriv-2026-11-18/cmp/delta.csv",
+   "src": "docs/archive/findings/p42-flow-deriv-2026-11-18/cmp/delta.csv",
    "pick": [
     {
      "where": {},
@@ -816,7 +816,7 @@
   },
   {
    "entry": 111,
-   "src": "docs/findings/p42-killzones-2026-11-19/results.csv",
+   "src": "docs/archive/findings/p42-killzones-2026-11-19/results.csv",
    "pick": [
     {
      "where": {
@@ -3828,7 +3828,7 @@
   },
   {
    "entry": 209,
-   "src": "docs/findings/p42-catboost-retitr-2026-11-19/read-aug.json",
+   "src": "docs/archive/findings/p42-catboost-retitr-2026-11-19/read-aug.json",
    "pick": [
     {
      "ptr": "sides/L",
@@ -3865,7 +3865,7 @@
   },
   {
    "entry": 209,
-   "src": "docs/findings/p42-catboost-retitr-2026-11-19/read-aug.json",
+   "src": "docs/archive/findings/p42-catboost-retitr-2026-11-19/read-aug.json",
    "pick": [
     {
      "ptr": "sides/S",
@@ -3902,7 +3902,7 @@
   },
   {
    "entry": 223,
-   "src": "docs/findings/p42-toxic-flow-2026-11-18/stage1.csv",
+   "src": "docs/archive/findings/p42-toxic-flow-2026-11-18/stage1.csv",
    "pick": [
     {
      "where": {},

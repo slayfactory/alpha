@@ -1,13 +1,5 @@
 use super::*;
 
-fn obs(m_bps: f64, spread: i64, mid2x: i64) -> Observation {
-    Observation {
-        m_bps,
-        spread_ticks_exit: spread,
-        mid2x_base: mid2x,
-    }
-}
-
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-9
 }
@@ -29,127 +21,11 @@ fn roundtrip_fees_are_single_number_for_g0_and_g3() {
     ));
 }
 
-/// Формула буквально: net = m − (круг + (spread+2)/mid2x·10⁴).
-/// mid2x = 20000, spread = 1 → slippage 1.5, cost круг + 1.5, net при m = 10.
+/// H6 — зелёный порог — число само по себе, 3 bps: вердикт по нему делает
+/// вызывающий (`bounce_verdict`), не этот модуль.
 #[test]
-fn net_formula_is_exact_on_synthetic_observation() {
-    assert!(close(slippage_bps(1, 20_000).unwrap(), 1.5));
-    assert!(close(
-        cost_bps(1, 20_000).unwrap(),
-        ROUNDTRIP_FEES_BPS + 1.5
-    ));
-    assert!(close(
-        net_bps(10.0, 1, 20_000).unwrap(),
-        10.0 - ROUNDTRIP_FEES_BPS - 1.5
-    ));
-}
-
-/// Done-condition буквально: колонка «после издержек» есть во всех трёх —
-/// C1, C2 и разведка считаются одной функцией из своих наблюдений.
-#[test]
-fn after_cost_column_exists_in_all_three() {
-    let c1 = [obs(10.0, 1, 20_000), obs(12.0, 2, 20_000)];
-    let c2 = [obs(15.0, 1, 20_000)];
-    let exploration = [obs(5.0, 4, 20_000), obs(6.0, 1, 10_000)];
-    let (n1, n2, ne) = (
-        mean_net_bps(&c1).expect("C1 обязан посчитаться"),
-        mean_net_bps(&c2).expect("C2 обязан посчитаться"),
-        mean_net_bps(&exploration).expect("разведка обязана посчитаться"),
-    );
-    assert!(close(
-        n1,
-        ((10.0 - 1.5) + (12.0 - 2.0)) / 2.0 - ROUNDTRIP_FEES_BPS
-    ));
-    assert!(close(n2, 15.0 - 1.5 - ROUNDTRIP_FEES_BPS));
-    assert!(n1.is_finite() && n2.is_finite() && ne.is_finite());
-}
-
-/// Проскальзывание считается на каждом наблюдении отдельно, а не
-/// константой: одинаковый m при разном спреде даёт разный net, а средний
-/// net при разных ценах не равен net от средних входов.
-#[test]
-fn slippage_is_per_observation_not_a_constant() {
-    let a = net_bps(10.0, 1, 20_000).unwrap();
-    let b = net_bps(10.0, 5, 20_000).unwrap();
-    assert!(!close(a, b), "разный спред обязан дать разный net");
-    // Разные цены: средний понаблюдательный net против издержек
-    // от средних входов (mid 15000, spread 1 → slippage 2.0).
-    let per_obs = mean_net_bps(&[obs(10.0, 1, 20_000), obs(10.0, 1, 10_000)]).unwrap();
-    let mean_m = 10.0;
-    let const_cost = cost_bps(1, 15_000).unwrap();
-    assert!(
-        !close(per_obs, mean_m - const_cost),
-        "понаблюдательный средний {per_obs} обязан отличаться от константного {}",
-        mean_m - const_cost
-    );
-    assert!(close(
-        per_obs,
-        ((10.0 - 1.5) + (10.0 - 3.0)) / 2.0 - ROUNDTRIP_FEES_BPS
-    ));
-}
-
-/// Тик на тонком инструменте честно весит больше: тот же спред при
-/// меньшей цене даёт большее проскальзывание в bps.
-#[test]
-fn tick_weighs_more_on_thin_instrument() {
-    let thick = slippage_bps(2, 20_000).unwrap();
-    let thin = slippage_bps(2, 2_000).unwrap();
-    assert!(close(thick, 2.0));
-    assert!(close(thin, 20.0));
-    assert!(thin > thick);
-    assert!(
-        net_bps(10.0, 2, 2_000).unwrap() < net_bps(10.0, 2, 20_000).unwrap(),
-        "тонкий инструмент обязан съедать больше эджа"
-    );
-}
-
-/// H6 — число само по себе: 3 bps, и никакая функция этого модуля не
-/// принимает по нему решение (таск 17 снял вердиктную ячейку C1/C2 и
-/// гейт G3, который раньше стоял на этом месте — см. докстрока модуля).
-/// `net_bps` ниже зелёного порога остаётся валидным числом, не отказом:
-/// сравнение с порогом — дело вызывающего (`shortlist`).
-#[test]
-fn green_threshold_is_a_number_not_a_verdict_here() {
+fn green_threshold_is_three_bps() {
     assert!(close(GREEN_NET_BPS, 3.0));
-    let probe = net_bps(5.0, 1, 20_000).expect("синтетика обязана посчитаться");
-    assert!(
-        probe.is_finite() && probe < GREEN_NET_BPS,
-        "ниже зелёного, но конечно"
-    );
-}
-
-/// Отказы вместо нулей: плохая база, отрицательный спред, неконечный m,
-/// пустой срез и хотя бы одно битое наблюдение дают None насквозь.
-#[test]
-fn invalid_inputs_yield_none_not_zero() {
-    assert_eq!(slippage_bps(1, 0), None);
-    assert_eq!(slippage_bps(1, -5), None);
-    assert_eq!(slippage_bps(-1, 20_000), None);
-    assert_eq!(net_bps(f64::NAN, 1, 20_000), None);
-    assert_eq!(net_bps(f64::INFINITY, 1, 20_000), None);
-    assert_eq!(net_bps(10.0, 1, 0), None);
-    assert_eq!(mean_net_bps(&[]), None);
-    assert_eq!(mean_net_bps(&[obs(10.0, 1, 20_000), obs(10.0, 1, 0)]), None);
-    assert_eq!(
-        mean_net_bps(&[obs(f64::NAN, 1, 20_000)]),
-        None,
-        "битое наблюдение травит среднее, а не выкидывается молча"
-    );
-}
-
-/// Синтетика вместо недели: все тесты выше идут на сконструированных
-/// наблюдениях без файлов и сети. Здесь — явная печать колонки
-/// синтетического прогона для ревью done-condition.
-#[test]
-fn synthetic_run_prints_net_column() {
-    let column = [obs(12.0, 1, 20_000), obs(8.0, 3, 20_000)];
-    let mean = mean_net_bps(&column).unwrap();
-    let line = format!("after_costs: mean_net={mean:.4} n={}", column.len());
-    assert!(line.contains("after_costs"), "колонка обязана называться");
-    assert!(close(
-        mean,
-        ((12.0 - 1.5) + (8.0 - 2.5)) / 2.0 - ROUNDTRIP_FEES_BPS
-    ));
 }
 
 fn fobs(day: i64, net: f64, filled: bool) -> FillObservation {
@@ -160,57 +36,9 @@ fn fobs(day: i64, net: f64, filled: bool) -> FillObservation {
     }
 }
 
-/// R07 буквально: `Σ netᵢ·fillᵢ / N`, не среднее только по исполнившимся
-/// и не произведение агрегатов. Четыре наблюдения, два исполнились —
-/// сумма `10 + (-4) = 6`, знаменатель `N = 4`, точка `1.5`, не `3.0`
-/// (среднее по исполнившимся) и не `mean(net)*fill_rate = 3.0*0.5=1.5`
-/// случайно совпавшее здесь — проверяется отдельно ниже, что формула не
-/// вырождается в это совпадение.
-#[test]
-fn net_fill_bps_is_sum_of_products_over_n_not_mean_of_filled() {
-    let data = [
-        fobs(0, 10.0, true),
-        fobs(0, -4.0, true),
-        fobs(1, 100.0, false),
-        fobs(1, -100.0, false),
-    ];
-    let nf = net_fill_bps(&data).expect("непустой срез обязан посчитаться");
-    assert!(close(nf, 1.5), "получено {nf}");
-    let mean_only_filled = (10.0 + -4.0) / 2.0;
-    assert!(
-        !close(nf, mean_only_filled),
-        "net_fill не обязан совпасть со средним только по исполнившимся"
-    );
-}
-
-/// Отказы: пустой срез и хотя бы одно неконечное `net_bps` — `None`, не
-/// молчаливый пропуск (то же правило, что `mean_net_bps`).
-#[test]
-fn net_fill_bps_refuses_on_empty_or_nonfinite() {
-    assert_eq!(net_fill_bps(&[]), None);
-    assert_eq!(net_fill_bps(&[fobs(0, f64::NAN, true)]), None);
-    assert_eq!(net_fill_bps(&[fobs(0, f64::INFINITY, false)]), None);
-}
-
-/// R06: `fill` — своя колонка, печатается всегда, не только в вердикте.
-#[test]
-fn fill_rate_is_its_own_column_always() {
-    let data = [
-        fobs(0, 1.0, true),
-        fobs(0, 1.0, false),
-        fobs(0, 1.0, true),
-        fobs(0, 1.0, false),
-    ];
-    let rate = fill_rate(&data).expect("непустой срез обязан посчитаться");
-    assert!(close(rate, 0.5));
-    assert_eq!(format_fill_column(Some(rate)), "0.5000");
-    assert_eq!(format_fill_column(None), "none");
-    assert_eq!(fill_rate(&[]), None);
-}
-
-/// `NetFillInterval.point_bps` обязан совпасть с `net_fill_bps` на тех
-/// же данных (тождество разложения `mean(net|fill=1)·fill_rate`, см.
-/// докстринг `NetFillInterval`), а нижняя граница — быть конечной и не
+/// `NetFillInterval.point_bps` обязан совпасть с прямой формулой
+/// `Σ netᵢ·fillᵢ / N` на тех же данных (тождество разложения
+/// `mean(net|fill=1)·fill_rate`, см. докстринг `NetFillInterval`), а нижняя граница — быть конечной и не
 /// выше точки при явно положительном сигнале на многих сутках.
 #[test]
 fn net_fill_interval_point_matches_direct_formula() {
@@ -220,7 +48,8 @@ fn net_fill_interval_point_matches_direct_formula() {
         data.push(fobs(day, 8.0, true));
         data.push(fobs(day, -1.0, false));
     }
-    let direct = net_fill_bps(&data).expect("обязано посчитаться");
+    // Σ netᵢ·fillᵢ / N на сутки: (10 + 8) · 8 дней / 24 наблюдения = 6.0.
+    let direct = 6.0;
     let interval = net_fill_interval(&data, 0.05, 999, 7).expect("обязано посчитаться");
     assert!(
         close(interval.point_bps, direct),
@@ -248,6 +77,20 @@ fn net_fill_interval_refuses_on_empty_nonfinite_or_no_fills() {
     assert_eq!(net_fill_interval(&no_fills, 0.05, 999, 1), None);
 }
 
+/// Шесть точек Уэбба `-√1.5, -1, -√0.5, √0.5, 1, √1.5` — независимая от
+/// `cells::WEBB_POINTS` запись выражениями (прежний `stats::webb_weight`
+/// удалён вместе с мёртвым wild-бутстрапом t).
+fn webb_point(index: u32) -> f64 {
+    match index {
+        0 => -(1.5_f64).sqrt(),
+        1 => -1.0,
+        2 => -(0.5_f64).sqrt(),
+        3 => (0.5_f64).sqrt(),
+        4 => 1.0,
+        _ => (1.5_f64).sqrt(),
+    }
+}
+
 /// Наивный процентильный нижний перцентиль ОДНОГО ряда при кластерном
 /// wild-бутстрапе — контрпример, от которого предостерегает критерий
 /// приёмки: если вызвать это отдельно для «net при исполнении» и
@@ -273,7 +116,7 @@ fn naive_series_lower(
         let mut boot = 0.0;
         for &(num, _n) in day_sums {
             let idx = (rng.next_u64() % 6) as u32;
-            boot += crate::stats::webb_weight(idx) * num;
+            boot += webb_point(idx) * num;
         }
         reps.push(boot / count_f64_u64(denom));
     }

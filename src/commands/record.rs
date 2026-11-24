@@ -236,15 +236,18 @@ impl Recorder {
         })
     }
 
+    #[cfg(test)]
     pub fn symbol(&self) -> &str {
         &self.symbol
     }
+    #[cfg(test)]
     pub fn day(&self) -> &str {
         &self.day
     }
     pub fn day_index(&self) -> i64 {
         self.day_index
     }
+    #[cfg(test)]
     pub fn part(&self) -> u32 {
         self.part
     }
@@ -257,12 +260,15 @@ impl Recorder {
     pub fn gaps_path(&self) -> &Path {
         &self.gaps
     }
+    #[cfg(test)]
     pub fn current_file(&self) -> PathBuf {
         day_file_path(&self.root, &self.symbol, &self.day, self.part)
     }
+    #[cfg(test)]
     pub fn frames_in_file(&self) -> u64 {
         self.frames_in_file
     }
+    #[cfg(test)]
     pub fn records_in_file(&self) -> u64 {
         self.records_in_file
     }

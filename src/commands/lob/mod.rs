@@ -140,7 +140,9 @@ pub use bounce_verdict::{run_bounce_verdict, BounceVerdictArgs};
 pub use clock::{run_clock, ClockArgs};
 pub use fee_rate::{run_fee_rate, FeeRateArgs};
 pub use latency::{run_latency, LatencyArgs};
-pub use pick::{run_pick, write_instruments_csv, PickArgs};
+#[cfg(test)]
+pub use pick::write_instruments_csv;
+pub use pick::{run_pick, PickArgs};
 pub use probe::{run_probe, ProbeArgs};
 pub use seconds::{run_seconds, SecondsArgs};
 pub use session::{run_session, SessionArgs};
@@ -152,9 +154,11 @@ pub use trades::{run_trades, TradesArgs};
 // не менялись — их держат эти ре-экспорты.
 #[cfg(test)]
 pub(crate) use h3::median_trade_lots_for_symbol;
+#[cfg(test)]
+pub use h3::resolve_h3_mode;
 pub use h3::{
-    resolve_h3_mode, resolve_h3_mode_full, resolve_h3_mode_with_k, ExecutionArgs, H3Args,
-    H3ModeArg, DEFAULT_REPEAT_WINDOW_MS, DEFAULT_WARMUP_MS, G0_MIN_PULLED,
+    resolve_h3_mode_full, resolve_h3_mode_with_k, ExecutionArgs, H3Args, H3ModeArg,
+    DEFAULT_REPEAT_WINDOW_MS, DEFAULT_WARMUP_MS,
 };
 pub(crate) use names::{aggressor_side_name, death_name, outcome_name, side_name, some_or_empty};
 pub(crate) use parts::{file_order_key, session_binlog_for, session_parts_for};
@@ -399,8 +403,8 @@ fn print_latency(args: LatencyArgs) -> anyhow::Result<()> {
     println!(
         "latency: symbol={} qty={} notional_usdt={} out={}",
         args.symbol,
-        crate::bybit::latency::format_e9(rep.qty_e9),
-        crate::bybit::latency::format_e9(rep.notional_e9),
+        crate::bybit::ws::format_e9(rep.qty_e9),
+        crate::bybit::ws::format_e9(rep.notional_e9),
         rep.out.display()
     );
     print!("{}", rep.summary);
@@ -410,7 +414,7 @@ fn print_latency(args: LatencyArgs) -> anyhow::Result<()> {
     if let Some(size) = rep.flattened_e9 {
         println!(
             "latency: в конце закрыт остаток позиции {}",
-            crate::bybit::latency::format_e9(size)
+            crate::bybit::ws::format_e9(size)
         );
     }
     Ok(())

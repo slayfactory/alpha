@@ -4,11 +4,11 @@ type: finding
 status: done
 title: "П-42 §13.28.1: перезаморозка вперёд — исходы ворот и заморозка (TK-626)"
 date: 2026-11-20
-links: [TK-626, P-42, docs/findings/p42-forward-refreeze-2026-11-20.md]
+links: [TK-626, P-42, docs/archive/findings/p42-forward-refreeze-2026-11-20.md]
 supersedes: []
 ---
 
-Отчёт — [[docs/findings/p42-forward-refreeze-2026-11-20.md]]; задача — [[TK-626]].
+Отчёт — [[docs/archive/findings/p42-forward-refreeze-2026-11-20.md]]; задача — [[TK-626]].
 
 | клетка (`all`, `t24=12`) | ΣS $ | сделок | прошла G_mk |
 |---|---|---|---|

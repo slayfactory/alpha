@@ -8,7 +8,8 @@
 set -euo pipefail
 WHAT="${1:?unit:<имя> | file:<путь>}"
 MIN="${2:-240}"
-KEY=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o BatchMode=yes
+. "$(dirname "${BASH_SOURCE[0]}")/_ssh.sh"
+KEY=("${SSH_ID[@]}" -o BatchMode=yes
      -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=4)
 case "${CHECK_HOST:-srv}" in srv) HOST=root@5.231.25.224 ;; vps) HOST=root@13.140.29.171 ;; *) echo "CHECK_HOST: srv|vps"; exit 2 ;; esac
 case "$WHAT" in

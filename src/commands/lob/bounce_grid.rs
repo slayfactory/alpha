@@ -123,7 +123,9 @@ use cache::{cached_approaches, DayTouches};
 use carry::{carry_boundary, carry_window_ns, extend_with_carry};
 use drive::{day_events, drive_day, write_arm_events, DayParams, DayRows, OrderSizing};
 use entry_sigma::EntrySigma;
-pub use forms::{grid_forms, ExitForm, GridForm};
+#[cfg(test)]
+pub use forms::grid_forms;
+pub use forms::{ExitForm, GridForm};
 use outputs::FormDayResult;
 pub(crate) use plan::ensure_holds_at_touch_checkable;
 use plan::{open_outputs, plan_grid, GridPlan};

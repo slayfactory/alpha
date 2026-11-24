@@ -270,6 +270,7 @@ pub enum Violation {
     },
 }
 
+#[cfg(test)]
 /// Проверяет одну серию точек одного источника на оба свойства
 /// done-condition шага 0.5: `|offset| < MAX_ABS_OFFSET_NS` на каждой точке,
 /// и скачок между соседними *успешными* точками серии не больше
@@ -381,6 +382,7 @@ pub fn append_row(path: &Path, row: &ClockRow) -> Result<(), ClockError> {
     Ok(())
 }
 
+#[cfg(test)]
 /// Читает `clock.csv` целиком — используется тестами (round-trip) и
 /// вызывающим кодом, которому нужна вся серия для `check_rows` (`lob verify`
 /// сверяет уже записанный файл, а не держит замеры в памяти процесса записи).
@@ -660,6 +662,7 @@ impl ReferenceClock for BybitServerTimeSource {
     }
 }
 
+#[cfg(test)]
 /// Метки реакционного пути (таск 15, `interfaces.md`: «монотонные через
 /// трейт `Clock`, не `SystemTime`»). `SystemClock` намеренно не гарантирует
 /// монотонность — его собственная документация называет цену: сравнимость с
@@ -680,6 +683,7 @@ pub struct MonotonicClock {
     origin_epoch_ns: i64,
 }
 
+#[cfg(test)]
 impl MonotonicClock {
     /// Заводит начало отсчёта один раз: `Instant::now()` — точка опоры,
     /// `SystemClock` — во сколько эпохи Unix она пришлась, только для того,
@@ -694,6 +698,7 @@ impl MonotonicClock {
     }
 }
 
+#[cfg(test)]
 impl Clock for MonotonicClock {
     fn now_ns(&self) -> i64 {
         let elapsed_ns = i64::try_from(self.origin.elapsed().as_nanos()).unwrap_or(i64::MAX);
