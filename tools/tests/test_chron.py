@@ -820,6 +820,55 @@ class TestRelink(Base):
         st.c.close()
 
 
+class TestBackup(Base):
+    """TK-704: ночная копия — летопись без клеток бэктеста; полная копия с клетками — в заданный день недели или по --full."""
+
+    def setUp(self):
+        super().setUp()
+        self.out = os.path.join(self.tmp.name, "bk")
+        e = int(self.st.add_entry(entry("запись с числами", body="текст"), ["TK-646"])[2:])
+        self.st.add_metrics([mrow(e)])
+        self.st.cells_put(e, [crow(i) for i in range(5)])
+
+    def test_slim_backup_without_cells(self):
+        rc, out = self.cli("backup", "--dir", self.out, "--full-day", "-1")
+        self.assertEqual(rc, 0, out)
+        stamp = sorted(Path(self.out).glob("chron-2*.sqlite"))
+        self.assertEqual(len(stamp), 1)
+        self.assertEqual(list(Path(self.out).glob("chron-full-*")), [])
+        c = sqlite3.connect(str(stamp[0]))
+        self.assertEqual(c.execute("SELECT count(*) FROM metric").fetchone()[0], 1)  # 1 «человеческая» строка, 5 клеток не взято
+        self.assertEqual(c.execute("SELECT count(*) FROM metric WHERE ckey IS NOT NULL").fetchone()[0], 0)
+        self.assertEqual(c.execute("SELECT count(*) FROM entry").fetchone()[0], 1)
+        self.assertEqual(c.execute("PRAGMA user_version").fetchone()[0], chron.SCHEMA_VERSION)
+        self.assertEqual(c.execute("PRAGMA journal_mode").fetchone()[0], "delete")
+        self.assertEqual(c.execute("SELECT count(*) FROM fts").fetchone()[0], 1)
+        c.close()
+        copy = chron.Store(chron.connect(str(stamp[0])))  # копия — рабочая летопись: триггеры, FTS, снимки
+        self.assertEqual(copy.check_db(), [])
+        copy.c.close()
+        lines = [json.loads(x) for x in stamp[0].with_suffix(".jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(sum(1 for x in lines if x["t"] == "metric"), 1)
+
+    def test_full_backup_and_retention(self):
+        for d in ("2026-01-01", "2026-01-02", "2026-01-03"):
+            for pre in ("chron-", "chron-full-"):
+                (Path(self.out)).mkdir(exist_ok=True)
+                (Path(self.out) / (pre + d + ".sqlite")).write_bytes(b"x")
+                (Path(self.out) / (pre + d + ".jsonl")).write_bytes(b"x")
+        rc, out = self.cli("backup", "--dir", self.out, "--full", "--keep", "2", "--keep-full", "2")
+        self.assertEqual(rc, 0, out)
+        names = sorted(p.name for p in Path(self.out).glob("*.sqlite"))
+        self.assertEqual(len([n for n in names if n.startswith("chron-full-")]), 2)
+        self.assertEqual(len([n for n in names if not n.startswith("chron-full-")]), 2)
+        self.assertNotIn("chron-2026-01-01.sqlite", names)  # самая старая ночная ушла вместе с JSONL
+        self.assertFalse((Path(self.out) / "chron-2026-01-01.jsonl").exists())
+        full = sorted(Path(self.out).glob("chron-full-2*.sqlite"))[-1]
+        c = sqlite3.connect(str(full))
+        self.assertEqual(c.execute("SELECT count(*) FROM metric WHERE ckey IS NOT NULL").fetchone()[0], 5)  # полная — с клетками
+        c.close()
+
+
 class TestMetricFiles(unittest.TestCase):
     """chron_metrics: строки чисел из JSON / CSV / таблиц md на маленьких файлах."""
 

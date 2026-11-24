@@ -2439,41 +2439,94 @@ def cmd_fields(a):
     return 0
 
 
+BACKUP_JSONL = ("protocol", "entry", "psec", "psec_flag", "psec_num", "metric", "metric_gap", "metric_fix", "link", "doc", "chunk", "kb_node")
+
+
+def slim_copy(db, dst):
+    """Летопись без клеток бэктеста (TK-704): новая БД текущей схемы + все таблицы живой, кроме строк metric с ckey (клетки — 4+ ГБ, пересчитываются;
+    их полный снимок — раз в неделю). Одна транзакция чтения живой БД; счётчики таблиц сверяются. → {таблица: строк}."""
+    conn = connect(dst)
+    try:
+        conn.execute("PRAGMA foreign_keys=OFF")  # infl_obs.cell / infl_inter.cell ссылаются на клетки, которых в урезанной копии нет
+        conn.execute("ATTACH DATABASE ? AS live", (str(db),))
+        conn.execute("BEGIN")
+        tables = [r[0] for r in conn.execute("SELECT name FROM main.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'fts_%' AND name <> 'fts'")]
+        counts = {}
+        for t in tables:
+            cols = ", ".join(r[1] for r in conn.execute("PRAGMA main.table_info(%s)" % t))
+            where = " WHERE ckey IS NULL" if t == "metric" else ""
+            conn.execute("INSERT INTO main.%s (%s) SELECT %s FROM live.%s%s" % (t, cols, cols, t, where))
+            counts[t] = conn.execute("SELECT count(*) FROM main.%s" % t).fetchone()[0]
+            if t != "metric" and counts[t] != conn.execute("SELECT count(*) FROM live.%s" % t).fetchone()[0]:
+                raise ChronError("урезанная копия: в таблице %s строк не столько, сколько в БД" % t)
+        conn.execute("INSERT INTO main.fts(node, title, body) SELECT node, title, body FROM live.fts")
+        counts["fts"] = conn.execute("SELECT count(*) FROM main.fts").fetchone()[0]
+        conn.execute("COMMIT")
+        conn.execute("DETACH DATABASE live")
+        if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise ChronError("урезанная копия не прошла integrity_check")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.execute("PRAGMA journal_mode=DELETE")
+        return counts
+    finally:
+        conn.close()
+
+
 def cmd_backup(a):
-    """Снимок БД (online backup API) + integrity_check + JSONL-выгрузка; с --box — rsync в Storage Box. Только на srv."""
+    """Снимок БД + JSONL → каталог (srv). Каждую ночь — летопись без клеток бэктеста (десятки МБ) и её JSONL; полная копия с клетками — в день
+    недели `--full-day` или с `--full` (4+ ГБ: хранится `--keep-full` штук). С --box — rsync в Storage Box. TK-704: до этого каждую ночь писалась полная копия."""
     db = local_db()
     if not db:
         raise ChronError("backup — на srv (рядом с БД)")
     out = Path(a.dir)
     out.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.datetime.now(TZ).strftime("%Y-%m-%d")
+    day = datetime.datetime.now(TZ)
+    stamp = day.strftime("%Y-%m-%d")
+    connect(db, ro=True).close()  # старая схема — перевести до копирования
     dst = out / ("chron-%s.sqlite" % stamp)
-    src = connect(db, ro=True)
-    tmp = sqlite3.connect(str(dst) + ".tmp")
-    src.backup(tmp)
-    tmp.close()
-    src.close()
-    chk = sqlite3.connect(str(dst) + ".tmp")
-    ok = chk.execute("PRAGMA integrity_check").fetchone()[0]
-    n = chk.execute("SELECT (SELECT count(*) FROM entry), (SELECT count(*) FROM psec), (SELECT count(*) FROM link), (SELECT count(*) FROM metric)").fetchone()
+    for f in (dst, Path(str(dst) + "-wal"), Path(str(dst) + "-shm")):
+        if f.exists():
+            f.unlink()
+    tmp = Path(str(dst) + ".tmp")
+    for f in (tmp, Path(str(tmp) + "-wal"), Path(str(tmp) + "-shm")):
+        if f.exists():
+            f.unlink()
+    n = slim_copy(db, tmp)
     jl = out / ("chron-%s.jsonl" % stamp)
+    chk = sqlite3.connect(str(tmp))
+    chk.row_factory = sqlite3.Row
     with open(str(jl) + ".tmp", "w", encoding="utf-8") as f:
-        chk.row_factory = sqlite3.Row
-        for t in ("protocol", "entry", "psec", "psec_flag", "psec_num", "metric", "metric_gap", "metric_fix", "link", "doc", "chunk", "kb_node"):
+        for t in BACKUP_JSONL:
             for r in chk.execute("SELECT * FROM %s" % t):
                 f.write(json.dumps({"t": t, **dict(r)}, ensure_ascii=False) + "\n")
     chk.close()
-    if ok != "ok":
-        raise ChronError("снимок не прошёл integrity_check: %s" % ok)
-    os.replace(str(dst) + ".tmp", str(dst))
+    os.replace(str(tmp), str(dst))
     os.replace(str(jl) + ".tmp", str(jl))
-    snaps = sorted(out.glob("chron-*.sqlite"))
-    for old in snaps[:-a.keep]:
-        old.unlink()
-        j = old.with_suffix(".jsonl")
-        if j.exists():
-            j.unlink()
-    print("backup: %s (записей %d, разделов %d, ссылок %d, чисел %d)" % (dst, n[0], n[1], n[2], n[3]))
+    print("backup: %s (записей %d, разделов %d, ссылок %d, чисел без клеток %d, %.1f МБ)" % (
+        dst, n["entry"], n["psec"], n["link"], n["metric"], dst.stat().st_size / 1e6))
+    if a.full or day.weekday() == a.full_day:
+        full = out / ("chron-full-%s.sqlite" % stamp)
+        src = connect(db, ro=True)
+        ftmp = Path(str(full) + ".tmp")
+        if ftmp.exists():
+            ftmp.unlink()
+        dstc = sqlite3.connect(str(ftmp))
+        src.backup(dstc)
+        dstc.close()
+        src.close()
+        chk = sqlite3.connect(str(ftmp))
+        ok = chk.execute("PRAGMA integrity_check").fetchone()[0]
+        chk.close()
+        if ok != "ok":
+            raise ChronError("полная копия не прошла integrity_check: %s" % ok)
+        os.replace(str(ftmp), str(full))
+        print("backup full: %s (%.1f ГБ)" % (full, full.stat().st_size / 1e9))
+    for pat, keep in (("chron-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].sqlite", a.keep), ("chron-full-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].sqlite", a.keep_full)):
+        for old in sorted(out.glob(pat))[:-keep]:
+            old.unlink()
+            j = old.with_suffix(".jsonl")
+            if j.exists():
+                j.unlink()
     if a.box:
         r = subprocess.run(["rsync", "-a", "--delete", "-e", "ssh -F /root/.ssh/config", str(out) + "/", a.box], capture_output=True, text=True)
         if r.returncode:
@@ -3012,9 +3065,12 @@ def main(argv=None):
     s = sp.add_parser("fields", help="перенесённые записи: заполненные поля и почему пусто")
     s.add_argument("--ids", action="store_true", help="номера записей по каждой причине")
     s.set_defaults(fn=cmd_fields)
-    s = sp.add_parser("backup", help="снимок БД (srv)")
+    s = sp.add_parser("backup", help="снимок БД без клеток + JSONL каждую ночь, полная копия раз в неделю (srv)")
     s.add_argument("--dir", default="/data/chron/backup")
-    s.add_argument("--keep", type=int, default=30)
+    s.add_argument("--keep", type=int, default=30, help="сколько ночных копий без клеток хранить")
+    s.add_argument("--keep-full", type=int, default=2, help="сколько полных копий (с клетками) хранить")
+    s.add_argument("--full-day", type=int, default=6, help="день недели полной копии (0 — понедельник … 6 — воскресенье, GMT+4)")
+    s.add_argument("--full", action="store_true", help="полная копия сейчас")
     s.add_argument("--box", help="rsync-цель, напр. box:chron/")
     s.set_defaults(fn=cmd_backup)
     s = sp.add_parser("serve", help="сайт: статика kb + /chron/ (srv, порт 8091)")
