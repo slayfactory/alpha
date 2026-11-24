@@ -99,6 +99,8 @@ set -o pipefail; $B1 2>&1 | tail -3 && rb_install $TGT/release/alpha $BIN_OUT-pl
   # TK-132 (А1 §0): настоящая метрика — clippy cognitive_complexity (порог 15) и too_many_lines; код не меняется,
   # clippy.toml пишется только в одноразовую копию дерева на VPS. Вывод: «функция @ файл:строка», по алфавиту
   complexity) CMD="echo cognitive-complexity-threshold = 15 > clippy.toml && cargo clippy --release $FEAT --target-dir $TGT --all-targets -j 3 -- -W clippy::cognitive_complexity -W clippy::too_many_lines 2>&1 | grep -E -A1 \"cognitive complexity of|too many lines\" | grep -E \"cognitive complexity of|too many lines|-->\" | paste - - | sed -E \"s/ *--> */ @ /\" | sort | tail -150" ;;
+  # TK-702: мёртвый код крейта — pub(crate) на всех модулях, публичны только входы CLI (tools/dead-probe.sh, одноразовая копия дерева)
+  deadcode) CMD="bash tools/dead-probe.sh $TGT-dead $J" ;;
   *) echo "неизвестно: $WHAT"; exit 2 ;;
 esac
 # shellcheck disable=SC2029
