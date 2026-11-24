@@ -135,10 +135,11 @@ def day_date(d: int) -> str:
 class StoreTape:
     """Сутки монеты со склада с количеством и агрессором: (t мс абс., цена e8, v = цена·кол-во, покупка тейкера); кэш LRU по суткам. Счётчики `n_store`, `n_zip`, `n_missing`."""
 
-    def __init__(self, win: str, sym: str, keep: int = 4):
-        self.root, self.sym, self.keep = WIN_ROOT % win, sym, keep
+    def __init__(self, win: str, sym: str, keep: int = 4, allow_nozip: bool = False):
+        """allow_nozip: сутки, чьего zip нет в дереве окна (RIF, VIC: монеты убраны из дерева после сборки таблицы TK-671), читаются со склада без сверки размера и времени zip (TK-701 единички; `n_nozip`)."""
+        self.root, self.sym, self.keep, self.allow_nozip = WIN_ROOT % win, sym, keep, allow_nozip
         self.cache, self.order = {}, []
-        self.n_store = self.n_zip = self.n_missing = 0
+        self.n_store = self.n_zip = self.n_missing = self.n_nozip = 0
 
     def day(self, d: int):
         if d in self.cache:
@@ -158,8 +159,12 @@ class StoreTape:
         try:
             zst = os.stat(zpath)
         except FileNotFoundError:
-            self.n_missing += 1
-            return None
+            v = self._from_store(date, d, None) if self.allow_nozip else None
+            if v is None:
+                self.n_missing += 1
+            else:
+                self.n_nozip += 1
+            return v
         v = self._from_store(date, d, zst)
         if v is None:
             self.n_zip += 1
@@ -175,7 +180,7 @@ class StoreTape:
                 if len(head) < HEAD_LEN or head[:4] != b"TK42":
                     return None
                 ver, size, mtime_s, mtime_ns, n = struct.unpack_from("<IQqII", head, 4)
-                if ver != 2 or size != zst.st_size or (mtime_s, mtime_ns) != divmod(zst.st_mtime_ns, 1_000_000_000):
+                if ver != 2 or (zst is not None and (size != zst.st_size or (mtime_s, mtime_ns) != divmod(zst.st_mtime_ns, 1_000_000_000))):
                     return None
                 raw_a, comp_a, flags, qty_dec = struct.unpack_from("<IIII", head, 64)
                 qty_step, raw_q, comp_q = struct.unpack_from("<QII", head, 80)

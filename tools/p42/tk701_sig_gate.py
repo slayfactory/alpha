@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """П-42 TK-701 (единички, набор `t701`): ворота столбцов `tfv60`, `pre_n5`, `oi_c1` (`tk701_sig.py`) по ВСЕМ сигналам базы файла (включая сигналы без строки таблицы TK-671), без P&L.
-  G-brute  — независимый путь: лента читается из zip (`_from_zip`, не из склада), NATR считается прямым циклом по минутам, `oi_c1` — прямым чтением строк metrics; значения сверяются с файлом столбцов;
+  G-brute  — независимая реализация: `tfv60` и `pre_n5` — прямым циклом по тикам склада (не `flow_features` / `searchsorted`), NATR — прямым циклом по минутам, `oi_c1` — прямым чтением строк metrics; значения сверяются с файлом столбцов.
+             Склад тиков доказан (владелец 19.11: zip с ним не сверяются; многие zip окна обнулены) — лента берётся со склада, проверяется код признаков, не лента;
   G-causal — тики с t ≥ sig отравлены (цена ×1,7, оборот ×3, бит агрессора инвертирован): `tfv60` и `pre_n5` не меняются; контроль силы — отравление тиков с t < sig (последние 60 с) меняет значения;
   G-eq     — в самом `tk701_sig.py` (`g_eq` в info.json): `tfv60` и `oi_c1` = столбцы таблицы TK-671 на сигналах таблицы.
   python3 tk701_sig_gate.py --win wb --side long --out /data/p42-tk701s/fam/c701/gate/gate-wb-long.json [--k-brute 200] [--k-causal 200]"""
@@ -15,16 +16,35 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import tk701_sig as S  # noqa: E402,I001  (первым: задаёт TK594_METRICS до импорта tk594_feat)
 import tk594_feat as F594  # noqa: E402
-import tk701_sig as S  # noqa: E402
 import tk701_tape as T  # noqa: E402
+from tk698_path import natr_at  # noqa: E402
 
 
-class ZipTape(T.StoreTape):
-    """Лента только из zip (независимый декодер): склад не открывается."""
-
-    def _from_store(self, date, d, zst):
-        return None
+def brute_vals(Tm, P, V, B, sig, s, natr):
+    """(tfv60, pre_n5) прямым циклом по тикам: сумма оборота и оборота покупок тейкера за [sig − 60 с, sig); цена последней сделки строго раньше sig и не позже sig − 5 с."""
+    nan = float("nan")
+    vt = vb = 0.0
+    n60 = 0
+    i1 = i0 = -1
+    for i in range(len(Tm)):
+        t = int(Tm[i])
+        if t < sig:
+            i1 = i
+            if t >= sig - 60_000:
+                n60 += 1
+                vt += float(V[i])
+                if B[i]:
+                    vb += float(V[i])
+        if t <= sig - S.BACK_MS:
+            i0 = i
+    if i1 < 0 or int(Tm[i1]) < sig - T.LOOK_MS:
+        return nan, nan
+    tfv = s * (2.0 * vb - vt) / vt if n60 > 0 and vt > 0 else nan
+    if i0 < 0 or int(Tm[i0]) < sig - T.LOOK_MS or not (natr > 0):
+        return tfv, nan
+    return tfv, s * (float(P[i1]) / float(P[i0]) - 1.0) / natr
 
 
 def natr_loop(c_path, b, p=30):
@@ -91,22 +111,22 @@ def main():
     tab = pd.read_parquet(os.path.join(S.PROD, "lvl-%s-%s" % (a.win, a.side), "rows.parquet"), columns=["row_id", "sym", "sig_ms", "abs_ms", "base_pass"])
     rows = S.ext_rows(eps, tab, a.win, a.side).set_index("row_id")
     assert list(rows.index) == list(res.index) and (rows["sym"].to_numpy() == res["sym"].to_numpy()).all() and (rows["sig_ms"].to_numpy() == res["sig_ms"].to_numpy()).all(), "строки файла ≠ ext_rows"
-    coins = set(x.strip() for x in open(S.COINS_FILE, encoding="utf-8") if x.strip())
+    coins = S.coins_set()
     rng = np.random.default_rng(a.seed)
     cand = np.flatnonzero(np.isin(res["sym"].to_numpy(), list(coins)) & np.isfinite(res["tfv60"].to_numpy()))
     out = dict(win=a.win, side=a.side, rows=int(len(res)), candidates_with_tape=int(len(cand)))
-    # ---- G-brute: лента из zip, NATR циклом
+    # ---- G-brute: признаки циклом по тикам склада, NATR циклом
     kb = rng.choice(cand, size=min(a.k_brute, len(cand)), replace=False)
     d_tfv, d_pre, d_nat, nb_pre_nan = [], [], [], 0
     for k in kb:
         r = rows.iloc[k]
         sg, sg_rel, sym = int(r["abs_ms"]), int(r["sig_ms"]), str(r["sym"])
-        tp = ZipTape(a.win, sym)
+        tp = T.StoreTape(a.win, sym, allow_nozip=True)
         Tm, P, V, B, miss = tp.span(sg - T.LOOK_MS, sg - 1)
         cp = S.CACHE % (a.win, sym)
         nat = natr_loop(cp, sg_rel // 60000 - 1) if os.path.exists(cp) else float("nan")
-        tfv, pre = S.sig_vals(Tm, P, V, B, sg, s, nat)
-        d_tfv.append(abs(tfv - res["tfv60"].iloc[k]))
+        tfv, pre = brute_vals(Tm, P, V, B, sg, s, nat)
+        d_tfv.append(abs(tfv - res["tfv60"].iloc[k]) if not np.isnan(tfv) else 1e9)      # в файле значение есть, а цикл дал пусто — расхождение
         if np.isnan(pre) != np.isnan(res["pre_n5"].iloc[k]):
             nb_pre_nan += 1
         elif not np.isnan(pre):
@@ -119,10 +139,10 @@ def main():
     for k in kc:
         r = rows.iloc[k]
         sg, sg_rel, sym = int(r["abs_ms"]), int(r["sig_ms"]), str(r["sym"])
-        tp = T.StoreTape(a.win, sym)
+        tp = T.StoreTape(a.win, sym, allow_nozip=True)
         Tm, P, V, B, miss = tp.span(sg - T.LOOK_MS, min(sg + 600_000, T.LAST_MS - 1))
         cp = S.CACHE % (a.win, sym)
-        nat = float(S.natr_at(cp, np.array([sg_rel // 60000 - 1]))[0]) if os.path.exists(cp) else float("nan")
+        nat = float(natr_at(cp, np.array([sg_rel // 60000 - 1]))[0]) if os.path.exists(cp) else float("nan")
         base = S.sig_vals(Tm, P, V, B, sg, s, nat)
         fut = Tm >= sg
         P2, V2, B2 = P.copy(), V.copy(), B.copy()

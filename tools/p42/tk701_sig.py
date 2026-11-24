@@ -7,7 +7,7 @@
   pre_n5 = s · (P_посл / P_5с − 1) / NATR, P_посл — цена последней сделки строго раньше sig, P_5с — цена последней сделки не позже sig − 5 с (в пределах 35 мин назад), NATR — 30-минутный
            средний TR / close закрытой минуты перед минутой сигнала (`tk698_path.natr_at`, то же определение, что у TK-701 / TK-698); NaN — нет сделок / NATR ≤ 0 / нет кэша минуток;
            это знаковый ход к цене СИГНАЛА (у TK-701 столбец `pre_n5` считался к цене входа — другая величина, пороги новые);
-  oi_c1  = (OI(T*) / OI(T* − 12) − 1) · 1e4 (TK-594 `deriv_features`: строка metrics строго до сигнала, T* = ⌊(sig − 10 мин) / 5 мин⌋; метрики — с 18.07, раньше NaN) — знак стороны не применяется
+  oi_c1  = (OI(T*) / OI(T* − 12) − 1) · 1e4 (TK-594 `deriv_features`: строка metrics строго до сигнала, T* = ⌊(sig − 10 мин) / 5 мин⌋; метрики `/data/p42-tk599/metrics-all` — с 17.06; нет файла монеты на сутки — NaN) — знак стороны не применяется
            (рост открытого интереса за час); окно 60 мин.
 Охват: лента 01.07–13.11 (сутки < 01.07 и ≥ 14.11 не открываются, В-170); первые 35 мин суток 01.07 и сутки без файла ленты — NaN (пустое значение фильтр пропускает, PS-993 (д)).
 Строки — все сигналы базы окна и стороны (таблица TK-671 плюс сигналы без её строки; `ext_rows`, как `tk697_ext`), значения зависят от монеты и минуты сигнала; монеты вне c539 (TradFi) — NaN.
@@ -26,6 +26,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+os.environ.setdefault("TK594_METRICS", "/data/p42-tk599/metrics-all")      # источник метрик таблицы TK-671 (ftab TK-634 / rustfeat_pass.sh): 17.06–13.11; в `/data/p42-metrics` — только с 18.07 (тогда oi_c1 июля пуст)
 import tk594_feat as F594  # noqa: E402
 import tk701_tape as T  # noqa: E402
 
@@ -38,6 +39,12 @@ OUT = "/data/p42-tk701s/fam/c701/%s-%s.parquet"
 SIDE_L = {"long": "L", "short": "S"}
 NAMES = ["tfv60", "pre_n5", "oi_c1"]
 BACK_MS = 5000
+METRICS_D0 = 20621                                              # 2026-06-17 (дни от 1970-01-01): первые сутки `/data/p42-tk599/metrics-all`
+
+
+def coins_set():
+    """Монеты c539 — как `tk625_run.Uni("c539").coins()` (файл — одна строка через запятую)."""
+    return set(x for x in open(COINS_FILE, encoding="utf-8").read().replace(chr(10), ",").split(",") if x)
 
 
 def ext_rows(eps, tab, win, side):
@@ -77,20 +84,20 @@ def compute(win, side, procs=1):
     eps = pd.read_parquet(os.path.join(FEAT34, "h775", "%s-%s" % (win, sl), "eps-%s.parquet" % sl), columns=["sym", "sig_ms"])
     tab = pd.read_parquet(os.path.join(PROD, "lvl-%s-%s" % (win, side), "rows.parquet"), columns=["row_id", "sym", "sig_ms", "abs_ms", "base_pass"])
     rows = ext_rows(eps, tab, win, side)
-    coins = set(x.strip() for x in open(COINS_FILE, encoding="utf-8") if x.strip())
+    coins = coins_set()
     n = len(rows)
     sym = rows["sym"].astype(str).to_numpy()
     sig_rel = rows["sig_ms"].to_numpy(np.int64)
     sig = rows["abs_ms"].to_numpy(np.int64)
     out = {c: np.full(n, np.nan) for c in NAMES}
     t0 = time.time()
-    cnt = dict(n_store=0, n_zip=0, n_missing=0)
+    cnt = dict(n_store=0, n_zip=0, n_missing=0, n_nozip=0)
     for sy in sorted(set(sym) & coins):
         g = np.flatnonzero(sym == sy)
         g = g[np.argsort(sig[g], kind="stable")]
         cp = CACHE % (win, sy)
         natr = natr_at(cp, sig_rel[g] // 60000 - 1) if os.path.exists(cp) else np.full(len(g), np.nan)
-        tp = T.StoreTape(win, sy)
+        tp = T.StoreTape(win, sy, allow_nozip=True)
         for j, k in enumerate(g):
             sg = int(sig[k])
             a = sg - T.LOOK_MS
@@ -102,7 +109,7 @@ def compute(win, side, procs=1):
             out["tfv60"][k], out["pre_n5"][k] = sig_vals(Tm, P, V, B, sg, s, float(natr[j]))
         for c in cnt:
             cnt[c] += getattr(tp, c)
-        d0, dmax = T.FIRST_MS // T.DAY_MS, int((sig[g] // T.DAY_MS).max())      # сетка metrics с 01.07 (файлов раньше 18.07 нет): первая строка монеты не зависит от того, какие сигналы есть
+        d0, dmax = METRICS_D0, int((sig[g] // T.DAY_MS).max())      # сетка metrics с первых суток `metrics-all` (17.06), как у таблицы TK-671: правило «первая строка монеты ≤ T* − 1 сут.» читает самую раннюю строку монеты, а не первую после 01.07
         M, first_row = F594.load_metrics(sy, d0, dmax)
         ft, fr = F594.load_funding(sy)
         keep = ft >= T.FIRST_MS
@@ -123,7 +130,7 @@ def compute(win, side, procs=1):
 def check(res, win, side):
     """G-eq (без P&L): у сигналов, которые есть в таблице TK-671, `tfv60` и `oi_c1` совпадают со столбцами таблицы (float32): рисунок NaN и значения; считаются строки таблицы с base_pass > 0 и монетой из c539."""
     import pandas as pd
-    coins = set(x.strip() for x in open(COINS_FILE, encoding="utf-8") if x.strip())
+    coins = coins_set()
     tab = pd.read_parquet(os.path.join(PROD, "lvl-%s-%s" % (win, side), "rows.parquet"), columns=["row_id", "sym", "sig_ms", "base_pass"])
     tab = tab[(tab["base_pass"] > 0) & tab["sym"].isin(coins)]
     f = pd.read_parquet(os.path.join(DATA671, "%s.parquet" % side), columns=["win", "row_id", "tfv60", "oi_c1"])
