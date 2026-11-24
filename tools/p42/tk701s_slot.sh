@@ -13,8 +13,8 @@ TL=$(date +%s)
 trap 'rmdir $L 2>/dev/null; echo "== $(date -u +%FT%TZ) SLOT-RELEASED held=$(( $(date +%s) - TL ))s" >> $LOG' EXIT
 echo "== $(date -u +%FT%TZ) SLOT-TAKEN" >> $LOG
 cd $G/code
-env -u TK674_BIN -u TK674_ROOT TK674_BIN=$REF TK674_GBASE=/data/p42-tk688/res/gate688.json timeout $(( BUDGET - 20 )) bash tk701s_chain.sh $ENTRY engine; RC=$?
+env -u TK674_BIN -u TK674_ROOT TK674_BIN=$REF TK674_GBASE=/data/p42-tk680n/res/gbase688.json timeout $(( BUDGET - 20 )) bash tk701s_chain.sh $ENTRY engine; RC=$?
 echo "== $(date -u +%FT%TZ) chain rc=$RC left=$(( BUDGET - ($(date +%s) - TL) ))s" >> $LOG
 echo "SLOT-DONE" >> $LOG
 rmdir $L 2>/dev/null; trap - EXIT; echo "== $(date -u +%FT%TZ) SLOT-RELEASED held=$(( $(date +%s) - TL ))s" >> $LOG
-[ $RC -eq 0 ] && systemd-run --wait --collect --unit=tk701s-post -p Nice=10 -p CPUQuota=100% -p MemoryMax=20G -p WorkingDirectory=$G/code -E TK674_BIN=$REF -E TK674_GBASE=/data/p42-tk688/res/gate688.json bash tk701s_chain.sh $ENTRY post
+[ $RC -eq 0 ] && systemd-run --wait --collect --unit=tk701s-post -p Nice=10 -p CPUQuota=100% -p MemoryMax=20G -p WorkingDirectory=$G/code -E TK674_BIN=$REF -E TK674_GBASE=/data/p42-tk680n/res/gbase688.json bash tk701s_chain.sh $ENTRY post
