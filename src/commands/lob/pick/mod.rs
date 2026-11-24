@@ -65,9 +65,11 @@ pub use pool::{
     EXCLUDED_BTC_ETH, EXCLUDED_NON_CRYPTO, EXCLUDED_TOO_YOUNG, MIN_LISTED_DAYS, NON_CRYPTO_BASES,
     POOL_SIZE, RANK_BEYOND_POOL,
 };
+#[cfg(test)]
+pub use table::write_instruments_csv;
 pub use table::{
     build_candidate_table, instruments_csv_reader, instruments_for_pool, write_candidate_table_csv,
-    write_instruments_csv, write_instruments_csv_with_h3, CandidateRow,
+    write_instruments_csv_with_h3, CandidateRow,
 };
 
 use measure::wall_clock_ms;

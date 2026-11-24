@@ -30,6 +30,7 @@
 //! GC ни при чём — тот считается на пути разбор-и-запись книги.
 
 use crate::bybit::sign::Credentials;
+use crate::bybit::ws::format_e9;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -117,32 +118,6 @@ pub fn far_price_e9(mid_price_e9: i64, tick_e9: i64, ticks_from_mid: i64, side: 
         OrderSide::Buy => mid_price_e9 - ticks_from_mid * tick_e9,
         OrderSide::Sell => mid_price_e9 + ticks_from_mid * tick_e9,
     }
-}
-
-/// Обратное к `bybit::ws::parse_e9`: величина в 1e-9 обратно в десятичную
-/// строку, которую API Bybit принимает для `qty`/`price`. Не переиспользует
-/// `ws.rs` (другой файл этого прохода) для инверсии — направления разные, а
-/// `parse_e9` там приватного формата не задаёт; тест
-/// `format_e9_round_trips_through_ws_parse_e9` ниже проверяет, что оба
-/// файла всё равно говорят об одной и той же величине.
-fn format_e9(v: i64) -> String {
-    let neg = v < 0;
-    let v = v.unsigned_abs();
-    let int_part = v / 1_000_000_000;
-    let frac_part = v % 1_000_000_000;
-    let mut s = if frac_part == 0 {
-        int_part.to_string()
-    } else {
-        let mut frac_str = format!("{frac_part:09}");
-        while frac_str.ends_with('0') {
-            frac_str.pop();
-        }
-        format!("{int_part}.{frac_str}")
-    };
-    if neg {
-        s.insert(0, '-');
-    }
-    s
 }
 
 #[derive(Debug, Clone, Serialize)]

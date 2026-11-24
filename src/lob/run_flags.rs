@@ -61,6 +61,7 @@ impl RunFlags {
         }
     }
 
+    #[cfg(test)]
     /// Строки манифеста `env:ALPHA_X=значение` по имени — тот же вид, что пишет `bounce_grid::plan` (С-06).
     pub fn snapshot_lines(&self) -> Vec<String> {
         self.raw

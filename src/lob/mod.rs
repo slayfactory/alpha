@@ -30,4 +30,3 @@ pub mod step_schedule;
 pub mod strategy;
 pub mod touch_axes;
 pub mod twin;
-pub mod watch;

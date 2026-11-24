@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use clap::Args;
 
 use crate::bybit::probe::{
-    run_cycles, summarize, BybitPrivateRest, OrderSide, PrivateRest, ProbeError, ProbeParams,
-    RttSummary, SignedRequest, DEFAULT_RECV_WINDOW_MS, MIN_CYCLES,
+    run_cycles, summarize, BybitPrivateRest, PrivateRest, ProbeError, ProbeParams, RttSummary,
+    SignedRequest, DEFAULT_RECV_WINDOW_MS, MIN_CYCLES,
 };
 use crate::bybit::rest::BYBIT_MAINNET_URL;
 use crate::bybit::sign::Credentials;
@@ -61,16 +61,6 @@ pub struct ProbeArgs {
     pub fixture: bool,
 }
 
-fn parse_probe_side(s: &str) -> anyhow::Result<OrderSide> {
-    match s.to_ascii_lowercase().as_str() {
-        "buy" => Ok(OrderSide::Buy),
-        "sell" => Ok(OrderSide::Sell),
-        other => Err(anyhow::anyhow!(
-            "сторона обязана быть buy или sell, получено {other}"
-        )),
-    }
-}
-
 /// Консервный транспорт для `--fixture`: успешное создание и успешная отмена
 /// с непустым `orderId` — тот же контракт ответа, что ждёт `run_cycle`.
 struct FixturePrivateRest;
@@ -106,7 +96,7 @@ pub fn run_probe(args: &ProbeArgs) -> anyhow::Result<(RttSummary, PathBuf)> {
         .map_err(|e| anyhow::anyhow!("ключи: {e:?} — выставьте BYBIT_API_KEY/BYBIT_API_SECRET"))?;
     let params = ProbeParams {
         symbol: args.symbol.clone(),
-        side: parse_probe_side(&args.side)?,
+        side: super::latency::parse_side(&args.side)?,
         qty_e9: args.qty_e9,
         tick_e9: args.tick_e9,
         ticks_from_mid: args.ticks_from_mid,

@@ -632,6 +632,7 @@ fn parse_half(spec: &str, base: &str) -> anyhow::Result<Option<u8>> {
     Ok(Some(q8))
 }
 
+#[cfg(test)]
 /// Формы сетки в порядке `stops × takes × DEADLINE_SECS`; имена —
 /// `bounce_verdict::form_label`, их же читает вердикт. Повторы имён отвергает
 /// `run_bounce_grid`. Это — прежний режим входа (F5, В-74): `touch`,
@@ -652,6 +653,7 @@ pub fn grid_forms(
     )
 }
 
+#[cfg(test)]
 /// Та же сетка, но с осями срока жизни входа (F5, В-74) и формы выхода
 /// (F7, Б-75): значения `entry_ttl`/`exit_form` — **внутренние** множители,
 /// поэтому при `&[EntryTtl::Touch]` и `&[ExitForm::None]` порядок

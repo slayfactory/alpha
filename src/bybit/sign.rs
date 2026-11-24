@@ -127,34 +127,6 @@ impl Credentials {
         mac.update(expires_ms.to_string().as_bytes());
         Ok(hex_lower(&mac.finalize().into_bytes()))
     }
-
-    /// Та же подпись v5, без единой аллокации (таск 17, запрет 1 горячего
-    /// пути). Не делегирует `sign` выше: там `format!` склеивает payload в
-    /// одну `String`, а `hex_lower` возвращает `String` — обе аллоцируют, и
-    /// именно от этого зависит `bybit::trade_ws::OrderSigner::sign_into`,
-    /// раз `Credentials` — его боевая реализация (`impl OrderSigner for
-    /// Credentials`, `trade_ws.rs`). Формула та же: HMAC кормится теми же
-    /// четырьмя кусками по отдельности через несколько `update` — порядок
-    /// байт на входе алгоритма от этого не меняется, что и доказывает
-    /// `sign_into_matches_sign_for_the_same_inputs` ниже сверкой с `sign`.
-    pub fn sign_into(
-        &self,
-        timestamp_ms: i64,
-        recv_window_ms: u32,
-        body: &str,
-        out: &mut [u8; 64],
-    ) -> Result<(), CredentialsError> {
-        let mut mac = HmacSha256::new_from_slice(self.api_secret.as_bytes())
-            .map_err(|_| CredentialsError::MacUnusable)?;
-        let mut ts_buf = [0u8; 20];
-        mac.update(write_i64(timestamp_ms, &mut ts_buf));
-        mac.update(self.api_key.as_bytes());
-        let mut rw_buf = [0u8; 10];
-        mac.update(write_u32(recv_window_ms, &mut rw_buf));
-        mac.update(body.as_bytes());
-        hex_lower_into(&mac.finalize().into_bytes(), out);
-        Ok(())
-    }
 }
 
 fn read_var(name: &'static str) -> Result<String, CredentialsError> {
@@ -184,57 +156,6 @@ fn hex_lower(bytes: &[u8]) -> String {
         out.push(nibble(b & 0x0f) as char);
     }
     out
-}
-
-/// `hex_lower` в предвыделенный буфер вместо `String` — единственная
-/// разница с ним; `out.len() == bytes.len() * 2` для HMAC-SHA256 (32 байта
-/// дайджеста → 64 hex-символа) гарантирует вызывающий типом `[u8; 64]`.
-fn hex_lower_into(bytes: &[u8], out: &mut [u8; 64]) {
-    debug_assert_eq!(bytes.len() * 2, out.len(), "дайджест не 32 байта");
-    for (i, b) in bytes.iter().enumerate() {
-        out[i * 2] = nibble(b >> 4);
-        out[i * 2 + 1] = nibble(b & 0x0f);
-    }
-}
-
-/// Десятичные ASCII-цифры `value` в `buf`, без аллокации; знак — только для
-/// отрицательных (сюда не должны прилетать, но тип `timestamp_ms` — `i64`,
-/// а не `u64`, и функция обязана быть тотальной, не паникующей на границе).
-/// `i64::MIN..=i64::MAX` умещается в 20 байт буфера (19 цифр + знак).
-fn write_i64(value: i64, buf: &mut [u8; 20]) -> &[u8] {
-    if value == 0 {
-        buf[0] = b'0';
-        return &buf[..1];
-    }
-    let neg = value < 0;
-    let mut n = value.unsigned_abs();
-    let mut i = buf.len();
-    while n > 0 {
-        i -= 1;
-        buf[i] = b'0' + (n % 10) as u8;
-        n /= 10;
-    }
-    if neg {
-        i -= 1;
-        buf[i] = b'-';
-    }
-    &buf[i..]
-}
-
-/// Тот же приём для `recv_window_ms: u32` (10 цифр хватает на `u32::MAX`).
-fn write_u32(value: u32, buf: &mut [u8; 10]) -> &[u8] {
-    if value == 0 {
-        buf[0] = b'0';
-        return &buf[..1];
-    }
-    let mut n = value;
-    let mut i = buf.len();
-    while n > 0 {
-        i -= 1;
-        buf[i] = b'0' + (n % 10) as u8;
-        n /= 10;
-    }
-    &buf[i..]
 }
 
 /// Синхронизация тестов, трогающих `BYBIT_API_KEY`/`BYBIT_API_SECRET`:
