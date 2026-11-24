@@ -291,6 +291,8 @@ def cmd_base(a):
     else:
         wins = ["wa", "wb", "wc"]
     sys.path.insert(0, TK700)
+    if not a.dry:
+        os.environ["TK700_WINSET"] = "h1"                                   # как `ho.modes(False)`: до первого импорта tk604_stats (его тянет tk674_axes)
     line = base_line(a.side, ckey)
     import tk700_cells as cl                                                # noqa: E402
     import tk700_mass as mm                                                 # noqa: E402
