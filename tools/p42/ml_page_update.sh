@@ -7,8 +7,9 @@
 #   сверяет каждую линию с летописью (/data/chron/chron.sqlite) и принятыми числами — расхождение останавливает выкладку.
 # Вид «Веер» — data/fan/ (tk684_fan.py: все клетки перебора c539 из летописи, ≈ 8 мин, юнит Nice 19, пик 3,4 ГБ); строится, если каталога ещё нет, пересчитать после новых клеток (четвёрки шорта, пересчёт bd): REBUILD_FAN=1 bash tools/p42/ml_page_update.sh
 set -euo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/../_ssh.sh"
 cd "$(dirname "$0")"
-KEY=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15)
+KEY=("${SSH_ID[@]}" -o ConnectTimeout=15)
 HOST=root@5.231.25.224
 python -c "import json,sys; json.load(open('ml_features.json', encoding='utf-8'))" || { echo "ml_features.json — не JSON"; exit 2; }
 tar -c ml_features.schema.json tk593_page.py tk593_template.html tk684_fan.js ml_page_server.py | ssh "${KEY[@]}" "$HOST" 'tar -x -C /data/pages/_src'

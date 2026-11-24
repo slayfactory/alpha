@@ -1,6 +1,6 @@
 # G-022: независимый клиент A/B на srv — передача дел (16.11.2026, 17:35 UTC)
 
-Ветка `bb/g-022-independent-client-ab-v1-thr_6kk25ds92h`. Итоговый отчёт `docs/findings/independent-client-ab-2026-11-16.md` **ещё не написан** — ждёт конца замера (≈ 19:06 UTC) и полного прогона `analyze.py`. Здесь — состояние, промежуточные числа, грабли, порядок завершения.
+Ветка `bb/g-022-independent-client-ab-v1-thr_6kk25ds92h`. Итоговый отчёт `docs/archive/findings/independent-client-ab-2026-11-16.md` **ещё не написан** — ждёт конца замера (≈ 19:06 UTC) и полного прогона `analyze.py`. Здесь — состояние, промежуточные числа, грабли, порядок завершения.
 
 ## Что запущено на srv (всё `systemd-run`, прод не тронут)
 
@@ -58,5 +58,5 @@
 1. `systemctl is-active indep-ab-bingx indep-ab-binance` — завершились сами; `systemctl stop indep-ab-hostsample`; `systemctl stop indep-ab-perfexec2` (SIGINT, файл закроется); `perf script -i host/perf-exec2.data -F time,comm,pid,event,trace > /data/indep-ab/perf2.txt`; `python3 perf_at_hour.py <txt> <epoch часа>` для 18:00 и 19:00 (сегмент 1 — для 17:00).
 2. Полные прогоны юнитами (Nice 19, ionice idle, ≈ 5 и ≈ 20 мин): `python3 analyze.py bingx --from 1794846000 --to <epoch 19:05:30> --json an-bingx-full.json`, то же `binance` (to = epoch 19:01:00). Таблицы по трём часам (17, 18, 19) берутся из `profile_*`, `arrival_gaps_*`, `uk_max_seconds`.
 3. `python3 hourwin.py 2026-11-16T18` и `…T19`; профили боя `run-prod-profiles.sh "<H17> <H18> <H19>" /data/indep-ab/prodprof-all` (исправленным скриптом), а также 14:00–16:00 для суточной картины; `at00.py` / `hourly_steal_vs_queue.py` (после 19:00) для `queue_lag`; `prod_nodisturb.py /data/collect/bingx/data 1794845452 <конец>` (старт клиентов 16:10:52 = 1794845452).
-4. Написать `docs/findings/independent-client-ab-2026-11-16.md` по-русски (методика, условия рядом с числами по п. 23 preferences, таблицы выше по полному окну, ответы на оба вопроса, отклонения: ограничение CPU первые 5 мин, исправление профильщика, чужой `hold_scan`, IO-затор 16:33); добавить в репо `perf_at_hour.py`, `prod_nodisturb.py`, `bingx_shard_spike.py`, `run-prod-profiles.sh`, `at00.py`; коммит (только свои файлы).
+4. Написать `docs/archive/findings/independent-client-ab-2026-11-16.md` по-русски (методика, условия рядом с числами по п. 23 preferences, таблицы выше по полному окну, ответы на оба вопроса, отклонения: ограничение CPU первые 5 мин, исправление профильщика, чужой `hold_scan`, IO-затор 16:33); добавить в репо `perf_at_hour.py`, `prod_nodisturb.py`, `bingx_shard_spike.py`, `run-prod-profiles.sh`, `at00.py`; коммит (только свои файлы).
 5. Сырое не удалять (п. 3 preferences): после анализа `zstd` каталогов `run1`, `run1bn`, `host` допустим (сжатие, не удаление).

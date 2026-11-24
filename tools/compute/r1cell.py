@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TK-250 (П1 плана TK-249): R1-клетки конвейера формы — один модуль вместо tk064-r1cells.py (thresholds/apply, FAM) и tk202-r1x.py (spec/apply, ctx).
 
-  r1cell.py spec  --plan docs/registry/plan_cells.jsonl --out X.r1spec [--which x|all] [--hyp Г-39,Г-04] [--q 20,33] [--hash h1,h2]    # ПК
+  r1cell.py spec  --plan docs/archive/registry/plan_cells.jsonl --out X.r1spec [--which x|all] [--hyp Г-39,Г-04] [--q 20,33] [--hash h1,h2]    # ПК
   r1cell.py apply --spec X.r1spec --pool /data/tk064/pool --t46 /data/tk046 --thr tk202-thresholds.json --out DIR [--months feb,mar]  # calc
 
 apply пишет DIR/cells/<мес>/<хеш>.csv (формат tk064: symbol,day_utc,signal_index,t0_ns,net_bps,reason,exit_ns,qty; исходы из rounds.csv B1),

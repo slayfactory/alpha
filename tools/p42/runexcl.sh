@@ -4,7 +4,8 @@
 # Использование: [P42_THREADS=4] bash tools/p42/runexcl.sh [бинарь на srv]
 set -euo pipefail
 SRV="${P42_SRV:-/data/p42v2}"; LOC="${P42_LOCAL:-data/p42v2}"; BIN="${1:-$SRV/bin/alpha-p42-v7}"; TH="${P42_THREADS:-4}"
-K=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15)
+. "$(dirname "${BASH_SOURCE[0]}")/../_ssh.sh"
+K=("${SSH_ID[@]}" -o ConnectTimeout=15)
 H=root@5.231.25.224
 cd "$(dirname "$0")/../.."
 ssh "${K[@]}" "$H" "rm -rf $SRV/excl_in $SRV/out/excl; mkdir -p $SRV/excl_in"

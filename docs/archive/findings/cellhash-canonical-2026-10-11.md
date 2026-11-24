@@ -12,7 +12,7 @@ band_exit); σ-каталог; исполнение (rtt place/cancel/taker и �
 ## Что изменено против ред. 1 (замечания Судьи)
 
 1. **Наборы — из `--set` командных файлов прогонов на calc, не из имён и не по умолчанию.**
-   - p05 (все 133 клетки b/c/a1/a2): `docs/registry/files/tk040-sets-jan.txt` (165 `--set` из
+   - p05 (все 133 клетки b/c/a1/a2): `docs/archive/registry/files/tk040-sets-jan.txt` (165 `--set` из
      `/data/tk046/jan/home/alpha/tmp-p07/cells-by-day/jall-jan-2026-01-02.sh`). Набор без `aNN` в имени = age 2700 (не 7200):
      `p05-b/p05-f25-u25k` (age 2700) ≠ `p05-c/p05-f25-a120-u25k` (age 7200). Допущение «возраст p05-b = 7200 из шапки группы» ложно, снято.
    - e106-pop: `age=2700,side=bid,btc4h_max=-44.55,r1_born_shift_cbps_min=-9e18` (`/data/tk0115/tk115-delta-day.sh:38`) — это **не** B1.

@@ -54,7 +54,7 @@ tools/compute/regrun.sh	ЯДРО	tools/registry/guard.py,tools/registry/regrun.s
 tools/compute/run-grid.sh	ЯДРО	docs/COMMANDS.md,tools/systemd/alpha-grid-nightly.service,tools/systemd/deck/alpha-grid-nightly.service
 tools/compute/sched-deploy.sh	ЗАМЫКАНИЕ	sched_cfg.py
 tools/compute/sched_cfg.py	ЗАМЫКАНИЕ	alsched.py,sched-deploy.sh
-tools/compute/sched_sim.py	АРХИВ	docs/archive/findings/alpha-review-B2-infra-2026-10-10.md,docs/archive/findings/alpha-review-summary-2026-10-10.md,docs/research/reviews/tk133-p3-sched-2026-10-10.md
+tools/compute/sched_sim.py	АРХИВ	docs/archive/findings/alpha-review-B2-infra-2026-10-10.md,docs/archive/findings/alpha-review-summary-2026-10-10.md,docs/archive/research/reviews/tk133-p3-sched-2026-10-10.md
 tools/compute/sets-check.sh	ЗАМЫКАНИЕ	_env.sh,sets.txt
 tools/compute/sets-nightly.txt	ЗАМЫКАНИЕ	nightly-grid.sh,sets-check.sh,sets.txt
 tools/compute/sets.txt	ЗАМЫКАНИЕ	_env.sh,approach-scan.sh,nightly-grid.sh,oos-frozen.sh
@@ -69,8 +69,8 @@ tools/compute/titration-dashboard-build.py	ЗАМЫКАНИЕ	titration-dashboar
 tools/compute/titration-dashboard-data.py	ЗАМЫКАНИЕ	titration-dashboard-build.py,titration-dashboard-merge.py
 tools/compute/titration-dashboard-merge.py	ЯДРО	tools/archive/README.md,tools/dashboard/build.py
 tools/compute/titration-dashboard.html	ЯДРО	tools/dashboard/dashboard.html
-tools/compute/titration-points.py	АРХИВ	.memory/projects/archive/state-history-2026-09-23.md,docs/archive/findings/t20-p2-btc-minute-2026-09-26.txt,docs/plan/EXPERIMENTS.md,docs/plan/dev-plan-2026-09-23.md
-tools/compute/titration-read.py	АРХИВ	docs/archive/findings/t20-audit-check-2026-09-26.md,docs/archive/findings/third-party-backtest-approaches-2026-09-26.md,docs/archive/findings/titration-regime-2026-09-23.md,docs/plan/dev-plan-2026-09-23.md
+tools/compute/titration-points.py	АРХИВ	.memory/projects/archive/state-history-2026-09-23.md,docs/archive/findings/t20-p2-btc-minute-2026-09-26.txt,docs/plan/EXPERIMENTS.md,docs/archive/plan/dev-plan-2026-09-23.md
+tools/compute/titration-read.py	АРХИВ	docs/archive/findings/t20-audit-check-2026-09-26.md,docs/archive/findings/third-party-backtest-approaches-2026-09-26.md,docs/archive/findings/titration-regime-2026-09-23.md,docs/archive/plan/dev-plan-2026-09-23.md
 tools/compute/titration-sets-v1.txt	ЗАМЫКАНИЕ	crash-stress.sh,sets.txt,titrate-exit.sh,titrate-forms.sh
 tools/compute/tk038-extra.py	ЗАМЫКАНИЕ	.claude/tickets/TK-038.md
 tools/compute/tk038-summary.py	ЗАМЫКАНИЕ	.claude/tickets/TK-038.md

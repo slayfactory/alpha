@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TK-202 (В-227 пакет B, М1): клетки R1 для колонок вне r1ext и ctx×keep_q (Г-78/55/140) — фильтры на signals.csv пула, как tk064-r1cells.py.
 
-  tk202-r1x.py spec  --plan docs/registry/plan_cells.jsonl --out spec.csv      # ПК: клетки «к счёту» (колонка+знак+q [+ ось/страта ctx]) из плана Летописи
+  tk202-r1x.py spec  --plan docs/archive/registry/plan_cells.jsonl --out spec.csv      # ПК: клетки «к счёту» (колонка+знак+q [+ ось/страта ctx]) из плана Летописи
   tk202-r1x.py apply --spec spec.csv --pool /data/tk064/pool --t46 /data/tk046 --thr tk202-thresholds.json --out DIR   # calc: DIR/cells/<мес>/<хеш>.csv
 
 Порог месяца m = квантиль keep_q по определённым сигналам B1 ВСЕХ предыдущих полных месяцев (январь — по самому январю, --jan-self TK-115);
