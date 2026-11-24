@@ -54,7 +54,7 @@ GRID_OLD = {"natr_min": _o(0.2, 0.4, 0.6, 0.8), "t1h": _o(0.25, 0.5, 1, 2), "t24
 def engine_axes(side):
     if SET == "grid":
         return grid_axes(side)
-    if SET in ("hist", "ctx", "t697", "t697b"):
+    if SET in ("hist", "ctx", "t697", "t697b", "t701"):
         return []
     if SET == "t697k":
         return t697k_axes(side)
@@ -159,7 +159,7 @@ T681_SM = (0.1, 0.2, 0.3, 0.5)                   # минимальное рас
 T681_SM_PARENT = (("sl", dict(sl=3.5)), ("cw", dict(cw=30, cl=0, ch=1000, cm=0.5)), ("nx", dict(nx=3.5)))
 FAST_NAMES = (["tfv30", "tfn30", "vpin300", "bigimb10", "bigimb30", "bigimb60", "sac10", "sac30", "sac60", "mk1_10", "mk1_30", "mk5_30", "mk5_60", "mk10_60", "kyle1m", "amih1m",
                "kyle5m", "amih5m"] + ["acc%s%d_%d" % (k, s_, P) for s_ in (1, 5, 10, 30) for P in (60, 300) for k in ("n", "v", "dn", "dv")])
-COVER_MIN = 0.7 if SET in ("t681", "t697", "t697b") else 0.0       # столбец, определённый менее чем у такой доли кандидатов базы (зачётный диапазон), активным не бывает — только описание (критик PS-974: пустая половина стоит в тихих минутах)
+COVER_MIN = 0.7 if SET in ("t681", "t697", "t697b", "t701") else 0.0       # столбец, определённый менее чем у такой доли кандидатов базы (зачётный диапазон), активным не бывает — только описание (критик PS-974: пустая половина стоит в тихих минутах)
 
 
 # поправка TK-697 (признаки из разбора сделок трейдера пробоев; семейства `m697` / `h697` / `l697` строк TK-671 + `mk_rel_s60 / 240 / 1440` таблицы TK-671):
@@ -210,11 +210,15 @@ def t697k_axes(side):
         ("lsl", [("off", {})] + [(ax.num(v), dict(c, lsl=v) if v else dict(c)) for v in (0,) + T697K_LSL], "off"),
         ("lx", [("off", {}), ("tf30", dict(c, tf=30)), ("tf60", dict(c))], "off"),
     ]
+# поправка TK-701 (единички, 24.11; ось выбрана после просмотра P&L TK-701 на этих данных): набор TK680_SET=t701 — три столбца `tfv60`, `pre_n5`, `oi_c1` (`tk701_sig.py`, все сигналы базы h775 окна и стороны).
+# Пороги — квантили 20 / 40 / 60 / 80 по кандидатам базы состава c539, порога 0 нет; обе стороны порога (≤ / ≥) = 8 клеток на столбец и сторону. Свой каталог TK674_ROOT.
+T701_FAM = "/data/p42-tk701s/fam/c701/%s-%s.parquet"      # окно, сторона: индекс row_id (< 0), столбцы sym, sig_ms, tfv60, pre_n5, oi_c1
+T701_NAMES = ["tfv60", "pre_n5", "oi_c1"]
 
 
 def nan_cols():
     """Столбцы, у которых пустое значение пропускает фильтр и поэтому считается отдельно (сделки с пустым значением, их Σ $)."""
-    return (list(HIST_COLS) if SET == "hist" else (list(FAST_NAMES) if SET == "t681" else (list(T697_NAMES) if SET == "t697" else (list(T697B_NAMES) if SET == "t697b" else []))))
+    return (list(HIST_COLS) if SET == "hist" else (list(FAST_NAMES) if SET == "t681" else (list(T697_NAMES) if SET == "t697" else (list(T697B_NAMES) if SET == "t697b" else (list(T701_NAMES) if SET == "t701" else [])))))
 
 
 def t681_volq():
@@ -282,6 +286,8 @@ def column_list(coverage_cols):
         return [(c, c, ("le", "ge")) for c in FAST_NAMES]
     if SET == "t697b":
         return [(c, c, ("le", "ge")) for c in T697B_NAMES]
+    if SET == "t701":
+        return [(c, c, ("le", "ge")) for c in T701_NAMES]
     if SET == "t697":       # окно > 60 мин — исключение поправки TK-697 (`horizon_skip` не вызывается)
         return [(c, c, ("le", "ge")) for c in T697_NAMES]
     out = []
