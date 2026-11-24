@@ -757,6 +757,69 @@ class TestCells(Base):
         self.assertEqual(rpc("cells_count", None)["ok"][0]["n"], 1)
 
 
+class TestRelink(Base):
+    """TK-704 (миграция 9): перенос файла в git — таблица file_move, `check` находит файл по новому пути."""
+
+    def test_move_path(self):
+        mv = [("docs/findings/a/", "docs/archive/findings/a/"), ("docs/x.md", "docs/archive/x.md"), ("docs/findings/a/keep.md", "docs/keep.md"),
+              ("docs/archive/x.md", "docs/archive/y.md")]
+        for p, want in (("docs/findings/a/res/c.json", "docs/archive/findings/a/res/c.json"), ("docs/findings/a", "docs/archive/findings/a"),
+                        ("docs/x.md#sec", "docs/archive/y.md#sec"), ("docs/x.md:12-20", "docs/archive/y.md:12-20"),  # цепочка x → archive/x → archive/y
+                        ("docs/findings/a/keep.md", "docs/keep.md"), ("docs/y.md", "docs/y.md"), ("docs/findings/ab/z", "docs/findings/ab/z")):
+            self.assertEqual(chron.move_path(p, mv), want, p)
+        with self.assertRaises(chron.ChronError):
+            chron.move_path("a/b", [("a/", "c/"), ("c/", "a/")])
+        self.assertEqual(chron.norm_move(r"./docs\a.md", "docs/b.md"), ("docs/a.md", "docs/b.md"))
+        for bad in (("a/", "b"), ("", "b"), ("a", "a/")):
+            with self.assertRaises(chron.ChronError):
+                chron.norm_move(*bad)
+
+    def test_relink_append_only(self):
+        self.assertEqual(self.st.relink([["a/", "b/"], ["c.md", "d.md"]], "TK-705", "t"), {"new": 2, "same": 0})
+        self.assertEqual(self.st.relink([["a/", "b/"]]), {"new": 0, "same": 1})  # повтор не пишется
+        for pairs in ([["a/", "z/"]], [["b/", "a/"]], [["new.md", "x.md"], ["c.md", "e.md"]]):  # другой new; цикл; конфликт во второй паре
+            with self.assertRaises(chron.ChronError):
+                self.st.relink(pairs)
+        self.assertEqual(self.st.file_moves(), [["a/", "b/"], ["c.md", "d.md"]])  # отказ ничего не записал
+        for sql in ("UPDATE file_move SET new='q'", "DELETE FROM file_move"):
+            with self.assertRaises(sqlite3.DatabaseError):
+                self.st.c.execute(sql)
+        self.assertEqual(self.st.check_db(), [])
+
+    def test_check_follows_move(self):
+        e = int(self.st.add_entry(entry("числа в перенесённом файле"), [])[2:])
+        self.st.add_metrics([mrow(e, src="docs/zz-old/chron.py")])
+        self.st.c.execute("INSERT INTO link VALUES ('L-%d', 'file:docs/zz-old/chron.py#x', 'file', 't', 'now')" % e)
+        rc, out = self.cli("check")
+        self.assertEqual(rc, 1)
+        self.assertIn("битая ссылка", out)
+        self.assertIn("число: файла нет в git", out)
+        rc, out = self.cli("relink", "docs/zz-old/", "tools/", "--dry-run")
+        self.assertEqual(rc, 0)
+        self.assertIn("ссылок file: 1, источников чисел 1", out)
+        self.assertEqual(self.st.file_moves(), [])  # dry-run ничего не пишет
+        rc, out = self.cli("relink", "docs/zz-old/", "tools/", "--reason", "TK-705")
+        self.assertIn("записано переносов новых 1", out)
+        rc, out = self.cli("check")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.cli("relink", "docs/zz-old2/", "docs/no-such-dir-tk704/")[0], 2)  # нового пути нет в git
+        self.assertEqual(self.st.file_moves(), [["docs/zz-old/", "tools/"]])
+
+    def test_migrate_v8_to_v9(self):
+        db = os.path.join(self.tmp.name, "v8.sqlite")
+        c = sqlite3.connect(db, isolation_level=None)
+        for stmt in chron.split_sql(chron.SCHEMA) + [x for v in range(3, 9) for x in chron.split_sql(chron.MIGRATE[v])]:
+            c.execute(stmt)
+        c.execute(chron.FTS_SQL)
+        c.execute("PRAGMA user_version=8")
+        c.close()
+        st = chron.Store(chron.connect(db))
+        self.assertEqual(st.c.execute("PRAGMA user_version").fetchone()[0], chron.SCHEMA_VERSION)
+        self.assertEqual(st.file_moves(), [])
+        self.assertEqual(st.check_db(), [])
+        st.c.close()
+
+
 class TestMetricFiles(unittest.TestCase):
     """chron_metrics: строки чисел из JSON / CSV / таблиц md на маленьких файлах."""
 
