@@ -75,23 +75,8 @@ pub(crate) fn bounce_plan(
     } = shape;
     let p_tick = touch.price_tick;
     let p = p_tick as f64 * tick;
-    // F5 (В-74): `entry_ttl_ns` — потолок срока жизни входа, а не таймер.
-    // Прежний режим `touch` воспроизводит «вход до конца касания» байт в байт
-    // и выключает условия F5 (`level_floor_qty`/`band_exit_bps` = 0) — на нём
-    // стоит гейт «те же круги». `wall` — только условия рынка.
-    let touch_ttl_ns = touch
-        .end_ms
-        .saturating_sub(touch.start_ms)
-        .saturating_mul(1_000_000);
-    let (entry_ttl_ns, level_floor_qty, band_exit_bps) = match entry_ttl {
-        EntryTtl::Touch => (touch_ttl_ns, 0.0, 0.0),
-        EntryTtl::Secs(secs) => (
-            secs.saturating_mul(1_000_000_000),
-            notional_floor_qty(h3_usd, p),
-            band_exit_bps,
-        ),
-        EntryTtl::Wall => (i64::MAX, notional_floor_qty(h3_usd, p), band_exit_bps),
-    };
+    let (entry_ttl_ns, level_floor_qty, band_exit_bps) =
+        entry_ttl_limits(touch, entry_ttl, h3_usd, p, band_exit_bps);
     let grid_step_px = grid_step_ticks as f64 * tick;
     // Знак «в сторону от плотности»: для бида это вверх, для аска — вниз.
     // Стоп, тейк и прежний вход (`P ± 1` тик) считаются по нему.
@@ -108,72 +93,7 @@ pub(crate) fn bounce_plan(
     // стеной; опорная цена для стопа/тейка — средняя цена лестницы **по
     // долям** (фактическую среднюю ведёт стратегия после F4 и сдвигает по ней
     // уровни). Прежняя форма (`single@fr`) берёт цену фронтранера байт в байт.
-    let (ladder, entry_tick) = match entry_form {
-        EntryForm::SingleFrontrun => (
-            EntryLadder::NONE,
-            touch
-                .frontrun_tick
-                .unwrap_or_else(|| p_tick.saturating_add(away)),
-        ),
-        // T-35 (Г-85): отступ от фронтрана в тиках, `ticks > 0` — к рынку; не ближе `P ± 1` к стене.
-        EntryForm::SingleFrontrunOffset { ticks } => {
-            let base = touch
-                .frontrun_tick
-                .unwrap_or_else(|| p_tick.saturating_add(away));
-            let tick = base.saturating_add(away.saturating_mul(i64::from(ticks)));
-            let tick = if tick.saturating_sub(p_tick).saturating_mul(away) < 1 {
-                p_tick.saturating_add(away)
-            } else {
-                tick
-            };
-            (EntryLadder::NONE, tick)
-        }
-        EntryForm::Ladder {
-            legs,
-            from_bps,
-            to_bps,
-            wall_weight,
-        } => {
-            let (ladder, avg_tick) = ladder_legs(p_tick, away, legs, from_bps, to_bps, wall_weight);
-            (ladder, avg_tick)
-        }
-        // В-131: ноги — σ монеты на взводе × (a…b) bps, нераздельные (каждая ≥ 1 тика дальше предыдущей,
-        // первая не ближе `P ± 1`); σ нет — плана нет (`n_no_sigma` у сетки).
-        EntryForm::LadderSigma {
-            legs,
-            from_sigma,
-            to_sigma,
-            wall_weight,
-        } => {
-            let sigma = entry_sigma_bps?;
-            ladder_legs_distinct(
-                p_tick,
-                away,
-                legs,
-                from_sigma * sigma,
-                to_sigma * sigma,
-                wall_weight,
-            )
-        }
-        // T4 (В-73-подобно, П-02, Г-86): рыночный вход — лимит за
-        // `MARKET_CROSS_MARGIN_BPS` от стены, гарантированно пересекающий
-        // спред (симулятор идёт по стакану до фактической цены фила —
-        // дальше этой цели, не по ней).
-        // Г-88: цена входа — как у `single@fr`; ожидание закола/возврата — в стратегии (`pyramid.reclaim_*`).
-        // Г-102: цена входа — как у `single@fr`; сдвиг на память отступа делает драйвер (`pyramid.retreat_*`).
-        EntryForm::Reclaim { .. } | EntryForm::Retreat { .. } => (
-            EntryLadder::NONE,
-            touch
-                .frontrun_tick
-                .unwrap_or_else(|| p_tick.saturating_add(away)),
-        ),
-        // Г-135: как `market` — заявка за `MARKET_CROSS_MARGIN_BPS` пересекает спред; когда ставить — решает
-        // стратегия (`pyramid.postsweep_bps`, `ReclaimWait`).
-        EntryForm::Market | EntryForm::Postsweep { .. } => (
-            EntryLadder::NONE,
-            p_tick + away * bps_to_ticks_ceil(MARKET_CROSS_MARGIN_BPS, p_tick),
-        ),
-    };
+    let (ladder, entry_tick) = entry_ladder(touch, entry_form, entry_sigma_bps, p_tick, away)?;
     // T4 (Г-86): рыночный вход не может быть мейкером — GTX отклонил бы
     // заявку, пересёкшую спред, как Expired (В-72); GTC независимо от
     // `--post-only`/набора.
@@ -182,38 +102,7 @@ pub(crate) fn bounce_plan(
     } else {
         post_only
     };
-    // Расстояние от уровня «в сторону от плотности», тики (> 0 — по нужную сторону).
-    let dist_from_level = (entry_tick - p_tick) * away;
-    let stop_tick = match form.stop {
-        StopForm::Before => {
-            if dist_from_level < 2 {
-                return None;
-            }
-            p_tick + away
-        }
-        StopForm::At => p_tick,
-        StopForm::Behind => p_tick - away,
-        StopForm::MidFrontrun => {
-            if dist_from_level < 2 {
-                return None;
-            }
-            p_tick + away * (dist_from_level / 2)
-        }
-        StopForm::BehindStack => touch.stack_next_tick? - away,
-        StopForm::Pct(pct) => entry_tick - away * bps_to_ticks_ceil(pct * 100.0, entry_tick),
-        StopForm::Sigma(a) => {
-            // `a × σ_H` от входа в сторону плотности, но не ближе тика **за**
-            // плотностью (`P − 1` для бида): дальний из двух.
-            let sigma = sigma_bps?;
-            let by_sigma = entry_tick - away * bps_to_ticks_ceil(a * sigma, entry_tick);
-            let floor = p_tick - away;
-            if (by_sigma - floor) * away > 0 {
-                floor
-            } else {
-                by_sigma
-            }
-        }
-    };
+    let stop_tick = stop_tick_of(form.stop, touch, sigma_bps, entry_tick, away)?;
     // Стоп обязан лежать по «свою» сторону от входа — иначе форма вырождена.
     if (entry_tick - stop_tick) * away <= 0 {
         return None;
@@ -227,23 +116,7 @@ pub(crate) fn bounce_plan(
         } => (trail_pct * 100.0, activate_pct * 100.0),
         _ => (trail_bps, trail_activate_bps),
     };
-    let take_tick = match form.take {
-        // 1:1 **от входа** (спека §3: «самый базовый, это один к одному» [D 16:17]).
-        // У трейла фиксированного тейка нет — цена стоит символически на 1:1,
-        // стратегия её не читает при `trail_bps > 0`.
-        TakeForm::OneToOne
-        | TakeForm::Trail { .. }
-        | TakeForm::HalfOneToOne
-        | TakeForm::Eaten { .. } => entry_tick + (entry_tick - stop_tick),
-        // Тейк в % от входа в сторону отскока — как `pct<x>` у стопа, зеркально.
-        TakeForm::Pct(x) => entry_tick + away * bps_to_ticks_ceil(x * 100.0, entry_tick),
-        TakeForm::Sigma(b) => {
-            let sigma = sigma_bps?;
-            let take_bps = (b * sigma)
-                .max(form.take_floor_fees.unwrap_or(0.0) * crate::lob::costs::ROUNDTRIP_FEES_BPS);
-            entry_tick + away * bps_to_ticks_ceil(take_bps, entry_tick)
-        }
-    };
+    let take_tick = take_tick_of(form, entry_tick, stop_tick, away, sigma_bps)?;
     let entry_px = entry_tick as f64 * tick;
     let stop_px = stop_tick as f64 * tick;
     let take_px = take_tick as f64 * tick;
@@ -312,140 +185,10 @@ pub(crate) fn bounce_plan(
                 _ => 0.0,
             },
             // Перенос стопа после снятия: безубыток (владелец 23.09) или уровень стены (26.09).
-            gone_stop: match shape.exit_form {
-                crate::commands::lob::bounce_grid::ExitForm::GoneBe { hard, .. } => {
-                    crate::lob::strategy::GoneStop::Breakeven { hard }
-                }
-                crate::commands::lob::bounce_grid::ExitForm::GoneWall {
-                    mode, buffer_bps, ..
-                } => crate::lob::strategy::GoneStop::Wall { mode, buffer_bps },
-                _ => crate::lob::strategy::GoneStop::Off,
-            },
+            gone_stop: gone_stop_of(shape.exit_form),
             // TK-014 `weat*`: съедание стены после входа, причина по ходу BTC.
-            wall_eat: match shape.exit_form {
-                crate::commands::lob::bounce_grid::ExitForm::WallEat {
-                    pct,
-                    secs,
-                    mode,
-                    btc_bps,
-                    btc,
-                } => crate::lob::strategy::WallEatExit {
-                    pct,
-                    secs,
-                    mode,
-                    btc_bps,
-                    btc,
-                },
-                _ => crate::lob::strategy::WallEatExit::OFF,
-            },
-            pyramid: with_reclaim(
-                entry_form,
-                match shape.exit_form {
-                    crate::commands::lob::bounce_grid::ExitForm::PyrEat { parts } => {
-                        crate::lob::strategy::PyramidCfg {
-                            eat_parts: parts,
-                            fresh: false,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::PyrFresh { parts } => {
-                        crate::lob::strategy::PyramidCfg {
-                            eat_parts: parts,
-                            fresh: true,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::PyrReinstall { n, u12 } => {
-                        crate::lob::strategy::PyramidCfg {
-                            reinstall_n: n,
-                            reinstall_u12: u12,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::PyrNewWall { k, u12 } => {
-                        crate::lob::strategy::PyramidCfg {
-                            newwall_k: k,
-                            newwall_u12: u12,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::HalfStop { q8 } => {
-                        crate::lob::strategy::PyramidCfg {
-                            half_stop: true,
-                            half_q8: q8,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::HalfLevel { q8 } => {
-                        crate::lob::strategy::PyramidCfg {
-                            half_level: true,
-                            half_q8: q8,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::TakeSched { g10, t4 } => {
-                        crate::lob::strategy::PyramidCfg {
-                            sched_g10: g10,
-                            sched_t4: t4,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::TakeSchedX { g8, t16 } => {
-                        crate::lob::strategy::PyramidCfg {
-                            sched_g8: g8,
-                            sched_t16: t16,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::Converge { tol, a_bps } => {
-                        crate::lob::strategy::PyramidCfg {
-                            converge_tol1: tol + 1,
-                            converge_a_bps: a_bps,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::LevelBack { gap_bps, secs } => {
-                        crate::lob::strategy::PyramidCfg {
-                            levelback_gap_bps: gap_bps,
-                            levelback_secs: secs,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::Chase { ms } => {
-                        crate::lob::strategy::PyramidCfg {
-                            chase_ms: ms,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::Tape { w, q } => {
-                        crate::lob::strategy::PyramidCfg {
-                            tape_w: w,
-                            tape_q: q,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::Cxl { w, q } => {
-                        crate::lob::strategy::PyramidCfg {
-                            cxl_w: w,
-                            cxl_q: q,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::NoStop { x8 } => {
-                        crate::lob::strategy::PyramidCfg {
-                            nostop_x8: x8,
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    crate::commands::lob::bounce_grid::ExitForm::Wall2 { k } => {
-                        crate::lob::strategy::PyramidCfg {
-                            wall2: crate::lob::strategy::wall2_code(k),
-                            ..crate::lob::strategy::PyramidCfg::OFF
-                        }
-                    }
-                    _ => crate::lob::strategy::PyramidCfg::OFF,
-                },
-            ),
+            wall_eat: wall_eat_of(shape.exit_form),
+            pyramid: with_reclaim(entry_form, pyramid_of(shape.exit_form)),
             // Трейл после снятия (владелец 23.09): откат в bps от входа.
             gone_trail_bps: match shape.exit_form {
                 crate::commands::lob::bounce_grid::ExitForm::GoneTrail { trail_pct, .. } => {
@@ -455,6 +198,327 @@ pub(crate) fn bounce_plan(
             },
         },
     ))
+}
+
+/// F5 (В-74): срок жизни входа и условия снятия по режиму `entry_ttl`: потолок в нс, порог «стена снята» и полоса.
+fn entry_ttl_limits(
+    touch: &TouchRecord,
+    entry_ttl: EntryTtl,
+    h3_usd: Option<f64>,
+    p: f64,
+    band_exit_bps: f64,
+) -> (i64, f64, f64) {
+    // F5 (В-74): `entry_ttl_ns` — потолок срока жизни входа, а не таймер.
+    // Прежний режим `touch` воспроизводит «вход до конца касания» байт в байт
+    // и выключает условия F5 (`level_floor_qty`/`band_exit_bps` = 0) — на нём
+    // стоит гейт «те же круги». `wall` — только условия рынка.
+    let touch_ttl_ns = touch
+        .end_ms
+        .saturating_sub(touch.start_ms)
+        .saturating_mul(1_000_000);
+    match entry_ttl {
+        EntryTtl::Touch => (touch_ttl_ns, 0.0, 0.0),
+        EntryTtl::Secs(secs) => (
+            secs.saturating_mul(1_000_000_000),
+            notional_floor_qty(h3_usd, p),
+            band_exit_bps,
+        ),
+        EntryTtl::Wall => (i64::MAX, notional_floor_qty(h3_usd, p), band_exit_bps),
+    }
+}
+
+/// Ноги входа и цена опоры (тик) по форме входа; `None` — формы для касания не построить (нет σ).
+fn entry_ladder(
+    touch: &TouchRecord,
+    entry_form: EntryForm,
+    entry_sigma_bps: Option<f64>,
+    p_tick: i64,
+    away: i64,
+) -> Option<(EntryLadder, i64)> {
+    Some(match entry_form {
+        EntryForm::SingleFrontrun => (
+            EntryLadder::NONE,
+            touch
+                .frontrun_tick
+                .unwrap_or_else(|| p_tick.saturating_add(away)),
+        ),
+        // T-35 (Г-85): отступ от фронтрана в тиках, `ticks > 0` — к рынку; не ближе `P ± 1` к стене.
+        EntryForm::SingleFrontrunOffset { ticks } => {
+            let base = touch
+                .frontrun_tick
+                .unwrap_or_else(|| p_tick.saturating_add(away));
+            let tick = base.saturating_add(away.saturating_mul(i64::from(ticks)));
+            let tick = if tick.saturating_sub(p_tick).saturating_mul(away) < 1 {
+                p_tick.saturating_add(away)
+            } else {
+                tick
+            };
+            (EntryLadder::NONE, tick)
+        }
+        EntryForm::Ladder {
+            legs,
+            from_bps,
+            to_bps,
+            wall_weight,
+        } => {
+            let (ladder, avg_tick) = ladder_legs(p_tick, away, legs, from_bps, to_bps, wall_weight);
+            (ladder, avg_tick)
+        }
+        // В-131: ноги — σ монеты на взводе × (a…b) bps, нераздельные (каждая ≥ 1 тика дальше предыдущей,
+        // первая не ближе `P ± 1`); σ нет — плана нет (`n_no_sigma` у сетки).
+        EntryForm::LadderSigma {
+            legs,
+            from_sigma,
+            to_sigma,
+            wall_weight,
+        } => {
+            let sigma = entry_sigma_bps?;
+            ladder_legs_distinct(
+                p_tick,
+                away,
+                legs,
+                from_sigma * sigma,
+                to_sigma * sigma,
+                wall_weight,
+            )
+        }
+        // T4 (В-73-подобно, П-02, Г-86): рыночный вход — лимит за
+        // `MARKET_CROSS_MARGIN_BPS` от стены, гарантированно пересекающий
+        // спред (симулятор идёт по стакану до фактической цены фила —
+        // дальше этой цели, не по ней).
+        // Г-88: цена входа — как у `single@fr`; ожидание закола/возврата — в стратегии (`pyramid.reclaim_*`).
+        // Г-102: цена входа — как у `single@fr`; сдвиг на память отступа делает драйвер (`pyramid.retreat_*`).
+        EntryForm::Reclaim { .. } | EntryForm::Retreat { .. } => (
+            EntryLadder::NONE,
+            touch
+                .frontrun_tick
+                .unwrap_or_else(|| p_tick.saturating_add(away)),
+        ),
+        // Г-135: как `market` — заявка за `MARKET_CROSS_MARGIN_BPS` пересекает спред; когда ставить — решает
+        // стратегия (`pyramid.postsweep_bps`, `ReclaimWait`).
+        EntryForm::Market | EntryForm::Postsweep { .. } => (
+            EntryLadder::NONE,
+            p_tick + away * bps_to_ticks_ceil(MARKET_CROSS_MARGIN_BPS, p_tick),
+        ),
+    })
+}
+
+/// Тик стопа по форме `stop`; `None` — форма для касания вырождена или нужной σ / стопки нет.
+fn stop_tick_of(
+    stop: StopForm,
+    touch: &TouchRecord,
+    sigma_bps: Option<f64>,
+    entry_tick: i64,
+    away: i64,
+) -> Option<i64> {
+    let p_tick = touch.price_tick;
+    // Расстояние от уровня «в сторону от плотности», тики (> 0 — по нужную сторону).
+    let dist_from_level = (entry_tick - p_tick) * away;
+    Some(match stop {
+        StopForm::Before => {
+            if dist_from_level < 2 {
+                return None;
+            }
+            p_tick + away
+        }
+        StopForm::At => p_tick,
+        StopForm::Behind => p_tick - away,
+        StopForm::MidFrontrun => {
+            if dist_from_level < 2 {
+                return None;
+            }
+            p_tick + away * (dist_from_level / 2)
+        }
+        StopForm::BehindStack => touch.stack_next_tick? - away,
+        StopForm::Pct(pct) => entry_tick - away * bps_to_ticks_ceil(pct * 100.0, entry_tick),
+        StopForm::Sigma(a) => {
+            // `a × σ_H` от входа в сторону плотности, но не ближе тика **за**
+            // плотностью (`P − 1` для бида): дальний из двух.
+            let sigma = sigma_bps?;
+            let by_sigma = entry_tick - away * bps_to_ticks_ceil(a * sigma, entry_tick);
+            let floor = p_tick - away;
+            if (by_sigma - floor) * away > 0 {
+                floor
+            } else {
+                by_sigma
+            }
+        }
+    })
+}
+
+/// Тик тейка по форме `form.take`; `None` — нужной σ нет.
+fn take_tick_of(
+    form: BounceForm,
+    entry_tick: i64,
+    stop_tick: i64,
+    away: i64,
+    sigma_bps: Option<f64>,
+) -> Option<i64> {
+    Some(match form.take {
+        // 1:1 **от входа** (спека §3: «самый базовый, это один к одному» [D 16:17]).
+        // У трейла фиксированного тейка нет — цена стоит символически на 1:1,
+        // стратегия её не читает при `trail_bps > 0`.
+        TakeForm::OneToOne
+        | TakeForm::Trail { .. }
+        | TakeForm::HalfOneToOne
+        | TakeForm::Eaten { .. } => entry_tick + (entry_tick - stop_tick),
+        // Тейк в % от входа в сторону отскока — как `pct<x>` у стопа, зеркально.
+        TakeForm::Pct(x) => entry_tick + away * bps_to_ticks_ceil(x * 100.0, entry_tick),
+        TakeForm::Sigma(b) => {
+            let sigma = sigma_bps?;
+            let take_bps = (b * sigma)
+                .max(form.take_floor_fees.unwrap_or(0.0) * crate::lob::costs::ROUNDTRIP_FEES_BPS);
+            entry_tick + away * bps_to_ticks_ceil(take_bps, entry_tick)
+        }
+    })
+}
+
+/// Перенос стопа после снятия: безубыток (владелец 23.09) или уровень стены (26.09).
+fn gone_stop_of(
+    exit_form: crate::commands::lob::bounce_grid::ExitForm,
+) -> crate::lob::strategy::GoneStop {
+    match exit_form {
+        crate::commands::lob::bounce_grid::ExitForm::GoneBe { hard, .. } => {
+            crate::lob::strategy::GoneStop::Breakeven { hard }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::GoneWall {
+            mode, buffer_bps, ..
+        } => crate::lob::strategy::GoneStop::Wall { mode, buffer_bps },
+        _ => crate::lob::strategy::GoneStop::Off,
+    }
+}
+
+/// TK-014 `weat*`: съедание стены после входа, причина по ходу BTC.
+fn wall_eat_of(
+    exit_form: crate::commands::lob::bounce_grid::ExitForm,
+) -> crate::lob::strategy::WallEatExit {
+    match exit_form {
+        crate::commands::lob::bounce_grid::ExitForm::WallEat {
+            pct,
+            secs,
+            mode,
+            btc_bps,
+            btc,
+        } => crate::lob::strategy::WallEatExit {
+            pct,
+            secs,
+            mode,
+            btc_bps,
+            btc,
+        },
+        _ => crate::lob::strategy::WallEatExit::OFF,
+    }
+}
+
+/// Пирамида и родственные формы выхода (`ExitForm::Pyr*`, `Half*`, `TakeSched*`, …) в конфиг стратегии.
+fn pyramid_of(
+    exit_form: crate::commands::lob::bounce_grid::ExitForm,
+) -> crate::lob::strategy::PyramidCfg {
+    match exit_form {
+        crate::commands::lob::bounce_grid::ExitForm::PyrEat { parts } => {
+            crate::lob::strategy::PyramidCfg {
+                eat_parts: parts,
+                fresh: false,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::PyrFresh { parts } => {
+            crate::lob::strategy::PyramidCfg {
+                eat_parts: parts,
+                fresh: true,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::PyrReinstall { n, u12 } => {
+            crate::lob::strategy::PyramidCfg {
+                reinstall_n: n,
+                reinstall_u12: u12,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::PyrNewWall { k, u12 } => {
+            crate::lob::strategy::PyramidCfg {
+                newwall_k: k,
+                newwall_u12: u12,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::HalfStop { q8 } => {
+            crate::lob::strategy::PyramidCfg {
+                half_stop: true,
+                half_q8: q8,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::HalfLevel { q8 } => {
+            crate::lob::strategy::PyramidCfg {
+                half_level: true,
+                half_q8: q8,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::TakeSched { g10, t4 } => {
+            crate::lob::strategy::PyramidCfg {
+                sched_g10: g10,
+                sched_t4: t4,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::TakeSchedX { g8, t16 } => {
+            crate::lob::strategy::PyramidCfg {
+                sched_g8: g8,
+                sched_t16: t16,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::Converge { tol, a_bps } => {
+            crate::lob::strategy::PyramidCfg {
+                converge_tol1: tol + 1,
+                converge_a_bps: a_bps,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::LevelBack { gap_bps, secs } => {
+            crate::lob::strategy::PyramidCfg {
+                levelback_gap_bps: gap_bps,
+                levelback_secs: secs,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::Chase { ms } => {
+            crate::lob::strategy::PyramidCfg {
+                chase_ms: ms,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::Tape { w, q } => {
+            crate::lob::strategy::PyramidCfg {
+                tape_w: w,
+                tape_q: q,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::Cxl { w, q } => {
+            crate::lob::strategy::PyramidCfg {
+                cxl_w: w,
+                cxl_q: q,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::NoStop { x8 } => {
+            crate::lob::strategy::PyramidCfg {
+                nostop_x8: x8,
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        crate::commands::lob::bounce_grid::ExitForm::Wall2 { k } => {
+            crate::lob::strategy::PyramidCfg {
+                wall2: crate::lob::strategy::wall2_code(k),
+                ..crate::lob::strategy::PyramidCfg::OFF
+            }
+        }
+        _ => crate::lob::strategy::PyramidCfg::OFF,
+    }
 }
 
 /// Г-88/Г-102: формы входа `reclaim<D>p<S>` и `retreat<k>t<T>` кладут свои числа в конфиг стратегии (остальные формы — без изменений).

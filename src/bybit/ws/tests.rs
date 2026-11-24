@@ -1,5 +1,17 @@
 use super::*;
 
+/// `format_e9` — обратное к `parse_e9`: без хвостовых нулей, со знаком.
+#[test]
+fn format_e9_prints_plain_decimals_and_round_trips() {
+    assert_eq!(format_e9(50_000_000_000), "50");
+    assert_eq!(format_e9(123_450_000), "0.12345");
+    assert_eq!(format_e9(0), "0");
+    assert_eq!(format_e9(-1_500_000_000), "-1.5");
+    for v in [1, 100_000_000, 1_000_000_001, 12_345_678_900_000, -7] {
+        assert_eq!(parse_e9(&format_e9(v)), Some(v), "{v}");
+    }
+}
+
 #[test]
 fn decimal_strings_become_exact_integers() {
     assert_eq!(parse_e9("1"), Some(1_000_000_000));

@@ -15,19 +15,19 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import tk674_axes as ax  # noqa: E402
 
-# эталон до правки (код после слияния TK-680, без TK674_X680): подпись осей / сеток пар / списка пропущенных пар и ключ базы стороны
+# эталон до правки (код после слияния TK-680 и TK-697 (причина строки пропуска lx), без TK674_X680): подпись осей / сеток пар / списка пропущенных пар и ключ базы стороны
 GOLD = {
-    ("plain", "L"): dict(axes="9fa536424685844e", n_axes=34, pairs=525, skipped=36, skip_hash="86f3e9811921d26c", cells=8620, grid_hash="0f173f112576ee8c",
+    ("plain", "L"): dict(axes="9fa536424685844e", n_axes=34, pairs=525, skipped=36, skip_hash="86f3e9811921d26c", cells=8620, grid_hash="14a9e4b6adb09732",
                          base="ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 t24=12"),
-    ("plain", "S"): dict(axes="b1556bd4d14ac9bd", n_axes=34, pairs=525, skipped=36, skip_hash="86f3e9811921d26c", cells=8868, grid_hash="19c7aa438c596483",
+    ("plain", "S"): dict(axes="b1556bd4d14ac9bd", n_axes=34, pairs=525, skipped=36, skip_hash="86f3e9811921d26c", cells=8868, grid_hash="8384bbacd014fa90",
                          base="bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 t24=12 tb=0.1 tt=20"),
-    ("rebase", "L"): dict(axes="e75ed52c7ed68f13", n_axes=34, pairs=525, skipped=36, skip_hash="86f3e9811921d26c", cells=8620, grid_hash="b3fd44795ca49ab7",
+    ("rebase", "L"): dict(axes="e75ed52c7ed68f13", n_axes=34, pairs=525, skipped=36, skip_hash="86f3e9811921d26c", cells=8620, grid_hash="4c76b453e73b78f2",
                           base="ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12"),
-    ("rebase", "S"): dict(axes="510b808ddfd99335", n_axes=34, pairs=525, skipped=36, skip_hash="86f3e9811921d26c", cells=8868, grid_hash="8a524f7943e4762d",
+    ("rebase", "S"): dict(axes="510b808ddfd99335", n_axes=34, pairs=525, skipped=36, skip_hash="86f3e9811921d26c", cells=8868, grid_hash="bdd53d8e73affaf3",
                           base="bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20"),
-    ("split", "L"): dict(axes="d7ed6a187ca45d75", n_axes=35, pairs=558, skipped=37, skip_hash="7f0219f56207f7db", cells=9970, grid_hash="0d7c88fb5c83240e",
+    ("split", "L"): dict(axes="d7ed6a187ca45d75", n_axes=35, pairs=558, skipped=37, skip_hash="7f0219f56207f7db", cells=9970, grid_hash="f9cc807e920ddf93",
                          base="ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12"),
-    ("split", "S"): dict(axes="9043ac4bc55b5a58", n_axes=35, pairs=558, skipped=37, skip_hash="7f0219f56207f7db", cells=10228, grid_hash="aa60bfb02778d585",
+    ("split", "S"): dict(axes="9043ac4bc55b5a58", n_axes=35, pairs=558, skipped=37, skip_hash="7f0219f56207f7db", cells=10228, grid_hash="b38453153c276df6",
                          base="bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20"),
 }
 # клетки пар (стороны L / S), ключи сняты с кода до правки при REBASE = 1: (назначение осей, заплатка, фильтр, канонический ключ)

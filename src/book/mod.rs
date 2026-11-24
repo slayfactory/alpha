@@ -90,6 +90,7 @@ impl HalfBook {
         self.levels.clear();
     }
 
+    #[cfg(test)]
     fn len(&self) -> usize {
         self.levels.len()
     }
@@ -179,6 +180,7 @@ impl Book {
         self.last_seq
     }
 
+    #[cfg(test)]
     pub fn last_cts_ms(&self) -> i64 {
         self.last_cts_ms
     }
@@ -288,6 +290,7 @@ impl Book {
         .map(|l| l.0)
     }
 
+    #[cfg(test)]
     pub fn depth(&self, side: Side) -> usize {
         match side {
             Side::Bid => self.bids.len(),

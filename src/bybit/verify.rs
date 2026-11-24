@@ -318,6 +318,7 @@ pub fn trade_in_range(book: &Book, price_tick: i64) -> Option<bool> {
 // Verifier: книга + счётчики трёх проверок в одном месте
 // ---------------------------------------------------------------------------
 
+#[cfg(test)]
 /// Ошибка выравнивания для проверки 1: без совпадения ключа сравнение нельзя
 /// читать как «книги расходятся» — это другая неисправность. `NotAligned`
 /// (по `u`) оставлен для совместимости; живой ключ — `seq` (`NotAlignedSeq`):
@@ -370,6 +371,7 @@ pub struct VerifyStats {
 }
 
 impl VerifyStats {
+    #[cfg(test)]
     /// Нарушения теста 3 (ревизия 17б: внутри диапазона на цене, которую книга
     /// ни разу не держала за время покрытия) в миллионных долях. `None` — сделок не было.
     pub fn trade_violation_ppm(&self) -> Option<u64> {
@@ -379,6 +381,7 @@ impl VerifyStats {
         Some(self.trades_violations * 1_000_000 / self.trades_total)
     }
 
+    #[cfg(test)]
     /// Доля сделок за границей видимой книги. Порога нет, это свойство глубины.
     /// `None` — сделок не было.
     pub fn out_of_range_ppm(&self) -> Option<u64> {
@@ -638,6 +641,7 @@ impl Verifier {
         matches!((bid, ask), (Some(b), Some(a)) if price_tick > b && price_tick < a)
     }
 
+    #[cfg(test)]
     /// Проверка 1: книга обязана стоять ровно на `u` снапшота. Не стоит —
     /// `AlignmentError`, а не «грязный дифф»: смешивать эти два исхода запрещено.
     /// Оставлена для совместимости; живой ключ — `verify_at_seq`.
@@ -656,6 +660,7 @@ impl Verifier {
         Ok(compare_with_snapshot(&self.book, snap, tick_e9, step_e9))
     }
 
+    #[cfg(test)]
     /// Проверка 1 по сквозному `seq`: книга обязана стоять ровно на `seq`
     /// снапшота. Живой ключ выравнивания (`u` в WS и REST — разные счётчики).
     pub fn verify_at_seq(
@@ -889,6 +894,7 @@ impl Default for FileReplayer {
     }
 }
 
+#[cfg(test)]
 /// Одноразовая обёртка над `FileReplayer` для тестов и простых случаев:
 /// весь срез — один поток, счётчик заводится свежим.
 pub fn records_to_updates(
@@ -964,6 +970,7 @@ pub struct VerifySummary {
 }
 
 impl VerifySummary {
+    #[cfg(test)]
     /// Доля вне диапазона в ppm (порога нет). `None` — сделок не было.
     pub fn out_of_range_ppm(&self) -> Option<u64> {
         if self.trades_total == 0 {
@@ -997,6 +1004,7 @@ impl std::ops::AddAssign<&VerifyStats> for VerifySummary {
     }
 }
 
+#[cfg(test)]
 /// Хронологический ключ файла `<SYMBOL>-<день>[-pN].binlog[.zst]`: день,
 /// потом часть суток. Правило — `binlog::binlog_file_order_key` (одно на все
 /// слои; `bybit` не зависит от `commands`, граница слоёв, поэтому общее
@@ -1005,6 +1013,7 @@ fn file_order_key(prefix: &str, name: &str) -> (String, u32) {
     crate::binlog::binlog_file_order_key(prefix, name)
 }
 
+#[cfg(test)]
 /// Прогоняет все суточные файлы символа через проверки 2-3. Проверка 1 здесь
 /// невозможна по построению (у файла нет `u`) и не выполняется молча как
 /// «чисто»: она отсутствует в отчёте вообще, а не со значением ноль.

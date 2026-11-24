@@ -1,12 +1,12 @@
 # 50 — SIGTERM = штатная остановка (A8.2)
 
 **Требования:** директива владельца 2026-09-17 («коллектор при любых обстоятельствах»), подтикет A8.2
-в `docs/plan/dev-plan-2026-09-17.md` §Дополнения; порядок — A8.3 ✔ → **A8.2** → A8.1b → A8.4–A8.6 → A8.7.
+в `docs/archive/plan/dev-plan-2026-09-17.md` §Дополнения; порядок — A8.3 ✔ → **A8.2** → A8.1b → A8.4–A8.6 → A8.7.
 **Blocked by:** — (независим от A8.1/A8.3)
 **Зона:** `src/feed/live.rs` (`StopHandle::stop_on_signals`, `wait_for_stop_signal`), тесты
 `src/feed/live/tests.rs`, `src/commands/lob/session.rs` (вызов + текст сообщений), `CLAUDE.md`,
 `docs/COMMANDS.md` (строка `lob session`, ранбук «Коллектор на сервере», грабли),
-`docs/plan/dev-plan-2026-09-17.md`.
+`docs/archive/plan/dev-plan-2026-09-17.md`.
 **Не трогать:** `bybit/*`, `lob/*`, `commands/record.rs` (одно-символьная запись — свой цикл, отдельный
 путь; у неё SIGTERM появится, только если владелец назовёт это нужным).
 **Волна:** 13
@@ -48,7 +48,7 @@
 - [x] `cargo test --release --target-dir target-ci` — **795 passed, 0 failed, 5 ignored** локально
       (на Linux 796: тест под `cfg(unix)`); clippy `-D warnings` и `fmt --check` чисто
 - [x] доки: `CLAUDE.md` (команды, грабли, состояние A8), `docs/COMMANDS.md` (строка `lob session`,
-      ранбук — `systemctl stop`/`restart` штатны, грабли Ctrl+C), `docs/plan/dev-plan-2026-09-17.md`
+      ранбук — `systemctl stop`/`restart` штатны, грабли Ctrl+C), `docs/archive/plan/dev-plan-2026-09-17.md`
       (A8.2 сделан + заметка)
 - [x] **GC**: одна сборка за раз, `--target-dir target-ci`
 

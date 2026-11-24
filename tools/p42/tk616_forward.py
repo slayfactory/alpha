@@ -21,6 +21,8 @@ TK-670 / §13.70: четвёртый файл цепочки `tk670-frozen.json`
   C2 — доля пар (монета, сутки зачёта) без klines предыдущих суток > 1 % на вселенной точки — `D_S` на ней не читается, остальные клетки считаются; `missing_days` движка печатается, в решение не входит;
   C3 — `replay-ds` (G-670c) сверяет `short-{trades,daily,coinday,entryrej}.csv` побайтно с выходами TK-668 (`--ref-dir /data/p42-tk668/e4/cells`, `<окно>/S_lx1/`; `short-sigsx.csv` — дамп TK-668, пакетный путь его не пишет: сверен в G-670a `tk670_replay.py`);
   совместное чтение `S_base` + `D_S` (вселенная all) — ОПИСАТЕЛЬНО (`joint_describe`): без вердикта и α; L1 по `D_S` — описательно, L2–L5 — `decide` как у всех.
+TK-691 / §13.77: пятый файл цепочки `tk691-frozen.json` (перезаморозка на c539, В-175): `universe.read` = `decision` = `crypto` (TradFi не читается, `check_universe_crypto`), порог N лонга по правилу tk638 на c539 (`filter.N` поверх tk638),
+  клетки `L_n24` / `L_mk2` / `D_S`, не прошедшие ворота c539 (`gates`), не читаются, их α возвращена (`L_n24` / `L_mk2` → `S_base`, `D_S` → `S_mk1`); файл обязателен всегда (нет — остановка); C1 — sha256 четырёх предыдущих звеньев.
 
   python3 tk616_forward.py plan  [--freeze …]                       # точки, окна, вселенные, состояние охран — без чтения данных и без запуска движка
   TK616F_GO=1 python3 tk616_forward.py point L2 --bin <alpha-mk> --feat-bin <alpha-feat> [--freeze-sha256 … --freeze-commit … --candidate-sha256 … --candidate-commit …]   # ОДНО чтение точки: движок по окнам и вселенным, таблицы, охраны, вердикт
@@ -87,7 +89,12 @@ FILES_641 = ("long-trades.csv", "long-daily.csv", "long-coinday.csv", "long-entr
 REQUIRE_CANDIDATE = True                               # кандидат — часть заморозки вперёд: нет `tk638-frozen.json` рядом с `--freeze` — остановка (второго источника α нет); False — только тесты прежнего поведения tk626
 CAND3_NAME, CAND3_VERSION, CAND3_CELL = "tk670-frozen.json", "tk670-frozen-1", "D_S"    # TK-670: третий кандидат (звено цепочки после tk641), читается ОТДЕЛЬНЫМ бинарём (ключ `lx`)
 REQUIRE_CANDIDATE3 = True                              # нет `tk670-frozen.json` рядом с `--freeze` — остановка (α tk641 перекрыты); False — только тесты прежнего поведения
-DS_ALPHA_FLOOR_S_BASE = 0.02                           # В-167: пол α(S_base); кандидат берёт α только из долей S_mk1 / L_base (≥ 0,005 остаётся у каждой)
+CAND4_NAME, CAND4_VERSION = "tk691-frozen.json", "tk691-frozen-1"    # TK-691: пятое звено цепочки (перезаморозка на c539): решающая вселенная `crypto`, N лонга по правилу tk638 на c539, ворота кандидатов на c539
+REQUIRE_CANDIDATE4 = True                              # нет `tk691-frozen.json` рядом с `--freeze` — остановка (решающая вселенная и N меняются только им); False — только тесты прежнего поведения
+CAND4_GATED = ("L_n24", "L_mk2", "D_S")                # кандидаты, повторно проходящие свои ворота на c539 (G-638a / G-626c / G-670a); не прошёл — клетка не читается
+CAND4_FALLBACK = {"L_n24": "S_base", "L_mk2": "S_base", "D_S": "S_mk1"}    # куда возвращается α не читаемой клетки (постановление критика)
+CAND4_DECISION = "crypto"
+DS_ALPHA_FLOOR_S_BASE = 0.02                          # В-167: пол α(S_base); кандидат берёт α только из долей S_mk1 / L_base (≥ 0,005 остаётся у каждой)
 DS_ALPHA_DONORS = ("S_mk1", "L_base")
 DS_MISSING_MAX_SHARE = 0.01                            # C2 `D_S`: доля пар (монета, сутки зачёта) без klines предыдущих суток, выше которой `D_S` на точке не читается
 FILES_670 = ("short-trades.csv", "short-daily.csv", "short-coinday.csv", "short-entryrej.csv")      # `short-sigsx.csv` пакетный путь точки не пишет (дамп сигналов TK-668 — только `tk670_replay.py`, G-670a: 5 файлов)
@@ -252,8 +259,10 @@ def check_tree_days(root, wins, last_day, allowed=None):
 def check_universe(fz, udir, base_dir, point, prev_lists=None):
     """§13.28.1 п. 2 и п. 6 (3): списки вселенной точки. Возвращает {"lists": {имя: [монеты]}, "text": {имя: строка для --symbols}, "sha256": {имя: sha256 файла}, "contracts_sha256": …}.
     Базовые списки (775 / 539 / 236) сверяются с замороженными sha256 и должны входить в списки точки; all = crypto ⊔ tradfi; прирост (нет в базе) — первые сутки > 13.11 и ≤ D точки;
-    предыдущая точка (`prev_lists`) входит в текущую."""
+    предыдущая точка (`prev_lists`) входит в текущую. `universe.read == ["crypto"]` (звено tk691) — `check_universe_crypto`."""
     un = fz["universe"]
+    if tuple(un["read"]) == (CAND4_DECISION,):
+        return check_universe_crypto(fz, udir, base_dir, point, prev_lists)
     base = {}
     for n in UNI_NAMES:
         bp = os.path.join(base_dir, "symbols-%s.txt" % n)
@@ -302,6 +311,47 @@ def check_universe(fz, udir, base_dir, point, prev_lists=None):
         if prev_lists is not None and set(prev_lists[n]) - set(cur[n]):
             raise GuardError("вселенная точки %s не содержит вселенной предыдущей точки (%s): %s" % (point["id"], n, sorted(set(prev_lists[n]) - set(cur[n]))[:3]))
     return {"lists": cur, "text": text, "sha256": sha, "contracts_sha256": sha256_text(cpath)}
+
+
+def check_universe_crypto(fz, udir, base_dir, point, prev_lists=None):
+    """TK-691 (постановление критика, п. 1 с поправкой): читается ТОЛЬКО `crypto` (c539; данных TradFi нет, В-175). Базовый список `crypto` — по замороженному sha256 и входит в список точки;
+    прирост (нет в базе) — первые сутки > 13.11 и ≤ D точки (`contracts.csv`, строки монет списка; чужие строки не читаются); предыдущая точка входит в текущую. Нет списка точки — остановка."""
+    un = fz["universe"]
+    bp = os.path.join(base_dir, "symbols-crypto.txt")
+    if not os.path.exists(bp):
+        raise GuardError("нет базового списка %s (--base-dir)" % bp)
+    if sha256_text(bp) != un["base"]["crypto"]["sha256"]:
+        raise GuardError("базовый список %s: sha256 %s ≠ замороженному %s" % (bp, sha256_text(bp), un["base"]["crypto"]["sha256"]))
+    base = set(rr.read_symbols(bp)[1])
+    cp = os.path.join(udir, "symbols-crypto.txt")
+    if not os.path.exists(cp):
+        raise GuardError("нет списка решающей вселенной точки %s: готовится скриптом подготовки до точки" % cp)
+    text, cur = rr.read_symbols(cp)
+    if len(set(cur)) != len(cur):
+        raise GuardError("список %s: повторы монет" % cp)
+    miss = sorted(base - set(cur))
+    if miss:
+        raise GuardError("список %s не содержит базовых монет (%d), например: %s" % (cp, len(miss), miss[:3]))
+    cpath = os.path.join(udir, "contracts.csv")
+    if not os.path.exists(cpath):
+        raise GuardError("нет %s" % cpath)
+    rows = {r["symbol"]: r for r in csv.DictReader(open(cpath, encoding="utf-8")) if r["symbol"] in set(cur)}
+    if set(rows) != set(cur):
+        raise GuardError("contracts.csv не содержит монет списка crypto: %s" % sorted(set(cur) - set(rows))[:3])
+    last = point["d"]
+    for s, r in rows.items():
+        inb = s in base
+        if int(r["in_base"]) != int(inb):
+            raise GuardError("contracts.csv: %s — in_base расходится со списками" % s)
+        days = int(r["days_0107_1311"])
+        if inb and days < 1:
+            raise GuardError("contracts.csv: базовый %s — days_0107_1311 = %d < 1" % (s, days))
+        if not inb and (days != 0 or not (LISTING_AFTER < r["first_day"] <= r["last_day"] <= last)):
+            raise GuardError("прирост %s: days_0107_1311 = %d (нужно 0), сутки %s…%s вне (%s; %s] — членство только по факту публикации после 13.11" % (
+                s, days, r["first_day"], r["last_day"], LISTING_AFTER, last))
+    if prev_lists is not None and set(prev_lists.get("crypto", ())) - set(cur):
+        raise GuardError("вселенная точки %s не содержит вселенной предыдущей точки (crypto): %s" % (point["id"], sorted(set(prev_lists["crypto"]) - set(cur))[:3]))
+    return {"lists": {"crypto": cur}, "text": {"crypto": text}, "sha256": {"crypto": sha256_text(cp)}, "contracts_sha256": sha256_text(cpath)}
 
 
 @dataclasses.dataclass
@@ -744,6 +794,94 @@ def resolve_candidate3(a, fz, cand, c2, repo):
     if not info["candidate3_read"]:
         info["candidate3_note"] = "кандидат 3 не читан (--no-candidate3): α по кандидату 3 применены (S_mk1 %s, L_base %s)" % (c3["alpha"]["S_mk1"], c3["alpha"]["L_base"])
     return c3, info
+
+
+# ---- перезаморозка на c539 (TK-691, §13.77; постановление критика): пятое звено цепочки tk626 → tk638 → tk641 → tk670 → tk691 ------------------------
+
+def candidate4_path(freeze_path):
+    return os.path.join(os.path.dirname(os.path.abspath(freeze_path)), CAND4_NAME)
+
+
+def load_candidate4(path, fz, freeze_path, cand, cand_path, c2, c2_path, c3, c3_path):
+    """Файл `tk691-frozen.json` против заморозки и звеньев до любых данных. Версия; sha256 tk626, tk638, tk641, tk670 в файле = sha256 файлов; бинарь / доли / точки / окна / `ds_binary` = прежним;
+    `universe` = заморозке, кроме `read` = [crypto] и `decision` = crypto (решающая вселенная входит в читаемые); `filter.N` > 0 при прежнем имени фильтра; `gates` — РОВНО три кандидата с булевым `passed`,
+    `not_read` = не прошедшие; α: набор и сумма 0,05 = tk670, α не читаемой клетки = 0 и возвращена её долей (`L_n24` / `L_mk2` → `S_base`, `D_S` → `S_mk1`), остальные α = tk670; α_k = α × доли."""
+    if cand is None or c2 is None or c3 is None:
+        raise GuardError("кандидат %s без %s / %s / %s: цепочка tk626 → tk638 → tk641 → tk670 → tk691 разорвана" % (CAND4_NAME, CAND_NAME, CAND2_NAME, CAND3_NAME))
+    if not os.path.exists(path):
+        raise GuardError("нет файла кандидата %s" % path)
+    c = json.load(open(path, encoding="utf-8"))
+    if c.get("version") != CAND4_VERSION:
+        raise GuardError("версия кандидата 4 %r ≠ %r" % (c.get("version"), CAND4_VERSION))
+    for key, ver, p, what in (("base_freeze", VERSION, freeze_path, "заморозки"), ("prev_candidate", CAND_VERSION, cand_path, CAND_NAME), ("prev_candidate2", CAND2_VERSION, c2_path, CAND2_NAME),
+                              ("prev_candidate3", CAND3_VERSION, c3_path, CAND3_NAME)):
+        x = c.get(key, {})
+        if x.get("version") != ver or x.get("sha256") != sha256_text(p):
+            raise GuardError("кандидат 4 записан против другого файла (%s): sha256 %s… ≠ файла %s %s…" % (what, str(x.get("sha256"))[:12], p, sha256_text(p)[:12]))
+    for k in ("binary", "point_shares", "points", "windows"):
+        if c.get(k) != fz.get(k):
+            raise GuardError("кандидат 4: поле %r расходится с заморозкой %s" % (k, os.path.basename(freeze_path)))
+    if c.get("ds_binary") != c3["ds_binary"]:
+        raise GuardError("кандидат 4: `ds_binary` расходится с кандидатом 3")
+    un, un0 = c.get("universe", {}), fz["universe"]
+    if set(un) != set(un0) or any(un[k] != un0[k] for k in un0 if k not in ("read", "decision")):
+        raise GuardError("кандидат 4: `universe` расходится с заморозкой (допустимо только `read` / `decision`)")
+    if un["read"] != [CAND4_DECISION] or un["decision"] != CAND4_DECISION or un["decision"] not in un["read"]:
+        raise GuardError("кандидат 4: вселенные чтения %s / решающая %r ≠ [%s] / %s" % (un.get("read"), un.get("decision"), CAND4_DECISION, CAND4_DECISION))
+    flt = c.get("filter", {})
+    if not isinstance(flt.get("N"), (int, float)) or isinstance(flt.get("N"), bool) or flt["N"] <= 0 or flt.get("name") != cand["filter"]["name"]:
+        raise GuardError("кандидат 4: фильтр: порог N не положителен или имя ≠ %r" % cand["filter"]["name"])
+    gates = c.get("gates", {})
+    if set(gates) != set(CAND4_GATED) or any(not isinstance(g.get("passed"), bool) for g in gates.values()):
+        raise GuardError("кандидат 4: `gates` — ровно %s, у каждой булев `passed`" % list(CAND4_GATED))
+    not_read = [k for k in CAND4_GATED if not gates[k]["passed"]]
+    if c.get("not_read") != not_read:
+        raise GuardError("кандидат 4: `not_read` %s ≠ клеткам без пройденных ворот %s" % (c.get("not_read"), not_read))
+    a, a3 = c.get("alpha", {}), c3["alpha"]
+    if set(a) != set(a3):
+        raise GuardError("α кандидата 4 заданы для %s ≠ клеткам кандидата 3 %s" % (sorted(a), sorted(a3)))
+    if not _near(sum(a.values()), ALPHA_TOTAL):
+        raise GuardError("сумма α кандидата 4 %.6f ≠ %.2f" % (sum(a.values()), ALPHA_TOTAL))
+    exp = dict(a3)
+    for k in not_read:
+        exp[CAND4_FALLBACK[k]] += a3[k]
+        exp[k] = 0.0
+    bad = {k: (a[k], exp[k]) for k in exp if not _near(a[k], exp[k])}
+    if bad:
+        raise GuardError("α кандидата 4 ≠ α tk670 с возвратом α не читаемых клеток (%s → %s): %s" % (not_read, [CAND4_FALLBACK[k] for k in not_read], bad))
+    ak = c.get("alpha_k", {})
+    if set(ak) != set(a) or any(set(ak[k]) != set(fz["point_shares"]) or any(not _near(ak[k][p], a[k] * sh) for p, sh in fz["point_shares"].items()) for k in ak):
+        raise GuardError("α по точкам кандидата 4 ≠ α × доли точек")
+    return c
+
+
+def apply_candidate4(fz, cand, c4):
+    """(заморозка, кандидат 1) с решением звена tk691: α, `universe` (читается и решает `crypto`), порог N лонга по правилу tk638 на c539; `L_mk2` не прошла ворота — клетки пакета нет."""
+    out = dict(fz)
+    out["alpha"] = dict(c4["alpha"])
+    out["universe"] = c4["universe"]
+    if CAND2_CELL in c4["not_read"] and CAND2_CELL in fz["cells"]:
+        out["cells"] = {k: v for k, v in fz["cells"].items() if k != CAND2_CELL}
+    c1 = dict(cand)
+    c1["filter"] = dict(cand["filter"], N=c4["filter"]["N"])
+    return out, c1
+
+
+def resolve_candidate4(a, fz, cand, c2, c3, repo):
+    """(кандидат 4, {поля маркера}). Нет файла — `GuardError` всегда (решающая вселенная и N меняются только им; молчаливого возврата к 775 нет), кроме тестов прежнего поведения (`REQUIRE_CANDIDATE4 = False`)."""
+    explicit = getattr(a, "candidate4", "")
+    path = explicit or candidate4_path(a.freeze)
+    if not os.path.exists(path):
+        if explicit or REQUIRE_CANDIDATE4:
+            raise GuardError("нет файла кандидата %s: решающая вселенная crypto, порог N и ворота на c539 без него не применяются — читать нельзя" % path)
+        return None, {}
+    cand_path = getattr(a, "candidate", "") or candidate_path(a.freeze)
+    c2_path = getattr(a, "candidate2", "") or candidate2_path(a.freeze)
+    c3_path = getattr(a, "candidate3", "") or candidate3_path(a.freeze)
+    c4 = load_candidate4(path, fz, a.freeze, cand, cand_path, c2, c2_path, c3, c3_path)
+    commit, sha = check_freeze_committed(path, repo, getattr(a, "candidate4_commit", ""), getattr(a, "candidate4_sha256", ""))
+    return c4, {"candidate4": "tk691", "candidate4_commit": commit, "candidate4_sha256": sha, "candidate4_not_read": c4["not_read"], "candidate4_N": c4["filter"]["N"],
+                "universe_read": c4["universe"]["read"], "universe_decision": c4["universe"]["decision"]}
 
 
 def ds_missing_pairs(pdir, wins, coins, lohi_of):
@@ -1226,14 +1364,18 @@ def run_point(a, runner=None, today=None, repo=REPO):
     cand, cinfo = resolve_candidate(a, fz, repo)
     if cand is not None:
         fz = apply_candidate(fz, cand)                                   # C1: α из кандидата (S_base 0,025 + L_n24 0,005), не из tk626-frozen.json
-    run_cand = cand is not None and cinfo["candidate_read"]
     c2, c2info = resolve_candidate2(a, fz, cand, repo)
     if c2 is not None:
         fz = apply_candidate2(fz, c2, c2info["candidate2_read"])         # TK-641 C1: α из tk641 (S_base 0,020 + L_mk2 0,005); `L_mk2` — обычная клетка пакета
     c3, c3info = resolve_candidate3(a, fz, cand, c2, repo)
     if c3 is not None:
         fz = apply_candidate3(fz, c3)                                    # TK-670 C1: α из tk670 (S_base 0,020 + D_S 0,005, доля S_mk1 / L_base); `D_S` — отдельный прогон `run_ds`
-    run_ds_cell = c3 is not None and c3info["candidate3_read"]
+    c4, c4info = resolve_candidate4(a, fz, cand, c2, c3, repo)
+    if c4 is not None:
+        fz, cand = apply_candidate4(fz, cand, c4)                        # TK-691 C1: решающая вселенная crypto, N лонга на c539, α не читаемых клеток возвращены; `read` = [crypto]
+    nr = c4["not_read"] if c4 is not None else []
+    run_cand = cand is not None and cinfo["candidate_read"] and CAND_CELL not in nr
+    run_ds_cell = c3 is not None and c3info["candidate3_read"] and CAND3_CELL not in nr
     pt = get_point(fz, a.point)
     today = today or datetime.datetime.now(datetime.timezone.utc).date()
     check_point_date(pt, today)
@@ -1257,7 +1399,7 @@ def run_point(a, runner=None, today=None, repo=REPO):
             raise GuardError("нет манифеста файлов точки %s (%s)" % (prev["id"], mp))
         prev_man = read_manifest(mp)
     uni = check_universe(fz, a.universe_dir or os.path.join(pdir, "universe"), a.base_dir, pt, prev_lists)
-    ntree = check_tree_days(pdir, wins_used, D, allowed=set(uni["lists"]["all"]))
+    ntree = check_tree_days(pdir, wins_used, D, allowed=set().union(*uni["lists"].values()))
     man = tree_manifest(pdir, wins_used)
     if prev_man is not None:
         bad = manifest_guard(prev_man, man)
@@ -1265,7 +1407,7 @@ def run_point(a, runner=None, today=None, repo=REPO):
             raise GuardError("данные между точками изменились (%d): %s" % (len(bad), bad[:3]))
     claim_read(a.root, pt["id"], {"point": pt["id"], "bin_md5": md5, "bin_sha256": sha, "freeze_commit": commit, "freeze_sha256": fsha, "tree_files": ntree,
                                  "universe_sha256": uni["sha256"], "universe_n": {n: len(v) for n, v in uni["lists"].items()}, "contracts_sha256": uni["contracts_sha256"],
-                                 **cinfo, **c2info, **c3info, "utc": datetime.datetime.now(datetime.timezone.utc).isoformat()})
+                                 **cinfo, **c2info, **c3info, **c4info, "utc": datetime.datetime.now(datetime.timezone.utc).isoformat()})
     reqs = reqs_of(fz)
     tabs, byw, n24, ds_info = {}, {}, {}, {}
     rn = runner or rr.SubprocessRunner()
@@ -1306,14 +1448,14 @@ def run_point(a, runner=None, today=None, repo=REPO):
     rates = None
     if a.funding:
         months = sorted({(F0 + datetime.timedelta(days=i)).strftime("%Y-%m") for i in range((to - F0).days + 1)})
-        rates = rf.load_funding_rates(a.funding, uni["lists"]["all"], months=tuple(months)) or None
+        rates = rf.load_funding_rates(a.funding, sorted(set().union(*uni["lists"].values())), months=tuple(months)) or None
     stats = {k: cell_point_stats(fz, k.split("|")[0], pt, rows[k], to, rates, a.nboot, uni=k.split("|")[1]) for k in rows}
     joint = None
     sk, dk = key_of("S_base", fz["universe"]["decision"]), key_of(CAND3_CELL, fz["universe"]["decision"])
     if sk in rows and dk in rows:                                        # совместное чтение с S_base — ОПИСАТЕЛЬНО, без вердикта и без α (раздел «вместе с S_base» отчёта TK-668)
         joint = joint_describe(rows[sk], rows[dk], to)
     res = {"point": pt, "freeze_commit": commit, "freeze_sha256": fsha, "bin_md5": md5, "stats": stats, "seams": {k: len(x) for k, x in seam.items()},
-           "prefix": {"forced_prev": forced, "diffs": {c: len(x) for c, x in pref.items()}}, "n24": n24, "candidate": cinfo, "candidate2": c2info, "candidate3": c3info, "ds": ds_info, "joint": joint, "tree_files": ntree, "manifest_files": len(man),
+           "prefix": {"forced_prev": forced, "diffs": {c: len(x) for c, x in pref.items()}}, "n24": n24, "candidate": cinfo, "candidate2": c2info, "candidate3": c3info, "candidate4": c4info, "ds": ds_info, "joint": joint, "tree_files": ntree, "manifest_files": len(man),
            "universe": {"n": {n: len(v) for n, v in uni["lists"].items()}, "sha256": uni["sha256"]}}
     json.dump(res, open(os.path.join(a.root, "point-%s.json" % pt["id"]), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=float)
     if run_cand:
@@ -1331,7 +1473,7 @@ def f2(x, nd=2):
 
 def render(res):
     pt = res["point"]
-    L = ["# TK-626 — точка %s: данные до %s, входы ≤ %s (окна %s); решающая вселенная — all, остальные — описательно" % (pt["id"], pt["d"], pt["entries_to"], ", ".join(pt["windows"])), "",
+    L = ["# TK-626 — точка %s: данные до %s, входы ≤ %s (окна %s); решающая вселенная — %s, остальные — описательно" % (pt["id"], pt["d"], pt["entries_to"], ", ".join(pt["windows"]), (res.get("candidate4") or {}).get("universe_decision", "all")), "",
          "| клетка | вселенная | сделок | forced | ΣS $ | $/сделку | шарп | p | α точки | без 2 лучших суток | без 2 лучших монет | граница B $ (режим) | (ΣS − B)/N > 0 | решение |",
          "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for k, s in res["stats"].items():
@@ -1346,6 +1488,8 @@ def render(res):
         L.append("%s (кандидат TK-641): %s" % (CAND2_CELL, res["candidate2"]["candidate2_note"]))
     if (res.get("candidate3") or {}).get("candidate3_read") is False:
         L.append("%s (кандидат TK-670): %s" % (CAND3_CELL, res["candidate3"]["candidate3_note"]))
+    if (res.get("candidate4") or {}).get("candidate4_not_read"):
+        L.append("TK-691: клетки не читаются (ворота c539 не пройдены, α возвращена): %s" % ", ".join(res["candidate4"]["candidate4_not_read"]))
     for u, x in (res.get("ds") or {}).items():
         L.append("%s (кандидат TK-670), вселенная %s: %s; пар (монета, сутки) без klines предыдущих суток %s из %s%s%s" % (
             CAND3_CELL, u, "прочитана" if x["status"] == "read" else "НЕ ЧИТАЛАСЬ", x["missing_pairs"] if x["missing_pairs"] is not None else "—", x["pairs"] if x["pairs"] is not None else "—",
@@ -1354,7 +1498,7 @@ def render(res):
             L.append("%s, вселенная %s, счётчики движка по окнам (печатаются, в решение не входят): %s" % (CAND3_CELL, u, x["windows"]))
     j = res.get("joint")
     if j:
-        L += ["", "Совместно `S_base` + `%s` (вселенная all, ОПИСАТЕЛЬНО — без вердикта и α; простая сумма суточных рядов, лимит позиций и слоты не моделируются):" % CAND3_CELL,
+        L += ["", "Совместно `S_base` + `%s` (вселенная %s, ОПИСАТЕЛЬНО — без вердикта и α; простая сумма суточных рядов, лимит позиций и слоты не моделируются):" % (CAND3_CELL, (res.get("candidate4") or {}).get("universe_decision", "all")),
               "сделок %d (S_base %d + %s %d); Σ %s $ (S_base %s, %s %s); $/сделку %s; шарп %s (S_base %s, %s %s); просадка %s $ (%s %% маржи); корреляция суточных %s; сделок с парой в другой линии: S_base %d, %s %d" % (
                   j["n"], j["n_a"], CAND3_CELL, j["n_b"], f2(j["sum"]), f2(j["sum_a"]), CAND3_CELL, f2(j["sum_b"]), f2(j["mean"], 3), f2(j["sharpe"], 2), f2(j["sharpe_a"], 2), CAND3_CELL, f2(j["sharpe_b"], 2),
                   f2(j["maxdd"], 1), f2(j["maxdd_pct_margin"], 1), f2(j["corr_daily"], 3), j["overlap"]["a_with_pair"], CAND3_CELL, j["overlap"]["b_with_pair"])]
@@ -1386,6 +1530,13 @@ def cmd_plan(a):
                 print("кандидат %s (%s): α %s; клетка %s vid %s, бинарь %s" % (CAND3_NAME, c3["version"], fz["alpha"], CAND3_CELL, c3["cells"][CAND3_CELL]["vid"], c3["ds_binary"]["md5"]))
             else:
                 print("кандидата %s рядом с заморозкой нет — чтение точки остановится (кандидат в силе: α S_base 0,020, S_mk1 / L_base без него не применяются)" % CAND3_NAME)
+            cp4 = getattr(a, "candidate4", "") or candidate4_path(a.freeze)
+            if os.path.exists(cp4) and os.path.exists(cp3):
+                c4 = load_candidate4(cp4, fz, a.freeze, cand, cp, c2, cp2, c3, cp3)
+                fz, cand = apply_candidate4(fz, cand, c4)
+                print("кандидат %s (%s): α %s; читается и решает %s; N лонга %s; не читаются %s" % (CAND4_NAME, c4["version"], fz["alpha"], c4["universe"]["decision"], cand["filter"]["N"], c4["not_read"] or "—"))
+            elif os.path.exists(cp3):
+                print("кандидата %s рядом с заморозкой нет — чтение точки остановится (решающая вселенная crypto, N лонга и ворота c539 без него не применяются)" % CAND4_NAME)
         else:
             print("кандидата %s рядом с заморозкой нет — чтение точки остановится (кандидат в силе: α S_base 0,020)" % CAND2_NAME)
     else:
@@ -1427,6 +1578,9 @@ def main(argv=None):
     ap.add_argument("--no-candidate3", action="store_true", help="D_S не читать (файл всё равно нужен: α S_mk1 / L_base уже потрачены); в маркере «кандидат 3 не читан»")
     ap.add_argument("--candidate3-commit", default="")
     ap.add_argument("--candidate3-sha256", default="")
+    ap.add_argument("--candidate4", default="", help="файл пятого звена (по умолчанию `%s` рядом с --freeze): решающая вселенная crypto, N лонга, ворота c539" % CAND4_NAME)
+    ap.add_argument("--candidate4-commit", default="")
+    ap.add_argument("--candidate4-sha256", default="")
     ap.add_argument("--ds-bin", default="", help="бинарь `D_S` (md5 / sha256 — в `ds_binary` файла кандидата 3; ключ `lx` есть только в нём)")
     ap.add_argument("--ref-dir", default="/data/p42-tk626/gmk/out", help="replay-mk2: выходы G-626c `<окно>/<vid>/long-*`; replay-ds: выходы TK-668 `<окно>/S_lx1/short-*` (`/data/p42-tk668/e4/cells`)")
     ap.add_argument("--feat-bin", default="", help="`alpha-feat` кандидата (md5 / sha256 — в файле кандидата)")

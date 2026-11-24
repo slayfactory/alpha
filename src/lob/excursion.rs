@@ -83,6 +83,7 @@ impl SecondMids {
         }
     }
 
+    #[cfg(test)]
     /// Число секунд в ряду.
     pub fn len_secs(&self) -> usize {
         self.mid2x.len()

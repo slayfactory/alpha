@@ -513,6 +513,9 @@ pub struct TSig {
     pub far: i64,
     /// §13.13 (`ap = 2`): цена пришла в зону сверху (сигнал помечен, не отвергнут).
     pub ws: bool,
+    /// TK-697 (`tn`): цена следующего уровня за пробиваемым (длинная рама) — ближайший по цене уровень того же набора строго за `lp` по ходу сделки, известный и живой
+    /// на минуте сигнала `t` (`levels::next_px`); 0 — такого уровня нет. Считается всегда (фаза 1 не знает ключей выхода, кэш сигналов хранит поле).
+    pub nxt: i64,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -854,6 +857,12 @@ pub fn signals_for_coin(
                     lp: c.lp,
                     far: c.far,
                     ws,
+                    nxt: super::levels::next_px(
+                        &lev[&(cfg.lv.clone(), *side)],
+                        side.s(),
+                        c.lp,
+                        c.t as usize,
+                    ),
                 });
                 ctrs[j].signals[half_of_day(day)] += 1;
             }
@@ -969,6 +978,65 @@ pub fn tp_lots_n(ex: &ExitCfg, notional: i64) -> Vec<i64> {
     lots
 }
 
+/// TK-697 (`tn`): план тейков позиции с первым тейком у следующего уровня (определение — у `ExitCfg::tn_pct`): цены (рама), лоты (мкУЕ) и исходные номера
+/// ступеней лестницы (для пересчёта `tj`; у тейка у уровня — 0).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NextTake {
+    pub tps: Vec<i64>,
+    pub lots: Vec<i64>,
+    pub steps: Vec<usize>,
+}
+
+/// TK-697 (`tn`): план тейков лота `notional` (мкУЕ) с входом по `e` (рама) — `nxt` цена следующего уровня (рама; 0 — нет), `off` отступ внутрь (цена), `ladder` — цены ступеней
+/// обычной лестницы (рама, по возрастанию). `None` — откат на обычную лестницу: ключ выключен, следующего уровня нет, тейк `nxt − off` не выше цены входа или дальше
+/// внешней ступени лестницы. Иначе: тейк у уровня — лот `tn` % и ступени лестницы №2…n с ценой строго выше него, в тейки уходит `q` % остатка по весам `tpk` (нормированы по оставшимся
+/// ступеням, остаток целого деления — последней); `tn = 100` — ступеней нет. Полное определение — у `ExitCfg::tn_pct`.
+pub fn next_take_plan(
+    ex: &ExitCfg,
+    nxt: i64,
+    e: i64,
+    off: i64,
+    ladder: &[i64],
+    notional: i64,
+) -> Option<NextTake> {
+    if ex.tn_pct <= 0 || nxt == 0 {
+        return None;
+    }
+    let outer = *ladder.last()?;
+    let tp = nxt - off;
+    if tp <= e || tp > outer {
+        return None;
+    }
+    let first = notional * ex.tn_pct / 100;
+    let rest = notional - first;
+    let kept: Vec<usize> = if rest > 0 {
+        (1..ladder.len()).filter(|&i| ladder[i] > tp).collect()
+    } else {
+        Vec::new()
+    };
+    // веса ступеней — как в `tp_lots_n`: `1000·(n−1) + κ·i` по исходному номеру ступени
+    let n = ladder.len() as i64;
+    let w = |i: usize| i128::from(1000 * (n - 1) + ex.tp_kappa_m * i as i64);
+    let sw: i128 = kept.iter().map(|&i| w(i)).sum();
+    let budget = rest * ex.q_pct / 100;
+    let mut lots = vec![first];
+    lots.extend(
+        kept.iter()
+            .map(|&i| (i128::from(budget) * w(i) / sw) as i64),
+    );
+    if !kept.is_empty() {
+        let done: i64 = lots[1..].iter().sum();
+        if let Some(last) = lots.last_mut() {
+            *last += budget - done;
+        }
+    }
+    let mut tps = vec![tp];
+    tps.extend(kept.iter().map(|&i| ladder[i]));
+    let mut steps = vec![0usize];
+    steps.extend(kept);
+    Some(NextTake { tps, lots, steps })
+}
+
 /// NATR выхода (e8) для сигнала на минуте `t` (§13.2 п. 3; `ns`, §13.12): закрытая минутка `t−1` или, при `ns = 1`, `t`.
 pub fn exit_natr(sym: &Sym, ex: &ExitCfg, t: usize) -> i64 {
     sym.natr_for(ex.natr_p)
@@ -985,6 +1053,8 @@ pub struct LevelCtx {
     /// TK-676 (`vf`): волатильность стопа `V` и режимная `V_z` на закрытой минутке `t−1` (доля цены ×1e8, −1 — нет значения или `vf = 0`).
     pub vol: i64,
     pub volz: i64,
+    /// TK-697 (`tn`): цена следующего уровня (длинная рама), `TSig::nxt`; 0 — нет.
+    pub nxt: i64,
 }
 
 /// TK-676: значение источника волатильности `src` (коды `vs`) на закрытой минутке `t−1` сигнала в минуту `t`; −1 — нет значения.
@@ -1031,6 +1101,7 @@ pub fn level_ctx(sym: &Sym, side: Side, sg: &TSig, ex: &ExitCfg) -> LevelCtx {
         } else {
             -1
         },
+        nxt: sg.nxt,
     }
 }
 
@@ -1215,11 +1286,6 @@ impl Pos {
             hi: frac(ea, ex.s_pm, 100_000),
             entry_ms,
         });
-        let step = (ex.tj_m > 0).then(|| StepLadder {
-            delta_m: ex.tj_m,
-            mults: (0..n).map(|i| tp_mult_m(ex, i, n)).collect(),
-            unit,
-        });
         // TK-669 (`tpp`, `trp`): тейки и откат трейла — в процентах цены входа, а не в NATR
         let tp_at = |i: i64| {
             if ex.tpp {
@@ -1228,10 +1294,34 @@ impl Pos {
                 e + nat(tp_mult_m(ex, i, n))
             }
         };
+        let ladder: Vec<i64> = (0..n).map(tp_at).collect();
+        // TK-697 (`tn`): первый тейк у следующего уровня; `None` — обычная лестница (ключ выключен или тейк не годится)
+        let nt = if ex.tn_pct > 0 {
+            lc.and_then(|l| next_take_plan(ex, l.nxt, e, nat(ex.tno_m), &ladder, notional))
+        } else {
+            None
+        };
+        // пересчёт `tj` идёт по множителям исходных ступеней (у тейка у уровня множитель не используется: после его исполнения он не пересчитывается)
+        let step = (ex.tj_m > 0).then(|| StepLadder {
+            delta_m: ex.tj_m,
+            mults: match &nt {
+                Some(pl) => pl
+                    .steps
+                    .iter()
+                    .map(|&i| tp_mult_m(ex, i as i64, n))
+                    .collect(),
+                None => (0..n).map(|i| tp_mult_m(ex, i, n)).collect(),
+            },
+            unit,
+        });
+        let (tps, lots) = match nt {
+            Some(pl) => (pl.tps, pl.lots),
+            None => (ladder, tp_lots_n(ex, notional)),
+        };
         Pos {
             e,
-            tps: (0..n).map(tp_at).collect(),
-            lots: tp_lots_n(ex, notional),
+            tps,
+            lots,
             a_dist: nat(ex.a_m),
             r_dist: if ex.trp {
                 frac(ea, ex.r_m, 100_000)

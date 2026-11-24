@@ -33,6 +33,8 @@ pub mod trade;
 pub mod volstop;
 
 #[cfg(test)]
+mod lx4_tests;
+#[cfg(test)]
 mod lx_tests;
 #[cfg(test)]
 mod sigcache_tests;

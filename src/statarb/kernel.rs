@@ -96,6 +96,7 @@ pub struct PairInput<'a> {
 }
 
 impl PairInput<'_> {
+    #[cfg(test)]
     pub fn check(&self) -> Result<(), &'static str> {
         let n = self.ly.len();
         if self.lx.len() != n || self.oy.len() != n {

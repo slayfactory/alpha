@@ -339,7 +339,14 @@ fn lx_lw_parse_and_validation() {
     for ok in ["x lx=1 tf=60", "x lw=6", "x lx=3"] {
         assert!(parse_variant(ok).is_ok(), "{ok}");
     }
-    for bad in ["x lx=4", "x lw=7", "x lx=1 tf=30", "x lx=3 tf=240"] {
+    // lx = 4 (наклонная линия, TK-697 D № 1) без `lk` и `ld` — отказ; значение 5 — вне набора
+    for bad in [
+        "x lx=4",
+        "x lx=5",
+        "x lw=7",
+        "x lx=1 tf=30",
+        "x lx=3 tf=240",
+    ] {
         assert!(parse_variant(bad).is_err(), "{bad}");
     }
 }
@@ -386,7 +393,7 @@ fn lx_fresh_ok_is_bypassed_for_source_levels() {
         !fresh_ok(&s, &cfg, &plain_level(0), 1, lp, 3000),
         "пивотный уровень отвергнут"
     );
-    for src in 1..=3 {
+    for src in 1..=4 {
         assert!(
             fresh_ok(&s, &cfg, &plain_level(src), 1, lp, 3000),
             "lx = {src}: допущен"
@@ -487,6 +494,7 @@ fn lx_levels_dump_has_the_same_columns() {
         lp: px(105.0),
         far: px(105.0),
         ws: false,
+        nxt: 0,
     };
     write_sigsx(
         tmp.path(),

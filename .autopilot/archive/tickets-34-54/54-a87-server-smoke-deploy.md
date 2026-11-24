@@ -1,10 +1,10 @@
 # 54 — Смоук сценариев A8 на сервере и деплой (A8.7)
 
 **Требования:** директива владельца 2026-09-17 («коллектор при любых обстоятельствах»), подтикет A8.7
-в `docs/plan/dev-plan-2026-09-17.md` §Дополнения; порядок — A8.1b ✔ … A8.6 ✔ → **A8.7** → B5.
+в `docs/archive/plan/dev-plan-2026-09-17.md` §Дополнения; порядок — A8.1b ✔ … A8.6 ✔ → **A8.7** → B5.
 **Blocked by:** —
 **Зона:** сервер (второй корень `/opt/alpha/smoke`, бинарник `alpha-smoke-a87`), отчёт
-`docs/archive/findings/collector-resilience-2026-09-18.md`, `docs/plan/dev-plan-2026-09-17.md`, `CLAUDE.md`
+`docs/archive/findings/collector-resilience-2026-09-18.md`, `docs/archive/plan/dev-plan-2026-09-17.md`, `CLAUDE.md`
 (§Состояние — после деплоя).
 **Волна:** 13
 **Status:** done (смоук и деплой 2026-09-17 21:55:21Z; аудит 18.09)

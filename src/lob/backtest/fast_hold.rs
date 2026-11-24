@@ -116,6 +116,7 @@ impl<'a> HoldTracker<'a> {
         }
     }
 
+    #[cfg(test)]
     pub fn take_trades(&mut self) -> std::vec::Drain<'_, Event> {
         self.trades.drain(..)
     }
@@ -218,6 +219,7 @@ pub fn build_backtest_from_handoff(
     )
 }
 
+#[cfg(test)]
 /// То же в замыкании (тесты): движок умирает до выхода.
 pub fn with_backtest_from_handoff<R>(
     h: &FastHandoff,

@@ -166,6 +166,7 @@ pub fn append_verify_row(path: &Path, row: &VerifyRow) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 /// Читает все строки.
 pub fn read_verify_rows(path: &Path) -> anyhow::Result<Vec<VerifyRow>> {
     if std::fs::metadata(path)
@@ -265,10 +266,12 @@ impl VerifyState {
         self.replica.last_seq()
     }
 
+    #[cfg(test)]
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
 
+    #[cfg(test)]
     pub fn base_seq(&self) -> Option<u64> {
         self.verified_seq
     }
@@ -644,6 +647,7 @@ impl VerifyState {
 // Одна прямая сверка без догона (переиспользуемый generic, без сети в тестах)
 // ---------------------------------------------------------------------------
 
+#[cfg(test)]
 /// Прямое сравнение книги ровно на `seq` снапшота. Рассинхрон — `misaligned`,
 /// а не `mismatch`; отказ REST — строка `rest_unavailable` обычным возвратом.
 /// Ошибку возвращает только запись в CSV.
