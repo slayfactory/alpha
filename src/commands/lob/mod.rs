@@ -403,8 +403,8 @@ fn print_latency(args: LatencyArgs) -> anyhow::Result<()> {
     println!(
         "latency: symbol={} qty={} notional_usdt={} out={}",
         args.symbol,
-        crate::bybit::latency::format_e9(rep.qty_e9),
-        crate::bybit::latency::format_e9(rep.notional_e9),
+        crate::bybit::ws::format_e9(rep.qty_e9),
+        crate::bybit::ws::format_e9(rep.notional_e9),
         rep.out.display()
     );
     print!("{}", rep.summary);
@@ -414,7 +414,7 @@ fn print_latency(args: LatencyArgs) -> anyhow::Result<()> {
     if let Some(size) = rep.flattened_e9 {
         println!(
             "latency: в конце закрыт остаток позиции {}",
-            crate::bybit::latency::format_e9(size)
+            crate::bybit::ws::format_e9(size)
         );
     }
     Ok(())

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::bybit::rest::Instrument;
+use crate::bybit::ws::format_e9;
 
 use super::coverage::eligible_baskets;
 use super::depth::{depth_check, DepthCheck, MeasuredCandidate};
@@ -181,32 +182,6 @@ pub fn write_candidate_table_csv(
     }
     w.flush()?;
     Ok(())
-}
-
-/// Обратное к `bybit::ws::parse_e9`: величина 1e-9 обратно в десятичную
-/// строку — для человекочитаемого `instruments.csv`. Не переиспользует
-/// `probe.rs::format_e9` (тот же приём, там же причина: разная точка
-/// использования в чужом файле) — своя маленькая копия здесь, а тест
-/// `format_e9_round_trips_through_parse_e9` ниже пином проверяет, что оба
-/// файла всё равно говорят об одной и той же величине через общий `parse_e9`.
-fn format_e9(v: i64) -> String {
-    let neg = v < 0;
-    let v = v.unsigned_abs();
-    let int_part = v / 1_000_000_000;
-    let frac_part = v % 1_000_000_000;
-    let mut s = if frac_part == 0 {
-        int_part.to_string()
-    } else {
-        let mut frac_str = format!("{frac_part:09}");
-        while frac_str.ends_with('0') {
-            frac_str.pop();
-        }
-        format!("{int_part}.{frac_str}")
-    };
-    if neg {
-        s.insert(0, '-');
-    }
-    s
 }
 
 #[cfg(test)]

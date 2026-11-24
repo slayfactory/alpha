@@ -501,7 +501,7 @@ pub fn run_latency(args: &LatencyArgs) -> anyhow::Result<LatencyReport> {
             match bench.flatten() {
                 Ok(Some(size)) => bench.errors.push(format!(
                     "cycle {cycle}: закрыт остаток {}",
-                    crate::bybit::latency::format_e9(size)
+                    crate::bybit::ws::format_e9(size)
                 )),
                 Ok(None) => {}
                 Err(e) => bench.errors.push(format!("cycle {cycle}: flatten: {e}")),
