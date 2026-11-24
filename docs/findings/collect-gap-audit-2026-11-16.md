@@ -125,7 +125,7 @@ Binance: BARD исключён из пула 13.11 11:12 – 14.11 11:45 (1 474 
 ## 5. Артефакты
 
 - Скрипты: `tools/collect_gap/` — `aggregate.py` (матрица символ×минута из файлов), `klines.py` (REST-минутки), `analyze.py` (сверка, участки, причины), `shardgaps.py` (окна `msgs = 0` из `stats-*.jsonl`), `symslice.py` (записи символа за интервал).
-- Результаты по биржам: `docs/findings/collect-gap-audit-2026-11-16/<биржа>/` — `summary.json`, `stretches-book.csv`, `stretches-trade.csv`, `absent-runs.csv`, `shard-outages.csv`, `minutes.csv`, `short-holes.csv`; общие: `shardgaps/*.json`, `pool-journal-2026-11-13_15.txt` (пул и исключённый топ по запускам из журнала), `poolnow/` (пул «сейчас» по боевым бинарям, `--pool-only`).
+- Результаты по биржам: `docs/archive/findings/collect-gap-audit-2026-11-16/<биржа>/` — `summary.json`, `stretches-book.csv`, `stretches-trade.csv`, `absent-runs.csv`, `shard-outages.csv`, `minutes.csv`, `short-holes.csv`; общие: `shardgaps/*.json`, `pool-journal-2026-11-13_15.txt` (пул и исключённый топ по запускам из журнала), `poolnow/` (пул «сейчас» по боевым бинарям, `--pool-only`).
 - Сырые матрицы, REST-минутки, журналы: `/data/collect-gap/` на srv (`agg/`, `klines/`, `out/`, `journal/`, `poolnow/`, `gate-raw/`); не удалять.
 - Воспроизведение: `python3 tools/collect_gap/aggregate.py --exchange X --root <корень данных> --out /data/collect-gap/agg --t-end <epoch>` → `klines.py --exchange X --pools '<корень>/pool-*.json' --out …/klines --t-start <epoch−24 ч> --t-end …` → `analyze.py --exchange X --agg … --klines … --out … --journal <journalctl юнита>`. Полный проход по 60 ГБ — ≈ 1,5 ч на 4 ядрах (nice 19).
 

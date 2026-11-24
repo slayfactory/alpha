@@ -24,7 +24,7 @@
 - ssh: `-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts`, `root@5.231.25.224`. pandas на ПК сломан — всё, что читает минутки, на srv. cargo на ПК нельзя.
 
 ## Состояние остального (для контекста)
-- Флаги уровня A–G, индекс, 1324 PNG старого стиля — готовы и лежат в `Downloads\P-42-сделки\` (итог — `docs/findings/p42-trade-charts-level-flags-2026-11-15.md`).
+- Флаги уровня A–G, индекс, 1324 PNG старого стиля — готовы и лежат в `Downloads\P-42-сделки\` (итог — `docs/archive/findings/p42-trade-charts-level-flags-2026-11-15.md`).
 - §13.11 (опция движка `pk=1`) посчитана и отправлена координатору (отчёт `docs/archive/findings/p42-pk-level-pierce-kill-2026-11-15.md`; вердикты не изменились, Δ «в шуме»; m = 533 / 522). Новых задач по ней нет.
 - Правки Python — через `Edit`/скрипт; правки `*.rs` — Python с учётом CRLF (не нужны в этой задаче).
 

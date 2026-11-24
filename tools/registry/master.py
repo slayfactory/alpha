@@ -14,13 +14,14 @@ import cellhash as ch, db, mechanics as mech  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 FIND = os.path.join(ROOT, "docs", "findings")
+FIND_ARCH = os.path.join(ROOT, "docs", "archive", "findings")  # p12-cells-*.csv ушли в архив (TK-640)
 LAYERS = {"params.csv": ("params.jsonl", ("name",)), "stacks.csv": ("stacks.jsonl", ("stack", "version", "param")),
           "hyp_axes.csv": ("hyp_axes.jsonl", ("hyp", "protocol", "param")), "rules.csv": ("rules.jsonl", ("protocol", "version", "key"))}
 COLS = {"params.csv": ("name", "unit", "resolution", "axis_type", "cfg_path", "note"), "stacks.csv": ("stack", "version", "param", "value"),
         "hyp_axes.csv": ("hyp", "protocol", "version", "stack", "param", "lo", "hi", "points_f1", "old_points", "note", "role", "engine", "mechanic"),
         "rules.csv": ("protocol", "version", "key", "value")}
 RULE_DEFAULTS = {"months": 9}
-F1_STATS = os.path.join("docs", "findings", "tk278-sieve-f1-all-A-2026-10-16.csv")   # сито F1 по всем 50 гипотезам (TK-278 п.4; было tk237-…-cell-A, 12 гипотез), сторона А (hyp, axes, days_A, dSR, p, status) — вход зоны F2
+F1_STATS = os.path.join("docs", "archive", "findings", "tk278-sieve-f1-all-A-2026-10-16.csv")   # сито F1 по всем 50 гипотезам (TK-278 п.4; было tk237-…-cell-A, 12 гипотез), сторона А (hyp, axes, days_A, dSR, p, status) — вход зоны F2
 MAX_ZONES = 3   # П-14 §11.2 п. 2
 
 
@@ -204,8 +205,9 @@ def family_of(hyp):
     """Г-87 -> g87 / e112 …: имя семьи, как в p12-cells (Летопись); нет в таблице -> g<номер> (хеш с Летописью не сверен)."""
     if not _FAMILY:
         for fn in ("p12-cells-2026-10-06.csv", "p12-cells-ext-2026-10-07.csv"):
-            if os.path.exists(os.path.join(FIND, fn)):
-                for r in csv.DictReader(open(os.path.join(FIND, fn), encoding="utf-8")):
+            path = next((p for p in (os.path.join(FIND, fn), os.path.join(FIND_ARCH, fn)) if os.path.exists(p)), None)
+            if path:
+                for r in csv.DictReader(open(path, encoding="utf-8")):
                     m = re.fullmatch(r"[a-z]+(\d+)(?:-[a-z]+)?", r["family"])
                     if m:
                         _FAMILY.setdefault(m.group(1), r["family"])
@@ -227,10 +229,10 @@ def p15_thresholds():
 MONTHLY = {}  # хеш клетки -> {ГГГГ-ММ: строка --cells}: число в имени формы меняется по месяцам (Г-133 chase<a·W_m>); файл --cells на месяц
 _THR = os.path.join(FIND, "p12-r2b-thresholds-2026-10-10.json")
 MSETS = {}  # имя набора -> спецификация --set: наборы с порогом по месяцам (Г-10 btc<N>h_max=T_m); write_set добавляет их к --set
-_TAPE_THR = os.path.join(FIND, "tape-thresholds-v11-2026-10-18.json")   # TK-272 v11 (thr11/summary.json; v9 побитно внутри + q94 + 16 окон W из multi-W ленты wm16): ключи e112_W<W>_q<q> по месяцам
-_TK202_THR = os.path.join(FIND, "tk202-thresholds-2026-10-12.json")   # tools/analyze/tk202-thresholds.py: usd {месяц: {q: T}}, ctx {ось: {месяц: {q20..q80}}}
+_TAPE_THR = os.path.join(FIND_ARCH, "tape-thresholds-v11-2026-10-18.json")   # TK-272 v11 (thr11/summary.json; v9 побитно внутри + q94 + 16 окон W из multi-W ленты wm16): ключи e112_W<W>_q<q> по месяцам
+_TK202_THR = os.path.join(FIND_ARCH, "tk202-thresholds-2026-10-12.json")   # tools/analyze/tk202-thresholds.py: usd {месяц: {q: T}}, ctx {ось: {месяц: {q20..q80}}}
 _P15_THR = os.path.join(ROOT, "docs", "research", "P-15-thresholds.csv")   # TK-274: Г-72 (btc_lag_<s>s_min) и Г-146 (btc24h_min) по месяцам: hyp;axis;q;month;threshold_bps;set_arg
-_BTC_THR = os.path.join(FIND, "btc-thresholds-v4-2026-10-18.json")   # tools/analyze/btc-thresholds.py: {месяц: {N: {q: T}}}; v4 (TK-272): v3 побитно внутри + окна 10, 11 ч
+_BTC_THR = os.path.join(FIND_ARCH, "btc-thresholds-v4-2026-10-18.json")   # tools/analyze/btc-thresholds.py: {месяц: {N: {q: T}}}; v4 (TK-272): v3 побитно внутри + окна 10, 11 ч
 
 
 def w_median_ms():

@@ -13,6 +13,7 @@ import cellhash as ch
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 REG = os.path.join(ROOT, "docs", "archive", "registry")
 F = os.path.join(ROOT, "docs", "findings")
+FA = os.path.join(ROOT, "docs", "archive", "findings")  # p12-cells-*.csv — в архиве (TK-705)
 B1_SET = {"side": "bid", "min_age_s": 2700, "max_age_s": None, "ctx": "btc4h_max=-44.55", "min_flow_pct": None, "usd_min": None,
           "r1_born_shift_cbps_min": None, "signal": "approach", "frontrun_only": False, "driver": "setups", "lot": "usd:500x1",
           "entry_ttl": "60+300+1800", "post_only": True, "band_exit_bps": 20}
@@ -76,7 +77,7 @@ def jl(n):
 def variants():
     v = {}
     for fn in ("p12-cells-2026-10-06.csv", "p12-cells-ext-2026-10-07.csv"):
-        with open(os.path.join(F, fn), encoding="utf-8") as f:
+        with open(os.path.join(FA, fn), encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 v[r["cell"]] = r
     return v
@@ -126,7 +127,7 @@ def config_of(c, var, sets, run_pool):
     if nm in sets:  # R2-A (g87-fresh) / e106-pop: --set из r2-gen.py / tk115-delta-day.sh
         cfg["set"] = set_of(sets[nm])
         return cfg, "--set " + nm + " (calc)"
-    raise SystemExit("нет набора для клетки " + c["id"] + " " + c["set_name"])
+    raise LookupError("нет набора для клетки " + c["id"] + " " + c["set_name"])
 
 
 def build():
@@ -136,7 +137,11 @@ def build():
     rows = []
     for c in jl("cells.jsonl"):
         run = rc.get(c["id"], {}).get("run_id", "")
-        cfg, src = config_of(c, var, sets, runs[run]["data_pool"] if run in runs else "v171b")
+        try:
+            cfg, src = config_of(c, var, sets, runs[run]["data_pool"] if run in runs else "v171b")
+        except LookupError as e:  # клетки после 21.10 (спот v171-spot, tk331): конфига в адаптере нет — пропуск, не отказ (TK-705)
+            print("cellhash_reg: пропущена %s %s: %s" % (c["id"], c["set_name"], e), file=sys.stderr)
+            continue
         rows.append((c["id"], ch.cell_hash(cfg), src, c["form"], c["set_name"], run, ch.canonical_json(cfg)))
     return rows
 
