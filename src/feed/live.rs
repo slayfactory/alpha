@@ -46,12 +46,15 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 
+#[cfg(test)]
+use crate::bybit::conn::ORDERBOOK_DEPTH;
 use crate::bybit::conn::{
     BackoffConfig, BybitPublicLinearConnector, Clock, ConnEvent, ConnSink, Connection,
     PoolConnConfig, SymbolSpec, SystemClock, TransportConnector, MAX_ARGS_CHARS,
-    MAX_CONNECTIONS_PER_5MIN, ORDERBOOK_DEPTH, SUBSCRIBED_DEPTHS,
+    MAX_CONNECTIONS_PER_5MIN, SUBSCRIBED_DEPTHS,
 };
 
+#[cfg(test)]
 /// Потоки стакана по умолчанию для всех входов, кроме коллектора сессии:
 /// один быстрый `.50` (T45). Массив из одного элемента — потому что
 /// `spawn_io_thread` берёт срез потоков, а не отдельную глубину.
@@ -572,6 +575,7 @@ where
 }
 
 impl LiveFeed {
+    #[cfg(test)]
     /// Продовый вход: раскладка `plan_connections`, реальный сокет,
     /// системные часы (`SystemClock`) — прежнее поведение, потребитель не
     /// собирает свои метки этапов из отдельного `Clock` (`lob session`).
@@ -607,6 +611,7 @@ impl LiveFeed {
         }
     }
 
+    #[cfg(test)]
     /// Продовый вход с явно поданным `Clock` (ремонт таска 15, `interfaces.md`
     /// «Из таска 15»: домен часов). Живой `lob react` ставит свои метки
     /// книги/триггера/send через `bybit::clock::MonotonicClock` — если
@@ -623,6 +628,7 @@ impl LiveFeed {
         Self::spawn_with_clock_and_connector(pool, |_member| BybitPublicLinearConnector, clock)
     }
 
+    #[cfg(test)]
     /// Обобщённый вход (шов теста 1, `interfaces.md`: `Transport` —
     /// фейковый сокет). `make_connector` вызывается один раз на
     /// **соединение** (не на инструмент), на старте — как и продовый путь,
@@ -636,6 +642,7 @@ impl LiveFeed {
         Self::spawn_with_clock_and_connector(pool, make_connector, SystemClock)
     }
 
+    #[cfg(test)]
     /// Общее ядро `spawn`/`spawn_with`/`spawn_with_clock`: и транспорт, и
     /// часы — параметры, ничего больше в теле не меняется. Потоки стакана —
     /// один быстрый `.50` (`FAST_DEPTHS`): двухпотоковый вход один и назван

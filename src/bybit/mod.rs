@@ -6,7 +6,6 @@ pub mod latency;
 pub mod probe;
 pub mod rest;
 pub mod sign;
-pub mod trade_ws;
 pub mod verify;
 pub mod verify_sidecar;
 pub mod ws;

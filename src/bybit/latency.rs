@@ -34,6 +34,7 @@ use serde::Serialize;
 
 use crate::bybit::probe::{far_price_e9, percentile_ns, OrderSide};
 use crate::bybit::rest::parse_orderbook_snapshot;
+use crate::bybit::ws::format_e9;
 
 pub const TIME_PATH: &str = "/v5/market/time";
 pub const ORDERBOOK_PATH: &str = "/v5/market/orderbook";
@@ -298,28 +299,6 @@ pub fn opposite(side: OrderSide) -> OrderSide {
         OrderSide::Buy => OrderSide::Sell,
         OrderSide::Sell => OrderSide::Buy,
     }
-}
-
-/// 1e-9 → десятичная строка (`bybit::ws::parse_e9` наоборот); своя копия, как
-/// в `trade_ws.rs`, приколота тестом к тому же значению.
-pub fn format_e9(v: i64) -> String {
-    let neg = v < 0;
-    let v = v.unsigned_abs();
-    let int_part = v / 1_000_000_000;
-    let frac_part = v % 1_000_000_000;
-    let mut s = if frac_part == 0 {
-        int_part.to_string()
-    } else {
-        let mut frac = format!("{frac_part:09}");
-        while frac.ends_with('0') {
-            frac.pop();
-        }
-        format!("{int_part}.{frac}")
-    };
-    if neg {
-        s.insert(0, '-');
-    }
-    s
 }
 
 pub fn post_only_body(

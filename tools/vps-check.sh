@@ -40,8 +40,9 @@ SRC=/opt/alpha-compute/wave2-src$TAG-$$   # TK-169: свой каталог на
 # при свободном месте < порога (SWEEP_SHARED_FLOOR_GB), иначе живёт
 TGT=/opt/alpha-compute/shared-target
 ARCR=/opt/alpha-compute/wave2$TAG.tgz
-# TK-169: при красном — все строки ^error/^warning (+2 контекста), а не хвост (повторные сборки ради текста); true — grep без совпадений не ломает pipefail
-ERRS='L=$(mktemp); tee $L | tail -N; grep -A2 -e ^error -e ^warning $L | head -150; rm -f $L; true'
+# TK-169: при красном — все строки ^error/^warning (+2 контекста), а не хвост (повторные сборки ради текста); true — grep без совпадений не ломает pipefail;
+# TK-702: VPS_ERR_LINES — потолок строк (по умолчанию 150; при сотнях ошибок после массового удаления — 3000)
+ERRS='L=$(mktemp); tee $L | tail -N; grep -A2 -e ^error -e ^warning $L | head -'${VPS_ERR_LINES:-150}'; rm -f $L; true'
 tl() { echo "| { ${ERRS/N/$1}; }"; }
 J=3; TL10="$(tl 10)"; TL15="$(tl 15)"; TL25="$(tl 25)"; TL5="| tail -5"
 GREP_T="| grep -E \"^test result|FAILED|panicked|^error|^warning: unused\" | tail -40"
@@ -82,9 +83,9 @@ case "$WHAT" in
   fmt)    CMD="cargo fmt --check 2>&1 $TL25" ;;
   lint)   CMD="bash tools/lint-gate.sh $TGT-lint 2>&1 $TL15" ;;   # TK-279: только бюджет линтов (строгие линты + счёт срабатываний), без тестов   # TK-279: только бюджет линтов (строгие линты + счёт срабатываний), без тестов
   build)  CMD="cargo build --release $FEAT --target-dir $TGT -j $J 2>&1 $TL5" ;;
-  # G-022: один боевой бинарь (release без фич) на машине сборки: BIN_OUT — путь установки; печатает md5; ALPHA_COMMIT=<хеш> вшивается (health process.version)
+  # G-022: один боевой бинарь (release без фич) на машине сборки: BIN_OUT — путь установки; печатает md5; ALPHA_COMMIT=<хеш> вшивается (health process.version); BIN_NAME — другой бинарь из src/bin (TK-699: alpha-feat)
   binrel) : "${BIN_OUT:?BIN_OUT — путь на машине сборки, например /data/turbo-probe/alpha-turbo}"
-          CMD="set -o pipefail; ALPHA_COMMIT=${ALPHA_COMMIT:-unknown} cargo build --release --target-dir $TGT -j $J 2>&1 | tail -3 && install -D $TGT/release/alpha $BIN_OUT && md5sum $BIN_OUT" ;;
+          CMD="set -o pipefail; ALPHA_COMMIT=${ALPHA_COMMIT:-unknown} cargo build --release ${BIN_NAME:+--bin $BIN_NAME} --target-dir $TGT -j $J 2>&1 | tail -3 && install -D $TGT/release/${BIN_NAME:-alpha} $BIN_OUT && md5sum $BIN_OUT" ;;
   # TK-160: бинарники для гейта прямо на машине сборки, без копирования: без фич и r2 → $BIN_OUT-plain / $BIN_OUT-r2 + md5
   bin)    : "${BIN_OUT:?BIN_OUT — путь на машине сборки, например /data/tk0160/alpha-tk160}"
           B1="cargo build --release --target-dir $TGT -j $J"
@@ -99,6 +100,8 @@ set -o pipefail; $B1 2>&1 | tail -3 && rb_install $TGT/release/alpha $BIN_OUT-pl
   # TK-132 (А1 §0): настоящая метрика — clippy cognitive_complexity (порог 15) и too_many_lines; код не меняется,
   # clippy.toml пишется только в одноразовую копию дерева на VPS. Вывод: «функция @ файл:строка», по алфавиту
   complexity) CMD="echo cognitive-complexity-threshold = 15 > clippy.toml && cargo clippy --release $FEAT --target-dir $TGT --all-targets -j 3 -- -W clippy::cognitive_complexity -W clippy::too_many_lines 2>&1 | grep -E -A1 \"cognitive complexity of|too many lines\" | grep -E \"cognitive complexity of|too many lines|-->\" | paste - - | sed -E \"s/ *--> */ @ /\" | sort | tail -150" ;;
+  # TK-702: мёртвый код крейта — pub(crate) на всех модулях, публичны только входы CLI (tools/dead-probe.sh, одноразовая копия дерева)
+  deadcode) CMD="bash tools/dead-probe.sh $TGT-dead $J" ;;
   *) echo "неизвестно: $WHAT"; exit 2 ;;
 esac
 # shellcheck disable=SC2029

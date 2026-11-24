@@ -270,193 +270,50 @@ impl ExitForm {
             return Ok(ExitForm::None);
         }
         if let Some(rest) = spec.strip_prefix("pyeat") {
-            let parts: u8 = rest.parse().map_err(|_| {
-                anyhow::anyhow!("--exit-form {spec:?}: ожидается pyeat<N>, N ∈ [2, 10]")
-            })?;
-            anyhow::ensure!((2..=10).contains(&parts), "pyeat<N>: N ∈ [2, 10]");
-            let form = ExitForm::PyrEat { parts };
-            form.ensure_canonical(spec)?;
-            return Ok(form);
+            return Self::parse_pyeat(spec, rest);
         }
         if let Some(rest) = spec.strip_prefix("pyfresh") {
-            let parts: u8 = rest.parse().map_err(|_| {
-                anyhow::anyhow!("--exit-form {spec:?}: ожидается pyfresh<N>, N ∈ [2, 12]")
-            })?;
-            anyhow::ensure!((2..=12).contains(&parts), "pyfresh<N>: N ∈ [2, 12]");
-            let form = ExitForm::PyrFresh { parts };
-            form.ensure_canonical(spec)?;
-            return Ok(form);
+            return Self::parse_pyfresh(spec, rest);
         }
         if let Some(rest) = spec.strip_prefix("wall2") {
-            let k: Option<i8> = match rest {
-                "" => Some(-1),
-                "x" => Some(1),
-                "0" => Some(0),
-                _ => rest
-                    .strip_prefix('m')
-                    .map(|n| (n, -1))
-                    .or_else(|| rest.strip_prefix('p').map(|n| (n, 1)))
-                    .and_then(|(n, sg)| n.parse::<i8>().ok().map(|v| v * sg)),
-            };
-            if let Some(k) = k {
-                let form = ExitForm::Wall2 { k };
-                anyhow::ensure!(
-                    (-3..=3).contains(&k) && form.label() == spec,
-                    "--exit-form {spec:?}: ожидается wall2 | wall2x | wall20 | wall2m<n> | wall2p<n>, n ∈ 1..=3 (k тиков от цены 2-й стены)"
-                );
+            if let Some(form) = Self::parse_wall2(spec, rest)? {
                 return Ok(form);
             }
         }
         if let Some(rest) = spec.strip_prefix("chase") {
-            let ms: u32 = rest.parse().map_err(|_| {
-                anyhow::anyhow!("--exit-form {spec:?}: ожидается chase<мс>, окно W в миллисекундах")
-            })?;
-            anyhow::ensure!(ms > 0, "chase<мс>: окно W > 0");
-            return Ok(ExitForm::Chase { ms });
+            return Self::parse_chase(spec, rest);
         }
         for (pre, tape) in [("tape", true), ("cxl", false)] {
             if let Some(rest) = spec.strip_prefix(pre) {
-                let bad = || {
-                    anyhow::anyhow!(
-                        "--exit-form {spec:?}: ожидается {pre}<W>q<Q>: окно W с > 0, Q > 0 (мера / размер стены) или {pre}<W>qp (мера > 0)"
-                    )
-                };
-                let (ws, qs) = rest.split_once('q').ok_or_else(bad)?;
-                let w: u32 = ws.parse().map_err(|_| bad())?;
-                // `q` вместо числа — «мера строго > 0» (Q_m ≤ 0 в пороге по месяцу, Г-112 F1): наименьшее положительное.
-                let q: f64 = if qs == "p" {
-                    f64::MIN_POSITIVE
-                } else {
-                    qs.parse().map_err(|_| bad())?
-                };
-                anyhow::ensure!(w > 0, "{pre}<W>q<Q>: W > 0 с");
-                anyhow::ensure!(q.is_finite() && q > 0.0, "{pre}<W>q<Q>: Q > 0");
-                let form = if tape {
-                    ExitForm::Tape { w, q }
-                } else {
-                    ExitForm::Cxl { w, q }
-                };
-                form.ensure_canonical(spec)?;
-                return Ok(form);
+                return Self::parse_tape_cxl(spec, rest, pre, tape);
             }
         }
         if let Some(rest) = spec.strip_prefix("nostop") {
-            let bad = || {
-                anyhow::anyhow!("--exit-form {spec:?}: ожидается nostop<X2>, X2 ∈ {{1, 2, 4}} (×0,5; ×1; ×2 от trail_activate_bps), либо nostopx<X8>, X8 ∈ [1, 64] (x = X8/8)")
-            };
-            let x8: u8 = match rest.strip_prefix('x') {
-                Some(r) => r.parse().map_err(|_| bad())?,
-                None => rest
-                    .parse::<u8>()
-                    .map_err(|_| bad())?
-                    .checked_mul(4)
-                    .ok_or_else(bad)?,
-            };
-            anyhow::ensure!((1..=64).contains(&x8), "nostop: x = X8/8, X8 ∈ [1, 64]");
-            let legacy = matches!(x8, 4 | 8 | 16);
-            anyhow::ensure!(
-                legacy != rest.starts_with('x'),
-                "--exit-form {spec:?}: имя не каноническое (X8 ∈ {{4, 8, 16}} — nostop<X2>, прочие — nostopx<X8>)"
-            );
-            return Ok(ExitForm::NoStop { x8 });
+            return Self::parse_nostop(spec, rest);
         }
         if let Some(rest) = spec.strip_prefix("lvlback") {
-            let bad = || {
-                anyhow::anyhow!(
-                    "--exit-form {spec:?}: ожидается lvlback<G>w<W>, G — bps (≥ 0), W — секунды (≥ 1)"
-                )
-            };
-            let (gap_bps, secs) = rest.split_once('w').ok_or_else(bad)?;
-            let gap_bps: u32 = gap_bps.parse().map_err(|_| bad())?;
-            let secs: u32 = secs.parse().map_err(|_| bad())?;
-            anyhow::ensure!(secs > 0, "lvlback<G>w<W>: W ≥ 1 с");
-            let form = ExitForm::LevelBack { gap_bps, secs };
-            form.ensure_canonical(spec)?;
-            return Ok(form);
+            return Self::parse_lvlback(spec, rest);
         }
         if let Some(rest) = spec.strip_prefix("conv") {
-            let bad = || {
-                anyhow::anyhow!(
-                    "--exit-form {spec:?}: ожидается conv<t>a<A>, t ∈ [0, 16], A — bps (D прогона)"
-                )
-            };
-            let (tol, a_bps) = rest.split_once('a').ok_or_else(bad)?;
-            let tol: u8 = tol.parse().map_err(|_| bad())?;
-            let a_bps: u32 = a_bps.parse().map_err(|_| bad())?;
-            anyhow::ensure!(tol <= 16 && a_bps > 0, "conv<t>a<A>: t ∈ [0, 16], A > 0");
-            let form = ExitForm::Converge { tol, a_bps };
-            form.ensure_canonical(spec)?;
-            return Ok(form);
+            return Self::parse_conv(spec, rest);
         }
         if let Some(q8) = parse_half(spec, "halfstop")? {
             return Ok(ExitForm::HalfStop { q8 });
         }
         if let Some(rest) = spec.strip_prefix("tslx") {
-            let bad = || {
-                anyhow::anyhow!("--exit-form {spec:?}: ожидается tslx<G>t<Q>, G ∈ [1, 64] (γ = G/8), Q ∈ [1, 16] (T = Q/16 дедлайна)")
-            };
-            let (g8, t16) = rest.split_once('t').ok_or_else(bad)?;
-            let g8: u8 = g8.parse().map_err(|_| bad())?;
-            let t16: u8 = t16.parse().map_err(|_| bad())?;
-            anyhow::ensure!(
-                (1..=64).contains(&g8) && (1..=16).contains(&t16),
-                "tslx<G>t<Q>: G ∈ [1, 64], Q ∈ [1, 16]"
-            );
-            let form = ExitForm::TakeSchedX { g8, t16 };
-            form.ensure_canonical(spec)?;
-            return Ok(form);
+            return Self::parse_tslx(spec, rest);
         }
         if let Some(rest) = spec.strip_prefix("tsl") {
-            let bad = || {
-                anyhow::anyhow!("--exit-form {spec:?}: ожидается tsl<G>t<Q>, G ∈ [1, 99] (γ = G/10), Q ∈ [1, 4]")
-            };
-            let (g10, t4) = rest.split_once('t').ok_or_else(bad)?;
-            let g10: u8 = g10.parse().map_err(|_| bad())?;
-            let t4: u8 = t4.parse().map_err(|_| bad())?;
-            anyhow::ensure!(
-                (1..=99).contains(&g10) && (1..=4).contains(&t4),
-                "tsl<G>t<Q>: G ∈ [1, 99], Q ∈ [1, 4]"
-            );
-            let form = ExitForm::TakeSched { g10, t4 };
-            form.ensure_canonical(spec)?;
-            return Ok(form);
+            return Self::parse_tsl(spec, rest);
         }
         if let Some(q8) = parse_half(spec, "halflevel")? {
             return Ok(ExitForm::HalfLevel { q8 });
         }
         if let Some(rest) = spec.strip_prefix("pynw") {
-            let bad = || {
-                anyhow::anyhow!(
-                    "--exit-form {spec:?}: ожидается pynw<K>u<k> | pynw<K>w<u12>, K ∈ [1, 9], k ∈ {{1, 2, 3}}, u12 ∈ [1, 12]"
-                )
-            };
-            let (k, u) = rest.split_at(rest.find(['u', 'w']).ok_or_else(bad)?);
-            let k: u8 = k.parse().map_err(|_| bad())?;
-            let u12 = parse_u12(u).ok_or_else(bad)?;
-            anyhow::ensure!(
-                (1..=9).contains(&k) && (1..=12).contains(&u12),
-                "pynw<K>u<k>|w<u12>: K ∈ [1, 9], k ∈ {{1, 2, 3}}, u12 ∈ [1, 12]"
-            );
-            let form = ExitForm::PyrNewWall { k, u12 };
-            form.ensure_canonical(spec)?;
-            return Ok(form);
+            return Self::parse_pynw(spec, rest);
         }
         if let Some(rest) = spec.strip_prefix("pyre") {
-            let bad = || {
-                anyhow::anyhow!(
-                    "--exit-form {spec:?}: ожидается pyre<N>u<k> | pyre<N>w<u12>, N ∈ [1, 10], k ∈ {{1, 2, 3}}, u12 ∈ [1, 12]"
-                )
-            };
-            let (n, u) = rest.split_at(rest.find(['u', 'w']).ok_or_else(bad)?);
-            let n: u8 = n.parse().map_err(|_| bad())?;
-            let u12 = parse_u12(u).ok_or_else(bad)?;
-            anyhow::ensure!(
-                (1..=10).contains(&n) && (1..=12).contains(&u12),
-                "pyre<N>u<k>|w<u12>: N ∈ [1, 10], k ∈ {{1, 2, 3}}, u12 ∈ [1, 12]"
-            );
-            let form = ExitForm::PyrReinstall { n, u12 };
-            form.ensure_canonical(spec)?;
-            return Ok(form);
+            return Self::parse_pyre(spec, rest);
         }
         if let Some(rest) = spec.strip_prefix("weat") {
             return Self::parse_wall_eat(spec, rest);
@@ -470,76 +327,289 @@ impl ExitForm {
             return Ok(ExitForm::Eat { pct });
         }
         if let Some(rest) = spec.strip_prefix("gone") {
-            if let Some((w, tail)) = rest.split_once("wall") {
-                let pct: f64 = w.parse()?;
-                anyhow::ensure!(
-                    pct.is_finite() && pct > 0.0 && pct <= 100.0,
-                    "gone<W>wall<B>: W ∈ (0, 100]"
-                );
-                let (mode, b) = if let Some(b) = tail.strip_prefix('x') {
-                    (WallStopMode::Hard, b)
-                } else if let Some(b) = tail.strip_prefix('k') {
-                    (WallStopMode::Keep, b)
-                } else {
-                    (WallStopMode::Soft, tail)
-                };
-                let buffer_bps: f64 = b.parse().map_err(|_| {
-                    anyhow::anyhow!(
-                        "--exit-form {spec:?}: ожидается gone<W>wall<B>, gone<W>wallx<B> или gone<W>wallk<B> (B — bps)"
-                    )
-                })?;
-                anyhow::ensure!(
-                    buffer_bps.is_finite() && (0.0..10_000.0).contains(&buffer_bps),
-                    "gone<W>wall<B>: буфер B — bps за стеной в [0, 10000)"
-                );
-                let form = ExitForm::GoneWall {
-                    pct,
-                    mode,
-                    buffer_bps,
-                };
-                form.ensure_canonical(spec)?;
-                return Ok(form);
-            }
-            if let Some((w, mode)) = rest.split_once("be") {
-                let pct: f64 = w.parse()?;
-                anyhow::ensure!(
-                    pct.is_finite() && pct > 0.0 && pct <= 100.0,
-                    "gone<W>be: W ∈ (0, 100]"
-                );
-                let hard = match mode {
-                    "" => false,
-                    "x" => true,
-                    _ => anyhow::bail!("--exit-form {spec:?}: ожидается gone<W>be или gone<W>bex"),
-                };
-                let form = ExitForm::GoneBe { pct, hard };
-                form.ensure_canonical(spec)?;
-                return Ok(form);
-            }
-            if let Some((w, t)) = rest.split_once("tr") {
-                let pct: f64 = w.parse()?;
-                let trail_pct: f64 = t.parse()?;
-                anyhow::ensure!(
-                    pct.is_finite() && pct > 0.0 && pct <= 100.0,
-                    "gone<W>tr<T>: W ∈ (0, 100]"
-                );
-                anyhow::ensure!(
-                    trail_pct.is_finite() && trail_pct > 0.0 && trail_pct < 100.0,
-                    "gone<W>tr<T>: откат T — % от входа в (0, 100)"
-                );
-                let form = ExitForm::GoneTrail { pct, trail_pct };
-                form.ensure_canonical(spec)?;
-                return Ok(form);
-            }
-            let pct: f64 = rest.parse()?;
-            anyhow::ensure!(
-                pct.is_finite() && pct > 0.0 && pct <= 100.0,
-                "gone<W>: W ∈ (0, 100]"
-            );
-            return Ok(ExitForm::Gone { pct });
+            return Self::parse_gone(spec, rest);
         }
         anyhow::bail!(
             "--exit-form {spec:?}: ожидается none | eat<X> | gone<W> | weat<X>s<W>{{m|l|a}}<Y>"
         );
+    }
+
+    /// Форма `pyeat<N>`: пирамида по съеденным долям.
+    fn parse_pyeat(spec: &str, rest: &str) -> anyhow::Result<Self> {
+        let parts: u8 = rest.parse().map_err(|_| {
+            anyhow::anyhow!("--exit-form {spec:?}: ожидается pyeat<N>, N ∈ [2, 10]")
+        })?;
+        anyhow::ensure!((2..=10).contains(&parts), "pyeat<N>: N ∈ [2, 10]");
+        let form = ExitForm::PyrEat { parts };
+        form.ensure_canonical(spec)?;
+        Ok(form)
+    }
+
+    /// Форма `pyfresh<N>`: пирамида по свежим стенам.
+    fn parse_pyfresh(spec: &str, rest: &str) -> anyhow::Result<Self> {
+        let parts: u8 = rest.parse().map_err(|_| {
+            anyhow::anyhow!("--exit-form {spec:?}: ожидается pyfresh<N>, N ∈ [2, 12]")
+        })?;
+        anyhow::ensure!((2..=12).contains(&parts), "pyfresh<N>: N ∈ [2, 12]");
+        let form = ExitForm::PyrFresh { parts };
+        form.ensure_canonical(spec)?;
+        Ok(form)
+    }
+
+    /// Форма `wall2…`: журнал стен; чужое имя после префикса — не ошибка, а «не эта форма».
+    fn parse_wall2(spec: &str, rest: &str) -> anyhow::Result<Option<Self>> {
+        let k: Option<i8> = match rest {
+            "" => Some(-1),
+            "x" => Some(1),
+            "0" => Some(0),
+            _ => rest
+                .strip_prefix('m')
+                .map(|n| (n, -1))
+                .or_else(|| rest.strip_prefix('p').map(|n| (n, 1)))
+                .and_then(|(n, sg)| n.parse::<i8>().ok().map(|v| v * sg)),
+        };
+        if let Some(k) = k {
+            let form = ExitForm::Wall2 { k };
+            anyhow::ensure!(
+                (-3..=3).contains(&k) && form.label() == spec,
+                "--exit-form {spec:?}: ожидается wall2 | wall2x | wall20 | wall2m<n> | wall2p<n>, n ∈ 1..=3 (k тиков от цены 2-й стены)"
+            );
+            return Ok(Some(form));
+        }
+        Ok(None)
+    }
+
+    /// Форма `chase<мс>`: окно догона W в миллисекундах.
+    fn parse_chase(spec: &str, rest: &str) -> anyhow::Result<Self> {
+        let ms: u32 = rest.parse().map_err(|_| {
+            anyhow::anyhow!("--exit-form {spec:?}: ожидается chase<мс>, окно W в миллисекундах")
+        })?;
+        anyhow::ensure!(ms > 0, "chase<мс>: окно W > 0");
+        Ok(ExitForm::Chase { ms })
+    }
+
+    /// Формы `tape<W>q<Q>` и `cxl<W>q<Q>`: окно W с и порог Q.
+    fn parse_tape_cxl(spec: &str, rest: &str, pre: &str, tape: bool) -> anyhow::Result<Self> {
+        let bad = || {
+            anyhow::anyhow!(
+                "--exit-form {spec:?}: ожидается {pre}<W>q<Q>: окно W с > 0, Q > 0 (мера / размер стены) или {pre}<W>qp (мера > 0)"
+            )
+        };
+        let (ws, qs) = rest.split_once('q').ok_or_else(bad)?;
+        let w: u32 = ws.parse().map_err(|_| bad())?;
+        // `q` вместо числа — «мера строго > 0» (Q_m ≤ 0 в пороге по месяцу, Г-112 F1): наименьшее положительное.
+        let q: f64 = if qs == "p" {
+            f64::MIN_POSITIVE
+        } else {
+            qs.parse().map_err(|_| bad())?
+        };
+        anyhow::ensure!(w > 0, "{pre}<W>q<Q>: W > 0 с");
+        anyhow::ensure!(q.is_finite() && q > 0.0, "{pre}<W>q<Q>: Q > 0");
+        let form = if tape {
+            ExitForm::Tape { w, q }
+        } else {
+            ExitForm::Cxl { w, q }
+        };
+        form.ensure_canonical(spec)?;
+        Ok(form)
+    }
+
+    /// Форма `nostop<X2>` / `nostopx<X8>`: выход без стопа.
+    fn parse_nostop(spec: &str, rest: &str) -> anyhow::Result<Self> {
+        let bad = || {
+            anyhow::anyhow!("--exit-form {spec:?}: ожидается nostop<X2>, X2 ∈ {{1, 2, 4}} (×0,5; ×1; ×2 от trail_activate_bps), либо nostopx<X8>, X8 ∈ [1, 64] (x = X8/8)")
+        };
+        let x8: u8 = match rest.strip_prefix('x') {
+            Some(r) => r.parse().map_err(|_| bad())?,
+            None => rest
+                .parse::<u8>()
+                .map_err(|_| bad())?
+                .checked_mul(4)
+                .ok_or_else(bad)?,
+        };
+        anyhow::ensure!((1..=64).contains(&x8), "nostop: x = X8/8, X8 ∈ [1, 64]");
+        let legacy = matches!(x8, 4 | 8 | 16);
+        anyhow::ensure!(
+            legacy != rest.starts_with('x'),
+            "--exit-form {spec:?}: имя не каноническое (X8 ∈ {{4, 8, 16}} — nostop<X2>, прочие — nostopx<X8>)"
+        );
+        Ok(ExitForm::NoStop { x8 })
+    }
+
+    /// Форма `lvlback<G>w<W>`: возврат к уровню.
+    fn parse_lvlback(spec: &str, rest: &str) -> anyhow::Result<Self> {
+        let bad = || {
+            anyhow::anyhow!(
+                "--exit-form {spec:?}: ожидается lvlback<G>w<W>, G — bps (≥ 0), W — секунды (≥ 1)"
+            )
+        };
+        let (gap_bps, secs) = rest.split_once('w').ok_or_else(bad)?;
+        let gap_bps: u32 = gap_bps.parse().map_err(|_| bad())?;
+        let secs: u32 = secs.parse().map_err(|_| bad())?;
+        anyhow::ensure!(secs > 0, "lvlback<G>w<W>: W ≥ 1 с");
+        let form = ExitForm::LevelBack { gap_bps, secs };
+        form.ensure_canonical(spec)?;
+        Ok(form)
+    }
+
+    /// Форма `conv<t>a<A>`: сходимость цен.
+    fn parse_conv(spec: &str, rest: &str) -> anyhow::Result<Self> {
+        let bad = || {
+            anyhow::anyhow!(
+                "--exit-form {spec:?}: ожидается conv<t>a<A>, t ∈ [0, 16], A — bps (D прогона)"
+            )
+        };
+        let (tol, a_bps) = rest.split_once('a').ok_or_else(bad)?;
+        let tol: u8 = tol.parse().map_err(|_| bad())?;
+        let a_bps: u32 = a_bps.parse().map_err(|_| bad())?;
+        anyhow::ensure!(tol <= 16 && a_bps > 0, "conv<t>a<A>: t ∈ [0, 16], A > 0");
+        let form = ExitForm::Converge { tol, a_bps };
+        form.ensure_canonical(spec)?;
+        Ok(form)
+    }
+
+    /// Форма `tslx<G>t<Q>`: расписание тейка (мелкая сетка).
+    fn parse_tslx(spec: &str, rest: &str) -> anyhow::Result<Self> {
+        let bad = || {
+            anyhow::anyhow!("--exit-form {spec:?}: ожидается tslx<G>t<Q>, G ∈ [1, 64] (γ = G/8), Q ∈ [1, 16] (T = Q/16 дедлайна)")
+        };
+        let (g8, t16) = rest.split_once('t').ok_or_else(bad)?;
+        let g8: u8 = g8.parse().map_err(|_| bad())?;
+        let t16: u8 = t16.parse().map_err(|_| bad())?;
+        anyhow::ensure!(
+            (1..=64).contains(&g8) && (1..=16).contains(&t16),
+            "tslx<G>t<Q>: G ∈ [1, 64], Q ∈ [1, 16]"
+        );
+        let form = ExitForm::TakeSchedX { g8, t16 };
+        form.ensure_canonical(spec)?;
+        Ok(form)
+    }
+
+    /// Форма `tsl<G>t<Q>`: расписание тейка.
+    fn parse_tsl(spec: &str, rest: &str) -> anyhow::Result<Self> {
+        let bad = || {
+            anyhow::anyhow!(
+                "--exit-form {spec:?}: ожидается tsl<G>t<Q>, G ∈ [1, 99] (γ = G/10), Q ∈ [1, 4]"
+            )
+        };
+        let (g10, t4) = rest.split_once('t').ok_or_else(bad)?;
+        let g10: u8 = g10.parse().map_err(|_| bad())?;
+        let t4: u8 = t4.parse().map_err(|_| bad())?;
+        anyhow::ensure!(
+            (1..=99).contains(&g10) && (1..=4).contains(&t4),
+            "tsl<G>t<Q>: G ∈ [1, 99], Q ∈ [1, 4]"
+        );
+        let form = ExitForm::TakeSched { g10, t4 };
+        form.ensure_canonical(spec)?;
+        Ok(form)
+    }
+
+    /// Форма `pynw<K>u<k>` / `pynw<K>w<u12>`: пирамида по новой стене.
+    fn parse_pynw(spec: &str, rest: &str) -> anyhow::Result<Self> {
+        let bad = || {
+            anyhow::anyhow!(
+                "--exit-form {spec:?}: ожидается pynw<K>u<k> | pynw<K>w<u12>, K ∈ [1, 9], k ∈ {{1, 2, 3}}, u12 ∈ [1, 12]"
+            )
+        };
+        let (k, u) = rest.split_at(rest.find(['u', 'w']).ok_or_else(bad)?);
+        let k: u8 = k.parse().map_err(|_| bad())?;
+        let u12 = parse_u12(u).ok_or_else(bad)?;
+        anyhow::ensure!(
+            (1..=9).contains(&k) && (1..=12).contains(&u12),
+            "pynw<K>u<k>|w<u12>: K ∈ [1, 9], k ∈ {{1, 2, 3}}, u12 ∈ [1, 12]"
+        );
+        let form = ExitForm::PyrNewWall { k, u12 };
+        form.ensure_canonical(spec)?;
+        Ok(form)
+    }
+
+    /// Форма `pyre<N>u<k>` / `pyre<N>w<u12>`: пирамида с переустановкой.
+    fn parse_pyre(spec: &str, rest: &str) -> anyhow::Result<Self> {
+        let bad = || {
+            anyhow::anyhow!(
+                "--exit-form {spec:?}: ожидается pyre<N>u<k> | pyre<N>w<u12>, N ∈ [1, 10], k ∈ {{1, 2, 3}}, u12 ∈ [1, 12]"
+            )
+        };
+        let (n, u) = rest.split_at(rest.find(['u', 'w']).ok_or_else(bad)?);
+        let n: u8 = n.parse().map_err(|_| bad())?;
+        let u12 = parse_u12(u).ok_or_else(bad)?;
+        anyhow::ensure!(
+            (1..=10).contains(&n) && (1..=12).contains(&u12),
+            "pyre<N>u<k>|w<u12>: N ∈ [1, 10], k ∈ {{1, 2, 3}}, u12 ∈ [1, 12]"
+        );
+        let form = ExitForm::PyrReinstall { n, u12 };
+        form.ensure_canonical(spec)?;
+        Ok(form)
+    }
+
+    /// Формы `gone<W>…`: выход по снятию стены (`wall`, `be`, `tr` и простой).
+    fn parse_gone(spec: &str, rest: &str) -> anyhow::Result<Self> {
+        if let Some((w, tail)) = rest.split_once("wall") {
+            let pct: f64 = w.parse()?;
+            anyhow::ensure!(
+                pct.is_finite() && pct > 0.0 && pct <= 100.0,
+                "gone<W>wall<B>: W ∈ (0, 100]"
+            );
+            let (mode, b) = if let Some(b) = tail.strip_prefix('x') {
+                (WallStopMode::Hard, b)
+            } else if let Some(b) = tail.strip_prefix('k') {
+                (WallStopMode::Keep, b)
+            } else {
+                (WallStopMode::Soft, tail)
+            };
+            let buffer_bps: f64 = b.parse().map_err(|_| {
+                anyhow::anyhow!(
+                    "--exit-form {spec:?}: ожидается gone<W>wall<B>, gone<W>wallx<B> или gone<W>wallk<B> (B — bps)"
+                )
+            })?;
+            anyhow::ensure!(
+                buffer_bps.is_finite() && (0.0..10_000.0).contains(&buffer_bps),
+                "gone<W>wall<B>: буфер B — bps за стеной в [0, 10000)"
+            );
+            let form = ExitForm::GoneWall {
+                pct,
+                mode,
+                buffer_bps,
+            };
+            form.ensure_canonical(spec)?;
+            return Ok(form);
+        }
+        if let Some((w, mode)) = rest.split_once("be") {
+            let pct: f64 = w.parse()?;
+            anyhow::ensure!(
+                pct.is_finite() && pct > 0.0 && pct <= 100.0,
+                "gone<W>be: W ∈ (0, 100]"
+            );
+            let hard = match mode {
+                "" => false,
+                "x" => true,
+                _ => anyhow::bail!("--exit-form {spec:?}: ожидается gone<W>be или gone<W>bex"),
+            };
+            let form = ExitForm::GoneBe { pct, hard };
+            form.ensure_canonical(spec)?;
+            return Ok(form);
+        }
+        if let Some((w, t)) = rest.split_once("tr") {
+            let pct: f64 = w.parse()?;
+            let trail_pct: f64 = t.parse()?;
+            anyhow::ensure!(
+                pct.is_finite() && pct > 0.0 && pct <= 100.0,
+                "gone<W>tr<T>: W ∈ (0, 100]"
+            );
+            anyhow::ensure!(
+                trail_pct.is_finite() && trail_pct > 0.0 && trail_pct < 100.0,
+                "gone<W>tr<T>: откат T — % от входа в (0, 100)"
+            );
+            let form = ExitForm::GoneTrail { pct, trail_pct };
+            form.ensure_canonical(spec)?;
+            return Ok(form);
+        }
+        let pct: f64 = rest.parse()?;
+        anyhow::ensure!(
+            pct.is_finite() && pct > 0.0 && pct <= 100.0,
+            "gone<W>: W ∈ (0, 100]"
+        );
+        Ok(ExitForm::Gone { pct })
     }
 }
 
@@ -632,6 +702,7 @@ fn parse_half(spec: &str, base: &str) -> anyhow::Result<Option<u8>> {
     Ok(Some(q8))
 }
 
+#[cfg(test)]
 /// Формы сетки в порядке `stops × takes × DEADLINE_SECS`; имена —
 /// `bounce_verdict::form_label`, их же читает вердикт. Повторы имён отвергает
 /// `run_bounce_grid`. Это — прежний режим входа (F5, В-74): `touch`,
@@ -652,6 +723,7 @@ pub fn grid_forms(
     )
 }
 
+#[cfg(test)]
 /// Та же сетка, но с осями срока жизни входа (F5, В-74) и формы выхода
 /// (F7, Б-75): значения `entry_ttl`/`exit_form` — **внутренние** множители,
 /// поэтому при `&[EntryTtl::Touch]` и `&[ExitForm::None]` порядок

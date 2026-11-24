@@ -34,6 +34,7 @@ impl Series {
         self.first_min + self.len() as i64 - 1
     }
 
+    #[cfg(test)]
     /// Индексы `[a, b)` общего перекрытия двух рядов в координатах каждого; `None` — нет перекрытия.
     pub fn overlap(&self, other: &Series) -> Option<(usize, usize, usize)> {
         let lo = self.first_min.max(other.first_min);
@@ -140,6 +141,7 @@ pub struct ConvertStats {
     pub zero_volume: u64,
 }
 
+#[cfg(test)]
 pub fn convert_csv<R: BufRead>(csv: R) -> io::Result<Option<Series>> {
     convert_csv_stats(csv).map(|(s, _)| s)
 }

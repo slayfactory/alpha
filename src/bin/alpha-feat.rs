@@ -128,6 +128,9 @@ struct F12Opts {
     /// суток в сетке минуток (длина `.b42` = days·1440; по умолчанию SIGFEAT_DAYS или 80; у TK-594/`ep_u0` — 74)
     #[arg(long)]
     days: Option<i64>,
+    /// свеча уровня строк `sigsx` без поля `tf_min`, минут (дамп движка варианта p30 / p60 / p240)
+    #[arg(long, default_value_t = 60)]
+    tf_min: i64,
     /// склад суток TK-607 (формат v2, `.tk`): чтение без `unzip`; промах и сутки с отступлениями — разбор zip, запись в склад — только при `--store-cap-gb` > 0
     #[arg(long)]
     store: Option<PathBuf>,
@@ -210,6 +213,7 @@ fn run_f12(o: F12Opts) -> Result<()> {
             Some(d) => d,
             None => env_or("SIGFEAT_DAYS", "80").parse()?,
         },
+        tf_min: o.tf_min,
     };
     let Some(dir) = o.store else {
         let src = ZipPxSrc {
