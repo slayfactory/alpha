@@ -127,6 +127,24 @@ fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-9
 }
 
+/// Для съеденного уровня база обязана браться до сделок: срез ровно
+/// в момент смерти игнорируется строгим неравенством.
+#[test]
+fn eaten_base_is_taken_before_the_killing_trades() {
+    let mids = vec![sample(900, 20_000), sample(1_000, 20_200)];
+    let base = base_before(&mids, 1_000).expect("база обязана найтись");
+    assert_eq!(base, (900, 20_000), "срез в момент смерти — не база");
+    let m_from_base = markout_bps(Side::Ask, base.1, 20_400).unwrap();
+    let m_from_death = markout_bps(Side::Ask, 20_200, 20_400).unwrap();
+    assert!(close(m_from_base, 400.0 / 20_000.0 * 10_000.0));
+    assert!(
+        !close(m_from_base, m_from_death),
+        "базы обязаны различаться"
+    );
+    let fut = future_asof(&mids, base.0, 100).unwrap();
+    assert_eq!(fut, 20_200);
+}
+
 /// Зеркальное движение: бид вниз и аск вверх на ту же величину дают
 /// противоположную сырую доходность и одинаковое подписанное `m`.
 #[test]
@@ -194,6 +212,72 @@ fn touch(side: Side, start_ms: i64) -> TouchRecord {
         repeat_count: 0,
         depth_behind_lots: 0,
     }
+}
+
+/// В-45 (2): горизонт не длиннее касания — `within_touch`, граница
+/// включительна (`HORIZONS_MS[i] ≤ duration_ms`).
+#[test]
+fn horizons_not_longer_than_the_touch_are_within_it() {
+    assert_eq!(within_touch(0), [false; 4]);
+    assert_eq!(within_touch(99), [false; 4]);
+    assert_eq!(
+        within_touch(100),
+        [true, false, false, false],
+        "граница включительна"
+    );
+    assert_eq!(within_touch(1_000), [true, true, false, false]);
+    assert_eq!(within_touch(59_999), [true, true, true, false]);
+    assert_eq!(within_touch(60_000), [true; 4]);
+
+    let mids: Vec<MidSample> = (0..=70).map(|i| sample(i * 1_000, 2_002 + i)).collect();
+    let mut t = touch(Side::Bid, 5_000);
+    t.duration_ms = 10_000;
+    t.end_ms = 15_000;
+    let all = markouts_for_touch(&t, &mids);
+    assert!(all.iter().all(Option::is_some), "{all:?}");
+}
+
+/// Критерий приёмки таска 35: середина после касания выше — бид-касание
+/// даёт `m > 0` (знак «в сторону отскока»); аск на том же тренде — `m < 0`.
+/// База — последний срез строго до `start_ms`, как у смерти; будущее —
+/// как есть на `t0 + h` — точные значения линейного тренда: середина растёт
+/// на 2 единицы удвоенной шкалы за 100 мс от базы 20000, ожидаемые `m`
+/// 1.0, 10.0, 100.0, 600.0 bps.
+#[test]
+fn a_bid_touch_followed_by_a_rising_mid_has_positive_markout() {
+    let mids = vec![
+        sample(0, 20_000),
+        sample(100, 20_002),
+        sample(1_000, 20_020),
+        sample(10_000, 20_200),
+        sample(60_000, 21_200),
+    ];
+    let bid = touch(Side::Bid, 50);
+    let got = markouts_for_touch(&bid, &mids);
+    let want = [1.0, 10.0, 100.0, 600.0];
+    assert_eq!(HORIZONS_MS, [100, 1_000, 10_000, 60_000]);
+    for (i, h) in HORIZONS_MS.iter().enumerate() {
+        let v = got[i].expect("будущее есть на каждом горизонте");
+        assert!(v > 0.0 && close(v, want[i]), "горизонт {h}: got {v}");
+    }
+    let ask = markouts_for_touch(&touch(Side::Ask, 50), &mids);
+    for (i, v) in ask.iter().enumerate() {
+        let v = v.unwrap();
+        assert!(
+            v < 0.0 && close(v, -want[i]),
+            "аск на росте — против отскока"
+        );
+    }
+    assert_eq!(
+        touch_markout_bps(Side::Bid, 0, 1),
+        None,
+        "неположительная база"
+    );
+    assert_eq!(
+        markouts_for_touch(&touch(Side::Bid, -1), &mids),
+        [None; 4],
+        "до первого среза базы нет"
+    );
 }
 
 /// В-43: база касания — срез как есть на `start_ms`, включая шаг самого

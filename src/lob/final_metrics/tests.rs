@@ -51,6 +51,38 @@ fn sharpe_is_none_without_variance() {
     assert_eq!(sharpe_ratio(&[1.0, f64::NAN, 3.0]), None);
 }
 
+/// T-26: `SR0` при заданных числе испытаний и дисперсии — формула
+/// `√V·((1−γ)·Φ⁻¹(1−1/N) + γ·Φ⁻¹(1−1/(N·e)))`, посчитанная здесь руками;
+/// граничные входы отказываются или дают ноль.
+#[test]
+fn sr0_with_variance_matches_hand_formula() {
+    let slice = [0.3, -0.1, 0.25, 0.05, -0.2, 0.4];
+    let v = trial_sharpe_variance(&slice).unwrap();
+    let got = expected_sharpe_under_null_with_variance(slice.len(), v).unwrap();
+    let nf = 6.0;
+    let hand = v.sqrt()
+        * ((1.0 - EULER_MASCHERONI) * normal_inv_cdf(1.0 - 1.0 / nf)
+            + EULER_MASCHERONI * normal_inv_cdf(1.0 - 1.0 / (nf * std::f64::consts::E)));
+    assert!(close(got, hand, 1e-12), "{got} {hand}");
+    assert_eq!(expected_sharpe_under_null_with_variance(1, 0.5), Some(0.0));
+    assert_eq!(expected_sharpe_under_null_with_variance(5, 0.0), Some(0.0));
+    assert_eq!(expected_sharpe_under_null_with_variance(0, 0.5), None);
+    assert_eq!(expected_sharpe_under_null_with_variance(5, -1.0), None);
+    assert_eq!(trial_sharpe_variance(&[0.1]), None);
+}
+
+/// T-26: требуемый Шарп при измеренной `V` — обратная задача к
+/// `dsr_with_variance`: подстановка назад даёт ровно цель.
+#[test]
+fn required_sharpe_with_variance_inverts_dsr_with_variance() {
+    let (n, v, t) = (1388usize, 1.0 / 31.0, 31usize);
+    let x = required_sharpe_for_dsr_with_variance(n, v, t, 0.95).unwrap();
+    let back = dsr_with_variance(x, t, 0.0, 3.0, n, v).unwrap();
+    assert!(close(back, 0.95, 1e-6), "x={x} back={back}");
+    // Порядок величины из проверки Судьи `11a3d1e`: N журнала, V = 1/T, T = 31 → ≈ 0,9.
+    assert!(x > 0.8 && x < 1.0, "x={x}");
+}
+
 /// PBO = 1.0, когда IS-победитель заучил IS-блоки и валится на OOS: при
 /// S = 4 три сплита, и во всех трёх OOS-ранг ниже медианы.
 #[test]

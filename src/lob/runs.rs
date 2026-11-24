@@ -283,6 +283,24 @@ mod tests {
         }
     }
 
+    /// Файл создаётся с шапкой и нулём строк; повторный вызов шапку не
+    /// дублирует; пустой журнал — ноль испытаний, а не недоступность.
+    #[test]
+    fn ensure_writes_header_once_and_empty_journal_counts_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sub").join("runs.csv");
+        ensure_runs_csv(&path).unwrap();
+        ensure_runs_csv(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            text, "ts_utc,symbol,kind,detail\n",
+            "двойной ensure обязан оставить одну шапку: {text:?}"
+        );
+        let rows = read_run_rows(&path).unwrap();
+        assert_eq!(rows, Vec::new());
+        assert_eq!(count_trials(&rows), 0);
+    }
+
     /// Строка переживает запись и чтение теми же значениями, включая запятую,
     /// кавычки и кириллицу в детали; шапка стабильна побайтово.
     #[test]
@@ -304,6 +322,58 @@ mod tests {
         assert_eq!(got, vec![want]);
     }
 
+    /// Испытания — пилоты обоих кандидатов, подтверждающий прогон и
+    /// перезапуск; правка после результатов и долг — учёт, в поправку DSR
+    /// не входят.
+    #[test]
+    fn trials_count_runs_but_not_bookkeeping() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("runs.csv");
+        for (kind, symbol, detail) in [
+            (RunKind::Pilot, "SOLUSDT", "первый кандидат"),
+            (RunKind::Pilot, "HYPEUSDT", "второй кандидат"),
+            (RunKind::Confirmatory, "SOLUSDT", "первая попытка 5.1"),
+            (RunKind::Rerun, "SOLUSDT", "перезапуск после шага 5"),
+            (
+                RunKind::Amendment,
+                "SOLUSDT",
+                "порог H3 сменён коммитом ab12",
+            ),
+            (RunKind::Debt, "", "finding ревью: переименовать колонку"),
+            (
+                RunKind::Prereg,
+                "POOL",
+                "V-58: 48 форм до первого прогона с вердиктом",
+            ),
+        ] {
+            append_run_row(&path, &row(kind, symbol, detail)).unwrap();
+        }
+        let rows = read_run_rows(&path).unwrap();
+        assert_eq!(rows.len(), 7, "все семь строк обязаны читаться");
+        assert_eq!(count_trials(&rows), 4);
+    }
+
+    /// Предрегистрация (В-58) — учётная строка: журнал с ней читается целиком,
+    /// а число испытаний не растёт. Это регрессия находки R1 аудита 2026-09-17:
+    /// строка `kind=prereg` сделала боевой журнал нечитаемым, и DSR-дефляция
+    /// отказала бы до первого прогона B5.
+    #[test]
+    fn prereg_row_is_bookkeeping_and_does_not_kill_the_journal() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("runs.csv");
+        append_run_row(&path, &row(RunKind::Prereg, "POOL", "В-58: 48 форм")).unwrap();
+        append_run_row(&path, &row(RunKind::Pilot, "SOLUSDT", "вердикт G0")).unwrap();
+        let rows = read_run_rows(&path).expect("журнал с предрегистрацией обязан читаться");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(count_trials(&rows), 1, "предрегистрация — не испытание");
+        // Имя варианта — часть файла в git (`kind=prereg` уже записан строкой
+        // В-58), поэтому оно проверяется, а не подразумевается.
+        assert!(
+            std::fs::read_to_string(&path).unwrap().contains(",prereg,"),
+            "строка предрегистрации пишется как kind=prereg"
+        );
+    }
+
     /// Боевой журнал репозитория обязан читаться: он в git, у него есть
     /// потребитель DSR, и одна строка неизвестного вида гасит чтение целиком
     /// (находка R1). Тест ловит новый вид строки без варианта в `RunKind` —
@@ -317,6 +387,66 @@ mod tests {
         assert!(
             rows.iter().any(|r| r.kind == RunKind::Prereg),
             "предрегистрация В-58 обязана быть в боевом журнале"
+        );
+    }
+
+    /// Битая строка (неизвестный kind — опечатка человека в git-файле) даёт
+    /// отказ всего чтения, а не тихий пропуск: пропуск занизил бы поправку
+    /// DSR, и журнал перестал бы выполнять свою единственную задачу.
+    #[test]
+    fn malformed_journal_is_an_error_not_silent_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("runs.csv");
+        std::fs::write(
+            &path,
+            "ts_utc,symbol,kind,detail\n2026-09-08T00:00:00Z,SOLUSDT,pilott,опечатка в kind\n",
+        )
+        .unwrap();
+        assert!(
+            read_run_rows(&path).is_err(),
+            "неизвестный kind обязан быть ошибкой чтения"
+        );
+    }
+
+    /// Несуществующий файл — пустое чтение (ноль испытаний), а не ошибка:
+    /// до первого запуска журнала нет, и это честный ноль.
+    #[test]
+    fn missing_journal_is_zero_trials_not_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("нет-такого.csv");
+        let rows = read_run_rows(&path).unwrap();
+        assert_eq!(rows, Vec::new());
+        assert_eq!(count_trials(&rows), 0);
+    }
+
+    /// Один писатель на сетки форм: строка на id с префиксом вызывающего,
+    /// каждая — подтверждающее испытание; повторный вызов дописывает вторую
+    /// партию, не перезаписывает первую; пустой список — ни одной строки.
+    #[test]
+    fn log_trials_appends_one_confirmatory_row_per_id_with_the_callers_prefix_and_accumulates() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("runs.csv");
+        let ids = vec![
+            "pool:marginal:side=bid".to_string(),
+            "pool:cross:bounced|[0,10m)".to_string(),
+        ];
+        log_trials(&path, "2026-09-13T00:00:00Z", BOUNCE_TRIAL_PREFIX, &ids).unwrap();
+        let rows = read_run_rows(&path).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.kind == RunKind::Confirmatory));
+        assert_eq!(rows[0].detail, "bounce_form pool:marginal:side=bid");
+        assert_eq!(rows[1].detail, "bounce_form pool:cross:bounced|[0,10m)");
+        assert_eq!(count_trials(&rows), 2);
+        log_trials(&path, "2026-09-13T01:00:00Z", "other", &ids[..1]).unwrap();
+        let rows = read_run_rows(&path).unwrap();
+        assert_eq!(rows.len(), 3, "журнал, не перезапись");
+        assert_eq!(rows[2].detail, "other pool:marginal:side=bid");
+        assert_eq!(count_trials(&rows), 3);
+        log_trials(&path, "2026-09-13T02:00:00Z", "other", &[]).unwrap();
+        assert_eq!(
+            count_trials(&read_run_rows(&path).unwrap()),
+            3,
+            "пустой список — ни строки"
         );
     }
 }
