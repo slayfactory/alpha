@@ -1,0 +1,32 @@
+--queue-model prob:3 --no-post-only --stop-form before --stop-form at --stop-form behind --stop-form midfr --stop-form stack2 --stop-form pct1 --take-form 1to1 --take-form t2 --take-floor-fees 1
+--queue-model risk-adverse --stop-form before --stop-form pct1 --take-form 1to1 --entry-ttl-secs touch --entry-ttl-secs 60 --entry-ttl-secs 300 --band-exit-bps 2
+--queue-model risk-adverse --stop-form before --take-form 1to1 --early-exit-secs off --early-exit-secs 1 --early-exit-secs 3
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --entry-form single@fr --entry-form market --entry-form ladder3x0.5..2
+--queue-model risk-adverse --stop-form before --take-form 1to1 --side bid --order-qty-mult 2 --post-only
+--queue-model risk-adverse --stop-form before --take-form 1to1 --driver full
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form none
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form eat30
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form gone20
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form gone90tr0.5
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form gone90be
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form gone90bex
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form gone90wall5
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form gone90wallx2.5
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form gone90wallk2.5
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form halfstop
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form halfstopf1
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form halflevel
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form halflevelf3
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form nostop2
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form nostopx1
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form pyeat3
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form pyfresh12
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form pynw5w10
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form pyre10w2
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form chase2500
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form tape15q1.5 --tape-log 15
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form cxl60q0.25 --tape-log 60
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form conv16a20
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form tsl5t2
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form tslx8t8
+--queue-model prob:3 --no-post-only --stop-form before --take-form 1to1 --exit-form lvlback5w10
