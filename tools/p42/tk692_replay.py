@@ -223,8 +223,9 @@ def cmd_replay(a):
         r = runs[m]
         cw = db.execute("SELECT n, usd, errs FROM mass_cw WHERE run_id=? AND cid=? AND win=?", (run_id, cid, win)).fetchone()
         rf = ref.execute("SELECT n, usd FROM mass_cw WHERE run_id=? AND cid=? AND win=?", (r, cid, win)).fetchone()
-        dr = {d: (p, n) for d, p, n in db.execute("SELECT day, pnl, n FROM mass_day WHERE run_id=? AND cid=?", (run_id, cid))}
-        df = {d: (p, n) for d, p, n in ref.execute("SELECT day, pnl, n FROM mass_day WHERE run_id=? AND cid=?", (r, cid))}
+        d_lo, d_hi = W.MONTH_START[m], W.MONTH_START[m + 1]                 # запуск повтора — несколько окон: сравнение только суток своего месяца
+        dr = {d: (p, n) for d, p, n in db.execute("SELECT day, pnl, n FROM mass_day WHERE run_id=? AND cid=? AND day>=? AND day<?", (run_id, cid, d_lo, d_hi))}
+        df = {d: (p, n) for d, p, n in ref.execute("SELECT day, pnl, n FROM mass_day WHERE run_id=? AND cid=? AND day>=? AND day<?", (r, cid, d_lo, d_hi))}
         diff = max([abs(dr.get(d, (0.0, 0))[0] - df.get(d, (0.0, 0))[0]) for d in set(dr) | set(df)] or [0.0])
         ndiff = sum(1 for d in set(dr) | set(df) if dr.get(d, (0, 0))[1] != df.get(d, (0, 0))[1])
         ok = bool(cw and rf and not cw[2] and cw[0] == rf[0] and abs(cw[1] - rf[1]) <= TOL * max(1, rf[0]) and diff <= TOL and ndiff == 0)
@@ -243,7 +244,8 @@ def cmd_replay(a):
     if wanted - seen:
         ok_all = False
         print("не посчитаны пары: %s" % sorted(wanted - seen)[:10], flush=True)
-    print("повтор %s: пар записано %d из %d, ворота %s" % (run_id, len(wanted & seen), len(wanted), "PASS" if ok_all else "FAIL"), flush=True)
+    n_ok = rp.execute("SELECT count(*) FROM rp_gate WHERE run_id=? AND ok=1", (run_id,)).fetchone()[0]
+    print("повтор %s: пар прошло ворота %d из %d, ворота %s" % (run_id, n_ok, len(wanted), "PASS" if ok_all else "FAIL"), flush=True)
     return 0 if ok_all else 1
 
 
