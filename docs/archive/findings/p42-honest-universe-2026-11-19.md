@@ -16,7 +16,7 @@
 
 - Делистинги: **9** с последним днём сделок в июле–августе — NFP (02.07), AERGO (23.07), ACX / HFT / VANRY / VIC (07.08), ICX / SCRT / STORJ (26.08); **8** в сентябре–октябре — STG, 1000000BOB, PROMPT, PUMPBTC, EPIC, MITO, PTB, VELODROME. В старых 566 из 17 — 7 (все осенние); все 9 июль–августовских отсутствовали. Аудит писал «10 делистнутых в июле–августе»: по `deliveryDate` exchangeInfo в этом окне 8 + AERGO (уже убран из exchangeInfo) = 9; TON (23.06) и IP (28.06) закончились до 01.07 и в членство не входят.
 - Флаг TradFi — `contractType == TRADIFI_PERPETUAL` (`underlyingType`: 198 EQUITY, 15 HK_EQUITY, 8 KR_EQUITY, 2 CN_EQUITY, 8 COMMODITY, 1 FX, 4 PREMARKET/Pre-IPO). Не в exchangeInfo — один контракт, AERGOUSDT (монета, делистнут 23.07): помечен крипто. `PREDICTUSDT` (`PERPETUAL` / `PREMARKET`) — крипто. Даты: `onboard_date` (биржа), `first_agg_day`, `last_agg_day`, `delisted_in_window` — в `contracts.csv`.
-- Артефакты: `docs/findings/p42-honest-universe-2026-11-19/contracts.csv` (775 строк), `symbols-all.txt` / `symbols-crypto.txt` / `symbols-tradfi.txt` (через запятую, как `symbols.txt`); те же на srv `/data/p42-tk621/universe/`.
+- Артефакты: `docs/archive/findings/p42-honest-universe-2026-11-19/contracts.csv` (775 строк), `symbols-all.txt` / `symbols-crypto.txt` / `symbols-tradfi.txt` (через запятую, как `symbols.txt`); те же на srv `/data/p42-tk621/universe/`.
 
 ## 2. Данные на srv
 

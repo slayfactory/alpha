@@ -62,7 +62,7 @@
     "universe": "566 (U0, 01.07-13.11, 136 d)",
     "stop_base": "5 %",
     "verdict": "axis F single filter per variant; not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:217; tools/p42/retitr_full_spec.py:90-94"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:217; tools/p42/retitr_full_spec.py:90-94"
    },
    {
     "task": "TK-674",
@@ -82,7 +82,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "S tpm60<=650/min 260 tr +257 $ Sharpe 5.05 (highest S), deflated not significant; L no direction",
-    "source": "docs/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
+    "source": "docs/archive/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
    },
    {
     "task": "TK-598",
@@ -92,7 +92,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not clear on all targets",
-    "source": "docs/findings/p42-catboost-targets-2026-11-18.md"
+    "source": "docs/archive/findings/p42-catboost-targets-2026-11-18.md"
    },
    {
     "task": "TK-610",
@@ -102,7 +102,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not determined: long only 2 trades, short 26 < 30 in Aug",
-    "source": "docs/findings/p42-catboost-retitr-2026-11-19.md; docs/findings/p42-formal-tests-audit-2026-11-20.md:41"
+    "source": "docs/archive/findings/p42-catboost-retitr-2026-11-19.md; docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:41"
    },
    {
     "task": "TK-653",
@@ -112,7 +112,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "both sides not distinguishable",
-    "source": "docs/findings/p42-catboost-f12-775-2026-11-20.md"
+    "source": "docs/archive/findings/p42-catboost-f12-775-2026-11-20.md"
    },
    {
     "task": "TK-671",
@@ -244,7 +244,7 @@
     "universe": "566 (U0, 01.07-13.11, 136 d)",
     "stop_base": "5 %",
     "verdict": "axis F single filter per variant; not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:217; tools/p42/retitr_full_spec.py:90-94"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:217; tools/p42/retitr_full_spec.py:90-94"
    },
    {
     "task": "TK-671",
@@ -570,7 +570,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -641,7 +641,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -722,7 +722,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -795,7 +795,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -866,7 +866,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -937,7 +937,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1008,7 +1008,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1079,7 +1079,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1150,7 +1150,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1231,7 +1231,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1314,7 +1314,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1387,7 +1387,7 @@
     "universe": "566 (U0, 01.07-13.11, 136 d)",
     "stop_base": "5 %",
     "verdict": "axis F single filter per variant; not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:217; tools/p42/retitr_full_spec.py:90-94"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:217; tools/p42/retitr_full_spec.py:90-94"
    },
    {
     "task": "TK-600",
@@ -1407,7 +1407,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1458,7 +1458,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1509,7 +1509,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1580,7 +1580,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1651,7 +1651,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1732,7 +1732,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1805,7 +1805,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1856,7 +1856,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1907,7 +1907,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -1958,7 +1958,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -2009,7 +2009,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -2060,7 +2060,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -2111,7 +2111,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -2162,7 +2162,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -2213,7 +2213,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -2264,7 +2264,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -2315,7 +2315,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -2366,7 +2366,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -2480,7 +2480,7 @@
     "universe": "566 (U0, 01.07-13.11, 136 d)",
     "stop_base": "5 %",
     "verdict": "S pass1 winner F_cons60_hi_20: delta +0.181 $/trade, z 2.26, rejected (g_cat z<2.5); F_cons60_hi_25 chosen in forward replay, nothing frozen",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:217; tools/p42/retitr_full_spec.py:90-94"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:217; tools/p42/retitr_full_spec.py:90-94"
    },
    {
     "task": "TK-674",
@@ -2500,7 +2500,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "L CN60_ge_q60 -12 $ (-206 vs base); NOCONS L 148 tr +169 $ Sharpe 2.99; nothing significant",
-    "source": "docs/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
+    "source": "docs/archive/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
    },
    {
     "task": "TK-598",
@@ -2510,7 +2510,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not clear on all targets",
-    "source": "docs/findings/p42-catboost-targets-2026-11-18.md"
+    "source": "docs/archive/findings/p42-catboost-targets-2026-11-18.md"
    },
    {
     "task": "TK-610",
@@ -2520,7 +2520,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not determined: long only 2 trades, short 26 < 30 in Aug",
-    "source": "docs/findings/p42-catboost-retitr-2026-11-19.md; docs/findings/p42-formal-tests-audit-2026-11-20.md:41"
+    "source": "docs/archive/findings/p42-catboost-retitr-2026-11-19.md; docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:41"
    },
    {
     "task": "TK-653",
@@ -2530,7 +2530,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "both sides not distinguishable",
-    "source": "docs/findings/p42-catboost-f12-775-2026-11-20.md"
+    "source": "docs/archive/findings/p42-catboost-f12-775-2026-11-20.md"
    },
    {
     "task": "TK-671",
@@ -2611,7 +2611,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "DENSE: L +238 $ (+45), S +245 $ (+21), in noise; thresholds degenerate (zv6h=0 for 94.1 %/89.5 %)",
-    "source": "docs/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
+    "source": "docs/archive/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
    },
    {
     "task": "TK-598",
@@ -2621,7 +2621,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not clear on all targets",
-    "source": "docs/findings/p42-catboost-targets-2026-11-18.md"
+    "source": "docs/archive/findings/p42-catboost-targets-2026-11-18.md"
    },
    {
     "task": "TK-610",
@@ -2631,7 +2631,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not determined: long only 2 trades, short 26 < 30 in Aug",
-    "source": "docs/findings/p42-catboost-retitr-2026-11-19.md; docs/findings/p42-formal-tests-audit-2026-11-20.md:41"
+    "source": "docs/archive/findings/p42-catboost-retitr-2026-11-19.md; docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:41"
    },
    {
     "task": "TK-653",
@@ -2641,7 +2641,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "both sides not distinguishable",
-    "source": "docs/findings/p42-catboost-f12-775-2026-11-20.md"
+    "source": "docs/archive/findings/p42-catboost-f12-775-2026-11-20.md"
    },
    {
     "task": "TK-671",
@@ -2667,7 +2667,7 @@
   "flags": [
    "constant"
   ],
-  "note": "constant-like on h775: ZV6 thresholds q10..q40 all = 0 (kb/task/TK-674.md:50; docs/findings/p42-features-2026-11-22.md:120); zv6h=0 for 94.1 %/89.5 % of candidates (docs/findings/p42-level-quality-775-2026-11-20/nopnl-13.54.md:11); TK-654 ZV6_le_q20..q80 identical sets",
+  "note": "constant-like on h775: ZV6 thresholds q10..q40 all = 0 (kb/task/TK-674.md:50; docs/findings/p42-features-2026-11-22.md:120); zv6h=0 for 94.1 %/89.5 % of candidates (docs/archive/findings/p42-level-quality-775-2026-11-20/nopnl-13.54.md:11); TK-654 ZV6_le_q20..q80 identical sets",
   "where_ru": "TK-674 L-298, h775, стоп Л 3 / Ш 4: ZV6 ≤ q10 / q20 / q30 / q40 (на h775 все пороги = 0); TK-654 L-249, h775, стоп 5 %: лестница q20…q80 (DENSE)",
   "verdict_ru": "описательно: пороги вырождены (zv6h=0), эффект в шуме"
  },
@@ -2694,7 +2694,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "L 86 tr +162 $ 1.88 $/tr Sharpe 3.80 > noise max 3.68 but deflated 0.11 not significant; S -10 $ opposite sign",
-    "source": "docs/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
+    "source": "docs/archive/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
    }
   ],
   "flags": [
@@ -2757,7 +2757,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "L: MV5_ge_q60 +173 $ (-20 vs base), MV5_le_q20 +115 $; nothing significant; inside SHARP at median",
-    "source": "docs/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
+    "source": "docs/archive/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
    },
    {
     "task": "TK-598",
@@ -2767,7 +2767,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not clear on all targets",
-    "source": "docs/findings/p42-catboost-targets-2026-11-18.md"
+    "source": "docs/archive/findings/p42-catboost-targets-2026-11-18.md"
    },
    {
     "task": "TK-610",
@@ -2777,7 +2777,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not determined: long only 2 trades, short 26 < 30 in Aug",
-    "source": "docs/findings/p42-catboost-retitr-2026-11-19.md; docs/findings/p42-formal-tests-audit-2026-11-20.md:41"
+    "source": "docs/archive/findings/p42-catboost-retitr-2026-11-19.md; docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:41"
    },
    {
     "task": "TK-653",
@@ -2787,7 +2787,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "both sides not distinguishable",
-    "source": "docs/findings/p42-catboost-f12-775-2026-11-20.md"
+    "source": "docs/archive/findings/p42-catboost-f12-775-2026-11-20.md"
    },
    {
     "task": "TK-671",
@@ -3002,7 +3002,7 @@
     "universe": "566 (U0, 01.07-13.11, 136 d)",
     "stop_base": "5 %",
     "verdict": "L pass1 winner F_maxmv1_lo_25: delta +0.142 $/trade, z 1.01, rejected (g_cat z<2.5)",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:163; tools/p42/retitr_full_spec.py:90-94"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:163; tools/p42/retitr_full_spec.py:90-94"
    },
    {
     "task": "TK-671",
@@ -3274,7 +3274,7 @@
     "universe": "566 (136 d)",
     "stop_base": "5 %",
     "verdict": "best natr_min_0.6: L +0.070 $/trade z 0.13, S +0.396 z 1.12; not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:160,214"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:160,214"
    },
    {
     "task": "TK-674",
@@ -3294,7 +3294,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not clear on all targets",
-    "source": "docs/findings/p42-catboost-targets-2026-11-18.md"
+    "source": "docs/archive/findings/p42-catboost-targets-2026-11-18.md"
    },
    {
     "task": "TK-610",
@@ -3304,7 +3304,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not determined: long only 2 trades, short 26 < 30 in Aug",
-    "source": "docs/findings/p42-catboost-retitr-2026-11-19.md; docs/findings/p42-formal-tests-audit-2026-11-20.md:41"
+    "source": "docs/archive/findings/p42-catboost-retitr-2026-11-19.md; docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:41"
    },
    {
     "task": "TK-653",
@@ -3314,7 +3314,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "both sides not distinguishable",
-    "source": "docs/findings/p42-catboost-f12-775-2026-11-20.md"
+    "source": "docs/archive/findings/p42-catboost-f12-775-2026-11-20.md"
    },
    {
     "task": "TK-671",
@@ -3781,7 +3781,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "no direction: both sides below base in sum at all steps (L -37..-177, S -33..-193 $)",
-    "source": "docs/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
+    "source": "docs/archive/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
    },
    {
     "task": "TK-598",
@@ -3791,7 +3791,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not clear on all targets",
-    "source": "docs/findings/p42-catboost-targets-2026-11-18.md"
+    "source": "docs/archive/findings/p42-catboost-targets-2026-11-18.md"
    },
    {
     "task": "TK-610",
@@ -3801,7 +3801,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not determined: long only 2 trades, short 26 < 30 in Aug",
-    "source": "docs/findings/p42-catboost-retitr-2026-11-19.md; docs/findings/p42-formal-tests-audit-2026-11-20.md:41"
+    "source": "docs/archive/findings/p42-catboost-retitr-2026-11-19.md; docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:41"
    },
    {
     "task": "TK-653",
@@ -3811,7 +3811,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "both sides not distinguishable",
-    "source": "docs/findings/p42-catboost-f12-775-2026-11-20.md"
+    "source": "docs/archive/findings/p42-catboost-f12-775-2026-11-20.md"
    },
    {
     "task": "TK-671",
@@ -3953,7 +3953,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not clear on all targets",
-    "source": "docs/findings/p42-catboost-targets-2026-11-18.md"
+    "source": "docs/archive/findings/p42-catboost-targets-2026-11-18.md"
    },
    {
     "task": "TK-610",
@@ -3963,7 +3963,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not determined: long only 2 trades, short 26 < 30 in Aug",
-    "source": "docs/findings/p42-catboost-retitr-2026-11-19.md; docs/findings/p42-formal-tests-audit-2026-11-20.md:41"
+    "source": "docs/archive/findings/p42-catboost-retitr-2026-11-19.md; docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:41"
    },
    {
     "task": "TK-653",
@@ -3973,7 +3973,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "both sides not distinguishable",
-    "source": "docs/findings/p42-catboost-f12-775-2026-11-20.md"
+    "source": "docs/archive/findings/p42-catboost-f12-775-2026-11-20.md"
    },
    {
     "task": "TK-671",
@@ -4054,7 +4054,7 @@
     "universe": "566 (U0, 01.07-13.11, 136 d)",
     "stop_base": "5 %",
     "verdict": "axis F single filter per variant; not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:217; tools/p42/retitr_full_spec.py:90-94"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:217; tools/p42/retitr_full_spec.py:90-94"
    },
    {
     "task": "TK-671",
@@ -4196,7 +4196,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "CLEAN: L -23 $, S +19 $; ZONE 32/37 trades, no conclusion",
-    "source": "docs/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
+    "source": "docs/archive/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
    },
    {
     "task": "TK-598",
@@ -4206,7 +4206,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not clear on all targets",
-    "source": "docs/findings/p42-catboost-targets-2026-11-18.md"
+    "source": "docs/archive/findings/p42-catboost-targets-2026-11-18.md"
    },
    {
     "task": "TK-610",
@@ -4216,7 +4216,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not determined: long only 2 trades, short 26 < 30 in Aug",
-    "source": "docs/findings/p42-catboost-retitr-2026-11-19.md; docs/findings/p42-formal-tests-audit-2026-11-20.md:41"
+    "source": "docs/archive/findings/p42-catboost-retitr-2026-11-19.md; docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:41"
    },
    {
     "task": "TK-653",
@@ -4226,7 +4226,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "both sides not distinguishable",
-    "source": "docs/findings/p42-catboost-f12-775-2026-11-20.md"
+    "source": "docs/archive/findings/p42-catboost-f12-775-2026-11-20.md"
    },
    {
     "task": "TK-671",
@@ -4490,7 +4490,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not clear on all targets",
-    "source": "docs/findings/p42-catboost-targets-2026-11-18.md"
+    "source": "docs/archive/findings/p42-catboost-targets-2026-11-18.md"
    },
    {
     "task": "TK-610",
@@ -4500,7 +4500,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not determined: long only 2 trades, short 26 < 30 in Aug",
-    "source": "docs/findings/p42-catboost-retitr-2026-11-19.md; docs/findings/p42-formal-tests-audit-2026-11-20.md:41"
+    "source": "docs/archive/findings/p42-catboost-retitr-2026-11-19.md; docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:41"
    },
    {
     "task": "TK-653",
@@ -4510,7 +4510,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "both sides not distinguishable",
-    "source": "docs/findings/p42-catboost-f12-775-2026-11-20.md"
+    "source": "docs/archive/findings/p42-catboost-f12-775-2026-11-20.md"
    },
    {
     "task": "TK-671",
@@ -4855,7 +4855,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not clear on all targets",
-    "source": "docs/findings/p42-catboost-targets-2026-11-18.md"
+    "source": "docs/archive/findings/p42-catboost-targets-2026-11-18.md"
    },
    {
     "task": "TK-610",
@@ -4865,7 +4865,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not determined: long only 2 trades, short 26 < 30 in Aug",
-    "source": "docs/findings/p42-catboost-retitr-2026-11-19.md; docs/findings/p42-formal-tests-audit-2026-11-20.md:41"
+    "source": "docs/archive/findings/p42-catboost-retitr-2026-11-19.md; docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:41"
    },
    {
     "task": "TK-653",
@@ -4875,7 +4875,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "both sides not distinguishable",
-    "source": "docs/findings/p42-catboost-f12-775-2026-11-20.md"
+    "source": "docs/archive/findings/p42-catboost-f12-775-2026-11-20.md"
    },
    {
     "task": "TK-671",
@@ -5200,7 +5200,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not clear on all targets",
-    "source": "docs/findings/p42-catboost-targets-2026-11-18.md"
+    "source": "docs/archive/findings/p42-catboost-targets-2026-11-18.md"
    },
    {
     "task": "TK-610",
@@ -5210,7 +5210,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not determined: long only 2 trades, short 26 < 30 in Aug",
-    "source": "docs/findings/p42-catboost-retitr-2026-11-19.md; docs/findings/p42-formal-tests-audit-2026-11-20.md:41"
+    "source": "docs/archive/findings/p42-catboost-retitr-2026-11-19.md; docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:41"
    },
    {
     "task": "TK-653",
@@ -5220,7 +5220,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "both sides not distinguishable",
-    "source": "docs/findings/p42-catboost-f12-775-2026-11-20.md"
+    "source": "docs/archive/findings/p42-catboost-f12-775-2026-11-20.md"
    },
    {
     "task": "TK-671",
@@ -6707,7 +6707,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -6778,7 +6778,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -6849,7 +6849,7 @@
     "universe": "566 (U0, 01.07-13.11, 136 d)",
     "stop_base": "5 %",
     "verdict": "axis F single filter per variant; not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:163; tools/p42/retitr_full_spec.py:90-94"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:163; tools/p42/retitr_full_spec.py:90-94"
    },
    {
     "task": "TK-600",
@@ -6869,7 +6869,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -6940,7 +6940,7 @@
     "universe": "566 (U0, 01.07-13.11, 136 d)",
     "stop_base": "5 %",
     "verdict": "axis F single filter per variant; not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:163; tools/p42/retitr_full_spec.py:90-94"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:163; tools/p42/retitr_full_spec.py:90-94"
    },
    {
     "task": "TK-600",
@@ -6960,7 +6960,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -7031,7 +7031,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -7102,7 +7102,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -7173,7 +7173,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -7244,7 +7244,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -7315,7 +7315,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -7386,7 +7386,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -7467,7 +7467,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -7538,7 +7538,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -7609,7 +7609,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -7690,7 +7690,7 @@
     "universe": "h775 (76 d 01.07-14.09)",
     "stop_base": "5 %",
     "verdict": "L/S not clear, 0 of 11 cells pass Holm (best p L X_T5 0.014, S X_T3 0.019, need <=0.0045)",
-    "source": "docs/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
+    "source": "docs/archive/findings/p42-toxic-flow-stages-2026-11-20.md:1-6; P-42 §13.25.1"
    },
    {
     "task": "TK-671",
@@ -7741,7 +7741,7 @@
     "universe": "h775 (60 d 14.09-13.11 w/o 08.10)",
     "stop_base": "5 %",
     "verdict": "L -54.8 $ [-149;+42]; none passes Holm (m 6 / 73); L base 195 tr +76 $, S 135 tr +94 $",
-    "source": "docs/findings/p42-book-depth-2026-11-20.md:5-45"
+    "source": "docs/archive/findings/p42-book-depth-2026-11-20.md:5-45"
    },
    {
     "task": "TK-671",
@@ -7792,7 +7792,7 @@
     "universe": "h775 (60 d 14.09-13.11 w/o 08.10)",
     "stop_base": "5 %",
     "verdict": "L +35.2 $ [-52;+129] only plus; S within +-17 $; none passes Holm (m 6 / 73); L base 195 tr +76 $, S 135 tr +94 $",
-    "source": "docs/findings/p42-book-depth-2026-11-20.md:5-45"
+    "source": "docs/archive/findings/p42-book-depth-2026-11-20.md:5-45"
    },
    {
     "task": "TK-671",
@@ -7843,7 +7843,7 @@
     "universe": "h775 (60 d 14.09-13.11 w/o 08.10)",
     "stop_base": "5 %",
     "verdict": "L -33.6 $; none passes Holm (m 6 / 73); L base 195 tr +76 $, S 135 tr +94 $",
-    "source": "docs/findings/p42-book-depth-2026-11-20.md:5-45"
+    "source": "docs/archive/findings/p42-book-depth-2026-11-20.md:5-45"
    },
    {
     "task": "TK-671",
@@ -7894,7 +7894,7 @@
     "universe": "h775 (60 d 14.09-13.11 w/o 08.10)",
     "stop_base": "5 %",
     "verdict": "L -53.7 $; none passes Holm (m 6 / 73); L base 195 tr +76 $, S 135 tr +94 $",
-    "source": "docs/findings/p42-book-depth-2026-11-20.md:5-45"
+    "source": "docs/archive/findings/p42-book-depth-2026-11-20.md:5-45"
    },
    {
     "task": "TK-671",
@@ -7945,7 +7945,7 @@
     "universe": "h775 (60 d 14.09-13.11 w/o 08.10)",
     "stop_base": "5 %",
     "verdict": "L -58.4 $; none passes Holm (m 6 / 73); L base 195 tr +76 $, S 135 tr +94 $",
-    "source": "docs/findings/p42-book-depth-2026-11-20.md:5-45"
+    "source": "docs/archive/findings/p42-book-depth-2026-11-20.md:5-45"
    },
    {
     "task": "TK-671",
@@ -7996,7 +7996,7 @@
     "universe": "h775 (60 d 14.09-13.11 w/o 08.10)",
     "stop_base": "5 %",
     "verdict": "L -92.0 $ [-186;-19], p 0.030, not Holm; label scan said \"for\" (z 2.39); none passes Holm (m 6 / 73); L base 195 tr +76 $, S 135 tr +94 $",
-    "source": "docs/findings/p42-book-depth-2026-11-20.md:5-45"
+    "source": "docs/archive/findings/p42-book-depth-2026-11-20.md:5-45"
    },
    {
     "task": "TK-671",
@@ -8037,7 +8037,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "long crypto +304 $ (+1.02 $/tr) vs TradFi -112 $ (post-hoc), no verdict; \"works\" not given",
-    "source": "docs/findings/p42-coin-as-feature-2026-11-20.md:1-12,33-41; tools/p42/tk636_run.py:44,109-148; docs/findings/p42-formal-tests-audit-2026-11-20.md:30"
+    "source": "docs/findings/p42-coin-as-feature-2026-11-20.md:1-12,33-41; tools/p42/tk636_run.py:44,109-148; docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:30"
    },
    {
     "task": "TK-671",
@@ -8153,7 +8153,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not clear on all targets",
-    "source": "docs/findings/p42-catboost-targets-2026-11-18.md"
+    "source": "docs/archive/findings/p42-catboost-targets-2026-11-18.md"
    },
    {
     "task": "TK-610",
@@ -8163,7 +8163,7 @@
     "universe": "566",
     "stop_base": "5 %",
     "verdict": "not determined: long only 2 trades, short 26 < 30 in Aug",
-    "source": "docs/findings/p42-catboost-retitr-2026-11-19.md; docs/findings/p42-formal-tests-audit-2026-11-20.md:41"
+    "source": "docs/archive/findings/p42-catboost-retitr-2026-11-19.md; docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:41"
    },
    {
     "task": "TK-653",
@@ -8173,7 +8173,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "both sides not distinguishable",
-    "source": "docs/findings/p42-catboost-f12-775-2026-11-20.md"
+    "source": "docs/archive/findings/p42-catboost-f12-775-2026-11-20.md"
    },
    {
     "task": "TK-671",
@@ -8256,7 +8256,7 @@
     "universe": "566 (136 d)",
     "stop_base": "5 %",
     "verdict": "best t1h_2: L +0.001 z 0.00, S +0.137 z 0.77; not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:161,215"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:161,215"
    },
    {
     "task": "TK-674",
@@ -8327,7 +8327,7 @@
     "universe": "566 (136 d)",
     "stop_base": "5 %",
     "verdict": "axis t24 not titrated (no min trades in any cell)",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:34,162"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:34,162"
    },
    {
     "task": "TK-621",
@@ -8337,7 +8337,7 @@
     "universe": "566 -> h775",
     "stop_base": "5 %",
     "verdict": "t24=12 gave long +0.440 $/trade vs U0 (post-hoc); label AUC turn24h 0.271 L / 0.336 S (strongest in TK-588)",
-    "source": "docs/findings/p42-formal-tests-audit-2026-11-20.md:37"
+    "source": "docs/archive/findings/p42-formal-tests-audit-2026-11-20.md:37"
    },
    {
     "task": "TK-674",
@@ -8745,7 +8745,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "all 9 of 9 cells reduce Sigma on both sides (-17..-78 $)",
-    "source": "docs/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
+    "source": "docs/archive/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
    },
    {
     "task": "TK-604",
@@ -8796,7 +8796,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "all 9 of 9 cells reduce Sigma on both sides (-17..-78 $)",
-    "source": "docs/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
+    "source": "docs/archive/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
    },
    {
     "task": "TK-604",
@@ -8847,7 +8847,7 @@
     "universe": "h775",
     "stop_base": "5 %",
     "verdict": "all 9 of 9 cells reduce Sigma on both sides (-17..-78 $)",
-    "source": "docs/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
+    "source": "docs/archive/findings/p42-level-quality-775-2026-11-20.md:1-30; kb/task/TK-654.md:20-26"
    },
    {
     "task": "TK-604",

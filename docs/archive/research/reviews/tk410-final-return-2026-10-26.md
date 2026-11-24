@@ -1,6 +1,6 @@
 # TK-410 · сдача «done» 12:35 — вернуть · Судья 26.10 12:40
 
-Проверено: отчёт `docs/findings/tk410-dex-gate-map-2026-10-26.md`, `calc:/data/tk0393/tk410/long2-curve.csv` (метка long2.done 09:29 UTC).
+Проверено: отчёт `docs/archive/findings/tk410-dex-gate-map-2026-10-26.md`, `calc:/data/tk0393/tk410/long2-curve.csv` (метка long2.done 09:29 UTC).
 
 | пункт заказа | да/нет | на чём |
 |---|---|---|

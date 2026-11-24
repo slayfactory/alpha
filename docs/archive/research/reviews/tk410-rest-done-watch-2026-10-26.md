@@ -7,6 +7,6 @@
 | Охват добора | 6/6 пулов | extrest.log `pools_with_data 6 of 6`; list-rest.txt 6 монет (NXPC, IOTA, AEON, CFX, AIGENSYN, GMT) |
 | map2 по монетам | 6/6 ok | out4/*.log «ok»; кривая: AEON 0 строк (24 больших хода), GMT 0 больших ходов — отметить в итоге, не сбой |
 
-Вывод: wait_for выполнен; исполнителю — свести out4 в docs/findings/tk410-dex-gate-map-2026-10-26.md + csv
+Вывод: wait_for выполнен; исполнителю — свести out4 в docs/archive/findings/tk410-dex-gate-map-2026-10-26.md + csv
 (6 монет добора к прежним), Sui/22/24 ч — закрыть числом или строкой «нет и почему», сдать Судье целиком.
 Замечание: заявка proc подана без выписки В-213 и без GUARD_INPUTS (предупреждение guard) — в следующий раз объявлять входы.

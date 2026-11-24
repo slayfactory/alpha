@@ -1,7 +1,7 @@
 # Проверка П-42 §13.16 «вход по ленте на момент сигнала + 4 мс» (TK-585) — 17.11.2026
 
 **Вердикт: принять с правками (правки — только текст отчёта; числа, вердикты §10 и чтение Δ подтверждены).**
-Предмет: `docs/findings/p42-entry-by-book-2026-11-17.md`, `docs/archive/findings/p42-entry-by-book-e16-output-2026-11-17.txt`, ветка
+Предмет: `docs/archive/findings/p42-entry-by-book-2026-11-17.md`, `docs/archive/findings/p42-entry-by-book-e16-output-2026-11-17.txt`, ветка
 `bb/tk-585-p42-entry-by-book-v2-thr_49wt62v3p2` @ `9abd06ab`; srv `/data/p42v2/bin/alpha-p42-v18` (md5 `8cf9895d28b2ce07348eaa6ceabd775b` — совпадает),
 `/data/p42-t566/out/e16`, `/data/p42-t566/cal/cal.json`. Все числа ниже — измерено проверяющим (скрипты `/data/p42-t566/rv585-*.py` на srv,
 счёт под `systemd-run`).

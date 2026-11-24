@@ -59,7 +59,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L natr_min_0.6 +0.070 z0.13; S 0.6 +0.396 z1.12: not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:160 (L), 214 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:160 (L), 214 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-674",
@@ -197,7 +197,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L t1h_2 +0.001; S +0.137 z0.77: not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:161 (L), 215 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:161 (L), 215 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-618",
@@ -206,7 +206,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "0.25: +37.17 z1.92; 0.1: +17.09 z0.68; not passed",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:18-19; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:18-19; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-638",
@@ -255,7 +255,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no: S_base stays (0 of 20 Holm A1/B, 0 of 14 A2; noise N=54)",
-    "source": "L-251, L-252, L-253; PS-928/929; docs/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
+    "source": "L-251, L-252, L-253; PS-928/929; docs/archive/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
    },
    {
     "task": "TK-638",
@@ -333,7 +333,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "NOT TITRATED in effect: no cell has min trades per month on either side or pass; report says do not conclude 't24 has no effect'",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:162 (L), 216 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:162 (L), 216 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-638",
@@ -433,7 +433,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "30: +84.4 z0.85 (1130 trades); 240: -157 z-1.64",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:20-21; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:20-21; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-674",
@@ -473,7 +473,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no: S_base stays (0 of 20 Holm A1/B, 0 of 14 A2; noise N=54)",
-    "source": "L-251, L-252, L-253; PS-928/929; docs/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
+    "source": "L-251, L-252, L-253; PS-928/929; docs/archive/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
    },
    {
     "task": "TK-669",
@@ -532,7 +532,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "1: +42.9 z0.42; 3: -114.2",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:28-29; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:28-29; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-674",
@@ -572,7 +572,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no: S_base stays (0 of 20 Holm A1/B, 0 of 14 A2; noise N=54)",
-    "source": "L-251, L-252, L-253; PS-928/929; docs/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
+    "source": "L-251, L-252, L-253; PS-928/929; docs/archive/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
    }
   ],
   "flags": [],
@@ -621,7 +621,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "-4.8 / -12.2: in noise",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:26-27; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:26-27; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-674",
@@ -661,7 +661,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no: S_base stays (0 of 20 Holm A1/B, 0 of 14 A2; noise N=54)",
-    "source": "L-251, L-252, L-253; PS-928/929; docs/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
+    "source": "L-251, L-252, L-253; PS-928/929; docs/archive/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
    }
   ],
   "flags": [],
@@ -710,7 +710,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "1: +553 +-302 z1.83 at 3304 trades (g2/g3 fail); 3: -264",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:22-23; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:22-23; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-674",
@@ -750,7 +750,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no: S_base stays (0 of 20 Holm A1/B, 0 of 14 A2; noise N=54). Largest effect n_bounce=1 +794 +-316 $ (2907 trades, $/trade halves, no plateau, survives=no)",
-    "source": "L-251, L-252, L-253; PS-928/929; docs/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
+    "source": "L-251, L-252, L-253; PS-928/929; docs/archive/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
    },
    {
     "task": "TK-669",
@@ -849,7 +849,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "14: +26.4 z0.77; 3: -85.3",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:24-25; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:24-25; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-674",
@@ -889,7 +889,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no: S_base stays (0 of 20 Holm A1/B, 0 of 14 A2; noise N=54)",
-    "source": "L-251, L-252, L-253; PS-928/929; docs/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
+    "source": "L-251, L-252, L-253; PS-928/929; docs/archive/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
    }
   ],
   "flags": [],
@@ -991,7 +991,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "fresh-level cells in noise for both pk values",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:267-291; docs/findings/p42-fresh-level-2026-11-15.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:267-291; docs/archive/findings/p42-fresh-level-2026-11-15.md"
    },
    {
     "task": "no TK",
@@ -1097,7 +1097,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "all in noise; base H=4 is owner's word, not chosen by grid; 17 cells per pk from base fr_base (fh=4 fk=120 fm=50 fb=0.5), one axis at a time; 136 of 136 cells in noise; rule (a) removes 68 % of b0 trades",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:267-291; docs/findings/p42-fresh-level-2026-11-15.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:267-291; docs/archive/findings/p42-fresh-level-2026-11-15.md"
    },
    {
     "task": "TK-642",
@@ -1140,7 +1140,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "in noise; base K=120 = owner's '1-2 h'; branch (b) fires on 3 of 1324 trades",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:267-291; docs/findings/p42-fresh-level-2026-11-15.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:267-291; docs/archive/findings/p42-fresh-level-2026-11-15.md"
    },
    {
     "task": "TK-676",
@@ -1172,7 +1172,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "in noise; base 50 % fixed before counting",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:267-291; docs/findings/p42-fresh-level-2026-11-15.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:267-291; docs/archive/findings/p42-fresh-level-2026-11-15.md"
    },
    {
     "task": "TK-642",
@@ -1205,7 +1205,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "in noise; base 0.5",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:267-291; docs/findings/p42-fresh-level-2026-11-15.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:267-291; docs/archive/findings/p42-fresh-level-2026-11-15.md"
    }
   ],
   "flags": [
@@ -1396,7 +1396,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "both byte-identical to base (no effect)",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:30-31; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:30-31; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    }
   ],
   "flags": [
@@ -1448,7 +1448,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "short: es15_e2_05 accepted (dA +2.43 / dB +5.37); es05 cut by mask (<70 trades); short base e=0.15",
-    "source": "docs/findings/p42-stops-exits-2026-11-18.md:123,176"
+    "source": "docs/archive/findings/p42-stops-exits-2026-11-18.md:123,176"
    },
    {
     "task": "TK-599",
@@ -1457,7 +1457,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L e_0.05 +0.282 z1.01 (edge, no plateau); S e_0.05 +0.341 z2.12 rejected by funding and plateau",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:153 (L), 207 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:153 (L), 207 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-674",
@@ -1497,7 +1497,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no: base stays (Holm 0; min p 0.169 vs 0.0063). Closest S e=0.05 +0.176 $/trade, dSum -26",
-    "source": "L-248; PS-918, PS-924; docs/findings/p42-entry-offset-775-2026-11-20/prereg-13.55.md:28-30; kb/task/TK-655.md"
+    "source": "L-248; PS-918, PS-924; docs/archive/findings/p42-entry-offset-775-2026-11-20/prereg-13.55.md:28-30; kb/task/TK-655.md"
    }
   ],
   "flags": [],
@@ -1600,7 +1600,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "only S_mk1 passed G_mk (p 0.0026 vs 0.0125, 4/5 months, dSum vs taker -11.09 +-37.69); L_mk1, L_mk2, S_mk2 no; S_mk1 frozen forward family (tk616-frozen.json); L_mk2 later frozen separately (TK-641)",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1184-1215; docs/findings/p42-maker-entry-2026-11-19.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1184-1215; docs/archive/findings/p42-maker-entry-2026-11-19.md"
    },
    {
     "task": "TK-674",
@@ -1649,7 +1649,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "all 5 delta>0 but p_Holm>=0.615; no pass",
-    "source": "docs/findings/p42-long-autopsy-2026-11-19.md:51-64"
+    "source": "docs/archive/findings/p42-long-autopsy-2026-11-19.md:51-64"
    },
    {
     "task": "TK-674",
@@ -1689,7 +1689,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no",
-    "source": "L-248; PS-918, PS-924; docs/findings/p42-entry-offset-775-2026-11-20/prereg-13.55.md:28-30; kb/task/TK-655.md"
+    "source": "L-248; PS-918, PS-924; docs/archive/findings/p42-entry-offset-775-2026-11-20/prereg-13.55.md:28-30; kb/task/TK-655.md"
    },
    {
     "task": "TK-660",
@@ -1742,7 +1742,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "long e2_10 not accepted (dA +0.33 / dB -1.50); short e2_05 accepted (+1.90 / +2.28) and es15_e2_05 (+2.43 / +5.37)",
-    "source": "docs/findings/p42-stops-exits-2026-11-18.md:85,122-123,175-176"
+    "source": "docs/archive/findings/p42-stops-exits-2026-11-18.md:85,122-123,175-176"
    },
    {
     "task": "TK-599",
@@ -1751,7 +1751,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L e2_0.05 +0.058 z0.42; S e2_0 -0.059",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:154 (L), 208 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:154 (L), 208 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-674",
@@ -1801,7 +1801,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no (S single entry e2=0 +0.106 $/trade, dSum +34, not significant)",
-    "source": "L-248; PS-918, PS-924; docs/findings/p42-entry-offset-775-2026-11-20/prereg-13.55.md:28-30; kb/task/TK-655.md"
+    "source": "L-248; PS-918, PS-924; docs/archive/findings/p42-entry-offset-775-2026-11-20/prereg-13.55.md:28-30; kb/task/TK-655.md"
    }
   ],
   "flags": [],
@@ -1929,7 +1929,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L winner s_3 d+0.145 z1.02; S winner s_8 d+0.183 z1.42; neither accepted; frozen = base",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:147 (L), 201 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:147 (L), 201 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-617",
@@ -1938,7 +1938,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "0 of 26 passed; L s=3 +97.7 +-89.3 (z1.09, p 0.137, g2 fail); S: all tightenings worse than base",
-    "source": "docs/findings/p42-long-autopsy-2026-11-19/stopgrid.md:11-24 (L), 49+ (S); docs/findings/p42-long-autopsy-2026-11-19.md:97"
+    "source": "docs/archive/findings/p42-long-autopsy-2026-11-19/stopgrid.md:11-24 (L), 49+ (S); docs/archive/findings/p42-long-autopsy-2026-11-19.md:97"
    },
    {
     "task": "TK-618",
@@ -1947,7 +1947,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "K2 +109.3 z1.62, almost all from the s=8 step; not passed (Holm m=34)",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:33; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:33; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-643",
@@ -1956,7 +1956,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "both sides 'no: base stays' (Holm 0 of m=312/side, noise bar N=392 passed 0); L s=3 sum +255 vs +193, Sharpe 3.38 vs 1.96, p 0.18 (found on these data)",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-674",
@@ -2026,7 +2026,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "not accepted: long best ls05 dA +3.94 / dB -0.17; short no cell with dA>0 (ls05 -1.26, ls10 -1.36)",
-    "source": "docs/findings/p42-stops-exits-2026-11-18.md:81,176"
+    "source": "docs/archive/findings/p42-stops-exits-2026-11-18.md:81,176"
    },
    {
     "task": "TK-595 (L-137 card field says TK-591)",
@@ -2054,7 +2054,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L ls_1 -0.110, S ls_1 -0.178: no winner",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:148 (L), 202 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:148 (L), 202 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-617",
@@ -2063,7 +2063,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "0 passed; L ls0.5 -129.4 $, ls1 -66.9 $",
-    "source": "docs/findings/p42-long-autopsy-2026-11-19/stopgrid.md:11-24 (L), 49+ (S); docs/findings/p42-long-autopsy-2026-11-19.md:97"
+    "source": "docs/archive/findings/p42-long-autopsy-2026-11-19/stopgrid.md:11-24 (L), 49+ (S); docs/archive/findings/p42-long-autopsy-2026-11-19.md:97"
    },
    {
     "task": "TK-643",
@@ -2072,7 +2072,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "both sides 'no: base stays' (Holm 0 of m=312/side, noise bar N=392 passed 0); L s=3 sum +255 vs +193, Sharpe 3.38 vs 1.96, p 0.18 (found on these data)",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-676",
@@ -2111,7 +2111,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "0 of 28 passed G_620; S all 14 cells worse than base (dSum -69..-101 $, z -1.4..-2.05); L dSum -17..+56 $, z<=0.50",
-    "source": "docs/research/freeze/tk620-variants.txt; docs/findings/p42-stops-redesign-2026-11-19.md; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1382-1431"
+    "source": "docs/research/freeze/tk620-variants.txt; docs/archive/findings/p42-stops-redesign-2026-11-19.md; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1382-1431"
    }
   ],
   "flags": [],
@@ -2149,7 +2149,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L ns_c3 +0.089 z0.41, S ns_lin -0.186: not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:149 (L), 203 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:149 (L), 203 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-617",
@@ -2158,7 +2158,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "0 passed; L sn3 +57.6 $, sn1 -57.0 $; S worse",
-    "source": "docs/findings/p42-long-autopsy-2026-11-19/stopgrid.md:11-24 (L), 49+ (S); docs/findings/p42-long-autopsy-2026-11-19.md:97"
+    "source": "docs/archive/findings/p42-long-autopsy-2026-11-19/stopgrid.md:11-24 (L), 49+ (S); docs/archive/findings/p42-long-autopsy-2026-11-19.md:97"
    },
    {
     "task": "TK-643",
@@ -2167,7 +2167,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "both sides 'no: base stays' (Holm 0 of m=312/side, noise bar N=392 passed 0); L s=3 sum +255 vs +193, Sharpe 3.38 vs 1.96, p 0.18 (found on these data)",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-643",
@@ -2217,7 +2217,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "same NS axis, not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:149 (L), 203 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:149 (L), 203 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-643",
@@ -2226,7 +2226,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "both sides 'no: base stays' (Holm 0 of m=312/side, noise bar N=392 passed 0); L s=3 sum +255 vs +193, Sharpe 3.38 vs 1.96, p 0.18 (found on these data)",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-643",
@@ -2276,7 +2276,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "same NS axis, not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:149 (L), 203 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:149 (L), 203 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-643",
@@ -2285,7 +2285,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "both sides 'no: base stays' (Holm 0 of m=312/side, noise bar N=392 passed 0); L s=3 sum +255 vs +193, Sharpe 3.38 vs 1.96, p 0.18 (found on these data)",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-643",
@@ -2335,7 +2335,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "same NS axis, not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:149 (L), 203 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:149 (L), 203 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-643",
@@ -2344,7 +2344,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "both sides 'no: base stays' (Holm 0 of m=312/side, noise bar N=392 passed 0); L s=3 sum +255 vs +193, Sharpe 3.38 vs 1.96, p 0.18 (found on these data)",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-643",
@@ -2394,7 +2394,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "same NS axis, not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:149 (L), 203 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:149 (L), 203 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-643",
@@ -2403,7 +2403,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "both sides 'no: base stays' (Holm 0 of m=312/side, noise bar N=392 passed 0); L s=3 sum +255 vs +193, Sharpe 3.38 vs 1.96, p 0.18 (found on these data)",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2153; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-643",
@@ -2434,7 +2434,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "0 of 28 passed G_620; S all 14 cells worse than base (dSum -69..-101 $, z -1.4..-2.05); L dSum -17..+56 $, z<=0.50",
-    "source": "docs/research/freeze/tk620-variants.txt; docs/findings/p42-stops-redesign-2026-11-19.md; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1382-1431"
+    "source": "docs/research/freeze/tk620-variants.txt; docs/archive/findings/p42-stops-redesign-2026-11-19.md; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1382-1431"
    }
   ],
   "flags": [],
@@ -2453,7 +2453,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "0 of 28 passed G_620; S all 14 cells worse than base (dSum -69..-101 $, z -1.4..-2.05); L dSum -17..+56 $, z<=0.50",
-    "source": "docs/research/freeze/tk620-variants.txt; docs/findings/p42-stops-redesign-2026-11-19.md; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1382-1431"
+    "source": "docs/research/freeze/tk620-variants.txt; docs/archive/findings/p42-stops-redesign-2026-11-19.md; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1382-1431"
    }
   ],
   "flags": [],
@@ -2472,7 +2472,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "0 of 28 passed G_620; S all 14 cells worse than base (dSum -69..-101 $, z -1.4..-2.05); L dSum -17..+56 $, z<=0.50",
-    "source": "docs/research/freeze/tk620-variants.txt; docs/findings/p42-stops-redesign-2026-11-19.md; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1382-1431"
+    "source": "docs/research/freeze/tk620-variants.txt; docs/archive/findings/p42-stops-redesign-2026-11-19.md; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1382-1431"
    }
   ],
   "flags": [
@@ -2493,7 +2493,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "0 of 28 passed G_620; S all 14 cells worse than base (dSum -69..-101 $, z -1.4..-2.05); L dSum -17..+56 $, z<=0.50",
-    "source": "docs/research/freeze/tk620-variants.txt; docs/findings/p42-stops-redesign-2026-11-19.md; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1382-1431"
+    "source": "docs/research/freeze/tk620-variants.txt; docs/archive/findings/p42-stops-redesign-2026-11-19.md; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1382-1431"
    }
   ],
   "flags": [
@@ -2514,7 +2514,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "0 of 28 passed G_620; S all 14 cells worse than base (dSum -69..-101 $, z -1.4..-2.05); L dSum -17..+56 $, z<=0.50",
-    "source": "docs/research/freeze/tk620-variants.txt; docs/findings/p42-stops-redesign-2026-11-19.md; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1382-1431"
+    "source": "docs/research/freeze/tk620-variants.txt; docs/archive/findings/p42-stops-redesign-2026-11-19.md; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1382-1431"
    }
   ],
   "flags": [
@@ -2761,7 +2761,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "4: -7.19 z-2.38; 12: +1.46: in noise",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:38-39; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:38-39; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-674",
@@ -2801,7 +2801,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no: S_base stays (0 of 20 Holm A1/B, 0 of 14 A2; noise N=54)",
-    "source": "L-251, L-252, L-253; PS-928/929; docs/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
+    "source": "L-251, L-252, L-253; PS-928/929; docs/archive/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
    }
   ],
   "flags": [],
@@ -2850,7 +2850,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "0.5: -13.9 z-3.25; 2: +18.25 z2.46 p0.0070 - 'weak', Holm not rejected -> Hypotheses G-149, not forward",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:40-41; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:40-41; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-674",
@@ -2890,7 +2890,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no: S_base stays (0 of 20 Holm A1/B, 0 of 14 A2; noise N=54)",
-    "source": "L-251, L-252, L-253; PS-928/929; docs/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
+    "source": "L-251, L-252, L-253; PS-928/929; docs/archive/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
    }
   ],
   "flags": [],
@@ -2958,7 +2958,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L t_high_8 +0.010 z0.52; S +0.030 z1.05",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:158 (L), 212 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:158 (L), 212 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-618",
@@ -2967,7 +2967,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "K3 +111.8",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:34; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:34; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-643",
@@ -2976,7 +2976,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "no: base stays (Holm 0)",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2155; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2155; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-674",
@@ -3084,7 +3084,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L q_25 +0.033 z1.18; S +0.039 z0.98",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:159 (L), 213 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:159 (L), 213 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-618",
@@ -3093,7 +3093,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "K4 +116.4",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:35; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:35; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-643",
@@ -3102,7 +3102,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "no: base stays (Holm 0)",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2155; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2155; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-674",
@@ -3162,7 +3162,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "no find: all 24 cells have verdicts as the base; surface monotone, optimum at grid edge gamma=0.5 kappa=3 (edge not extended); dPnl <= +-1 $/day vs noise 8-15",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:226-246; docs/findings/p42-take-grid-2026-11-15.md; L-67"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:226-246; docs/archive/findings/p42-take-grid-2026-11-15.md; L-67"
    },
    {
     "task": "TK-674",
@@ -3202,7 +3202,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no: base stays (Holm 0 of 73, noise N=343). Surface monotonic to extreme: L +0.064, S +0.092 $/trade, indistinguishable",
-    "source": "L-228 (prereg sec 13.50), L-231; docs/findings/p42-take-grid-775-2026-11-20/prereg-13.50.md:26-28; kb/task/TK-650.md"
+    "source": "L-228 (prereg sec 13.50), L-231; docs/archive/findings/p42-take-grid-775-2026-11-20/prereg-13.50.md:26-28; kb/task/TK-650.md"
    }
   ],
   "flags": [],
@@ -3262,7 +3262,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no (see tpg)",
-    "source": "L-228 (prereg sec 13.50), L-231; docs/findings/p42-take-grid-775-2026-11-20/prereg-13.50.md:26-28; kb/task/TK-650.md"
+    "source": "L-228 (prereg sec 13.50), L-231; docs/archive/findings/p42-take-grid-775-2026-11-20/prereg-13.50.md:26-28; kb/task/TK-650.md"
    }
   ],
   "flags": [],
@@ -3300,7 +3300,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L +0.019 z0.76; S +0.025 z0.68: not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:157 (L), 211 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:157 (L), 211 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-618",
@@ -3309,7 +3309,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "K5 +115.5",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:36; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:36; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-643",
@@ -3318,7 +3318,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "no: base stays (Holm 0)",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2155; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2155; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-674",
@@ -3438,7 +3438,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "long: best bm1 dA +3.45 / dB -1.99 not accepted; short: bm1 accepted (+4.12 / +1.17)",
-    "source": "docs/findings/p42-stops-exits-2026-11-18.md:84,121,175-176"
+    "source": "docs/archive/findings/p42-stops-exits-2026-11-18.md:84,121,175-176"
    },
    {
     "task": "TK-595 (L-137 card field says TK-591)",
@@ -3466,7 +3466,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L bm_1 -0.010; S bm_2 -0.024: no winner",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:155 (L), 209 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:155 (L), 209 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-643",
@@ -3475,7 +3475,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "no: base stays (Holm 0)",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2155; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2155; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-674",
@@ -3574,7 +3574,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "1: -24.7; 3: +3.73; a3_r1.5 +2.1: in noise",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:42-43,49; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:42-43,49; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-657",
@@ -3584,7 +3584,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no: S_base stays (0 of 20 Holm A1/B, 0 of 14 A2; noise N=54)",
-    "source": "L-251, L-252, L-253; PS-928/929; docs/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
+    "source": "L-251, L-252, L-253; PS-928/929; docs/archive/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
    }
   ],
   "flags": [],
@@ -3652,7 +3652,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L rr_3 -0.047; S rr_3 +0.033 z0.36",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:156 (L), 210 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:156 (L), 210 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-618",
@@ -3661,7 +3661,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "-22.2; K6 +120.3 z1.28: none passed",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:37,48; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:37,48; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-643",
@@ -3670,7 +3670,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "no: base stays (Holm 0)",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2155; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2155; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-674",
@@ -3829,7 +3829,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "accepted by A/B rule: long tx20_x3 (dA +4.21 / dB +0.11) but never fired in assembly; short tx20_x1 (+0.82 / +0.91)",
-    "source": "docs/findings/p42-stops-exits-2026-11-18.md:82,119,175-176"
+    "source": "docs/archive/findings/p42-stops-exits-2026-11-18.md:82,119,175-176"
    },
    {
     "task": "TK-599",
@@ -3838,7 +3838,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "d=0.000 (no winner; tx displaced by rf exit)",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:150 (L), 204 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:150 (L), 204 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-643",
@@ -3847,7 +3847,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "no: base stays; S without rt (rf=0) sum +399..+550 vs +223, p 0.012..0.079, plateau, but Holm and noise failed -> hypothesis",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2154; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2154; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-674",
@@ -3927,7 +3927,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "accepted: long X=0.3, short X=0.1 (later short base tb=0.1)",
-    "source": "docs/findings/p42-stops-exits-2026-11-18.md:82,119"
+    "source": "docs/archive/findings/p42-stops-exits-2026-11-18.md:82,119"
    },
    {
     "task": "TK-599",
@@ -3936,7 +3936,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "d=0.000, no winner",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:150 (L), 204 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:150 (L), 204 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-643",
@@ -3945,7 +3945,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "no: base stays; S without rt (rf=0) sum +399..+550 vs +223, p 0.012..0.079, plateau, but Holm and noise failed -> hypothesis",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2154; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2154; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-674",
@@ -4007,7 +4007,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "accepted: long rt02_20 (dA +3.64 / dB +0.84), short rt02_2 (+0.85 / +1.66)",
-    "source": "docs/findings/p42-stops-exits-2026-11-18.md:83,120,175-176"
+    "source": "docs/archive/findings/p42-stops-exits-2026-11-18.md:83,120,175-176"
    },
    {
     "task": "TK-595 (L-137 card field says TK-591)",
@@ -4035,7 +4035,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L rf_0.3 +0.039 z0.84; S rf_0.3 +0.122 z1.48: not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:151 (L), 205 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:151 (L), 205 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-618",
@@ -4044,7 +4044,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "0.4 -5.7; 0.5 +12.2; K1 +34.5 z1.19: none passed",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:32,44-45; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:32,44-45; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-643",
@@ -4053,7 +4053,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "no: base stays; S without rt (rf=0) sum +399..+550 vs +223, p 0.012..0.079, plateau, but Holm and noise failed -> hypothesis",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2154; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2154; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-674",
@@ -4123,7 +4123,7 @@
     "stop_base": "5 %",
     "window": "A 15.09-14.10 / B 15.10-13.11 (60 d)",
     "verdict": "accepted: long 20 s, short 2 s (current bases L 20 / S 2)",
-    "source": "docs/findings/p42-stops-exits-2026-11-18.md:83,120"
+    "source": "docs/archive/findings/p42-stops-exits-2026-11-18.md:83,120"
    },
    {
     "task": "TK-599",
@@ -4132,7 +4132,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L rs_2 -0.096 no winner; S rs_20 +0.039 z0.31",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:152 (L), 206 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:152 (L), 206 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-618",
@@ -4141,7 +4141,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "0: -92.9 z-1.95; 5: -9.2",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:46-47; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:46-47; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-643",
@@ -4150,7 +4150,7 @@
     "universe": "h775 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "no: base stays; S without rt (rf=0) sum +399..+550 vs +223, p 0.012..0.079, plateau, but Holm and noise failed -> hypothesis",
-    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2154; kb/task/TK-643.md:13-16; docs/findings/p42-stops-exits-775-2026-11-20.md"
+    "source": "docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:2154; kb/task/TK-643.md:13-16; docs/archive/findings/p42-stops-exits-775-2026-11-20.md"
    },
    {
     "task": "TK-674",
@@ -4322,7 +4322,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no: noise, sign flips by month",
-    "source": "L-228 (prereg sec 13.50), L-231; docs/findings/p42-take-grid-775-2026-11-20/prereg-13.50.md:26-28; kb/task/TK-650.md"
+    "source": "L-228 (prereg sec 13.50), L-231; docs/archive/findings/p42-take-grid-775-2026-11-20/prereg-13.50.md:26-28; kb/task/TK-650.md"
    }
   ],
   "flags": [],
@@ -4352,7 +4352,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "reference only",
-    "source": "L-228 (prereg sec 13.50), L-231; docs/findings/p42-take-grid-775-2026-11-20/prereg-13.50.md:26-28; kb/task/TK-650.md"
+    "source": "L-228 (prereg sec 13.50), L-231; docs/archive/findings/p42-take-grid-775-2026-11-20/prereg-13.50.md:26-28; kb/task/TK-650.md"
    }
   ],
   "flags": [
@@ -4684,7 +4684,7 @@
     "universe": "566 (136 d 01.07-13.11), short only",
     "stop_base": "5 %",
     "verdict": "reentry=1 byte-identical to base (no effect); reentry=2 +1.48 +-1.46 z1.01",
-    "source": "docs/findings/p42-short-levers-2026-11-19.md:16-17; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
+    "source": "docs/archive/findings/p42-short-levers-2026-11-19.md:16-17; protocol docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:1327-1381"
    },
    {
     "task": "TK-657",
@@ -4694,7 +4694,7 @@
     "stop_base": "5% (old base)",
     "window": "01.07-13.11 (136 d, wa/wb/wc)",
     "verdict": "no: S_base stays (0 of 20 Holm A1/B, 0 of 14 A2; noise N=54)",
-    "source": "L-251, L-252, L-253; PS-928/929; docs/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
+    "source": "L-251, L-252, L-253; PS-928/929; docs/archive/findings/p42-short-levers-775-2026-11-20/prereg-13.57.md:28-30; kb/task/TK-657.md"
    }
   ],
   "flags": [],
@@ -4841,7 +4841,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L best F_maxmv1_lo_25 +0.142 z1.01; S best F_cons60_hi_20 +0.181 z2.26 (<2.5): not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:163 (L), 217 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:163 (L), 217 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-604",
@@ -4980,7 +4980,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L best F_maxmv1_lo_25 +0.142 z1.01; S best F_cons60_hi_20 +0.181 z2.26 (<2.5): not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:163 (L), 217 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:163 (L), 217 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-604",
@@ -5120,7 +5120,7 @@
     "universe": "566 (136 d 01.07-13.11)",
     "stop_base": "5 %",
     "verdict": "L best F_maxmv1_lo_25 +0.142 z1.01; S best F_cons60_hi_20 +0.181 z2.26 (<2.5): not accepted",
-    "source": "docs/findings/p42-retitration-full-2026-11-19.md:163 (L), 217 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
+    "source": "docs/archive/findings/p42-retitration-full-2026-11-19.md:163 (L), 217 (S); grid docs/archive/chronicle-2026-11-20/P-42-level-breakout.md:751-753; docs/research/freeze/tk599-grids.json"
    },
    {
     "task": "TK-604",

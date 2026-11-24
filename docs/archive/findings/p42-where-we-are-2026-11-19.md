@@ -39,7 +39,7 @@
 | Nov 1–13 | +34.43 | 37 | +0.931 | +7.10 | 6.13 |
 | **TOTAL 136 d** | +248.05 | 372 | +0.667 | +4.42 | 39.27 |
 
-**Raw signal, 60-min markout, $ per signal at 500 $ (no exits, no costs)** — source TK-617 §6 (`docs/findings/p42-long-autopsy-2026-11-19/autopsy.md:432`); round-trip taker cost = 0.42 $ (fees 0.32 + slippage 0.10).
+**Raw signal, 60-min markout, $ per signal at 500 $ (no exits, no costs)** — source TK-617 §6 (`docs/archive/findings/p42-long-autopsy-2026-11-19/autopsy.md:432`); round-trip taker cost = 0.42 $ (fees 0.32 + slippage 0.10).
 | month | long: signals | $/signal | share >0 | short: signals | $/signal | share >0 |
 |---|---|---|---|---|---|---|
 | July | 132 | -1.39 | 44% | 104 | +3.38 | 54% |
