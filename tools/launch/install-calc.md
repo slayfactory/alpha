@@ -6,7 +6,7 @@
 
 С dev-машины (PowerShell, `ssh calc`; в Git Bash `calc` не резолвится):
 
-1. Пакет: `launch/` + `registry/` (py) + `compute/hyp_stack.py` + `docs/archive/research/spec-v227-2026-10-12.md` +
+1. Пакет: `launch/` + `registry/` (py) + `compute/hyp_stack.py` + `docs/research/spec-v227-2026-10-12.md` +
    `docs/findings/p12-cells-{2026-10-06,ext-2026-10-07}.csv` (читает cellhash_reg) → `/opt/alpha-launch/{tools/launch,tools/registry,tools/compute,docs/research,docs/findings}` (tar по ssh, владелец root); снимок Летописи `docs/registry/*.jsonl` и `files/` →
    `/data/launch/registry/` (только чтение; обновление = повторный tar, кэш сбрасывается по mtime results.jsonl);
    `ln -s /data/launch/registry /opt/alpha-launch/docs/registry` (cellhash_reg/db читают `docs/registry` от корня пакета).

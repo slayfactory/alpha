@@ -188,7 +188,7 @@ def cmd_decide():
             cells.append(c)
     extra = {"g140_abs_ge_030_share": {m: round(sum((r.get("g140_pool_share") or 0) >= 0.30 for r in data[m]["g140"])
                                                 / len(data[m]["g140"]), 4) for m in data}}
-    out = {"protocol": "docs/archive/research/P-08-new-code-7.md §12 п. 9, 17 (Судья 7ee1483, 128d8f6); исход не читался",
+    out = {"protocol": "docs/research/P-08-new-code-7.md §12 п. 9, 17 (Судья 7ee1483, 128d8f6); исход не читался",
            "signals_b1": n, "b1_trades": T, "cells": cells, "final": final,
            "m_family": sum(len(v) for v in final.values()), "extra": extra}
     path = f"{COV}/p08-coverage.json"

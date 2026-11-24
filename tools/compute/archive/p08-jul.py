@@ -140,7 +140,7 @@ def main():
         ok = (not stop) and p <= 0.05 / (m - i)
         stop = stop or not ok
         res[k]["holm_sig"] = ok
-    out = {"protocol": "docs/archive/research/P-08-new-code-7.md §10.3; Судья 97a6823", "m_holm": m, "gate_b1": gate,
+    out = {"protocol": "docs/research/P-08-new-code-7.md §10.3; Судья 97a6823", "m_holm": m, "gate_b1": gate,
            "cells": res}
     path = os.path.join(A, "tmp-p08", "p08-jul.json")
     json.dump(out, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)

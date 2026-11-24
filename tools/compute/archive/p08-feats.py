@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Python-фильтры входа П-08 (`docs/archive/research/P-08-new-code-7.md` §7, §9 п. 2(в), §11; TK-013).
+"""Python-фильтры входа П-08 (`docs/research/P-08-new-code-7.md` §7, §9 п. 2(в), §11; TK-013).
 
 Вход — сигналы базы B1 (Г-85б, клетка `p07b-base` из `p07-cells.py`, прогон `--busy-skip off`): все `signals.csv`
 под `--src` (дерево `<клетка>/<сутки>/<набор>/signals.csv`, как ищет `busy-replay.py`). Признаки — по последней
