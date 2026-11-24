@@ -21,7 +21,7 @@ G108 = (0, 1, 2, 4, 8, 16, 32)  # зазор, bps
 W108 = (5, 15, 30, 60, 300, 900, 1800)  # окно, с
 K102 = (1, 2, 3, 4, 6, 8)  # тики (верх — лимит каталога 8)
 T102 = (5, 15, 30, 60, 120, 240, 480)  # полураспад, мин
-ROUTES = os.path.join(HERE, "..", "launch", "routes.json")
+ROUTES = os.path.join(HERE, "routes.json")
 
 
 def cfg_of(form):

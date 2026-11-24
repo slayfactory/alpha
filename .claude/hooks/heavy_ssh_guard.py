@@ -3,16 +3,15 @@
 
 Команда из ssh-сессии — не юнит: замок замеров её не видит (05.10: `find` 57 мин съел HDD). Отказ тяжёлому (du/find/rsync/
 vmtouch, `ls -R`, `grep -r`, `cp -r`, tar кроме распаковки со stdin, хеши каталогов/масок/бинлогов, cat/cp бинлогов,
-python3-скрипт / `-m` / длинный `-c`) вне `systemd-run`, `/data/benchrun.sh` и разрешённых вызовов alsched.
+python3-скрипт / `-m` / длинный `-c`) вне `systemd-run`.
 Свободно: короткие cat/tail/head/ls/grep по файлам, systemctl, uptime, sha256sum отдельных файлов, `cat > f && mv`,
 `python3 -m py_compile`, `python3 -c '<≤200 знаков>'`, `tar x` со stdin.
-Хост — RPV_GUARD_HEAVY_HOST (умолчание 89.163.242.211), алиас ssh `calc`. Выключить на одну команду нельзя (так и было)."""
+Хост — RPV_GUARD_HEAVY_HOST (умолчание 89.163.242.211), алиас ssh `calc`; calc выведен (В-102), связка alsched/benchrun удалена (TK-703) — исключений для них нет. Выключить на одну команду нельзя (так и было)."""
 import json, os, re, shlex, sys
 
 HOST = (os.environ.get("RPV_GUARD_HEAVY_HOST") or "89.163.242.211").strip().lower()
 ALIASES = {"calc"}
-ALLOW = re.compile(r"^python3 /data/sched/alsched[.]py (submit|ps|cancel|wave|stand|reprio|thaw)( |$)")
-HINT = "Обёртка: /data/benchrun.sh stand <команда> (волна — wave; учёт дисков встроен)."
+HINT = "calc выведен (В-102): тяжёлое — на srv юнитом systemd-run."
 REASON = ("Тяжёлая команда на машине замеров ({h}) вне замка замеров запрещена ({t}). Почему: замок не видит ssh-сессии и не "
           "замораживает их, а du/find/tar/rsync/cp -r/vmtouch, md5sum и cmp по каталогам, cat больших файлов и "
           "python-скрипты из ssh едят диск и ЦП во время замеров и портят их. Как надо: юнитом — ssh … 'systemd-run --unit "
@@ -124,8 +123,6 @@ def tar_label(args):
 
 def heavy_label(name, args, stdin=(), xargs=False):
     """Метка тяжёлой команды `name args…` или None."""
-    if ALLOW.search(" ".join([name, *args])):
-        return None
     if name in ALWAYS:
         return name
     short, long_, pos = opts(args)
@@ -309,8 +306,8 @@ def scan(text, remote, stdin, vars_, depth):
             name, args = cmd_name(args[0]), args[1:]
         if not name:
             continue
-        if name == "systemd-run" or name.startswith("benchrun"):
-            continue                                         # юнит / обёртка замера — под замком
+        if name == "systemd-run":
+            continue                                         # юнит — под замком
         sin = stdin
         if piped and prev_echo is not None:
             sin = [prev_echo]
@@ -366,7 +363,7 @@ def ssh_scan(args, stdin, vars_, depth):
 
 def legacy_heavy(cmd):
     """Страховка, когда разбор не удался (незакрытая кавычка): грубый поиск в тексте команды с этим хостом."""
-    if not (HOST in cmd or re.search(r"\bssh\b.*\bcalc\b", cmd)) or "systemd-run" in cmd or "benchrun" in cmd:
+    if not (HOST in cmd or re.search(r"\bssh\b.*\bcalc\b", cmd)) or "systemd-run" in cmd:
         return None
     m = LEGACY_HEAVY.search(cmd)
     return m.group(0).strip(" ;&|(`'\"\t\n") if m else None
