@@ -4,7 +4,8 @@
 # Использование: [P42_THREADS=6] bash tools/p42/runexcl22.sh [бинарь на srv]
 set -euo pipefail
 SRV="${P42_SRV:-/data/p42v2}"; LOC="${P42_LOCAL:-data/p42v2}"; BIN="${1:-$SRV/bin/alpha-p42-v11}"; TH="${P42_THREADS:-6}"
-K=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15)
+. "$(dirname "${BASH_SOURCE[0]}")/../_ssh.sh"
+K=("${SSH_ID[@]}" -o ConnectTimeout=15)
 H=root@5.231.25.224
 cd "$(dirname "$0")/../.."
 scp -q "${K[@]}" "$LOC"/variants-excl22-1m.txt "$LOC"/variants-excl22-tick.txt "$LOC"/symbols-excl22.txt "$LOC"/symbols-full.txt "$LOC"/variants-base.txt "$LOC"/variants-tickbase.txt "$H:$SRV/"

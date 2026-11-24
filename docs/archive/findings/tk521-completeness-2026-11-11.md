@@ -1,6 +1,6 @@
 # TK-521 — полнота L1 из сырья CHFT (для сверки Судьёй), 11.11.2026
 
-Источник: `docs/research/reviews/tk525-accept-2026-11-11-audit.txt` (аудит accept-tk525, fail 0 по 4 биржам; принят Судьёй).
+Источник: `docs/archive/research/reviews/tk525-accept-2026-11-11-audit.txt` (аудит accept-tk525, fail 0 по 4 биржам; принят Судьёй).
 exp = контракт-сутки downloaded=1 (Aster исключён В-121).
 
 | биржа | exp | ok_l1 | l1 = 24 ч | tr = l1 | tr есть | aux | tr_ok |

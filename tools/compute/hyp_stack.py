@@ -1,12 +1,12 @@
 import csv,json,re,collections,sys
 F='docs/findings/'
 hyp=list(csv.DictReader(open(F+'letopis-hypotheses-2026-10-11.csv',encoding='utf-8'),delimiter=';'))
-rc=[json.loads(l) for l in open('docs/registry/run_cells.jsonl',encoding='utf-8')]
+rc=[json.loads(l) for l in open('docs/archive/registry/run_cells.jsonl',encoding='utf-8')]
 cells={}
-for l in open('docs/registry/cells.jsonl',encoding='utf-8'):
+for l in open('docs/archive/registry/cells.jsonl',encoding='utf-8'):
     x=json.loads(l);cells[x['id']]=x
 res=collections.defaultdict(set)
-for l in open('docs/registry/results.jsonl',encoding='utf-8'):
+for l in open('docs/archive/registry/results.jsonl',encoding='utf-8'):
     x=json.loads(l);res[x['cell_id']].add(x['month'])
 reg=collections.defaultdict(set)
 for x in rc:

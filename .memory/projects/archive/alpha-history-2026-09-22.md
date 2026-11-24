@@ -438,7 +438,7 @@ fast-forward, push. Состояние прода живёт **только** в
 **Где встали (18.09, A8.7 закрыт — этап A кончился).** Всё закоммичено, `master` =
 `dev/wave-4-record-verify` = `origin`, HEAD **`de4c791`** (`A8.7 (smoke): the resilience scenarios
 hold on a real Linux host`). Ворота: **802 / 0 / 5** (на Linux 803 — тест SIGTERM под `cfg(unix)`),
-clippy `-D warnings`, fmt. План — `docs/plan/dev-plan-2026-09-17.md`, статус по тикетам — в его шапке
+clippy `-D warnings`, fmt. План — `docs/archive/plan/dev-plan-2026-09-17.md`, статус по тикетам — в его шапке
 «Точка входа». Закрыто: A1–A7, **A8.1 (48), A8.1b, A8.2 (50), A8.3 (49), A8.4 (51), A8.5 (52),
 A8.6 (53), A8.7 (54) — этап A целиком**, B1 (В-58), B2, B4, половина B3 (хвост — к C4).
 **A8.7:** смоук сценариев во втором корне `/opt/alpha/smoke` (add/replace/шов соседей/`kill -TERM`/
@@ -513,7 +513,7 @@ N минут → снять из пула» — отдельное решени�
 23 761 Б), соседи после пересборки сокета писали дальше (190 287 и 187 029 Б), gaps 0, reconnects 0,
 frames_failed 0, `stop` → `closed=true` (151 с, 127 778 записей, CPU 1.1 %, parse p99 41 мкс).
 
-**Что дальше, по порядку** (подробно — `docs/plan/dev-plan-2026-09-17.md` §Дополнения, таблица A8.x).
+**Что дальше, по порядку** (подробно — `docs/archive/plan/dev-plan-2026-09-17.md` §Дополнения, таблица A8.x).
 1. **A8 — остался только A8.7:** смоук сценариев на сервере во втором корне `/opt/alpha/smoke`
    (бинарник `alpha-smoke-<коммит>`, 5 монет: добавить/удалить/заменить монету, `kill -TERM`,
    обрыв сети `iptables`, заполнение диска второго корня) → отчёт
@@ -638,14 +638,14 @@ R4 (`frontrun_best_px` → `frontrun_tick` в тикете), R5 (отказ `--d
 
 - `CLAUDE.md` (корень репо) — инжектится в сессию сам, читать первым.
 - `docs/plan/PLAN.md` → «Точка остановки»; `docs/plan/SETTLED.md` → решения В-1…В-58.
-- `docs/plan/dev-plan-2026-09-17.md` → **план работ A→B→C→D** со статусами по каждому тикету.
+- `docs/archive/plan/dev-plan-2026-09-17.md` → **план работ A→B→C→D** со статусами по каждому тикету.
 - `docs/findings/` → артефакты; `docs/COMMANDS.md` → команды и грабли; `docs/plan/runs.csv` → прогоны.
 - `.autopilot/2026-09-11-lob-density-ed3/tickets/` → тикеты (41 done, 42 pending, 47 — пересмотр
   механизма `verify`).
 
 ## Состояние на 2026-09-17
 
-- **План работ** — `docs/plan/dev-plan-2026-09-17.md`: этапы **A** база и коллектор (срок ≈ 22.09),
+- **План работ** — `docs/archive/plan/dev-plan-2026-09-17.md`: этапы **A** база и коллектор (срок ≈ 22.09),
   **B** база бэктестера, **C** сигнал-отскоки, **D** накрутка. Источники — четыре отчёта от 17.09 в
   `docs/findings/`: `bounce-spec` (спека отскока по S/D, 68 КБ), `transcripts` (семь видео, 122 КБ),
   `collector-audit` (120 КБ; таблица K1/V1–V13/C1–C9, §11 вопросы, §12 ответы владельца), `roadmap`
@@ -787,7 +787,7 @@ R4 (`frontrun_best_px` → `frontrun_tick` в тикете), R5 (отказ `--d
   bbr, `netdev_max_backlog=25000`, `tcp_fastopen=3`, `tcp_slow_start_after_idle=0`, выключенные
   `unattended-upgrades`/apt-таймеры; привязка к ядру и `nice -5` отклонены (p99 хуже). Профиль
   `perf`: ядро/сисколлы ~25 %, libc memset 9.1 %, приложение ~17 % (`Book::apply` 5.1 %).
-- Разбор — `docs/findings/deploy-2026-09-15-ovh-singapore.md`; детали окружения —
+- Разбор — `docs/archive/findings/deploy-2026-09-15-ovh-singapore.md`; детали окружения —
   `skills/ovh-vps-singapore.md`. Дополнения к `CLAUDE.md` («Состояние») внесены.
 
 ## T45 — два потока глубины (2026-09-15, в проде)

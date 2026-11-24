@@ -267,7 +267,7 @@
   },
   "contracts_sha256": "4b51e9aad05b4652c50bc6030ba11aaa1fa362ecf5e3b877b1bac735e514d328",
   "contracts_files": {
-   "git": "docs/findings/p42-honest-universe-2026-11-19/contracts.csv",
+   "git": "docs/archive/findings/p42-honest-universe-2026-11-19/contracts.csv",
    "srv": "/data/p42-tk621/universe/contracts.csv"
   },
   "listing_after": "2026-11-13",

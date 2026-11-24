@@ -9,7 +9,7 @@ ROOT = os.path.normpath(os.path.join(TOOLS, "..", ".."))
 R1CELL = os.path.join(TOOLS, "r1cell.py")
 TK064 = os.path.join(TOOLS, "archive", "tk064-r1cells.py")
 TK202 = os.path.join(TOOLS, "tk202-r1x.py")
-PLAN = os.path.join(ROOT, "docs", "registry", "plan_cells.jsonl")
+PLAN = os.path.join(ROOT, "docs", "archive", "registry", "plan_cells.jsonl")
 SET = "t-bid-btc4h-q1"
 
 
@@ -150,7 +150,7 @@ def test_r1ext_name():
     assert r1cell.r1ext_name("g68", "obi5_bp", 33) == "g68-obi5_bp-k33"
 
 
-@pytest.mark.skipif(not os.path.isfile(PLAN), reason="нет docs/registry/plan_cells.jsonl")
+@pytest.mark.skipif(not os.path.isfile(PLAN), reason="нет docs/archive/registry/plan_cells.jsonl")
 def test_spec_hash_is_plan_hash(tmp_path):
     out = str(tmp_path / "s.r1spec")
     run(R1CELL, "spec", "--plan", PLAN, "--which", "all", "--hyp", "Г-39,Г-04", "--out", out)
@@ -166,7 +166,7 @@ def test_spec_hash_is_plan_hash(tmp_path):
     assert {r["sign"] for r in spec if r["hyp"] == "Г-39"} == {"lo"} and {r["sign"] for r in spec if r["hyp"] == "Г-04"} == {"hi"}
 
 
-@pytest.mark.skipif(not os.path.isfile(PLAN), reason="нет docs/registry/plan_cells.jsonl")
+@pytest.mark.skipif(not os.path.isfile(PLAN), reason="нет docs/archive/registry/plan_cells.jsonl")
 def test_spec_x_skips_r1ext_done(tmp_path):
     out = str(tmp_path / "s.r1spec")
     run(R1CELL, "spec", "--plan", PLAN, "--out", out)   # по умолчанию — как tk202: вне r1ext и ctx
