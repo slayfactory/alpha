@@ -291,6 +291,57 @@ class Mass(unittest.TestCase):
             self.assertIn("'cc+fast': 1", text)
 
 
+class Derive(unittest.TestCase):
+    OWN = {"long": "a" * 32, "short": "b" * 32}
+
+    def test_derive_all2(self):
+        import argparse
+        import contextlib
+        import io
+        import sqlite3
+        import tk700_cells as cl
+        with tempfile.TemporaryDirectory() as d:
+            chron = os.path.join(d, "chron.sqlite")
+            c = sqlite3.connect(chron)
+            c.executescript("CREATE TABLE metric(id INTEGER PRIMARY KEY, side, ckey, uni, win, trades, usd, extra, bin); CREATE TABLE metric_fix(id INTEGER PRIMARY KEY, metric);")
+            f12 = [("short", "k=1 F=age_h<=5", 80, 50.0, {"line": "k=1", "daily": [1.0, 2.0]}, self.OWN["short"]),          # заменяется
+                   ("short", "k=2 F=age_h<=6", 10, 0.5, {"line": "k=2"}, self.OWN["short"]),                                # ниже порога — уходит
+                   ("short", "k=3 F=age_h<=7", 20, 9.0, {"line": "k=3"}, self.OWN["short"]),                                # новая
+                   ("long", "k=4 F=age_h<=8", 30, 7.0, {"line": "k=4"}, "e" * 32),                                          # бинарь равен по eqbins — берётся свой
+                   ("long", "k=5 F=age_h<=9", 30, 7.0, {"line": "k=5"}, "f" * 32)]                                          # чужой бинарь — клетка базы остаётся
+            c.executemany("INSERT INTO metric(side, ckey, uni, win, trades, usd, extra, bin) VALUES(?,?,'c539','TK699-f12',?,?,?,?)", [(s, k, t, u, json.dumps(e), b) for s, k, t, u, e, b in f12])
+            c.commit()
+            c.close()
+            eq = os.path.join(d, "eq.json")
+            json.dump(["e" * 32, self.OWN["long"], self.OWN["short"]], open(eq, "w"))
+            db = os.path.join(d, "m.sqlite")
+            m = cl.connect(db)
+            m.execute("INSERT INTO cellset VALUES('b1', 't', '{}')")
+            base = [(1, "short", "k=1 F=age_h<=5", "k=1", 9, 11.0), (2, "short", "k=2 F=age_h<=6", "k=2", 9, 11.0), (3, "short", "k=0", "k=0", 9, 11.0), (4, "long", "k=5 F=age_h<=9", "k=5", 9, 11.0)]
+            m.executemany("INSERT INTO cell VALUES('b1', ?, ?, ?, ?, 's', '[]', 'age_h', ?, ?, NULL, 1, ?)", [(i, s_, k, ln, n, u, self.OWN[s_]) for i, s_, k, ln, n, u in base])
+            m.commit()
+            m.close()
+            old_sig, cl.sig_of = cl.sig_of, lambda line: "sig:" + line
+            try:
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    cl.main(["derive", "--cellset", "b2", "--base", "b1", "--db", db, "--chron", chron, "--eqbins", eq, "--bins", "long:%s,short:%s" % (self.OWN["long"], self.OWN["short"])])
+            finally:
+                cl.sig_of = old_sig
+            m = cl.connect(db)
+            got = {(s_, k): (cid, n, u, dly, b, sg) for cid, s_, k, n, u, dly, b, sg in m.execute("SELECT cid, side, ckey, ref_n, ref_usd, ref_daily, bin, sig FROM cell WHERE cellset='b2'")}
+            self.assertEqual(got["short", "k=1 F=age_h<=5"], (1, 80, 50.0, "[1.0,2.0]", self.OWN["short"], "sig:k=1"))        # тот же cid, числа f12, ряд f12
+            self.assertNotIn(("short", "k=2 F=age_h<=6"), got)
+            self.assertEqual(got["short", "k=0"], (3, 9, 11.0, None, self.OWN["short"], "s"))                                    # без строки f12 — как была
+            self.assertEqual(got["short", "k=3 F=age_h<=7"][:3], (6, 20, 9.0))                                                  # новые — cid после максимума базы (4), в порядке (сторона, ckey): long 5, short 6
+            self.assertEqual(got["long", "k=4 F=age_h<=8"][:3] + got["long", "k=4 F=age_h<=8"][4:5], (5, 30, 7.0, self.OWN["long"]))
+            self.assertEqual(got["long", "k=5 F=age_h<=9"][:3], (4, 9, 11.0))                                                   # чужой бинарь f12: клетка базы нетронута
+            self.assertEqual(len(got), 5)
+            prm = json.loads(m.execute("SELECT params FROM cellset WHERE name='b2'").fetchone()[0])
+            self.assertEqual((prm["replaced"], prm["added"], prm["dropped_le_min"], prm["bin_equal_by_eqbins"], prm["other_bin_skipped"], prm["kept_unchanged"]), (1, 2, 1, 1, 1, 2))
+            self.assertIn("b2", out.getvalue())
+
+
 class Warm20(unittest.TestCase):
     """Ворота прогрева: строки эталона (T0 = 17.06) сдвигаются на 6 суток к координатам wa20 (T0 = 11.06)."""
     HEAD = "sym,level,sig_ms,dist_e8,level_px_e8,born,end,first_bar,natr_e8,members\n"

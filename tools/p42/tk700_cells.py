@@ -2,6 +2,7 @@
 """TK-700 (В-183): набор клеток для прогона на январе–июне 2026 — все клетки c539 с Σ P&L > 1 $ за 01.07–13.11 (ставка 500 $) из БД летописи → таблица `cell` в БД результатов.
 
   python3 tk700_cells.py extract --cellset all1 [--min-usd 1] [--bins long:<md5>,short:<md5>] [--with-daily] [--db /data/p42-tk700/mass/mass.sqlite]
+  python3 tk700_cells.py derive  --cellset all2 --base all1 [--win TK699-f12]       # all1 с подменой по строкам исправленного f12 (TK-699), с посуточным рядом f12
   python3 tk700_cells.py stats   --cellset all1                       # число клеток по сторонам / фильтрам / ключам прохода сигналов, версии бинарей
 
 Источник — `/data/chron/chron.sqlite` (только чтение, `metric` без исправленных строк `metric_fix`): uni = c539, win = 01.07–13.11, usd > порога. Повтор (сторона, ckey) — берётся строка бинаря своей стороны (`--bins`: лонг c400af11 = tk683k, шорт 562f6899 = tk683l), иначе последняя по id;
@@ -21,6 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 CHRON_DB = "/data/chron/chron.sqlite"
 MASS_DB = "/data/p42-tk700/mass/mass.sqlite"
+EQBINS = "/data/p42-tk674c/res/eqbins674.json"                                                  # бинари движка с равным счётом клеток TK-674
 BINS = "long:c400af112bda3396d807b2ba882aea8b,short:562f689967dde28ebce44f4a00f1b7af"   # бинари БД: лонг — tk683k, шорт — tk683l (у лонга строк 562f6899 нет)
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS cellset(name TEXT PRIMARY KEY, created TEXT, params TEXT);
@@ -90,6 +92,65 @@ def cmd_extract(a):
     return 0
 
 
+def cmd_derive(a):
+    """Набор `--cellset` = набор `--base` с подменой по строкам исправленного f12 (TK-699, `metric.win = TK699-f12`, приказ координатора 24.11): ключ (сторона, ckey);
+    клетка со строкой f12 — ref_n / ref_usd / ref_daily / line / sig / db_id / bin из строки f12, при usd ≤ порога клетка уходит; строка f12 вне базы с usd > порога — добавляется (cid после максимума базы);
+    клетки без строки f12 — как были (тот же cid). Бинарь строки f12, не равный своему, но равный по `eqbins674.json` (счёт TK-674 одинаков), — бинарь стороны; иной бинарь — клетка пропущена."""
+    import tk700_freeze as fr
+    out = connect(a.db)
+    if out.execute("SELECT 1 FROM cellset WHERE name=?", (a.cellset,)).fetchone():
+        raise SystemExit("набор %s уже есть: другое имя или DELETE вручную" % a.cellset)
+    if not out.execute("SELECT 1 FROM cellset WHERE name=?", (a.base,)).fetchone():
+        raise SystemExit("нет базового набора %s" % a.base)
+    bins = dict(x.split(":") for x in a.bins.split(","))
+    eq = set(json.load(open(a.eqbins, encoding="utf-8"))) if os.path.exists(a.eqbins) else set()
+    src = sqlite3.connect("file:%s?mode=ro" % a.chron, uri=True)
+    t0 = time.time()
+    sel = "m.id, m.side, m.ckey, m.bin, m.trades, m.usd, json_extract(m.extra, '$.line')" + (", json_extract(m.extra, '$.daily')" if a.with_daily else ", NULL")
+    rows = {}
+    for id_, side, ckey, bin_, trades, usd, line, daily in src.execute(
+            "SELECT %s FROM metric m WHERE m.uni=? AND m.win=? AND m.id NOT IN (SELECT metric FROM metric_fix)" % sel, (a.uni, a.win)):
+        if ckey and ((side, ckey) not in rows or id_ > rows[side, ckey][0]):
+            rows[side, ckey] = (id_, bin_, int(trades), float(usd), line, daily)
+    out.execute("CREATE TEMP TABLE f12k(side TEXT, ckey TEXT, PRIMARY KEY(side, ckey)) WITHOUT ROWID")
+    out.executemany("INSERT INTO f12k VALUES(?,?)", list(rows))
+    old = {(s, k): (cid, flt, feats) for cid, s, k, flt, feats in out.execute(
+        "SELECT cid, side, ckey, filt, feats FROM cell WHERE cellset=? AND EXISTS(SELECT 1 FROM f12k k WHERE k.side=cell.side AND k.ckey=cell.ckey)", (a.base,))}
+    nxt = out.execute("SELECT max(cid) FROM cell WHERE cellset=?", (a.base,)).fetchone()[0] + 1
+    new, n_drop, n_rep, n_add, n_bin_eq, n_bin_skip = [], 0, 0, 0, 0, 0
+    for (side, ckey), (id_, bin_, trades, usd, line, daily) in sorted(rows.items()):
+        own = bins[side]
+        if bin_ != own and bin_ not in eq:
+            n_bin_skip += 1
+            out.execute("DELETE FROM f12k WHERE side=? AND ckey=?", (side, ckey))      # чужой бинарь: клетка базы остаётся как была
+            continue
+        if usd <= a.min_usd:
+            n_drop += (side, ckey) in old
+            continue
+        n_bin_eq += bin_ != own
+        eng, flt = fr.split_ckey(ckey)
+        line = line or eng
+        if (side, ckey) in old:
+            cid, filt, feats = old[side, ckey]
+            n_rep += 1
+        else:
+            cid, filt, feats = nxt, json.dumps(flt), ",".join(sorted({f for f, _, _ in flt}))
+            nxt += 1
+            n_add += 1
+        new.append((a.cellset, cid, side, ckey, line, sig_of(line), filt, feats, trades, usd, daily, int(id_), own))
+    out.execute("INSERT INTO cell SELECT ?, cid, side, ckey, line, sig, filt, feats, ref_n, ref_usd, ref_daily, db_id, bin FROM cell WHERE cellset=? "
+                "AND NOT EXISTS(SELECT 1 FROM f12k k WHERE k.side=cell.side AND k.ckey=cell.ckey)", (a.cellset, a.base))
+    n_keep = out.execute("SELECT count(*) FROM cell WHERE cellset=?", (a.cellset,)).fetchone()[0]
+    out.executemany("INSERT INTO cell VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", new)
+    out.execute("INSERT INTO cellset VALUES(?,?,?)", (a.cellset, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), json.dumps(dict(
+        base=a.base, fix_win=a.win, uni=a.uni, min_usd=a.min_usd, bins=bins, with_daily=a.with_daily, rows_f12=len(rows), kept_unchanged=n_keep, replaced=n_rep, added=n_add, dropped_le_min=n_drop,
+        bin_equal_by_eqbins=n_bin_eq, other_bin_skipped=n_bin_skip))))
+    out.commit()
+    print("набор %s из %s по %s: строк f12 %d → заменено %d, добавлено %d, убрано (usd ≤ %g) %d, бинарь по eqbins674 %d, чужой бинарь %d; без строки f12 — как были %d; %.0f с" % (
+        a.cellset, a.base, a.win, len(rows), n_rep, n_add, a.min_usd, n_drop, n_bin_eq, n_bin_skip, n_keep, time.time() - t0))
+    return 0
+
+
 def cmd_stats(a):
     c = connect(a.db)
     p = c.execute("SELECT params FROM cellset WHERE name=?", (a.cellset,)).fetchone()
@@ -113,11 +174,22 @@ def main(argv=None):
     e.add_argument("--with-daily", action="store_true")
     e.add_argument("--mod", type=int, default=0)
     e.add_argument("--rem", type=int, default=0)
+    d = sp.add_parser("derive")
+    d.add_argument("--cellset", required=True)
+    d.add_argument("--base", default="all1")
+    d.add_argument("--db", default=MASS_DB)
+    d.add_argument("--chron", default=CHRON_DB)
+    d.add_argument("--uni", default="c539")
+    d.add_argument("--win", default="TK699-f12")
+    d.add_argument("--min-usd", type=float, default=1.0)
+    d.add_argument("--bins", default=BINS)
+    d.add_argument("--eqbins", default=EQBINS)
+    d.add_argument("--no-daily", dest="with_daily", action="store_false")
     s = sp.add_parser("stats")
     s.add_argument("--cellset", required=True)
     s.add_argument("--db", default=MASS_DB)
     a = ap.parse_args(argv)
-    return {"extract": cmd_extract, "stats": cmd_stats}[a.cmd](a)
+    return {"extract": cmd_extract, "derive": cmd_derive, "stats": cmd_stats}[a.cmd](a)
 
 
 if __name__ == "__main__":
