@@ -209,6 +209,7 @@ fn format_e9(v: i64) -> String {
     s
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 struct InstrumentRow {
     symbol: String,
@@ -218,6 +219,7 @@ struct InstrumentRow {
     min_notional_value: String,
 }
 
+#[cfg(test)]
 /// `instruments.csv` (done-condition шага 0.4: «непуст», и размер-22а обоих
 /// финалистов посчитан из этих полей и укладывается в правила биржи,
 /// Decision 22а) — пишется

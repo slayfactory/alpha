@@ -1346,6 +1346,7 @@ impl<K: Ord + Copy, V> SortedVec<K, V> {
         self.items.iter()
     }
 
+    #[cfg(test)]
     fn len(&self) -> usize {
         self.items.len()
     }
@@ -1483,9 +1484,11 @@ pub struct LevelTracker {
     twins: Vec<TwinRec>,
     /// Буфер касаний для `observe_frame` без выхода касаний: те же события
     /// считаются, записи отбрасываются, ёмкость переиспользуется.
+    #[cfg(test)]
     touch_scratch: Vec<TouchRecord>,
     /// Буфер подходов для `observe_frame_with_touches` (F1): записи
     /// отбрасываются, ёмкость переиспользуется.
+    #[cfg(test)]
     approach_scratch: Vec<ApproachRecord>,
     /// Лучшая цена каждой стороны из последнего её кадра (`side_key`): сигналу
     /// подхода нужна лучшая цена **другой** стороны, а кадры приходят по одной
@@ -1787,7 +1790,9 @@ impl LevelTracker {
             twin_seeds: Vec::new(),
             twin_symbol: String::new(),
             twins: Vec::new(),
+            #[cfg(test)]
             touch_scratch: Vec::with_capacity(8),
+            #[cfg(test)]
             approach_scratch: Vec::with_capacity(8),
             best_tick: [None; 2],
             strength_ok: Vec::with_capacity(64),
@@ -1815,6 +1820,7 @@ impl LevelTracker {
         sum
     }
 
+    #[cfg(test)]
     /// Сколько уровней живо прямо сейчас. Нужно тестам, чтобы убедиться, что
     /// фикстура никого не потеряла и не оставила висеть.
     pub fn live_count(&self) -> usize {
@@ -1867,6 +1873,7 @@ impl LevelTracker {
         self.live.iter().map(|(k, lv)| (*k, lv.birth_ms)).collect()
     }
 
+    #[cfg(test)]
     pub fn observe_frame(
         &mut self,
         ts_ms: i64,
@@ -1882,6 +1889,7 @@ impl LevelTracker {
         self.touch_scratch = scratch;
     }
 
+    #[cfg(test)]
     /// Один кадр одной стороны. Умершие за кадр дописываются в `out`
     /// в порядке возрастания цены, кончившиеся касания — в `touches`
     /// (порядок — документация модуля, «Касания»); ёмкость обоих — забота

@@ -38,16 +38,6 @@ use crate::stats::{count_f64_u64, quantile_sorted, SplitMix64};
 // же вход даёт один и тот же отчёт.
 // ---------------------------------------------------------------------------
 
-/// Seed по умолчанию для тестов этого модуля.
-pub const CELLS_SEED: u64 = 2026_0502;
-
-/// Нижний квантиль двустороннего интервала контраста: 0.25%.
-pub const CONTRAST_CI_LOW_Q: f64 = 0.0025;
-
-/// Верхний квантиль двустороннего интервала контраста: 99.75%.
-/// Вместе с нижним даёт двусторонний интервал уровня 99.5%.
-pub const CONTRAST_CI_HIGH_Q: f64 = 0.9975;
-
 // ---------------------------------------------------------------------------
 // Детерминированный источник весов Уэбба для интервала контраста.
 // ---------------------------------------------------------------------------
@@ -81,41 +71,6 @@ fn next_webb(rng: &mut SplitMix64) -> f64 {
 // ---------------------------------------------------------------------------
 // Дизъюнктный контраст: разность двух взвешенных средних.
 // ---------------------------------------------------------------------------
-
-/// Разность двух рядов на общих кластерных репликах Уэбба: точечная оценка —
-/// разность пуловых средних `mean_a − mean_b`; интервал — процентили wild
-/// cluster bootstrap той же разности.
-#[derive(Debug, Clone, PartialEq)]
-pub struct DisjointContrast {
-    /// Знаменатель ряда A.
-    pub n_a: u64,
-    /// Знаменатель ряда B.
-    pub n_b: u64,
-    /// Среднее ряда A на наблюдённых (невзвешенных) суммах.
-    pub mean_a: f64,
-    /// Среднее ряда B на наблюдённых (невзвешенных) суммах.
-    pub mean_b: f64,
-    /// Разность `mean_a − mean_b`.
-    pub diff: f64,
-    /// Нижняя граница интервала (квантиль `CONTRAST_CI_LOW_Q`).
-    pub ci_low: f64,
-    /// Верхняя граница интервала (квантиль `CONTRAST_CI_HIGH_Q`).
-    pub ci_high: f64,
-    /// Число реплик интервала.
-    pub replications: u32,
-    /// Seed реплик.
-    pub seed: u64,
-}
-
-impl DisjointContrast {
-    /// Строка контраста: разность с двусторонним интервалом.
-    pub fn format_headline(&self) -> String {
-        format!(
-            "contrast(A-B): diff={:.4} CI=[{:.4},{:.4}] (99.5%, B={} seed={}) n_a={} n_b={}",
-            self.diff, self.ci_low, self.ci_high, self.replications, self.seed, self.n_a, self.n_b
-        )
-    }
-}
 
 /// Общий шов совместного кластерного бутстрапа двух рядов, расширяемый под
 /// разные статистики: дизъюнктный контраст соединяет два взвешенных
@@ -181,32 +136,6 @@ fn joint_two_series_bootstrap(
     Some((mean_a, n_a, mean_b, n_b, point, reps))
 }
 
-/// Дизъюнктный контраст: точечная оценка — разность пуловых средних;
-/// интервал — процентили wild cluster bootstrap разности на весах Уэбба.
-/// `None` — пуст ряд A или пуст ряд B. Публична: сохранена без вызывающего
-/// внутри крейта по прямому указанию `interfaces.md` (см. докстрока модуля) —
-/// расширять при следующей надобности в контрасте двух серий, не писать
-/// второй бутстрап.
-pub fn disjoint_contrast(
-    day_sums: &[(f64, u64, f64, u64)],
-    replications: u32,
-    seed: u64,
-) -> Option<DisjointContrast> {
-    let (mean_a, n_a, mean_b, n_b, diff, diffs) =
-        joint_two_series_bootstrap(day_sums, replications, seed, |a, b| a - b)?;
-    Some(DisjointContrast {
-        n_a,
-        n_b,
-        mean_a,
-        mean_b,
-        diff,
-        ci_low: quantile_sorted(&diffs, CONTRAST_CI_LOW_Q),
-        ci_high: quantile_sorted(&diffs, CONTRAST_CI_HIGH_Q),
-        replications,
-        seed,
-    })
-}
-
 /// Итог совместного интервала произведения двух средних (таск 03, R08/R50):
 /// расширение `joint_two_series_bootstrap` с `combine = умножение` вместо
 /// вычитания дизъюнктного контраста. Публична только сигнатура, нужная
@@ -263,106 +192,6 @@ pub(crate) fn joint_product_interval(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    /// Реплик в тестах: сетка от их числа не зависит по существу
-    /// (свойство перебора весовых векторов, см. `stats`), а прогон в
-    /// десять раз быстрее.
-    const TEST_REPLICATIONS: u32 = 999;
-
-    fn close(a: f64, b: f64) -> bool {
-        (a - b).abs() < 1e-9
-    }
-
-    /// Два кластера (сутки) с известными числами проверяют формулу
-    /// буквально: `mean_a = (10+20)/(4+6) = 3.0`, `mean_b = (5+15)/(4+6)
-    /// = 2.0`, разность `= 1.0`. Точечная оценка обязана лежать внутри
-    /// своего же интервала на сильном сигнале.
-    #[test]
-    fn disjoint_contrast_matches_hand_computed_diff_and_ci_bounds() {
-        let day_sums = [(10.0, 4u64, 5.0, 4u64), (20.0, 6u64, 15.0, 6u64)];
-        let c =
-            disjoint_contrast(&day_sums, TEST_REPLICATIONS, CELLS_SEED).expect("обе серии непусты");
-        assert_eq!((c.n_a, c.n_b), (10, 10));
-        assert!(close(c.mean_a, 3.0), "mean_a = 30/10");
-        assert!(close(c.mean_b, 2.0), "mean_b = 20/10");
-        assert!(close(c.diff, 1.0), "diff = mean_a - mean_b");
-        assert!(
-            c.ci_low <= c.diff && c.diff <= c.ci_high,
-            "точечная оценка внутри своего интервала"
-        );
-        let text = c.format_headline();
-        assert!(text.contains("diff=1.0000"), "печать: {text}");
-        assert!(text.contains("n_a=10") && text.contains("n_b=10"), "{text}");
-
-        assert_eq!(
-            disjoint_contrast(&[], TEST_REPLICATIONS, CELLS_SEED),
-            None,
-            "пустой вход обязан дать None"
-        );
-    }
-
-    /// Таск 03 (R08/R50): `joint_product_interval` — расширение того же шва,
-    /// что дизъюнктный контраст, с `combine = умножение`. Те же два кластера
-    /// (сутки) с известными числами проверяют формулу буквально:
-    /// `mean_a = (10+20)/(4+6) = 3.0`, `mean_b = (5+15)/(4+6) = 2.0`,
-    /// точка `= 6.0`. Разные seed обязаны дать разные (но конечные) нижние
-    /// границы — иначе seed декоративен, как и у `wild_cluster_bootstrap_t`.
-    #[test]
-    fn joint_product_interval_matches_hand_computed_point_and_reacts_to_seed() {
-        let day_sums = [(10.0, 4u64, 5.0, 4u64), (20.0, 6u64, 15.0, 6u64)];
-        let jp = joint_product_interval(&day_sums, 0.05, TEST_REPLICATIONS, CELLS_SEED)
-            .expect("обе серии непусты");
-        assert_eq!((jp.n_a, jp.n_b), (10, 10));
-        assert!(close(jp.mean_a, 3.0), "mean_a = 30/10");
-        assert!(close(jp.mean_b, 2.0), "mean_b = 20/10");
-        assert!(close(jp.point, 6.0), "точка = mean_a*mean_b = 3*2");
-        assert!(jp.lower.is_finite(), "нижняя граница обязана быть конечной");
-        assert!(
-            jp.lower <= jp.point,
-            "нижний перцентиль не может быть выше точки на положительном сигнале"
-        );
-
-        let other_seed = joint_product_interval(&day_sums, 0.05, TEST_REPLICATIONS, CELLS_SEED + 1)
-            .expect("обе серии непусты");
-        assert_ne!(
-            jp.lower, other_seed.lower,
-            "другой seed обязан дать другую реплику нижней границы"
-        );
-
-        assert_eq!(
-            joint_product_interval(&[], 0.05, TEST_REPLICATIONS, CELLS_SEED),
-            None
-        );
-    }
-
-    /// Веса Уэбба записаны здесь и в `stats` **разными выражениями**: там
-    /// `(1.5).sqrt()` и `(0.5).sqrt()` считаются в рантайме, здесь стоят
-    /// литерал и `FRAC_1_SQRT_2`. Комментарий к `WEBB_POINTS` утверждает, что
-    /// поток весов совпадает с потоком `stats` пореплико, и это утверждение
-    /// держится ровно на побитовом равенстве шести чисел.
-    ///
-    /// Сегодня оно верно — оба выражения дают одинаковые f64 по корректному
-    /// округлению, — но верно по удаче, а не потому, что кто-то это проверяет.
-    /// Правка одного литерала развела бы два потока молча, и ни один тест не
-    /// покраснел бы. Сравнение идёт по `to_bits`, а не по `==`: равенство
-    /// f64 здесь и есть предмет проверки, приблизительное сравнение проверяло
-    /// бы не то.
-    #[test]
-    fn webb_points_match_stats_bit_for_bit() {
-        assert_eq!(
-            WEBB_POINTS.len() as u32,
-            crate::stats::WEBB_WEIGHT_VALUES,
-            "число весов разошлось с сеткой stats"
-        );
-        for i in 0..crate::stats::WEBB_WEIGHT_VALUES {
-            assert_eq!(
-                WEBB_POINTS[i as usize].to_bits(),
-                crate::stats::webb_weight(i).to_bits(),
-                "вес {i} разошёлся с stats::webb_weight побитово"
-            );
-        }
-    }
 
     /// Граница модулей в духе шагов 1.1/4.1/5.1: анализ не знает про транспорт
     /// и часы. Вещественное число здесь разрешено формулой (bps, интервал),

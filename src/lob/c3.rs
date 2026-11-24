@@ -19,7 +19,9 @@
 )]
 
 use crate::book::Side;
+#[cfg(test)]
 use crate::lob::markout::{mid_double_tick, MidSample};
+#[cfg(test)]
 use crate::lob::sigma::SigmaSeries;
 use crate::lob::twin::twin_key;
 
@@ -148,6 +150,7 @@ pub fn swap_flags(n: usize, seed: u64) -> Vec<bool> {
         .collect()
 }
 
+#[cfg(test)]
 /// Посекундные ряды суток для `DayCtx`: `mid[s]` — середина (цена) как есть на границу секунды `start_ms + s·1000`
 /// (последний срез не позже границы; NaN, пока срезов не было), `sigma[s]` — σ240 в bps на ту же границу (NaN —
 /// не определена). `mids` отсортированы по времени (так их выдаёт реплей; можно с хвостом прошлых суток для σ).

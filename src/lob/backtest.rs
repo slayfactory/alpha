@@ -61,10 +61,7 @@ use hftbacktest::types::{
     EXCH_BID_DEPTH_EVENT, LOCAL_ASK_DEPTH_EVENT, LOCAL_BID_DEPTH_EVENT, SELL_EVENT,
 };
 
-use crate::lob::costs::{
-    fill_rate, format_fill_column, leg_fee_bps, net_fill_bps, net_fill_interval, FillObservation,
-    NetFillInterval, MAKER_FEE_BPS, TAKER_FEE_BPS,
-};
+use crate::lob::costs::{leg_fee_bps, FillObservation, MAKER_FEE_BPS, TAKER_FEE_BPS};
 use crate::lob::levels::WallEvent;
 use crate::lob::retreat::{RetreatCfg, RetreatMemory};
 use crate::lob::strategy::{
@@ -112,18 +109,6 @@ pub const SIGMA_LONG: i8 = 1;
 // Вход: сигналы триггера уровня, уже сгруппированные по профилю.
 // ---------------------------------------------------------------------------
 
-/// Один сигнал стратегии: срабатывание условия уровня в момент `t₀`.
-/// Принадлежность к профилю решает вызывающий (группировка по `profile_id` —
-/// `commands::lob::backtest`); сюда сигнал приходит уже отобранным, вместе
-/// со стороной σ по Decision 14.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Signal {
-    /// Момент срабатывания `t₀` в наносекундах (часы стороны, не стенка).
-    pub t0_ns: i64,
-    /// Сторона по σ: `-1` — бид (шорт), `+1` — аск (лонг).
-    pub sigma: i8,
-}
-
 // ---------------------------------------------------------------------------
 // Пропуски: обязательная колонка, раздельно по причине.
 // ---------------------------------------------------------------------------
@@ -160,11 +145,6 @@ impl MissLedger {
     /// Всего пропусков обеими причинами.
     pub fn total(self) -> u64 {
         self.timeout.saturating_add(self.busy)
-    }
-
-    /// Обязательная колонка пропусков: обе причины раздельно.
-    pub fn format_column(self) -> String {
-        format!("missed_timeout={} missed_busy={}", self.timeout, self.busy)
     }
 }
 
@@ -261,146 +241,9 @@ pub fn roundtrip_net_bps(fill: &Fill) -> Option<f64> {
     Some(gross - leg_fee_bps(fill.entry_taker) - leg_fee_bps(fill.exit_taker))
 }
 
-/// PnL-кривая: накопленный чистый результат по кругам в порядке исполнения.
-/// Чистая функция от входов — тестируется без недели. `None`, если кругов
-/// нет или хотя бы один не посчитался: молча выкидывать его значило бы
-/// пересчитывать выборку задним числом (то же правило, что `Report::mean_net_bps`).
-pub fn pnl_curve_bps(fills: &[Fill]) -> Option<Vec<f64>> {
-    if fills.is_empty() {
-        return None;
-    }
-    let mut curve = Vec::with_capacity(fills.len());
-    let mut running = 0.0;
-    for f in fills {
-        running += roundtrip_net_bps(f)?;
-        curve.push(running);
-    }
-    Some(curve)
-}
-
 // ---------------------------------------------------------------------------
 // Сравнение с таблицей профилей (таск 10) и гейт G4.
 // ---------------------------------------------------------------------------
-
-/// Оценка профиля из `docs/findings/profiles-<дата>.csv` (таск 10). Это
-/// чистое ядро CSV не читает — значения приносит вызывающий
-/// (`commands::lob::backtest::read_table`), иначе `lob/backtest` тянул бы
-/// файловый ввод в свою границу модуля.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TableEstimate {
-    /// `net_bps` таблицы (без взвешивания на `fill`).
-    pub net_bps: Option<f64>,
-    /// `net_fill` таблицы — база сравнения, когда она измерялась.
-    pub net_fill_bps: Option<f64>,
-    /// `true`, когда источник явно не мерил `net_fill`/`fill`
-    /// (`fill_model=none` — колонка несёт литерал `not_measured`, не
-    /// число и не отсутствие данных). Сравнение в этом случае падает на
-    /// `net_bps`, а колонка `table_net_fill_bps` печатает `not_measured`
-    /// буквально — не путать «не измерялось» с «измерено и пусто».
-    pub net_fill_not_measured: bool,
-}
-
-/// Сравнение реализованного `net_fill` бэктеста с оценкой таблицы профилей.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TableComparison {
-    /// `net_bps` таблицы, для контекста (`None` — строки профиля нет).
-    pub table_net_bps: Option<f64>,
-    /// `net_fill` таблицы, если он измерялся (`None`, когда `not_measured`
-    /// или строки нет).
-    pub table_net_fill_bps: Option<f64>,
-    /// `true` — таблица явно не мерила `net_fill` (печатать `not_measured`,
-    /// не `none`).
-    pub table_net_fill_not_measured: bool,
-    /// Реализованный `net_fill` бэктеста (медианная RTT).
-    pub realized_net_fill_bps: Option<f64>,
-    /// Разность `реализация − база` в bps: база — `net_fill` таблицы, а
-    /// если он не измерялся — `net_bps` (координатор: «тогда сравнение по
-    /// `net_bps`»). `None` — нет любого из входов.
-    pub diff_net_fill_bps: Option<f64>,
-}
-
-/// Разность реализации и таблицы профилей. Отказ любого входа — `None`
-/// разности, а не ноль: совпадение с оценкой надо показать, а не
-/// предположить.
-pub fn compare_with_table(
-    table: Option<TableEstimate>,
-    realized_net_fill_bps: Option<f64>,
-) -> TableComparison {
-    let (table_net_bps, table_net_fill_bps, table_net_fill_not_measured) = match table {
-        Some(t) => (t.net_bps, t.net_fill_bps, t.net_fill_not_measured),
-        None => (None, None, false),
-    };
-    let baseline = if table_net_fill_not_measured {
-        table_net_bps
-    } else {
-        table_net_fill_bps
-    };
-    let diff_net_fill_bps = match (baseline, realized_net_fill_bps) {
-        (Some(a), Some(b)) if a.is_finite() && b.is_finite() => Some(b - a),
-        _ => None,
-    };
-    TableComparison {
-        table_net_bps,
-        table_net_fill_bps,
-        table_net_fill_not_measured,
-        realized_net_fill_bps,
-        diff_net_fill_bps,
-    }
-}
-
-impl TableComparison {
-    /// Строка сравнения для отчёта: оба числа и разность; `table_net_fill`
-    /// печатает `not_measured` буквально, когда таблица его не мерила.
-    pub fn format_line(&self) -> String {
-        let table_net_fill = if self.table_net_fill_not_measured {
-            "not_measured".to_string()
-        } else {
-            fmt_opt(self.table_net_fill_bps)
-        };
-        format!(
-            "vs_table: table_net_fill={table_net_fill} realized_net_fill={} diff={}",
-            fmt_opt(self.realized_net_fill_bps),
-            fmt_opt(self.diff_net_fill_bps)
-        )
-    }
-}
-
-/// Вердикт гейта G4. Чистый PnL положителен при медианном RTT и остаётся
-/// положительным при 95-м перцентиле — иначе красный (G4-в, `PLAN.md`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum G4Verdict {
-    /// Положителен на обеих задержках.
-    Pass,
-    /// Иначе красный (включая отсутствие данных).
-    Red,
-}
-
-impl G4Verdict {
-    /// Проход гейта.
-    pub fn is_pass(self) -> bool {
-        matches!(self, G4Verdict::Pass)
-    }
-}
-
-impl std::fmt::Display for G4Verdict {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            G4Verdict::Pass => write!(f, "G4 pass: net>0 at median and p95 RTT"),
-            G4Verdict::Red => write!(f, "G4 RED"),
-        }
-    }
-}
-
-/// Решение G4 строго по формулировке: оба средних конечны и строго
-/// положительны — проход, иначе (включая `None`) красный.
-pub fn decide_g4(median_net_bps: Option<f64>, p95_net_bps: Option<f64>) -> G4Verdict {
-    match (median_net_bps, p95_net_bps) {
-        (Some(m), Some(p)) if m.is_finite() && m > 0.0 && p.is_finite() && p > 0.0 => {
-            G4Verdict::Pass
-        }
-        _ => G4Verdict::Red,
-    }
-}
 
 // ---------------------------------------------------------------------------
 // RTT 6.4 → задержка крейта.
@@ -454,17 +297,6 @@ impl ExecLatency {
         }
     }
 }
-
-/// Измеренные медианы WS trade с сервера коллектора (В-68, `lob latency`
-/// 2026-09-19, `docs/findings/latency-2026-09-19.md`): постановка 4.20 мс,
-/// снятие 3.98, рыночный 5.65. Флаги бэктестов эту константу **не** берут по
-/// умолчанию (правило В-37: число называют явно) — она для справочных полей
-/// (`lob dashboard` печатает, какую задержку ждёт бэктест).
-pub const MEASURED_LATENCY: ExecLatency = ExecLatency {
-    place_ns: 4_200_000,
-    cancel_ns: 3_980_000,
-    taker_ns: 5_650_000,
-};
 
 /// `--median-rtt-ns 20000000` (одно число на всё) или
 /// `--median-rtt-ns place=4200000,cancel=3980000,taker=5650000` (три, в любом
@@ -565,20 +397,6 @@ pub fn entry_side(sigma: i8) -> Option<HbtSide> {
     }
 }
 
-/// Цена входа Decision 19 — мейкер у своей стороны спреда: шорт выставляется
-/// на лучший аск, лонг на лучший бид. `None` — книга неполна: на incomplete
-/// book не торгуется ни одна сторона, обе цены обязаны быть конечными.
-pub fn entry_price(side: HbtSide, best_bid: f64, best_ask: f64) -> Option<f64> {
-    if !(best_bid.is_finite() && best_ask.is_finite()) {
-        return None;
-    }
-    match side {
-        HbtSide::Buy => Some(best_bid),
-        HbtSide::Sell => Some(best_ask),
-        HbtSide::None | HbtSide::Unsupported => None,
-    }
-}
-
 /// Цена выхода — тейкер пересекающим лимитом: лонг продаёт по лучшему биду,
 /// шорт покупает по лучшему аску. Цена равна лучшей на своей стороне, потому
 /// исполнение идёт по лучшей (модель это гарантирует). `None` — книга
@@ -591,15 +409,6 @@ pub fn exit_price(side: HbtSide, best_bid: f64, best_ask: f64) -> Option<f64> {
         HbtSide::Buy => Some(best_bid),
         HbtSide::Sell => Some(best_ask),
         HbtSide::None | HbtSide::Unsupported => None,
-    }
-}
-
-/// Печать опционального числа: `none`, если данных нет.
-fn fmt_opt(v: Option<f64>) -> String {
-    match v {
-        Some(x) if x.is_finite() => format!("{x:.4}"),
-        Some(_) => "nonfinite".to_string(),
-        None => "none".to_string(),
     }
 }
 
@@ -773,101 +582,6 @@ pub struct SignalTrace {
     pub residual: Option<bool>,
 }
 
-/// Итог прогона одного профиля на одной RTT-сценарии: done-condition 6.3
-/// буквально — заполнения, пропуски раздельно по причине, наблюдения для
-/// `costs::{fill_rate, net_fill_bps, net_fill_interval}`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ProfileRun {
-    /// Сигналов подано в драйвер.
-    pub signals: u64,
-    /// Закрытые круги в порядке исполнения.
-    pub fills: Vec<Fill>,
-    /// Пропуски раздельно по причине (обязательная колонка).
-    pub misses: MissLedger,
-    /// Одно наблюдение на попытку (заполнена или нет) — вход `costs`.
-    pub observations: Vec<FillObservation>,
-    /// Данные кончились раньше, чем позиция закрылась или время вышло:
-    /// итог неполон, вердикт по нему не выносится.
-    pub incomplete: bool,
-}
-
-impl ProfileRun {
-    /// Число заполнений (закрытых кругов).
-    pub fn n_fills(&self) -> usize {
-        self.fills.len()
-    }
-
-    /// Средний чистый результат круга в bps (не взвешен на `fill`).
-    pub fn mean_net_bps(&self) -> Option<f64> {
-        let curve = pnl_curve_bps(&self.fills)?;
-        curve
-            .last()
-            .map(|last| last / crate::stats::count_f64(self.fills.len()))
-    }
-
-    /// Доля исполнившихся входов (R06) — `costs::fill_rate`.
-    pub fn fill_rate(&self) -> Option<f64> {
-        fill_rate(&self.observations)
-    }
-
-    /// `net_fill` по наблюдению (R07) — `costs::net_fill_bps`.
-    pub fn net_fill_bps(&self) -> Option<f64> {
-        net_fill_bps(&self.observations)
-    }
-
-    /// Совместный интервал `net_fill` — `costs::net_fill_interval` с
-    /// каноническими `alpha`/`replications` гейта (`stats::GATE_ALPHA`,
-    /// `stats::BOOTSTRAP_REPLICATIONS`), тот же выбор, что уже использует
-    /// `commands::lob::pilot` для родственного интервала.
-    pub fn net_fill_interval(&self) -> Option<NetFillInterval> {
-        net_fill_interval(
-            &self.observations,
-            crate::stats::GATE_ALPHA,
-            crate::stats::BOOTSTRAP_REPLICATIONS,
-            0,
-        )
-    }
-
-    /// Строки профиля для отчёта: заполнения, обе колонки пропусков, кривая
-    /// компактно (длина, финал, минимум), `fill`/`net_fill`/нижняя граница.
-    pub fn summary_lines(&self, name: &str) -> Vec<String> {
-        let mut lines = Vec::with_capacity(4);
-        lines.push(format!(
-            "{name}: signals={} fills={} {} incomplete={}",
-            self.signals,
-            self.fills.len(),
-            self.misses.format_column(),
-            self.incomplete
-        ));
-        match pnl_curve_bps(&self.fills) {
-            Some(curve) => match curve.last() {
-                Some(&last) => {
-                    let min = curve.iter().fold(f64::INFINITY, |a, b| a.min(*b));
-                    lines.push(format!(
-                        "{name} pnl_bps: n={} final={:.4} min={:.4}",
-                        curve.len(),
-                        last,
-                        min
-                    ));
-                }
-                None => lines.push(format!("{name} pnl_bps: none (no fills)")),
-            },
-            None => lines.push(format!("{name} pnl_bps: none (no fills)")),
-        }
-        lines.push(format!(
-            "{name} mean_net_bps={}",
-            fmt_opt(self.mean_net_bps())
-        ));
-        lines.push(format!(
-            "{name} fill={} net_fill={} net_fill_lower={}",
-            format_fill_column(self.fill_rate()),
-            fmt_opt(self.net_fill_bps()),
-            fmt_opt(self.net_fill_interval().map(|iv| iv.lower_bps)),
-        ));
-        lines
-    }
-}
-
 /// Шаг опроса `on_event` при активном круге. Не модельная величина и не
 /// параметр стратегии (тот же класс, что был у снятого `EXIT_RESP_TIMEOUT_NS`
 /// раньше) — только гранулярность, с которой драйвер замечает переходы фазы
@@ -877,154 +591,6 @@ impl ProfileRun {
 /// 10 с, то есть ≤ 0.5% и ≤ 0.1% соответственно; исполнение цены решает
 /// очередь крейта на момент фактического пересечения, шаг её не трогает.
 const ON_EVENT_POLL_STEP_NS: i64 = 10_000_000;
-
-/// Прогон стратегии `on_event` (таск 15) по сигналам одного профиля поверх
-/// любого `Bot<MD>` — бэктестера или живой стороны (A6: тот же код без
-/// правок). Экономику решения не дублирует: `on_event` сама решает, когда
-/// войти, когда снять неисполнившийся вход и когда выйти. Этот драйвер
-/// только продвигает часы стороны и классифицирует исход каждого
-/// вооружённого круга по тому, что `Bot<MD>` и так публикует.
-///
-/// Одна позиция за раз: сигнал, чей `t0` приходится на время удержания
-/// предыдущего (успешно исполнившегося) круга, — пропуск по занятости; окно
-/// занятости берётся из **фактического** времени исполнения выхода
-/// (`Order::exch_timestamp`), а не из номинального `t0 + HOLD_NS`.
-pub fn drive_profile<B, MD>(
-    bot: &mut B,
-    asset_no: usize,
-    signals: &[Signal],
-    cfg: &DriveConfig,
-) -> Result<ProfileRun, B::Error>
-where
-    B: Bot<MD>,
-    MD: MarketDepth,
-{
-    let mut order: Vec<Signal> = signals.to_vec();
-    order.sort_by_key(|s| s.t0_ns);
-    let mut fills: Vec<Fill> = Vec::new();
-    let mut misses = MissLedger::default();
-    let mut observations: Vec<FillObservation> = Vec::new();
-    let mut next_id = cfg.first_order_id;
-    let mut incomplete = false;
-    let mut blocked_until_ns: i64 = i64::MIN;
-
-    let miss_observation = |t0_ns: i64| FillObservation {
-        day_cluster: day_index_ns(t0_ns),
-        net_bps: 0.0,
-        filled: false,
-    };
-
-    // Инициализация часов стороны: свежий бэктестер стоит на максимуме до
-    // первого продвижения, живая сторона — на стенке; нулевой шаг первую
-    // ставит на первый фид, второй безвреден.
-    if bot.elapse(0)? == ElapseResult::EndOfData {
-        return Ok(ProfileRun {
-            signals: order.len() as u64,
-            fills,
-            misses,
-            observations,
-            incomplete: true,
-        });
-    }
-
-    'signals: for sig in &order {
-        // Неизвестная σ — не сигнал стратегии: пропускается без счёта, как
-        // чужой символ в счётчике `watch` (молчание здесь — фильтр, а не
-        // потеря: выборка профиля его не содержит по построению).
-        if entry_side(sig.sigma).is_none() {
-            continue;
-        }
-        if sig.t0_ns < blocked_until_ns {
-            misses.record(MissReason::PositionBusy);
-            observations.push(miss_observation(sig.t0_ns));
-            continue;
-        }
-        // Догнать время сигнала часами стороны.
-        let now = bot.current_timestamp();
-        if sig.t0_ns > now {
-            if bot.elapse(sig.t0_ns - now)? == ElapseResult::EndOfData {
-                incomplete = true;
-                break;
-            }
-            // Сделки до постановки входа к пути исполнения не относятся
-            // (F3): буфер чистится, чтобы детектор `run_round` видел только
-            // сделки шага, в котором нога исполнилась.
-            bot.clear_last_trades(Some(asset_no));
-        }
-        // Двойная проверка занятости (как у `blocked_until_ns` выше): по
-        // факту тоже, на случай если позиция открыта извне драйвера.
-        if bot.position(asset_no) != 0.0 {
-            misses.record(MissReason::PositionBusy);
-            observations.push(miss_observation(sig.t0_ns));
-            continue;
-        }
-
-        let mut state = StrategyState::with_plan(
-            asset_no,
-            sig.sigma,
-            cfg.order_qty,
-            next_id,
-            TradePlan::SpreadHold,
-        );
-        state.enable_tape_from(cfg.tape_log_secs);
-        state.enable_tape_ws(&cfg.tape_log_ws);
-        // Запас номеров на круг — `ID_STRIDE`: страховка от коллизии id со
-        // следующим кругом, не экономическая величина.
-        next_id = next_id.saturating_add(ID_STRIDE);
-
-        let (entry_id, side) = match on_event(bot, &mut state)? {
-            Action::EntrySubmitted { order_id, side, .. } => (order_id, side),
-            Action::Idle => {
-                // Книга не была готова в момент сигнала — попытки не было и
-                // не будет: тот же исход, что «не исполнился за 2 с».
-                misses.record(MissReason::EntryTimeout);
-                observations.push(miss_observation(sig.t0_ns));
-                continue;
-            }
-            other => unreachable!("свежее состояние не могло вернуть {other:?}"),
-        };
-
-        // Остаток позиции здесь не страхуется: круг Decision 20 — одна нога
-        // входа и одна нога выхода, и `Bot::position` на этом плане честен.
-        let (outcome, _residual) = run_round(bot, asset_no, &mut state, entry_id, 1, side, None)?;
-        match outcome {
-            RoundOutcome::EndOfData => {
-                incomplete = true;
-                break 'signals;
-            }
-            RoundOutcome::Inconsistent => incomplete = true,
-            RoundOutcome::TimedOut { .. } => {
-                misses.record(MissReason::EntryTimeout);
-                observations.push(miss_observation(sig.t0_ns));
-            }
-            RoundOutcome::Filled {
-                fill,
-                exit_ts,
-                reason: _,
-                partial: _,
-            } => {
-                let net = roundtrip_net_bps(&fill);
-                observations.push(FillObservation {
-                    day_cluster: day_index_ns(sig.t0_ns),
-                    net_bps: net.unwrap_or(0.0),
-                    filled: net.is_some(),
-                });
-                fills.push(fill);
-                blocked_until_ns = exit_ts;
-            }
-        }
-        bot.clear_inactive_orders(Some(asset_no));
-    }
-    bot.clear_inactive_orders(Some(asset_no));
-
-    Ok(ProfileRun {
-        signals: order.len() as u64,
-        fills,
-        misses,
-        observations,
-        incomplete,
-    })
-}
 
 /// Остаток позиции круга со знаком для `flatten_residual` (B4, ревью 23.09):
 /// `StrategyState::position()` — объём без знака (`entry − exit ≥ 0`) у обеих
@@ -3994,76 +3560,6 @@ pub fn drive_bounce_windowed<R: EventRows + ?Sized>(
 // таблицей профилей, вердикт G4.
 // ---------------------------------------------------------------------------
 
-/// Итог профиля: прогон на медианной и на p95 RTT, сравнение с таблицей
-/// профилей (по медианной — основной сценарий), вердикт G4 по обеим.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ProfileReport {
-    /// Идентификатор профиля — тот же, что в `profiles-<дата>.csv`.
-    pub profile_id: String,
-    /// Прогон на медианной замеренной RTT.
-    pub median: ProfileRun,
-    /// Прогон на p95 замеренной RTT.
-    pub p95: ProfileRun,
-    /// Сравнение реализованного `net_fill` (медианная RTT) с таблицей.
-    pub comparison: TableComparison,
-    /// Вердикт гейта G4.
-    pub g4: G4Verdict,
-}
-
-impl ProfileReport {
-    /// Строки профиля: заголовок, обе RTT-сценарии, сравнение, вердикт.
-    pub fn summary_lines(&self) -> Vec<String> {
-        let mut lines = Vec::with_capacity(10);
-        lines.push(format!("profile={}", self.profile_id));
-        lines.extend(self.median.summary_lines("median_rtt"));
-        lines.extend(self.p95.summary_lines("p95_rtt"));
-        lines.push(self.comparison.format_line());
-        lines.push(self.g4.to_string());
-        lines
-    }
-}
-
-/// Собрать отчёт профиля из двух готовых прогонов (медиана, p95) и
-/// (опциональной) строки таблицы профилей.
-pub fn build_profile_report(
-    profile_id: String,
-    median: ProfileRun,
-    p95: ProfileRun,
-    table: Option<TableEstimate>,
-) -> ProfileReport {
-    let comparison = compare_with_table(table, median.net_fill_bps());
-    let g4 = decide_g4(median.mean_net_bps(), p95.mean_net_bps());
-    ProfileReport {
-        profile_id,
-        median,
-        p95,
-        comparison,
-        g4,
-    }
-}
-
-/// Отчёт бэктеста на произвольное число профилей (история 32–34 спеки, done
-/// после сноса `c1`/`c2`/`verdict_cell`).
-#[derive(Debug, Clone, PartialEq)]
-pub struct BacktestReport {
-    pub profiles: Vec<ProfileReport>,
-}
-
-impl BacktestReport {
-    pub fn new(profiles: Vec<ProfileReport>) -> Self {
-        Self { profiles }
-    }
-
-    /// Строки всех профилей подряд — то, что печатает `commands::lob::backtest`
-    /// и что таск 13 читает в шапку шорт-листа.
-    pub fn summary_lines(&self) -> Vec<String> {
-        self.profiles
-            .iter()
-            .flat_map(ProfileReport::summary_lines)
-            .collect()
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Строитель `Backtest` крейта: движок целиком в одном месте.
 // ---------------------------------------------------------------------------
@@ -4100,6 +3596,7 @@ impl BacktestReport {
 ///
 /// Буфер последних сделок (`last_trades_capacity`) нужен только детектору
 /// пути (3); читает его `run_round`, сразу после чтения очищая.
+#[cfg(test)]
 pub fn build_backtest(
     events: &[Event],
     tick_size: f64,
@@ -4347,11 +3844,6 @@ impl SignalWindows {
     pub fn window_at(&self, t0_ns: i64) -> Option<&SignalWindow> {
         let i = self.windows.partition_point(|w| w.t0_ns < t0_ns);
         self.windows.get(i).filter(|w| w.t0_ns == t0_ns)
-    }
-
-    /// Окно с самой ранней стартовой строкой (база индекса удержания суток, TK-048 К-4).
-    pub fn earliest(&self) -> Option<&SignalWindow> {
-        self.windows.iter().min_by_key(|w| w.start)
     }
 
     pub fn len(&self) -> usize {

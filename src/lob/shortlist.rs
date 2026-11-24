@@ -30,8 +30,10 @@ const _: () = assert!(
 /// Корзины размера: кратность порога H3.
 pub const SIZE_LABELS: [&str; 3] = ["[1,2)", "[2,4)", "[4,inf)"];
 
+#[cfg(test)]
 /// Корзины времени жизни.
 pub const LIFETIME_LABELS: [&str; 3] = ["[0,1s)", "[1s,10s)", "[10s,inf)"];
 
+#[cfg(test)]
 /// Стороны.
 pub const SIDE_LABELS: [&str; 2] = ["bid", "ask"];

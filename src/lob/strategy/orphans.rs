@@ -20,6 +20,7 @@ impl StrategyState {
         self.gate_measure
     }
 
+    #[cfg(test)]
     /// F8c (К1): сколько раз новая партия сирот вытеснила живую прежнюю.
     pub fn orphan_overflow(&self) -> u64 {
         self.orphan_overflow
