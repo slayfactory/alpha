@@ -10,7 +10,7 @@ import argparse, collections, datetime, json, math, os, posixpath, re, shlex, su
 REQ_RE = re.compile(r"^L-\d{8}-\d{6}\.json$")
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
-REG = os.environ.get("LAUNCH_REGISTRY") or os.path.join(ROOT, "docs", "registry")   # на calc — снимок /data/launch/registry (только чтение)
+REG = os.environ.get("LAUNCH_REGISTRY") or os.path.join(ROOT, "docs", "archive", "registry")   # на calc — снимок /data/launch/registry (только чтение)
 sys.path.insert(0, os.path.join(ROOT, "tools", "registry"))
 
 
@@ -19,7 +19,7 @@ def load_config(path=None):
 
 
 def plan_rows(protocol="P-14", fraction=1):
-    """Клетки сетки (docs/registry/plan_cells.jsonl): hyp, hash, axes{}. fraction — число или список долей (TK-272: [1, 2] — F1 и F2);
+    """Клетки сетки (docs/archive/registry/plan_cells.jsonl): hyp, hash, axes{}. fraction — число или список долей (TK-272: [1, 2] — F1 и F2);
     одна пара (гипотеза, хеш) в нескольких долях — одна строка (первая доля)."""
     fr = {fraction} if isinstance(fraction, int) else set(fraction)
     out, seen = [], set()
@@ -431,7 +431,7 @@ def recent_runs(cfg=None, n=5):
 
 
 def hyp_list():
-    """[{id, family, title}] из docs/registry/hypotheses.jsonl."""
+    """[{id, family, title}] из docs/archive/registry/hypotheses.jsonl."""
     out = []
     for line in open(os.path.join(REG, "hypotheses.jsonl"), encoding="utf-8"):
         if line.strip():

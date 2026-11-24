@@ -1,8 +1,8 @@
-"""SQLite-слой реестра (TK-068): миграции, сборка из каноничных jsonl, загрузка клеток. Канон — docs/registry/*.jsonl (git)."""
+"""SQLite-слой реестра (TK-068): миграции, сборка из каноничных jsonl, загрузка клеток. Канон — docs/archive/registry/*.jsonl (git)."""
 import hashlib, json, os, re, sqlite3, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REGD = os.path.join(HERE, "..", "..", "docs", "registry")
+REGD = os.path.join(HERE, "..", "..", "docs", "archive", "registry")
 DB = os.path.join(HERE, "..", "..", "data", "registry.sqlite")
 MIG = os.path.join(HERE, "migrations")
 HYPRE = re.compile(r"Г-\d+[а-я]?|R[12]-\d+")

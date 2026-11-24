@@ -3,7 +3,7 @@
   python tools/registry/cellhash_reg.py map  [--out docs/findings/cellhash-map-2026-10-11.csv]
   python tools/registry/cellhash_reg.py plan <сетка.jsonl>   # строка = полный/частичный конфиг клетки (cellhash.normalize)
 Конфиг клетки Летописи собирается БЕЗ пересчёта данных. Набор — из `--set` командных файлов прогонов на calc (не из имени
-и не по умолчанию): пул TK-040 — docs/registry/files/tk040-sets-jan.txt (jall-jan-*.sh), e106-pop — tk115-delta-day.sh:38,
+и не по умолчанию): пул TK-040 — docs/archive/registry/files/tk040-sets-jan.txt (jall-jan-*.sh), e106-pop — tk115-delta-day.sh:38,
 g87-fresh — r2-gen.py:21. Исполнение — из тех же команд (busy-skip off, hold-step skip, prob:3, рtt В-68, h3 notional).
 Вселенная монет — версия пула прогона (+ исключения p12). map отказывает, если клетки с равным хешем разошлись в results."""
 import csv, json, os, re, sys, collections
@@ -11,7 +11,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import cellhash as ch
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
-REG = os.path.join(ROOT, "docs", "registry")
+REG = os.path.join(ROOT, "docs", "archive", "registry")
 F = os.path.join(ROOT, "docs", "findings")
 B1_SET = {"side": "bid", "min_age_s": 2700, "max_age_s": None, "ctx": "btc4h_max=-44.55", "min_flow_pct": None, "usd_min": None,
           "r1_born_shift_cbps_min": None, "signal": "approach", "frontrun_only": False, "driver": "setups", "lot": "usd:500x1",

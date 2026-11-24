@@ -7,9 +7,9 @@
 С dev-машины (PowerShell, `ssh calc`; в Git Bash `calc` не резолвится):
 
 1. Пакет: `launch/` + `registry/` (py) + `compute/hyp_stack.py` + `docs/research/spec-v227-2026-10-12.md` +
-   `docs/findings/p12-cells-{2026-10-06,ext-2026-10-07}.csv` (читает cellhash_reg) → `/opt/alpha-launch/{tools/launch,tools/registry,tools/compute,docs/research,docs/findings}` (tar по ssh, владелец root); снимок Летописи `docs/registry/*.jsonl` и `files/` →
+   `docs/findings/p12-cells-{2026-10-06,ext-2026-10-07}.csv` (читает cellhash_reg) → `/opt/alpha-launch/{tools/launch,tools/registry,tools/compute,docs/research,docs/findings}` (tar по ssh, владелец root); снимок Летописи `docs/archive/registry/*.jsonl` и `files/` →
    `/data/launch/registry/` (только чтение; обновление = повторный tar, кэш сбрасывается по mtime results.jsonl);
-   `ln -s /data/launch/registry /opt/alpha-launch/docs/registry` (cellhash_reg/db читают `docs/registry` от корня пакета).
+   `ln -s /data/launch/registry /opt/alpha-launch/docs/archive/registry` (cellhash_reg/db читают `docs/archive/registry` от корня пакета).
 2. Пользователь и каталоги: `useradd --system --no-create-home --shell /usr/sbin/nologin alpha-launch;
    install -d -m 755 -o root -g root /data/launch /data/launch/out; install -d -m 755 -o alpha-launch -g alpha-launch /data/launch/requests`.
 3. Токен: `install -d -m 755 /etc/alpha-launch && head -c 32 /dev/urandom | base64 | tr -d '/+=\n' > /etc/alpha-launch/token && chown alpha-launch /etc/alpha-launch/token && chmod 400 /etc/alpha-launch/token`

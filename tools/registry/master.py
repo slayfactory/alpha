@@ -1,5 +1,5 @@
 """Летопись — мастер плана (TK-187, В-225): слои params / stacks / hyp_axes / rules / plan_cells / sieve в БД.
-Канон — docs/registry/*.jsonl (git); БД собирается из него. Команды (через registry.py):
+Канон — docs/archive/registry/*.jsonl (git); БД собирается из него. Команды (через registry.py):
   load-axes <каталог>            params.csv, stacks.csv, hyp_axes.csv, rules.csv (';', UTF-8) -> jsonl канона
   plan --protocol P-14 --fraction k   сетка из hyp_axes (k=2 — окрестность зоны F1 по П-14 §11.2, k>=3 — окрестность плато из sieve), дедуп по хешу против results
   sieve --protocol P-14 --fraction k --stats f.csv   правило §4 (числа — rules) -> sieve.jsonl
