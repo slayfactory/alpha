@@ -28,6 +28,8 @@ TOKEN = re.compile(r"docs/[^\s)\]>\"'`,;|*{}<\\]+")
 MDLINK = re.compile(r"(\]\(|src=\"|href=\")([^)\"#\s]+)")
 NO_REWRITE = ("data/", "src/", "tools/", "docs/registry/", "docs/plan/runs.csv")  # данные и код: текст не правим (src — вывод --help, tools — чужие правки TK-703); документ, на который они ссылаются, остаётся
 
+SNAPSHOTS = "docs/archive/chronicle-2026-11-20/"  # снимки md до переноса в БД летописи: байт в байт, ссылки не правим (и они не держат файлы)
+
 
 def git(*a):
     return subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=True).stdout
@@ -95,7 +97,7 @@ def build(args):
 
 def rewrite(f, t, moves, fset, freeze):
     """Новый текст файла f (пути docs/… и относительные ссылки)."""
-    if f in freeze or f.startswith(NO_REWRITE):
+    if f in freeze or f.startswith(NO_REWRITE) or f.startswith(SNAPSHOTS):
         return t
     f_new = moves.get(f, f)
 
