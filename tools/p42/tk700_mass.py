@@ -345,7 +345,7 @@ def cmd_run(a):
     if row and (row[0] != a.cellset or row[1] != int(a.dry)):
         raise SystemExit("run-id %s уже занят набором %s (dry=%s)" % (a.run_id, row[0], row[1]))
     if not row:
-        db.execute("INSERT INTO mass_run VALUES(?,?,?,?,?,?,?,?)", (a.run_id, a.cellset, int(a.dry), ",".join(wins), md5, json.dumps(params), now(), "running"))
+        db.execute("INSERT OR IGNORE INTO mass_run VALUES(?,?,?,?,?,?,?,?)", (a.run_id, a.cellset, int(a.dry), ",".join(wins), md5, json.dumps(params), now(), "running"))
         db.commit()
     part_k, part_n = (int(x) for x in a.part.split("/"))
     if not (part_n >= 1 and 0 <= part_k < part_n):
