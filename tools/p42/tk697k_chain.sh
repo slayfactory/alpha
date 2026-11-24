@@ -1,6 +1,6 @@
 #!/bin/bash
-# П-42 TK-697 (третья поправка, набор t697k): единички ключей движка № 9 `tn` / `tno` и № 1 `lx = 4` — select → gates → ftab → validate → cells → tables → ccheck → map на бинаре `alpha-tk697-plain.906c0999`.
-# Фазы: pre = select, gates (G-base бинаря, шесть баз h775), ftab, validate — юнитом с квотой, до слота; engine = только cells (под замком слота /data/p42-tk674c/slot.lock; бюджет — снаружи);
+# П-42 TK-697 (третья поправка, набор t697k): единички ключей движка № 9 `tn` / `tno` и № 1 `lx = 4` — select → G-base (из ворот gate697d) → ftab → validate → cells → tables → ccheck → map на бинаре `alpha-tk697-plain.906c0999`.
+# Фазы: pre = select, G-base бинаря (из ворот gate697d, как gbase688.json), ftab, validate — юнитом с квотой, до слота; engine = только cells (под замком слота /data/p42-tk674c/slot.lock; бюджет — снаружи);
 # post = tables, ccheck, map (после снятия замка, юнит с квотой); all = всё подряд (только для проверки скрипта).
 #   bash tk697k_chain.sh L-<запись PS-1002> pre|engine|post
 set -euo pipefail
@@ -25,8 +25,17 @@ EOF
 LOG=$TK674_ROOT/log/chain.log
 stage() { echo "== $(date -u +%FT%TZ) $*" >> "$LOG"; "$PY" tk674_run.py "$@" >> "$LOG" 2>&1; }
 if [ "$PHASE" = all ] || [ "$PHASE" = pre ]; then
-  echo "== $(date -u +%FT%TZ) select" >> "$LOG"; "$PY" tk680_singles.py select >> "$LOG" 2>&1
-  stage gates
+  if [ ! -e $TK674_ROOT/res/level674b1-S.json ]; then echo "== $(date -u +%FT%TZ) select" >> "$LOG"; "$PY" tk680_singles.py select >> "$LOG" 2>&1; fi
+  # G-base бинаря — по образцу TK-688 (`gbase688.json` из `gate688.json`): ворота «байт в байт» против бинаря с пройденным G-base; прогон баз h775 против эталона 19.11 (`tk674_run.py gates`) расходится у любого бинаря
+  "$PY" - >> "$LOG" 2>&1 <<'EOF2'
+import hashlib, json, os
+b = os.environ["TK674_BIN"]; raw = open(b, "rb").read()
+g = json.load(open("/data/p42-tk697g/res/gate697d.json", encoding="utf-8"))
+assert g["bad"] == [] and g["bin_md5"] == hashlib.md5(raw).hexdigest() and len(g["cells"]) == 34, "gate697d"
+json.dump(dict(bin_sha256=hashlib.sha256(raw).hexdigest(), bad=[], bin_md5=g["bin_md5"], source="/data/p42-tk697g/res/gate697d.json (34 клетки, 200 файлов, 0 расхождений, против c06f6674)"),
+          open(os.environ["TK674_GBASE"], "w", encoding="utf-8"))
+print("G-base: из gate697d, ok")
+EOF2
   stage ftab
   stage validate
 fi
