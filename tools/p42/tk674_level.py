@@ -27,6 +27,7 @@ OVERLAY_CLASSES = {x for x in os.environ.get("TK674_OVERLAY_CLASSES", "bd").spli
 MAPSFX = os.environ.get("TK674_MAPSFX", "")         # `map`: добавка к имени файла карты (BATCH + MAPSFX), чтобы не затирать прежнюю карту; нижний уровень следующей карты — `TK674_LOWTAG=<BATCH><MAPSFX>`
 EXCL_LEVEL = os.environ.get("TK674_EXCLUDE_LEVEL", "")                       # `split`, ступень 2 (PS-1000): файл уровня (объединение ступени 1) — его комбинации не берутся; нумерация `skip` продолжает его (skip = число его комбинаций)
 EXCL_AXES = {x for x in os.environ.get("TK674_EXCLUDE_AXES", "").split(",") if x}   # `split`: комбинации с осью-столбцом с таким базовым именем (до «.») не берутся (дефект f12, PS-999 п. 3)
+EXCL_PREFIX = tuple(x for x in os.environ.get("TK674_EXCLUDE_PREFIX", "").split(",") if x)   # `split`: комбинации с осью, чьё базовое имя начинается с такого префикса (bd_), не берутся (приказ критика 24.11: bd-четвёрки ступени 2 не считаем, В-183)
 SPLIT_OUT = os.environ.get("TK674_SPLIT_OUT", "")                           # `split`: добавка к имени сводки split674<SUF2><n><добавка>.json (сводка ступени 1 не затирается)
 
 
@@ -164,6 +165,11 @@ def fits(cur, n_new, cap):
     return not cur["taken"] or cur["n_new"] + n_new <= cap
 
 
+def stage2_filter(cand, exn, axes, prefix):
+    """Ранг ступени 2: без комбинаций ступени 1 (`exn` — множества имён) и без комбинаций с осью, чьё базовое имя (до «.») в `axes` или начинается с `prefix` (кортеж; пустой — не действует). Порядок ранга не меняется."""
+    return [c for c in cand if frozenset(c[1]) not in exn and not any(a_.split(".")[0] in axes or (prefix and a_.split(".")[0].startswith(prefix)) for a_ in c[1])]
+
+
 def cmd_split(n, cap, tag0="r"):
     """Остаток уровня n за потолком `select` — партии с чистыми границами (PS-990): комбинации в том же порядке, что `select` (первые `taken` — из файла уровня, совпадение проверяется),
     дальше подряд целыми комбинациями, пока новых клеток (нет в БД и нет в предыдущих партиях) ≤ cap; комбинация крупнее cap — своя партия. Каждая клетка — ровно в одной партии.
@@ -179,9 +185,13 @@ def cmd_split(n, cap, tag0="r"):
             ex = json.load(open(EXCL_LEVEL, encoding="utf-8"))
             exn = {frozenset(x["names"]) for x in ex["taken"]}
             n_el = len(cand)
-            cand = [c for c in cand if frozenset(c[1]) not in exn and not any(a_.split(".")[0] in EXCL_AXES for a_ in c[1])]
+            n_bd = sum(1 for c in cand if frozenset(c[1]) not in exn and EXCL_PREFIX and any(a_.split(".")[0].startswith(EXCL_PREFIX) for a_ in c[1]))
+            n_f12 = sum(1 for c in cand if frozenset(c[1]) not in exn and any(a_.split(".")[0] in EXCL_AXES for a_ in c[1]))
+            full = cand
+            cand = stage2_filter(cand, exn, EXCL_AXES, EXCL_PREFIX)
             nt, start, seen = len(ex["taken"]), 0, set()
-            print("== %s: eligible %d, ступень 1 %d, без осей %s и ступени 1 — %d" % (side, n_el, nt, ",".join(sorted(EXCL_AXES)) or "-", len(cand)), flush=True)
+            print("== %s: eligible %d, ступень 1 %d, с осью %s... %d, с осью EXCL_AXES %d (пересекаются), без них и без ступени 1 — %d; первая взятая — ранг %d" % (
+                side, n_el, nt, ",".join(EXCL_PREFIX), n_bd, n_f12, len(cand), full.index(cand[0]) + 1 if cand else 0), flush=True)
         else:
             base = json.load(open(level_file(n, side), encoding="utf-8"))
             nt = start = len(base["taken"])
