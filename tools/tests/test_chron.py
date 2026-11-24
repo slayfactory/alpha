@@ -17,6 +17,7 @@ TOOLS = Path(__file__).resolve().parent.parent
 ROOT = TOOLS.parent
 sys.path.insert(0, str(TOOLS))
 import chron  # noqa: E402
+import chron_site  # noqa: E402
 
 
 def entry(title="заголовок", **kw):
@@ -464,7 +465,7 @@ class TestMetrics(Base):
         self.assertEqual(self.st.metrics_coverage()[0]["outcome_gap"], 0)
         rc, out = self.cli("show", "L-%d" % a)
         self.assertIn("снята: числа добавлены (было «нет чисел»): предрегистрация — итога нет", out)
-        page = chron.Site(self.db, None).entry(a)
+        page = chron_site.Site(self.db, None).entry(a)
         self.assertIn("снята: числа добавлены · <s>нет чисел: предрегистрация", page)
         self.assertNotIn("<b>Нет чисел", page)
         gc.collect()  # связь Site (ro) держит файл на Windows
@@ -492,7 +493,7 @@ class TestMetrics(Base):
         self.assertEqual(self.st.check_db(), [])
         rc, out = self.cli("show", "L-%d" % a)
         self.assertIn("(строка 65) → #", out)
-        page = chron.Site(self.db, None).entry(a)
+        page = chron_site.Site(self.db, None).entry(a)
         self.assertIn("заменено строк: 1", page)
         gc.collect()
 
@@ -694,7 +695,7 @@ class TestCells(Base):
         self.assertEqual(self.st.metrics_facets()["uni"], ["h775"])
         self.assertEqual([c["rows"] for c in self.st.metrics_coverage() if c["project"] == "П-42"], [1])
         self.assertEqual(self.st.get("L-%d" % b)["metrics_total"], 4)
-        site = chron.Site(self.db, None)
+        site = chron_site.Site(self.db, None)
         self.assertIn("4 строк", site.metrics_page({"cells": ["1"]}))
         self.assertIn("1 строк", site.metrics_page({}))
         self.assertIn("Числа (4)", site.entry(b))
@@ -818,6 +819,140 @@ class TestRelink(Base):
         self.assertEqual(st.file_moves(), [])
         self.assertEqual(st.check_db(), [])
         st.c.close()
+
+
+class TestBackup(Base):
+    """TK-704: ночная копия — летопись без клеток бэктеста; полная копия с клетками — в заданный день недели или по --full."""
+
+    def setUp(self):
+        super().setUp()
+        self.out = os.path.join(self.tmp.name, "bk")
+        e = int(self.st.add_entry(entry("запись с числами", body="текст"), ["TK-646"])[2:])
+        self.st.add_metrics([mrow(e)])
+        self.st.cells_put(e, [crow(i) for i in range(5)])
+
+    def test_slim_backup_without_cells(self):
+        rc, out = self.cli("backup", "--dir", self.out, "--full-day", "-1")
+        self.assertEqual(rc, 0, out)
+        stamp = sorted(Path(self.out).glob("chron-2*.sqlite"))
+        self.assertEqual(len(stamp), 1)
+        self.assertEqual(list(Path(self.out).glob("chron-full-*")), [])
+        c = sqlite3.connect(str(stamp[0]))
+        self.assertEqual(c.execute("SELECT count(*) FROM metric").fetchone()[0], 1)  # 1 «человеческая» строка, 5 клеток не взято
+        self.assertEqual(c.execute("SELECT count(*) FROM metric WHERE ckey IS NOT NULL").fetchone()[0], 0)
+        self.assertEqual(c.execute("SELECT count(*) FROM entry").fetchone()[0], 1)
+        self.assertEqual(c.execute("PRAGMA user_version").fetchone()[0], chron.SCHEMA_VERSION)
+        self.assertEqual(c.execute("PRAGMA journal_mode").fetchone()[0], "delete")
+        self.assertEqual(c.execute("SELECT count(*) FROM fts").fetchone()[0], 1)
+        c.close()
+        copy = chron.Store(chron.connect(str(stamp[0])))  # копия — рабочая летопись: триггеры, FTS, снимки
+        self.assertEqual(copy.check_db(), [])
+        copy.c.close()
+        lines = [json.loads(x) for x in stamp[0].with_suffix(".jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(sum(1 for x in lines if x["t"] == "metric"), 1)
+
+    def test_full_backup_and_retention(self):
+        for d in ("2026-01-01", "2026-01-02", "2026-01-03"):
+            for pre in ("chron-", "chron-full-"):
+                (Path(self.out)).mkdir(exist_ok=True)
+                (Path(self.out) / (pre + d + ".sqlite")).write_bytes(b"x")
+                (Path(self.out) / (pre + d + ".jsonl")).write_bytes(b"x")
+        rc, out = self.cli("backup", "--dir", self.out, "--full", "--keep", "2", "--keep-full", "2")
+        self.assertEqual(rc, 0, out)
+        names = sorted(p.name for p in Path(self.out).glob("*.sqlite"))
+        self.assertEqual(len([n for n in names if n.startswith("chron-full-")]), 2)
+        self.assertEqual(len([n for n in names if not n.startswith("chron-full-")]), 2)
+        self.assertNotIn("chron-2026-01-01.sqlite", names)  # самая старая ночная ушла вместе с JSONL
+        self.assertFalse((Path(self.out) / "chron-2026-01-01.jsonl").exists())
+        full = sorted(Path(self.out).glob("chron-full-2*.sqlite"))[-1]
+        c = sqlite3.connect(str(full))
+        self.assertEqual(c.execute("SELECT count(*) FROM metric WHERE ckey IS NOT NULL").fetchone()[0], 5)  # полная — с клетками
+        c.close()
+
+
+class TestOptimize(Base):
+    """TK-704: индексы под запросы check / клеток; `optimize` идемпотентен, данные и триггеры не трогает."""
+
+    PLANS = (  # запрос → индекс, который его обслуживает
+        ("SELECT DISTINCT src, src_commit FROM metric WHERE ckey IS NULL", "metric_human"),
+        ("SELECT count(*) FROM metric WHERE ckey IS NULL AND from_text = 0 AND src NOT LIKE 'docs/%'", "metric_human"),
+        ("SELECT count(*) FROM metric WHERE (ckey IS NULL) <> (bin IS NULL) OR (ckey IS NOT NULL AND (side IS NULL OR uni IS NULL OR win IS NULL))", "metric_cell2"),
+        ("SELECT * FROM metric WHERE cell = 'L_n24' AND side = 'long'", "metric_cellname"),
+        ("SELECT * FROM metric WHERE side = 'long' AND uni = 'h775' AND win = 'all' AND ckey = 'k'", "metric_cell2"),
+    )
+
+    def setUp(self):
+        super().setUp()
+        e = int(self.st.add_entry(entry("запись с числами", body="текст"), ["TK-646"])[2:])
+        self.st.add_metrics([mrow(e)])
+        self.st.cells_put(e, [crow(i) for i in range(5)])
+
+    def names(self):
+        return {x[0] for x in self.st.c.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+
+    def as_old(self):
+        """БД, как живая до TK-704: без новых индексов, с metric_cell."""
+        for n, _ in chron.MAINT_INDEXES:
+            self.st.c.execute("DROP INDEX %s" % n)
+        self.st.c.execute("CREATE INDEX metric_cell ON metric(side, uni, win, ckey)")
+
+    def snapshot(self):
+        return [tuple(r) for r in self.st.c.execute("SELECT id, h, usd, ckey, bin FROM metric ORDER BY id")]
+
+    def test_new_db_has_indexes_without_old_cell_index(self):
+        n = self.names()
+        self.assertTrue({m for m, _ in chron.MAINT_INDEXES} <= n)
+        self.assertNotIn("metric_cell", n)
+        self.assertEqual(self.st.optimize()["steps"], [[m, "есть", 0.0] for m, _ in chron.MAINT_INDEXES])  # нечего делать
+
+    def test_optimize_old_db(self):
+        self.as_old()
+        before = self.snapshot()
+        dry = self.st.optimize(dry_run=True)
+        self.assertEqual([s[:2] for s in dry["steps"]], [[m, "создастся"] for m, _ in chron.MAINT_INDEXES] + [["metric_cell", "удалится"]])
+        self.assertEqual(self.names() & {m for m, _ in chron.MAINT_INDEXES}, set())  # dry-run ничего не меняет
+        self.assertIn("metric_cell", self.names())
+        done = self.st.optimize()
+        self.assertEqual([s[:2] for s in done["steps"]], [[m, "создан"] for m, _ in chron.MAINT_INDEXES] + [["metric_cell", "удалён"]])
+        self.assertNotIn("metric_cell", self.names())
+        self.assertEqual(self.snapshot(), before)  # строки не тронуты
+        self.assertEqual(self.st.optimize()["steps"], [[m, "есть", 0.0] for m, _ in chron.MAINT_INDEXES])  # повтор — ничего
+        for sql in ("UPDATE metric SET usd=0", "DELETE FROM metric"):
+            with self.assertRaises(sqlite3.DatabaseError):
+                self.st.c.execute(sql)
+        self.assertEqual(self.st.check_db(), [])
+
+    def test_optimize_keeps_old_index_if_replacement_missing(self):
+        self.as_old()
+        chron.MAINT_DROP, keep = (("metric_cell", "нет_такого_индекса"),), chron.MAINT_DROP
+        try:
+            self.st.optimize()
+        finally:
+            chron.MAINT_DROP = keep
+        self.assertIn("metric_cell", self.names())
+
+    def test_queries_use_indexes(self):
+        for sql, idx in self.PLANS:
+            plan = " | ".join(r[3] for r in self.st.c.execute("EXPLAIN QUERY PLAN " + sql))
+            self.assertIn(idx, plan, sql)
+
+    def test_check_db_per_table_and_full(self):
+        self.assertEqual(self.st.check_db(), [])
+        self.assertEqual(self.st.check_db(full=True), [])
+        self.assertEqual(self.st.integrity_issues(), [])
+        self.assertNotIn("integrity_check metric", " ".join(self.st.integrity_issues()))
+
+    def test_cli_optimize(self):
+        self.as_old()
+        rc, out = self.cli("optimize", "--dry-run")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("создастся", out)
+        self.assertIn("(dry-run)", out)
+        self.assertEqual(self.names() & {m for m, _ in chron.MAINT_INDEXES}, set())
+        rc, out = self.cli("optimize")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("metric_cell2", out)
+        self.assertIn("удалён", out)
 
 
 class TestMetricFiles(unittest.TestCase):
