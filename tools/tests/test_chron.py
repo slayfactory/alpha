@@ -870,6 +870,91 @@ class TestBackup(Base):
         c.close()
 
 
+class TestOptimize(Base):
+    """TK-704: индексы под запросы check / клеток; `optimize` идемпотентен, данные и триггеры не трогает."""
+
+    PLANS = (  # запрос → индекс, который его обслуживает
+        ("SELECT DISTINCT src, src_commit FROM metric WHERE ckey IS NULL", "metric_human"),
+        ("SELECT count(*) FROM metric WHERE ckey IS NULL AND from_text = 0 AND src NOT LIKE 'docs/%'", "metric_human"),
+        ("SELECT count(*) FROM metric WHERE (ckey IS NULL) <> (bin IS NULL) OR (ckey IS NOT NULL AND (side IS NULL OR uni IS NULL OR win IS NULL))", "metric_cell2"),
+        ("SELECT * FROM metric WHERE cell = 'L_n24' AND side = 'long'", "metric_cellname"),
+        ("SELECT * FROM metric WHERE side = 'long' AND uni = 'h775' AND win = 'all' AND ckey = 'k'", "metric_cell2"),
+    )
+
+    def setUp(self):
+        super().setUp()
+        e = int(self.st.add_entry(entry("запись с числами", body="текст"), ["TK-646"])[2:])
+        self.st.add_metrics([mrow(e)])
+        self.st.cells_put(e, [crow(i) for i in range(5)])
+
+    def names(self):
+        return {x[0] for x in self.st.c.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+
+    def as_old(self):
+        """БД, как живая до TK-704: без новых индексов, с metric_cell."""
+        for n, _ in chron.MAINT_INDEXES:
+            self.st.c.execute("DROP INDEX %s" % n)
+        self.st.c.execute("CREATE INDEX metric_cell ON metric(side, uni, win, ckey)")
+
+    def snapshot(self):
+        return [tuple(r) for r in self.st.c.execute("SELECT id, h, usd, ckey, bin FROM metric ORDER BY id")]
+
+    def test_new_db_has_indexes_without_old_cell_index(self):
+        n = self.names()
+        self.assertTrue({m for m, _ in chron.MAINT_INDEXES} <= n)
+        self.assertNotIn("metric_cell", n)
+        self.assertEqual(self.st.optimize()["steps"], [[m, "есть", 0.0] for m, _ in chron.MAINT_INDEXES])  # нечего делать
+
+    def test_optimize_old_db(self):
+        self.as_old()
+        before = self.snapshot()
+        dry = self.st.optimize(dry_run=True)
+        self.assertEqual([s[:2] for s in dry["steps"]], [[m, "создастся"] for m, _ in chron.MAINT_INDEXES] + [["metric_cell", "удалится"]])
+        self.assertEqual(self.names() & {m for m, _ in chron.MAINT_INDEXES}, set())  # dry-run ничего не меняет
+        self.assertIn("metric_cell", self.names())
+        done = self.st.optimize()
+        self.assertEqual([s[:2] for s in done["steps"]], [[m, "создан"] for m, _ in chron.MAINT_INDEXES] + [["metric_cell", "удалён"]])
+        self.assertNotIn("metric_cell", self.names())
+        self.assertEqual(self.snapshot(), before)  # строки не тронуты
+        self.assertEqual(self.st.optimize()["steps"], [[m, "есть", 0.0] for m, _ in chron.MAINT_INDEXES])  # повтор — ничего
+        for sql in ("UPDATE metric SET usd=0", "DELETE FROM metric"):
+            with self.assertRaises(sqlite3.DatabaseError):
+                self.st.c.execute(sql)
+        self.assertEqual(self.st.check_db(), [])
+
+    def test_optimize_keeps_old_index_if_replacement_missing(self):
+        self.as_old()
+        chron.MAINT_DROP, keep = (("metric_cell", "нет_такого_индекса"),), chron.MAINT_DROP
+        try:
+            self.st.optimize()
+        finally:
+            chron.MAINT_DROP = keep
+        self.assertIn("metric_cell", self.names())
+
+    def test_queries_use_indexes(self):
+        for sql, idx in self.PLANS:
+            plan = " | ".join(r[3] for r in self.st.c.execute("EXPLAIN QUERY PLAN " + sql))
+            self.assertIn(idx, plan, sql)
+
+    def test_check_db_per_table_and_full(self):
+        self.assertEqual(self.st.check_db(), [])
+        self.assertEqual(self.st.check_db(full=True), [])
+        self.assertEqual(self.st.integrity_issues(), [])
+        self.assertNotIn("integrity_check metric", " ".join(self.st.integrity_issues()))
+
+    def test_cli_optimize(self):
+        self.as_old()
+        rc, out = self.cli("optimize", "--dry-run")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("создастся", out)
+        self.assertIn("(dry-run)", out)
+        self.assertEqual(self.names() & {m for m, _ in chron.MAINT_INDEXES}, set())
+        rc, out = self.cli("optimize")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("metric_cell2", out)
+        self.assertIn("удалён", out)
+
+
 class TestMetricFiles(unittest.TestCase):
     """chron_metrics: строки чисел из JSON / CSV / таблиц md на маленьких файлах."""
 

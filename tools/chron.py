@@ -19,6 +19,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import time
 import unicodedata
 from pathlib import Path
 from urllib.parse import quote
@@ -162,6 +163,14 @@ ALTER TABLE metric ADD COLUMN ckey TEXT;
 ALTER TABLE metric ADD COLUMN bin TEXT;
 CREATE INDEX metric_cell ON metric(side, uni, win, ckey);
 """}
+# индексы под реальные запросы к metric (TK-704): без них `check` читал всю таблицу (4,4 ГБ) четыре раза. Не версия схемы: только индексы, строки и триггеры не
+# затронуты; `optimize` и создание новой БД ставят их `IF NOT EXISTS`. metric_cell2 заменяет metric_cell (тот же префикс + ckey, bin → check_db покрывающий).
+MAINT_INDEXES = (
+    ("metric_human", "CREATE INDEX IF NOT EXISTS metric_human ON metric(src, src_commit, from_text) WHERE ckey IS NULL"),   # metrics_sources, n_m в check_db
+    ("metric_cellname", "CREATE INDEX IF NOT EXISTS metric_cellname ON metric(cell, side, uni, win)"),                      # поиск клетки по имени (tk684 / tk698)
+    ("metric_cell2", "CREATE INDEX IF NOT EXISTS metric_cell2 ON metric(side, uni, win, ckey, bin)"),                      # cells_lookup / cells_count / n_c в check_db
+)
+MAINT_DROP = (("metric_cell", "metric_cell2"),)   # (лишний индекс, индекс, который его заменяет): удаляется только когда заменяющий есть
 # влияние осей на прибыль и просадку (TK-693, В-179): результаты разбора TK-689 по прогонам; таблицы только добавляются
 INFL_MET = ("n", "usd", "mean", "sh", "dd", "ddp", "gap", "rr")      # метрики клетки: сделок, Σ $, $/сд., Шарп, просадка $ / % маржи, перехай, R:R
 INFL_DDL = """
@@ -375,6 +384,7 @@ def connect(path, ro=False):
                 for stmt in split_sql(SCHEMA) + [x for v in sorted(MIGRATE) for x in split_sql(MIGRATE[v])]:
                     conn.execute(stmt)
                 conn.execute(FTS_SQL)
+                maint_apply(conn)
                 conn.execute("PRAGMA user_version=%d" % SCHEMA_VERSION)
             conn.execute("COMMIT")
         v = conn.execute("PRAGMA user_version").fetchone()[0]
@@ -390,6 +400,29 @@ def connect(path, ro=False):
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+def maint_apply(conn, dry_run=False):
+    """Индексы MAINT_INDEXES — каждый отдельной транзакцией (окно блокировки записи = сборка одного индекса; соединение в autocommit), затем лишние из MAINT_DROP.
+    Повтор ничего не меняет. → [(имя, действие, секунд)]; действие: есть / создан / удалён, при dry_run — создастся / удалится (секунды 0)."""
+    have = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+    out = []
+    for name, ddl in MAINT_INDEXES:
+        if name in have:
+            out.append((name, "есть", 0.0))
+            continue
+        t0 = time.monotonic()
+        if not dry_run:
+            conn.execute(ddl)
+        out.append((name, "создастся" if dry_run else "создан", round(time.monotonic() - t0, 1)))
+        have.add(name)
+    for old, new in MAINT_DROP:
+        if old in have and new in have:
+            t0 = time.monotonic()
+            if not dry_run:
+                conn.execute("DROP INDEX %s" % old)
+            out.append((old, "удалится" if dry_run else "удалён", round(time.monotonic() - t0, 1)))
+    return out
 
 
 def split_sql(script):
@@ -1219,11 +1252,31 @@ class Store:
     def metrics_sources(self):
         return [list(r) for r in self.c.execute("SELECT DISTINCT src, src_commit FROM metric WHERE ckey IS NULL UNION SELECT DISTINCT src, NULL FROM metric_gap WHERE src IS NOT NULL")]
 
-    def check_db(self):
+    def optimize(self, dry_run=False):
+        """Индексы под запросы check / cells / поиска (MAINT_INDEXES) + удаление заменённого metric_cell. Идемпотентно; запись на время сборки одного индекса ждёт
+        (на 4,7 ГБ — 40–70 с на индекс при 25 % CPU), поэтому — в тихое окно. → {шаги: [(имя, действие, с)], МБ до, МБ после}."""
+        size = lambda: self.c.execute("PRAGMA page_count").fetchone()[0] * self.c.execute("PRAGMA page_size").fetchone()[0] / 1e6
+        before = size()
+        steps = maint_apply(self.c, dry_run)
+        return {"steps": [list(s) for s in steps], "mb_before": round(before, 1), "mb_after": round(size(), 1)}
+
+    def integrity_issues(self, full=False):
+        """Целостность страниц и индексов. По умолчанию — по таблицам без `metric` (1,5 с; таблица клеток — 218 из 220 с `integrity_check` всей БД);
+        `full` и SQLite < 3.33 — вся БД. Полная проверка каждую неделю — в полной копии (`backup`)."""
+        if full or sqlite3.sqlite_version_info < (3, 33, 0):
+            names = [None]
+        else:
+            names = [r[0] for r in self.c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> 'metric' ORDER BY name")]
+        out = []
+        for n in names:
+            res = self.c.execute("PRAGMA integrity_check" + ("" if n is None else '("%s")' % n.replace('"', '""'))).fetchone()[0]
+            if res != "ok":
+                out.append("integrity_check%s: %s" % ("" if n is None else " " + n, res))
+        return out
+
+    def check_db(self, full=False):
         """Внутренняя целостность: битые ссылки (кроме commit/file — их проверяет клиент по git), триггеры, FTS, снимки md."""
-        issues = []
-        if self.c.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-            issues.append("integrity_check: не ok")
+        issues = self.integrity_issues(full)
         trig = {r[0] for r in self.c.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
         for t in ("entry_immutable", "entry_nodelete", "psec_locked", "psec_nodelete", "link_nodelete", "link_noupdate",
                   "psec_flag_noupdate", "psec_flag_nodelete", "metric_noupdate", "metric_nodelete", "psec_num_noupdate", "psec_num_nodelete",
@@ -1890,7 +1943,7 @@ def rpc_main():
     os.environ.setdefault("CHRON_DB", SRV_DB)
     try:
         if req["op"] not in RO_OPS | {"add_entry", "add_psec", "edit_psec", "lock_psec", "flag_psec", "num_psec", "add_metrics", "add_gaps", "add_metric_fixes", "cells_put", "sync_kb", "import_docs",
-                                      "new_protocol", "relink"}:
+                                      "new_protocol", "relink", "optimize"}:
             raise ChronError("операция %s недоступна" % req["op"])
         res = {"ok": call(req["op"], *req["args"], **req["kw"])}
     except (ChronError, sqlite3.Error) as e:
@@ -2346,7 +2399,7 @@ def cmd_sync_kb(a):
 
 def cmd_check(a):
     """Целостность: БД (битые ссылки на записи/разделы/протоколы/карточки, триггеры, FTS, снимки) + коммиты и файлы по git. Код 1 при ошибках."""
-    issues = list(call("check_db"))
+    issues = list(call("check_db", full=bool(a.full)))
     root = repo_root()
     links = call("links_all")
     gitl = [(s, d) for s, d, _ in links if node_kind(d) in ("commit", "file")]
@@ -2407,6 +2460,16 @@ def cmd_relink(a):
     if not a.dry_run:
         r = call("relink", [list(p) for p in pairs], a.reason, author())
         print("записано переносов новых %d, уже были %d" % (r["new"], r["same"]))
+    return 0
+
+
+def cmd_optimize(a):
+    """Индексы под запросы (TK-704): создаются недостающие и удаляется заменённый. Каждый индекс — отдельная транзакция, на время сборки запись в БД ждёт
+    (окно ≈ 1 мин на индекс на 4,7 ГБ) — запускать в тихое окно, когда писатели не идут. `--dry-run` — только что будет сделано."""
+    r = call("optimize", dry_run=bool(a.dry_run))
+    for name, what, secs in r["steps"]:
+        print("%-16s %-9s%s" % (name, what, "" if what in ("есть", "создастся", "удалится") else " %.1f с" % secs))
+    print("БД: %.1f → %.1f МБ%s" % (r["mb_before"], r["mb_after"], " (dry-run)" if a.dry_run else ""))
     return 0
 
 
@@ -2641,7 +2704,12 @@ def main(argv=None):
     s.add_argument("path")
     s.set_defaults(fn=cmd_export)
     sp.add_parser("sync-kb", help="обновить узлы kb (карточки) в БД").set_defaults(fn=cmd_sync_kb)
-    sp.add_parser("check", help="целостность и битые ссылки; код 1 при ошибках").set_defaults(fn=cmd_check)
+    s = sp.add_parser("check", help="целостность и битые ссылки; код 1 при ошибках")
+    s.add_argument("--full", action="store_true", help="integrity_check всей БД (с таблицей клеток ≈ 4 мин); по умолчанию — таблицы без неё")
+    s.set_defaults(fn=cmd_check)
+    s = sp.add_parser("optimize", help="индексы под запросы check / клеток (TK-704); запись ждёт на время сборки — в тихое окно")
+    s.add_argument("--dry-run", action="store_true", help="что будет сделано, без изменений")
+    s.set_defaults(fn=cmd_optimize)
     sp.add_parser("stats").set_defaults(fn=cmd_stats)
     s = sp.add_parser("metrics", help="числа записей (сторона × клетка × вселенная × окно): фильтры, сортировка, --coverage")
     s.add_argument("--entry", help="L-N")
