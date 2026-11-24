@@ -56,6 +56,8 @@ def engine_axes(side):
         return grid_axes(side)
     if SET in ("hist", "ctx", "t697", "t697b"):
         return []
+    if SET == "t697k":
+        return t697k_axes(side)
     if SET == "t681":
         return t681_axes(side)
     if SET == "new":
@@ -187,6 +189,29 @@ T697B_NAMES = ["btc_mv15", "mk_btc_s60"]
 T697B_ZERO = ("z0", 0.0)                                  # порог по знаку: ≥ 0 — BTC шёл по ходу сделки, ≤ 0 — против
 
 
+# поправка TK-697 (третья, PS-1002; ключи движка № 9 `tn` / `tno` и № 1 `lx = 4`, бинарь `alpha-tk697-plain.906c0999`): набор TK680_SET=t697k — только оси ключей, столбцов нет. Единички вокруг центра:
+# каждая ось меняет один ключ, остальные — в центре. Центр — середина списка значений (не по P&L): `tn` 50 %, `lk` 3, `ld` 3 суток; `lsl` 0 (без предела) и `tf` 60 — значения по умолчанию.
+# Клетки лежат на базе стороны (стоп лонга 3 % / шорта 4 %); `lx = 4` меняет проход сигналов (9 проходов на сторону), `tn` / `tno` — только выход (проход базы).
+T697K_TN, T697K_TNO = (25, 50, 100), (0.1, 0.25)
+T697K_TN_C = 50
+T697K_LK, T697K_LD, T697K_LSL = (2, 3, 4), (1, 3, 5), (0.5, 1, 2)
+T697K_LINE = dict(lx=4, lk=3, ld=3)             # центр наклонки: lsl = 0 (без предела), tf = 60 (база)
+
+
+def t697k_axes(side):
+    """Оси набора t697k: `tn` (25 / 50 / 100 при tno = 0), `tno` (0 / 0,1 / 0,25 при tn = 50), `lk` (2 / 3 / 4 при ld = 3), `ld` (1 / 3 / 5 при lk = 3), `lsl` (0 / 0,5 / 1 / 2 в центре),
+    `lx` (tf 30 / 60 в центре). Клетка центра одна на все оси (одинаковый ключ); 14 клеток на сторону."""
+    c = T697K_LINE
+    return [
+        ("tn", [("off", {})] + [(ax.num(v), dict(tn=v)) for v in T697K_TN], "off"),
+        ("tno", [("off", {})] + [(ax.num(o), dict(tn=T697K_TN_C, tno=o) if o else dict(tn=T697K_TN_C)) for o in (0,) + T697K_TNO], "off"),
+        ("lk", [("off", {})] + [(ax.num(k), dict(c, lk=k)) for k in T697K_LK], "off"),
+        ("ld", [("off", {})] + [(ax.num(d), dict(c, ld=d)) for d in T697K_LD], "off"),
+        ("lsl", [("off", {})] + [(ax.num(v), dict(c, lsl=v) if v else dict(c)) for v in (0,) + T697K_LSL], "off"),
+        ("lx", [("off", {}), ("tf30", dict(c, tf=30)), ("tf60", dict(c))], "off"),
+    ]
+
+
 def nan_cols():
     """Столбцы, у которых пустое значение пропускает фильтр и поэтому считается отдельно (сделки с пустым значением, их Σ $)."""
     return (list(HIST_COLS) if SET == "hist" else (list(FAST_NAMES) if SET == "t681" else (list(T697_NAMES) if SET == "t697" else (list(T697B_NAMES) if SET == "t697b" else []))))
@@ -249,7 +274,7 @@ def column_list(coverage_cols):
     """[(имя покрытия, источник parquet | (числитель, знаменатель), направления)] — все столбцы покрытия, кроме COL_SKIP."""
     if SET == "hist":
         return [(c, c, ("le", "ge")) for c in HIST_COLS]
-    if SET in ("grid", "new"):
+    if SET in ("grid", "new", "t697k"):
         return []
     if SET == "ctx":
         return [(c, c, ("le",)) for c in CTX_COLS]
