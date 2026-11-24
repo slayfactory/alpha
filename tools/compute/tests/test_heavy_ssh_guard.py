@@ -61,17 +61,10 @@ class Passed(unittest.TestCase):
     def test_unit_and_wrapper(self):
         self.ok(SSH + "'systemd-run --unit x --collect -p CPUQuota=100% find /data'")
         self.ok(SSH + "systemd-run --unit x python3 /data/tk0/a.py")
-        self.ok(SSH + "/data/benchrun.sh stand find /data")
-        self.ok(SSH + "'/data/benchrun.sh wave du -sh /data'")
 
-    def test_alsched(self):
-        for v in ("submit --kind gate --cores 3 -- bash x.sh", "ps", "cancel 12", "wave", "stand", "reprio 1 2", "thaw"):
-            self.ok(SSH + "python3 /data/sched/alsched.py " + v)
-        self.ok(SSH + "'python3 /data/sched/alsched.py submit --cls prod -- find /data'")
-        self.deny_other_alsched()
-
-    def deny_other_alsched(self):
-        self.assertTrue(G.verdict(SSH + "python3 /data/sched/alsched.py evil"))
+    def test_alsched_denied(self):          # calc выведен (В-102, TK-703): исключения для alsched убраны
+        for v in ("submit --kind gate --cores 3 -- bash x.sh", "ps", "cancel 12", "wave", "stand", "reprio 1 2", "thaw", "evil"):
+            self.assertTrue(G.verdict(SSH + "python3 /data/sched/alsched.py " + v), v)
 
     def test_light(self):
         for c in ("tail -n 50 /data/sched/logs/1.log", "cat /data/sched/jobs/1.json", "ls -l /data/alpha", "uptime",
@@ -103,7 +96,7 @@ class Hook(unittest.TestCase):
     def test_exit_codes(self):
         rc, err = self.run_hook(SSH + "'find /data'")
         self.assertEqual(rc, 2)
-        self.assertIn("benchrun.sh stand", err)
+        self.assertIn("calc выведен", err)
         self.assertEqual(self.run_hook(SSH + "'find /data'", tool="PowerShell")[0], 2)
         self.assertEqual(self.run_hook(SSH + "'find /data'", tool="Read")[0], 0)
         self.assertEqual(self.run_hook(SSH + "'systemd-run --unit x find /data'")[0], 0)

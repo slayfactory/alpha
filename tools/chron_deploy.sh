@@ -3,8 +3,9 @@
 # сайт :8091 (юнит kb-page) = `chron.py serve`: статика kb из /data/pages/kb + /chron/ из БД. Запуск из любого места: bash tools/chron_deploy.sh
 # БД (/data/chron/chron.sqlite) не трогается; создаётся пустой при первом обращении. Юнит kb-page перезапускается только если код изменился.
 set -euo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/_ssh.sh"
 cd "$(dirname "$0")/.."
-KEY=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15 -o BatchMode=yes)
+KEY=("${SSH_ID[@]}" -o ConnectTimeout=15 -o BatchMode=yes)
 HOST=root@5.231.25.224
 tar -c tools/chron.py tools/kb.py tools/systemd/chron-backup.service tools/systemd/chron-backup.timer | ssh "${KEY[@]}" "$HOST" 'set -e
 mkdir -p /data/chron/backup /data/chron/new && tar -x -C /data/chron/new
