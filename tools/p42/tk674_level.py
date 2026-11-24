@@ -25,6 +25,9 @@ LOWTAG = os.environ.get("TK674_LOWTAG", "")         # суффикс карты 
 OVERLAY_WIN = os.environ.get("TK674_OVERLAY_WIN", "")                          # `map`: у клеток классов OVERLAY_CLASSES строки берутся по этой метке окна БД (bd, пересчитанные на ftab674xb: `TK690-xb`, L-386), прежние строки этих клеток не читаются
 OVERLAY_CLASSES = {x for x in os.environ.get("TK674_OVERLAY_CLASSES", "bd").split(",") if x}
 MAPSFX = os.environ.get("TK674_MAPSFX", "")         # `map`: добавка к имени файла карты (BATCH + MAPSFX), чтобы не затирать прежнюю карту; нижний уровень следующей карты — `TK674_LOWTAG=<BATCH><MAPSFX>`
+EXCL_LEVEL = os.environ.get("TK674_EXCLUDE_LEVEL", "")                       # `split`, ступень 2 (PS-1000): файл уровня (объединение ступени 1) — его комбинации не берутся; нумерация `skip` продолжает его (skip = число его комбинаций)
+EXCL_AXES = {x for x in os.environ.get("TK674_EXCLUDE_AXES", "").split(",") if x}   # `split`: комбинации с осью-столбцом с таким базовым именем (до «.») не берутся (дефект f12, PS-999 п. 3)
+SPLIT_OUT = os.environ.get("TK674_SPLIT_OUT", "")                           # `split`: добавка к имени сводки split674<SUF2><n><добавка>.json (сводка ступени 1 не затирается)
 
 
 def axis_combos(side, n):
@@ -172,12 +175,21 @@ def cmd_split(n, cap, tag0="r"):
     for side in ax.SIDES:
         thr = load_thr(side)
         cand, act, n_sub = ranked(side, n)
-        base = json.load(open(level_file(n, side), encoding="utf-8"))
-        nt = len(base["taken"])
-        if [list(c[1]) for c in cand[:nt]] != [x["names"] for x in base["taken"]]:
-            raise SystemExit("%s: порядок отбора не совпал с файлом уровня" % side)
-        seen, bl, cur, total_new = set(base["cells"]), [], None, 0
-        for neg, names, na in cand[nt:]:
+        if EXCL_LEVEL:                               # ступень 2: ранг по полной карте, без комбинаций ступени 1 и без осей EXCL_AXES; клетки ступени 1 уже в БД
+            ex = json.load(open(EXCL_LEVEL, encoding="utf-8"))
+            exn = {frozenset(x["names"]) for x in ex["taken"]}
+            n_el = len(cand)
+            cand = [c for c in cand if frozenset(c[1]) not in exn and not any(a_.split(".")[0] in EXCL_AXES for a_ in c[1])]
+            nt, start, seen = len(ex["taken"]), 0, set()
+            print("== %s: eligible %d, ступень 1 %d, без осей %s и ступени 1 — %d" % (side, n_el, nt, ",".join(sorted(EXCL_AXES)) or "-", len(cand)), flush=True)
+        else:
+            base = json.load(open(level_file(n, side), encoding="utf-8"))
+            nt = start = len(base["taken"])
+            if [list(c[1]) for c in cand[:nt]] != [x["names"] for x in base["taken"]]:
+                raise SystemExit("%s: порядок отбора не совпал с файлом уровня" % side)
+            seen = set(base["cells"])
+        bl, cur, total_new = [], None, 0
+        for neg, names, na in cand[start:]:
             cc = combo_cells(side, names, thr, {})
             fresh = {k: c for k, c in cc.items() if k not in seen}
             found = store.cells_lookup(SIDENAME[side], UNI, WIN, list(fresh), bins=bins)
@@ -203,15 +215,17 @@ def cmd_split(n, cap, tag0="r"):
             sigs = {c["sig"] for c in b["cells"].values() if c["sig"]}
             skip = nt + sum(len(x["taken"]) for x in bl[:i])
             tg = "%s%02d" % (tag0, nb)
-            out = dict(side=side, n=n, cap=cap, sub_min=SUB_MIN, active_subs=len(act), subs=n_sub, eligible=len(cand), taken=b["taken"], left_out=len(cand) - skip - len(b["taken"]),
+            out = dict(side=side, n=n, cap=cap, sub_min=SUB_MIN, active_subs=len(act), subs=n_sub, eligible=len(cand), taken=b["taken"], left_out=len(cand) - (skip - (nt if EXCL_LEVEL else 0)) - len(b["taken"]),
                        n_cells=len(b["cells"]), n_have=b["n_have"], n_new=b["n_new"], skip=skip, batch=tg,
                        cells={k: dict(cid=c["cid"], patch=c["patch"], filt=c["filt"], sig=c["sig"]) for k, c in b["cells"].items()})
             json.dump(out, open(level_file(n, side, tg), "w", encoding="utf-8"), ensure_ascii=False)
+            import tk674_emptycols as ec_
+            cls = [ec_.filt_class(c["filt"]) for c in b["cells"].values()]
             summary[side].append(dict(batch=tg, skip=skip, triples=len(b["taken"]), cells=len(b["cells"]), in_db=b["n_have"], new=b["n_new"], sigs=len(sigs),
-                                      filt=sum(1 for c in b["cells"].values() if c["filt"])))
+                                      filt=sum(1 for c in b["cells"].values() if c["filt"]), bd=cls.count("bd"), cc=cls.count("cc")))
             print("== %s %s: комбинаций %d (с %d), клеток %d (в БД %d, считаем %d), проходов сигналов %d, с фильтром %d" % (
                 side, tg, len(b["taken"]), skip + 1, len(b["cells"]), b["n_have"], b["n_new"], len(sigs), summary[side][-1]["filt"]), flush=True)
-    for fn_ in ("split674%s%d.json" % (ax.SUF2, n), "split674%s%d-%s.json" % (ax.SUF2, n, "".join(ax.SIDES))):      # вторая копия — по сторонам запуска: запуск другой стороны сводку первой не затирает
+    for fn_ in ("split674%s%d%s.json" % (ax.SUF2, n, SPLIT_OUT), "split674%s%d%s-%s.json" % (ax.SUF2, n, SPLIT_OUT, "".join(ax.SIDES))):      # вторая копия — по сторонам запуска: запуск другой стороны сводку первой не затирает
         json.dump(dict(n=n, cap=cap, batches=nb, first=SPLIT_FIRST, summary=summary), open(os.path.join(ROOT, "res", fn_), "w", encoding="utf-8"), ensure_ascii=False)
     print("партий %d" % nb)
 
