@@ -16,7 +16,8 @@ case "$WIN" in
   hold) T0=2026-10-31; CACHE=/data/p42-tk598/hold-in/cache;     TR=/data/p42-tk598/hold-in/aggtrades; DAYS=14:16 ;;   # §13.23.1: дерево после докачки 18.11 (tk598_hold_prep.sh)
   *) echo "окно: F|jul|aug|hold" >&2; exit 2 ;;
 esac
-K=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15)
+. "$(dirname "${BASH_SOURCE[0]}")/../_ssh.sh"
+K=("${SSH_ID[@]}" -o ConnectTimeout=15)
 H=root@5.231.25.224
 [ -s "$VF" ] || { echo "нет файла вариантов: $VF" >&2; exit 2; }
 ssh "${K[@]}" "$H" "mkdir -p $ROOT/out $ROOT/var && cat > $ROOT/var/$NAME.txt" < "$VF"

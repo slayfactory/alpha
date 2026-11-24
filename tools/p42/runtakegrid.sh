@@ -5,7 +5,8 @@
 set -euo pipefail
 NAME="${1:?имя прогона}"; VF="${2:?файл вариантов}"; BIN="${3:-/data/p42v2/bin/alpha-p42-v14}"
 U=566; SRV=/data/p42-t$U; TH=6
-K=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15)
+. "$(dirname "${BASH_SOURCE[0]}")/../_ssh.sh"
+K=("${SSH_ID[@]}" -o ConnectTimeout=15)
 H=root@5.231.25.224
 DET=""; [ -n "${P42_DETAIL:-}" ] && DET="P42_DETAIL=1"
 ssh "${K[@]}" "$H" "cat > $SRV/variants-$NAME.txt" < "$VF"

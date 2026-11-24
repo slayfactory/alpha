@@ -7,7 +7,8 @@ set -euo pipefail
 NAME="${1:?имя прогона}"; VF="${2:?файл вариантов}"; BIN="${3:?бинарь на srv}"
 SRV=/data/p42-t566; TH=6
 OUTR="${P42_OUTROOT:-$SRV/out}"   # корень результатов (TK-596: свой каталог, чтобы чужие чтения не видели прогон)
-K=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15)
+. "$(dirname "${BASH_SOURCE[0]}")/../_ssh.sh"
+K=("${SSH_ID[@]}" -o ConnectTimeout=15)
 H=root@5.231.25.224
 ENVS=""
 [ -n "${P42_DETAIL:-}" ] && ENVS="$ENVS P42_DETAIL=1"

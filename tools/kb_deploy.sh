@@ -2,8 +2,9 @@
 # TK-629: собрать сайт kb и выложить на srv:8091 (юнит kb-page, /data/pages/kb); образец — ml-page-8090. TK-646: + узлы kb в летопись. Запуск из любого места: bash tools/kb_deploy.sh
 # Сначала `kb check` (красный — выкладка не идёт). Юнит создаётся при первом запуске; существующий не трогается (страница статическая, перезапуск не нужен).
 set -euo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/_ssh.sh"
 cd "$(dirname "$0")/.."
-KEY=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15)
+KEY=("${SSH_ID[@]}" -o ConnectTimeout=15)
 HOST=root@5.231.25.224
 PORT=8091
 python tools/kb.py check | tail -3
