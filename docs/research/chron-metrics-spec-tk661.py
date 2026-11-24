@@ -51,7 +51,7 @@ text(135, E, 54, [r("пары: клеток / прошли BH q = 0,10", same_da
                   r("CB3 − логистика, AUC (не больше)", extra={"d_auc_max": 0.013})])
 
 # ── П-42 §13.20 (TK-594): ΔAUC наборов против S0 — файл; август — текст
-pick(77, "docs/findings/p42-flow-deriv-2026-11-18/cmp/delta.csv",
+pick(77, "docs/archive/findings/p42-flow-deriv-2026-11-18/cmp/delta.csv",
      [dict(where={}, side="{side}", cell="{dir} {set}−S0 {model}", win="09–11 (поиск)",
            extra={"d_auc": "dAUC", "lo975": "lo975", "hi975": "hi975", "d_e1_top": "dE1_top"})])
 text(77, J, 155, [r("август (отложенный), ΔAUC S3 − S0, CB3", side="long", win="август", extra={"d_auc": 0.0013, "lo": -0.0055, "hi": 0.0083, "auc_base": 0.633}),
@@ -101,7 +101,7 @@ for sd, side in (("L", "long"), ("S", "short")):
              win="01.07–13.11 (136 сут.)")
 
 # ── П-42 килзоны (TK-622): P&L базы по корзинам — файл (метрика gf = $ на сделку базы)
-pick(111, "docs/findings/p42-killzones-2026-11-19/results.csv",
+pick(111, "docs/archive/findings/p42-killzones-2026-11-19/results.csv",
      [dict(where={"metric": "gf"}, side="{side}", cell="{scheme} · {bucket}", map={"trades": "n_in", "usd": "sum_in", "mean_usd": "mean_in"},
            extra={"d_usd_trade": "D", "lo": "lo", "hi": "hi", "p": "p", "p_holm": "p_holm", "n_out": "n_out", "mean_out": "mean_out"})],
      verdict="описательно", win="01.07–13.11")
@@ -366,14 +366,14 @@ gap(208, "предрегистрация", "§13.24.5 записана ДО сч
 
 # ── П-42 §13.27 (TK-610): чтение августа — файл
 for sd, side in (("L", "long"), ("S", "short")):
-    pick(209, "docs/findings/p42-catboost-retitr-2026-11-19/read-aug.json",
+    pick(209, "docs/archive/findings/p42-catboost-retitr-2026-11-19/read-aug.json",
          [dict(ptr="sides/%s" % sd, side=side, cell="A: C* без фильтра", map={"trades": "n_a", "usd": "sum_a", "mean_usd": "mean_a"}, extra={"per_day": "per_day_a"}),
           dict(ptr="sides/%s" % sd, side=side, cell="B: C* с фильтром CatBoost", map={"trades": "n_b", "usd": "sum_b", "mean_usd": "mean_b"},
                extra={"delta": "delta", "lower5": "lower5", "upper95": "upper95", "dsum": "dsum", "per_day": "per_day"})],
          win="август")
 
 # ── П-42 TK-600: X против f12, этап 1 — файл
-pick(223, "docs/findings/p42-toxic-flow-2026-11-18/stage1.csv",
+pick(223, "docs/archive/findings/p42-toxic-flow-2026-11-18/stage1.csv",
      [dict(where={}, side="{side}", cell="{target} · рука X", map={"trades": "n_sel_X", "usd": "sum_sel_X", "mean_usd": "S0_X"}, extra={"D": "D", "p_D": "p_D", "SE_D": "SE_D", "blocks_pos": "blocks_pos"}),
       dict(where={}, side="{side}", cell="{target} · рука f12", map={"trades": "n_sel_f12", "usd": "sum_sel_f12", "mean_usd": "S0_f12"})],
      win="окно F U0 (60 сут.)")

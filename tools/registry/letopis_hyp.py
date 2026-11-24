@@ -13,7 +13,7 @@ if not os.path.exists(db.DB):
 con = sqlite3.connect(db.DB)
 q = lambda s, *a: con.execute(s, a).fetchall()
 inv = {r["id"]: r for r in csv.DictReader(open(os.path.join(ROOT, "docs/findings/tk024-pool-inventory-2026-10-02.csv"), encoding="utf-8"), delimiter=";")}
-hyps = [json.loads(l) for l in open(os.path.join(ROOT, "docs/registry/hypotheses.jsonl"), encoding="utf-8")]
+hyps = [json.loads(l) for l in open(os.path.join(ROOT, "docs/archive/registry/hypotheses.jsonl"), encoding="utf-8")]
 
 # --- сводки в репо (R2 пул, TK-065; R1 — колонки пула TK-064; число клеток П-12) ---
 import re, collections

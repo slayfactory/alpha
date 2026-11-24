@@ -1,10 +1,10 @@
 # 53 — Скачок часов (NTP-шаг) (A8.6)
 
 **Требования:** директива владельца 2026-09-17 («коллектор при любых обстоятельствах»), подтикет A8.6
-в `docs/plan/dev-plan-2026-09-17.md` §Дополнения; порядок — A8.5 ✔ → **A8.6** → A8.7 (смоук + деплой).
+в `docs/archive/plan/dev-plan-2026-09-17.md` §Дополнения; порядок — A8.5 ✔ → **A8.6** → A8.7 (смоук + деплой).
 **Blocked by:** —
 **Зона:** `src/lob/markout.rs` (doc-контракт), `src/lob/markout/tests.rs`,
-`src/commands/lob/session/tests.rs`, `docs/COMMANDS.md`, `docs/plan/dev-plan-2026-09-17.md`.
+`src/commands/lob/session/tests.rs`, `docs/COMMANDS.md`, `docs/archive/plan/dev-plan-2026-09-17.md`.
 **Волна:** 13
 **Status:** done (2026-09-18)
 

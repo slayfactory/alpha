@@ -293,4 +293,4 @@
 Дальше — только записью координатора; новые клетки вперёд не выбираются (§13.37 п. 9).
 
 
-Файлы: `docs/findings/p42-tradecount-size-2026-11-20/{res,gates}/` (счётные JSON), `cells-all.md` (все клетки, все колонки), srv `/data/p42-tk639/`.
+Файлы: `docs/archive/findings/p42-tradecount-size-2026-11-20/{res,gates}/` (счётные JSON), `cells-all.md` (все клетки, все колонки), srv `/data/p42-tk639/`.

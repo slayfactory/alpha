@@ -2974,6 +2974,6 @@ EXCLUDE-код/доки/реестр	/data/tk291/src/docs/findings/*[MM]	0.000	6
 EXCLUDE-код/доки/реестр	/data/tk312-src/docs/findings/*[MM]	0.000	6	1	1
 EXCLUDE-код/доки/реестр	/data/tk316/src/docs/findings/*[MM]	0.000	6	1	1
 EXCLUDE-код/доки/реестр	/data/tk155/src/docs/findings/*[MM]	0.000	4	1	1
-EXCLUDE-код/доки/реестр	/data/tk0303/src-pgo/docs/registry/*[MM]	0.000	18	6	123456
-EXCLUDE-код/доки/реестр	/data/tk312-src/docs/registry/files/*[MM]	0.000	1	1	1
+EXCLUDE-код/доки/реестр	/data/tk0303/src-pgo/docs/archive/registry/*[MM]	0.000	18	6	123456
+EXCLUDE-код/доки/реестр	/data/tk312-src/docs/archive/registry/files/*[MM]	0.000	1	1	1
 EXCLUDE-код/доки/реестр	/data/tk312-src/tools/compute/archive/*[MM]	0.000	1	1	3
