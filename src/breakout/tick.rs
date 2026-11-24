@@ -14,6 +14,7 @@ use super::data::{
     START_MIN,
 };
 use super::levels::{build_levels_far, Level};
+use super::memo::{MoveKey, MoveMemo};
 use super::params::{ExitCfg, LevelCfg, PortCfg, SigCfg};
 use super::portfolio::Settled;
 use super::store::{DayHead, DayTrades, QtyRaw, SrcMeta, TickStore};
@@ -106,6 +107,11 @@ pub trait TradeSrc: Sync {
     /// TK-683: ступени НОД цен суток (для `tick_at`); источник с памятью считает их один раз на сутки за запуск.
     fn gcd_steps(&self, sym: &str, day: usize) -> Option<Arc<GcdSteps>> {
         self.day(sym, day).map(|v| Arc::new(GcdSteps::of(&v)))
+    }
+
+    /// TK-706: память исходов хода на запуск (`memo.rs`); `None` — исходы считаются каждый раз (источники тестов, `P42_MEMO=0`).
+    fn move_memo(&self) -> Option<&MoveMemo> {
+        None
     }
 }
 
@@ -390,6 +396,8 @@ pub struct ZipSrc {
     /// TK-683: время потоков в `day`, нс: разбор суток (загрузчик) и ожидание чужого разбора (вместе с ожиданием разрешения на счёт).
     pub load_ns: AtomicU64,
     pub wait_ns: AtomicU64,
+    /// TK-706: память исходов хода на весь запуск (общая для рабочих всех вариантов).
+    memo: Option<MoveMemo>,
 }
 
 impl ZipSrc {
@@ -409,7 +417,14 @@ impl ZipSrc {
             gcd_dir: None,
             load_ns: AtomicU64::new(0),
             wait_ns: AtomicU64::new(0),
+            memo: None,
         }
+    }
+
+    /// TK-706: включить память исходов хода (`MoveMemo::from_env()`; `None` — выключена).
+    pub fn with_memo(mut self, memo: Option<MoveMemo>) -> ZipSrc {
+        self.memo = memo;
+        self
     }
 
     pub fn with_store(mut self, store: Arc<TickStore>) -> ZipSrc {
@@ -568,6 +583,10 @@ impl ZipSrc {
 }
 
 impl TradeSrc for ZipSrc {
+    fn move_memo(&self) -> Option<&MoveMemo> {
+        self.memo.as_ref()
+    }
+
     fn day(&self, sym: &str, day: usize) -> Option<Arc<Vec<Tick>>> {
         let key = (sym.to_string(), day);
         let slot: DaySlot = match self.lru.lock() {
@@ -1230,7 +1249,7 @@ pub fn sort_tsigs(v: &mut [TSig]) {
 
 // ───────────────────────────── фаза 2: исход сделки ─────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TLeg {
     pub ms: i64,
     /// Настоящая цена исполнения (не рама).
@@ -1239,7 +1258,7 @@ pub struct TLeg {
     pub maker: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TickOut {
     pub entry_ms: i64,
     pub entry_px: i64,
@@ -1359,7 +1378,7 @@ pub fn exit_natr(sym: &Sym, ex: &ExitCfg, t: usize) -> i64 {
 }
 
 /// Цена версии уровня на сигнале и дальний край зоны (длинная рама) — для выходов от уровня (§13.19).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LevelCtx {
     pub lp: i64,
     pub far: i64,
@@ -1990,6 +2009,57 @@ pub fn sim_fill_lc_s(
         entry_slip_bps,
         stop_px,
     )
+}
+
+/// TK-706: ход лота по ленте монеты `coin` от места `(day, idx)` (сделки после `entry_ms`; место старта — только где начать чтение) с памятью исходов запуска:
+/// ход — чистая функция аргументов и ленты, поэтому равный ключ (`MoveKey`: все аргументы по значению + монета) берёт готовый исход; без памяти (`move_memo` = `None`) —
+/// прежний счёт по свежему курсору. Ход лота 2 — тот же вызов с `m2` / `q0` / `lot2_n` / `stop2`.
+#[allow(clippy::too_many_arguments)]
+fn sim_fill_mem(
+    src: &dyn TradeSrc,
+    coin: &str,
+    start: (usize, usize),
+    entry_ms: i64,
+    p0: i64,
+    side: Side,
+    natr_e8: i64,
+    ex: &ExitCfg,
+    lc: LevelCtx,
+    notional: i64,
+    entry_slip_bps: i64,
+    stop_px: Option<i64>,
+) -> TickOut {
+    let mut compute = || {
+        let mut cur = Cursor::new(src, coin, start.0, start.1);
+        sim_fill_lc_s(
+            &mut || cur.next_tick(),
+            entry_ms,
+            p0,
+            side,
+            natr_e8,
+            ex,
+            Some(lc),
+            notional,
+            entry_slip_bps,
+            stop_px,
+        )
+    };
+    let Some(memo) = src.move_memo() else {
+        return compute();
+    };
+    let key = MoveKey {
+        coin: coin.into(),
+        entry_ms,
+        p0,
+        side,
+        natr_e8,
+        ex: ex.clone(),
+        lc: Some(lc),
+        notional,
+        entry_slip_bps,
+        stop_px,
+    };
+    memo.get_or_compute(key, &mut compute)
 }
 
 /// Позиция после входа: цена входа `p0` (рама) ± проскальзывание, тейки, стоп, трейл по потоку `next` (сделки после входа).
@@ -3428,18 +3498,9 @@ pub fn run_tick_xb(
             match dec {
                 EntryDec::Next => simulate_tick(src, sym, side, sg, natr, ex),
                 EntryDec::Fill { ms, p0 } => {
-                    let mut cur =
-                        Cursor::new(src, &sym.name, usize::from(sg.day), sg.idx as usize + 1);
-                    let t1 = sim_fill_lc_e(
-                        &mut || cur.next_tick(),
-                        ms,
-                        p0,
-                        side,
-                        natr,
-                        ex,
-                        Some(lc),
-                        lot_n,
-                        entry_slip,
+                    let start = (usize::from(sg.day), sg.idx as usize + 1);
+                    let t1 = sim_fill_mem(
+                        src, &sym.name, start, ms, p0, side, natr, ex, lc, lot_n, entry_slip, None,
                     );
                     if maker {
                         res.mk[0] += 1;
@@ -3491,23 +3552,9 @@ pub fn run_tick_xb(
                                 immediate,
                             } => {
                                 res.lot2[usize::from(!immediate)] += 1;
-                                let mut cur2 = Cursor::new(
-                                    src,
-                                    &sym.name,
-                                    usize::from(sg.day),
-                                    sg.idx as usize + 1,
-                                );
-                                tr2 = Some(sim_fill_lc_s(
-                                    &mut || cur2.next_tick(),
-                                    m2,
-                                    q0,
-                                    side,
-                                    natr,
-                                    ex,
-                                    Some(lc),
-                                    lot2_n,
-                                    entry_slip,
-                                    stop2,
+                                tr2 = Some(sim_fill_mem(
+                                    src, &sym.name, start, m2, q0, side, natr, ex, lc, lot2_n,
+                                    entry_slip, stop2,
                                 ));
                             }
                             Lot2Dec::Cancel => res.lot2[2] += 1,

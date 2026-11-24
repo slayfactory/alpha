@@ -21,6 +21,7 @@ pub mod data;
 pub mod feat;
 pub mod ftab;
 pub mod levels;
+pub mod memo;
 pub mod params;
 pub mod portfolio;
 pub mod sigcache;

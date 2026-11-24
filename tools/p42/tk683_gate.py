@@ -120,7 +120,7 @@ def main():
     if not a.no_gbase:
         m.cmd_gates(a)                          # G-base: при различии — выход с кодом 1
     u = r5.Uni(m.UNI)
-    res, bad, n = [], [], 0
+    res, bad, gone, n = [], [], [], 0
     for root, full in roots:
         _IDX.clear()
         rn = os.path.basename(root.rstrip("/"))
@@ -130,20 +130,25 @@ def main():
                 for nm, ftab, vs in pick(root, ws, a.per_batch, full):
                     out = os.path.join(m.ROOT, "gate", a.tag, rn, ws, nm) if a.tag else os.path.join(m.ROOT, "gate", ws, nm)
                     r5.tick(u, w, vs, out, m.one_side_env(side), t.q("log", "gate%s-%s-%s-%s.log" % (a.tag, rn, ws, nm)), ftab=ftab)
+                    n0 = len(res)
                     for cid, line in vs:
                         old, new = os.path.join(root, "cells", ws, nm, cid), os.path.join(out, cid)
-                        files = sorted(os.listdir(old))     # файл, которого у прежнего бинаря не было (lots.csv до TK-677), — в `extra`, не различие
-                        diff = [f for f in files if not (os.path.exists(os.path.join(new, f)) and filecmp.cmp(os.path.join(old, f), os.path.join(new, f), shallow=False))]
+                        try:
+                            files = sorted(os.listdir(old))     # файл, которого у прежнего бинаря не было (lots.csv до TK-677), — в `extra`, не различие
+                            diff = [f for f in files if not (os.path.exists(os.path.join(new, f)) and filecmp.cmp(os.path.join(old, f), os.path.join(new, f), shallow=False))]
+                        except FileNotFoundError:           # TK-706: каталог клетки убрала загрузка таблиц цепочки, пока шёл гейт — клетка не сверена
+                            gone.append("%s/%s/%s/%s" % (rn, ws, nm, cid))
+                            continue
                         n += 1
                         res.append(dict(root=rn, ws=ws, batch=nm, cid=cid, tick_at=tick_at_line(line), filt=bool(ftab), files=len(files), diff=diff,
                                         extra=sorted(set(os.listdir(new)) - set(files)) if os.path.isdir(new) else []))
                         if diff:
                             bad.append("%s/%s/%s/%s: %s" % (rn, ws, nm, cid, ", ".join(diff)))
-                    say("gate %s %s %s: клеток %d, %s" % (rn, ws, nm, len(vs), "байт в байт" if not any(r["diff"] for r in res[-len(vs):]) else "РАЗЛИЧИЯ"))
-    json.dump(dict(bin=m.BIN, bin_md5=m.bin_md5(m.BIN), bin_sha256=r4.sha256(m.BIN), cells=res, bad=bad),
+                    say("gate %s %s %s: клеток %d (убрано цепочкой %d), %s" % (rn, ws, nm, len(res) - n0, len(vs) - (len(res) - n0), "байт в байт" if not any(r["diff"] for r in res[n0:]) else "РАЗЛИЧИЯ"))
+    json.dump(dict(bin=m.BIN, bin_md5=m.bin_md5(m.BIN), bin_sha256=r4.sha256(m.BIN), cells=res, bad=bad, gone=gone),
               open(t.q("res", "gate683%s.json" % a.tag), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    say("gate683: клеток %d (из них с tick_at %d, с фильтром %d), файлов %d, клеток с новым файлом %d, различий %d%s" % (
-        n, sum(r["tick_at"] for r in res), sum(r["filt"] for r in res), sum(r["files"] for r in res), sum(bool(r["extra"]) for r in res), len(bad), "".join("\n   " + x for x in bad[:20])))
+    say("gate683: клеток %d (из них с tick_at %d, с фильтром %d), файлов %d, клеток с новым файлом %d, не сверено (убраны цепочкой) %d, различий %d%s" % (
+        n, sum(r["tick_at"] for r in res), sum(r["filt"] for r in res), sum(r["files"] for r in res), sum(bool(r["extra"]) for r in res), len(gone), len(bad), "".join("\n   " + x for x in bad[:20])))
     if bad:
         sys.exit(1)
 

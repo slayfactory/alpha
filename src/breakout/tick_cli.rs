@@ -5,6 +5,7 @@
 use super::data::{self, Sym, HALF_DAYS, MIN_MS, SCALE, START_DAY};
 use super::ftab::{filter_sigs, FeatTab};
 use super::levels::build_levels_tracked;
+use super::memo::MoveMemo;
 use super::params::ExitCfg;
 use super::params::{parse_variant, Params, SigCfg};
 use super::sigcache::{SigCache, SigCacheOpts};
@@ -587,7 +588,9 @@ pub fn run(
         .map_err(|_| anyhow::anyhow!("поток открытия склада сделок упал"))?
         .context("склад сделок")?;
     let t_store = t0.elapsed().as_secs_f64();
-    let mut src = ZipSrc::new(trades.to_path_buf(), cap_gb << 30);
+    // TK-706: память исходов хода — общая для рабочих всех вариантов запуска (`P42_MEMO=0` выключает, `P42_MEMO_VERIFY` — шаг сверки)
+    let memo = MoveMemo::from_env();
+    let mut src = ZipSrc::new(trades.to_path_buf(), cap_gb << 30).with_memo(memo);
     if let Some(st) = &store {
         src = src.with_store(Arc::clone(st));
     }
@@ -968,6 +971,10 @@ pub fn run(
             s(src.wait_ns.load(Relaxed) - warm_ns.1),
             s(write_ns.load(Relaxed))
         );
+    }
+    match src.move_memo() {
+        Some(m) => eprintln!("{}", m.summary()),
+        None => eprintln!("память исходов: выключена (P42_MEMO=0)"),
     }
     if src.evicted() {
         eprintln!("сутки сверх памяти: были вытеснения");
