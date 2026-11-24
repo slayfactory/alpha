@@ -397,6 +397,8 @@ CREATE TABLE IF NOT EXISTS tk692_sum(rid TEXT, side TEXT, step TEXT, emb INTEGER
 CREATE TABLE IF NOT EXISTS tk692_rand(rid TEXT, side TEXT, step TEXT, emb INTEGER, kind TEXT, stat TEXT, value REAL, PRIMARY KEY(rid, side, step, emb, kind, stat));
 CREATE TABLE IF NOT EXISTS tk692_rr(rid TEXT, side TEXT, step TEXT, emb INTEGER, series TEXT, rr REAL, stop_loss REAL, stop_loss_pct REAL, leak_share REAL, note TEXT, PRIMARY KEY(rid, side, step, emb, series));
 CREATE TABLE IF NOT EXISTS tk692_verdict(rid TEXT, side TEXT, step TEXT, p REAL, alpha_j REAL, holm INTEGER, boot_lo REAL, e0_positive INTEGER, verdict TEXT, note TEXT, PRIMARY KEY(rid, side, step));
+CREATE TABLE IF NOT EXISTS tk692_cmp(rid TEXT, side TEXT, win TEXT, series TEXT, step TEXT, cid INTEGER, days INTEGER, n INTEGER, sum REAL, per_trade REAL, sharpe REAL, dd REAL, ddp REAL,
+    extra TEXT, PRIMARY KEY(rid, side, win, series, step));
 """
 
 
@@ -429,9 +431,53 @@ def check_consistency(out, rid, side, step, emb, picks, nd, pool_name):
             raise SystemExit("выбор изменился против %s (%s %s E=%d): (b, было, стало) %s" % (prid, side, step, emb, bad[:5]))
 
 
+def window_bounds(nd):
+    """[(окно, d0, d1, месяцы)]: каждый загруженный месяц и «cum» (все загруженные сутки)."""
+    nm = month_of(nd - 1) + 1
+    return [(MONTHS[m], MONTH_START[m], min(MONTH_START[m + 1], nd), [m]) for m in range(nm)] + [("cum", 0, nd, list(range(nm)))]
+
+
+def anchor_series(pool, side, extra_path):
+    """Ряд якоря L-334 стороны (базовая линия без осей фильтра): клетка набора (ключ / семейство) или повтор движком; None — нет."""
+    label, ck, n0, usd0 = BASES[side][0]
+    idx, how, fam = pool.resolve_base(ck, n0, usd0)
+    if idx is not None:
+        p, n, miss = pool.step_pnl([idx], 0, pool.nd)
+        return p[0], n[0], int(pool.cids[idx]), how + (", пропуск месяца" if miss[0] else "")
+    xb = extra_base(extra_path, side, label, pool.nd)
+    return (xb[0], xb[1], xb[2], "replay") if xb is not None else None
+
+
+def cmp_row(rid, side, win, series, step, cid, st, extra):
+    return (rid, side, win, series, step, cid, st["days"], st["n"], st["sum"], st["per_trade"], st["sharpe"], st["dd"], st["ddp"], json.dumps(extra, ensure_ascii=False))
+
+
+def cmp_rows(pool, side, rid, anchor):
+    """Якорь (базовая линия) и лучшая клетка набора по каждому окну; лучшая — максимум Σ $ окна среди клеток, посчитанных во всех месяцах окна, с охраной (а) — найдено на тех же данных."""
+    rows = []
+    for win, d0, d1, ms in window_bounds(pool.nd):
+        tot, nn = pool.X[:, d0:d1].sum(axis=1), pool.N[:, d0:d1].sum(axis=1)
+        cand = np.nonzero(pool.P[:, ms].all(axis=1) & (nn >= n_min(side, d1 - d0)))[0]
+        a_sum, ext_a = None, {}
+        if anchor is not None:
+            st = series_stats(anchor[0][d0:d1], anchor[1][d0:d1])
+            a_sum, ext_a = st["sum"], dict(how=anchor[3])
+        if len(cand):
+            best = cand[np.lexsort((pool.cids[cand], -tot[cand]))[0]]
+            ext_b = dict(m=int(len(cand)), found_on_same_data=True)
+            if a_sum is not None:
+                above = int((tot[cand] > a_sum).sum())
+                ext_b["n_above_anchor"], ext_a["n_above_anchor"], ext_a["m"] = above, above, int(len(cand))
+            rows.append(cmp_row(rid, side, win, "best", "", int(pool.cids[best]), series_stats(pool.X[best, d0:d1], pool.N[best, d0:d1]), ext_b))
+        if anchor is not None:
+            rows.append(cmp_row(rid, side, win, "anchor", "", anchor[2], st, ext_a))
+    return rows
+
+
 def process_side(con, out, rid, pool, side, args):
     ckeys = {label: (ck, n, usd) for label, ck, n, usd in BASES[side]}
     report = []
+    out.executemany("INSERT OR REPLACE INTO tk692_cmp VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", cmp_rows(pool, side, rid, anchor_series(pool, side, getattr(args, "extra", ""))))
     for step in STEPS:
         for emb in EMBARGOS:
             rng = np.random.default_rng([SEED, 0 if side == "long" else 1, STEPS.index(step), emb])
@@ -460,6 +506,11 @@ def process_side(con, out, rid, pool, side, args):
             hi = max((r["pick"]["noise"] for r in tr if r["pick"]["noise"] == r["pick"]["noise"]), default=float("nan"))
             extra = dict(changes=ch, distinct=dist, skipped_steps=sum(r["skipped"] for r in tr), steps=len(tr), win_sharpe_mean=float(np.mean([r["pick"]["score"] for r in tr])), noise_max=hi)
             out.execute("INSERT OR REPLACE INTO tk692_sum VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", sum_row(rid, side, step, emb, "select", st, extra))
+            if emb == EMBARGOS[0]:
+                for win, d0, d1, _ in window_bounds(pool.nd):
+                    mk = (days >= d0) & (days < d1)
+                    if mk.any():
+                        out.execute("INSERT OR REPLACE INTO tk692_cmp VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", cmp_row(rid, side, win, "select", step, None, series_stats(pnl[mk], nn[mk]), dict(emb=emb)))
             g1 = rand_c1(pool, side, picks, emb, args.nrand, rng)
             g2 = rand_c2(pool, side, picks, days, args.nrand, rng)
             for kind, G in (("c1", g1), ("c2", g2)):
@@ -502,7 +553,7 @@ def cmd_run(a):
         pool = load_pool(con, runs, a.cellset, side)
         through = MONTHS[pool.P.shape[1] - 1]
         rid = "%s-%s" % (a.pool, through)
-        for t in ("tk692_pick", "tk692_oos", "tk692_sum", "tk692_rand", "tk692_rr", "tk692_verdict"):
+        for t in ("tk692_pick", "tk692_oos", "tk692_sum", "tk692_rand", "tk692_rr", "tk692_verdict", "tk692_cmp"):
             out.execute("DELETE FROM %s WHERE rid=? AND side=?" % t, (rid, side))
         out.execute("INSERT OR REPLACE INTO tk692_run VALUES(?,?,?,?,?,?,?)", (rid + "/" + side, a.pool, through, ",".join(runs), json.dumps(dict(side=side, cellset=a.cellset, nrand=a.nrand, nboot=a.nboot, cells=len(pool.cids))),
                                                                            git_head(), datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")))
@@ -548,6 +599,35 @@ def cmd_verdict(a):
         print("%-5s %-6s Σ %9.2f $  p %.4f  α_j %.4f  Holm %d  нижняя граница к якорю %s  E=0>0 %d  → %s %s" % (side, step, tot, p, aj, ok, "%.2f" % lo if lo is not None else "—", e0pos, v, note))
     out.commit()
     out.close()
+    return 0
+
+
+def cmd_cmp(a):
+    """Таблица «база против отобранных»: по стороне и окну — якорь L-334 (базовая линия без фильтра), выбранная линия по шагам (E = 1), лучшая клетка пула (найдено на тех же данных)."""
+    out = sqlite3.connect("file:%s?mode=ro" % a.out, uri=True)
+    rids = [r for r in a.rids.split(",") if r]
+    for side in [x for x in a.sides.split(",") if x]:
+        print("### %s: база против отобранных (ряд — суммарно по окну; ставка 500 $, маржа 250 $)" % side)
+        print("| окно | пул | ряд | шаг | cid | суток | сд. | Σ $ | Шарп | просадка $ (% маржи) | примечание |")
+        print("|---|---|---|---|---|---|---|---|---|---|---|")
+        wins = [w for (w,) in out.execute("SELECT DISTINCT win FROM tk692_cmp WHERE side=? AND rid IN (%s)" % ",".join("?" * len(rids)), [side] + rids)]
+        for win in sorted(wins, key=lambda w: (w == "cum", w)):
+            for rid in rids:
+                for ser, step, cid, days, n, tot, sh, dd, ddp, ex in out.execute(
+                        "SELECT series, step, cid, days, n, sum, sharpe, dd, ddp, extra FROM tk692_cmp WHERE rid=? AND side=? AND win=? ORDER BY series='select', series, step", (rid, side, win)):
+                    ex = json.loads(ex)
+                    note = []
+                    if ser == "anchor":
+                        note.append(ex.get("how", ""))
+                        if "n_above_anchor" in ex:
+                            note.append("клеток выше базы %d из %d" % (ex["n_above_anchor"], ex["m"]))
+                    elif ser == "best":
+                        note.append("найдено на этих данных, клеток %d" % ex["m"])
+                        if "n_above_anchor" in ex:
+                            note.append("выше базы %d" % ex["n_above_anchor"])
+                    print("| %s | %s | %s | %s | %s | %d | %d | %+.2f | %.2f | %.2f (%.1f %%) | %s |" % (
+                        win, rid.split("-")[0], ser, step or "—", cid if cid is not None else "—", days, n, tot, sh, dd, ddp, "; ".join(x for x in note if x)))
+        print()
     return 0
 
 
@@ -621,6 +701,11 @@ def main(argv=None):
     v.add_argument("--out", required=True)
     v.add_argument("--rid", required=True)
     v.set_defaults(fn=cmd_verdict)
+    c = sub.add_parser("cmp")
+    c.add_argument("--out", required=True)
+    c.add_argument("--rids", required=True, help="rid пулов через запятую, например A-m01,H-m01,B-m01")
+    c.add_argument("--sides", default="long,short")
+    c.set_defaults(fn=cmd_cmp)
     q = sub.add_parser("report")
     q.add_argument("--out", required=True)
     q.add_argument("--rid", required=True)

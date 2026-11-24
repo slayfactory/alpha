@@ -284,3 +284,33 @@ def test_report_prints_table(tmp_path, capsys):
     assert w.main(["report", "--out", out, "--rid", "T-m02", "--db", os.path.join(str(tmp_path), "mass.sqlite")]) == 0
     txt = capsys.readouterr().out
     assert "| month | select |" in txt and "случайная c1" in txt and "Следующий выбор" in txt and "ключ: k" in txt
+
+
+def test_cmp_rows_anchor_best_and_windows():
+    # 4 клетки × 59 суток (январь + февраль): клетка 3 — лучшая в январе, клетка 4 — не посчитана в феврале
+    X = np.zeros((4, 59))
+    X[0, :] = 1.0
+    X[1, :31] = -1.0
+    X[2, :31] = 3.0
+    X[2, 31:] = -0.5
+    X[3, :31] = 5.0
+    N = (np.abs(X) > 0).astype(np.int32) * 2
+    P = np.array([[1, 1], [1, 1], [1, 1], [1, 0]], bool)
+    pool = mk_pool(X, N, P)
+    anchor = (X[0].copy(), N[0].copy(), 1, "ckey")
+    rows = w.cmp_rows(pool, "long", "A-m02", anchor)
+    got = {(r[2], r[3]): r for r in rows}
+    assert set(got) == {("m01", "anchor"), ("m01", "best"), ("m02", "anchor"), ("m02", "best"), ("cum", "anchor"), ("cum", "best")}
+    assert got[("m01", "anchor")][8] == 31.0                       # Σ якоря за январь
+    assert got[("m01", "best")][5] == 4 and got[("m01", "best")][8] == 155.0   # клетка 4 (cid 4) лучшая в январе
+    assert got[("cum", "best")][5] != 4                             # клетка 4 не во всех месяцах: в «cum» не участвует
+    ex = json.loads(got[("m01", "anchor")][13])
+    assert ex["n_above_anchor"] == 2 and ex["m"] == 4              # выше Σ якоря 31: клетки 3 (93) и 4 (155)
+    assert json.loads(got[("m01", "best")][13])["found_on_same_data"] is True
+
+
+def test_cmp_rows_without_anchor():
+    X = np.ones((2, 31)) * [[1.0], [2.0]]
+    pool = mk_pool(X, np.ones(X.shape, np.int32) * 2)
+    rows = w.cmp_rows(pool, "long", "A-m01", None)
+    assert {r[3] for r in rows} == {"best"} and rows[0][5] == 2
