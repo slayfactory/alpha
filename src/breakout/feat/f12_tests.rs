@@ -3,8 +3,8 @@
 
 use super::f12::{
     block_returns, coin_rows, csv_row, ffill_close, header, minute_returns, natr_series,
-    parse_px_csv, pearson_pairs, ratio_f64, read_sigsx, CoinCtx, Minutes, PxDay, PxSrc, Refs, Sig,
-    DAYS_TOTAL, META, NAMES,
+    parse_px_csv, pearson_pairs, ratio_f64, read_sigsx, read_sigsx_tf, CoinCtx, Minutes, PxDay,
+    PxSrc, Refs, Sig, DAYS_TOTAL, META, NAMES, NF,
 };
 use super::pdcompat::parse_date;
 use anyhow::Result;
@@ -130,8 +130,32 @@ fn sigsx_reader_sorts_by_level_then_time() -> Result<()> {
     );
     assert_eq!(a[0].members, vec![(5, 100), (9, 101)]);
     assert_eq!(a[0].natr_e8, 400_003);
+    assert!(a.iter().all(|x| x.tf_min == 60)); // нет поля — свеча по умолчанию
     let only = read_sigsx(&p, Some(&["BBBUSDT".to_string()]))?;
     assert_eq!(only.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn sigsx_tf_min_column_and_default() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let p = dir.path().join("long-sigsx.csv");
+    std::fs::write(
+        &p,
+        "sym,level,sig_ms,dist_e8,level_px_e8,born,end,first_bar,natr_e8,members,tf_min
+         AAAUSDT,1,100,1,200,1,9,7,400000,5:200,240
+         AAAUSDT,2,200,1,200,1,9,7,400000,5:200,
+",
+    )?;
+    let a = &read_sigsx_tf(&p, None, 30)?["AAAUSDT"];
+    assert_eq!((a[0].tf_min, a[1].tf_min), (240, 30)); // поле строки — приоритет, пустое — по умолчанию
+    std::fs::write(
+        &p,
+        "sym,level,sig_ms,dist_e8,level_px_e8,born,end,first_bar,natr_e8,members,tf_min
+         AAAUSDT,1,100,1,200,1,9,7,400000,5:200,0
+",
+    )?;
+    assert!(read_sigsx(&p, None).is_err());
     Ok(())
 }
 
@@ -192,6 +216,7 @@ fn coin_rows_flat_synthetic() -> Result<()> {
         born: 20 * 1440 + 300,
         first_bar: 20 * 24 + 1,
         natr_e8: 400_000,
+        tf_min: 60,
         members: vec![(20 * 24 + 1, r), (20 * 24 + 4, 100_40000000)],
     };
     let src = MemSrc {
@@ -256,4 +281,136 @@ fn coin_rows_flat_synthetic() -> Result<()> {
     assert!(line.contains(",False,"));
     assert_eq!(META.len() + NAMES.len() + 1, header().split(',').count());
     Ok(())
+}
+
+/// TK-699: одна строка `sigsx` с размером свечи уровня в 11-м поле (`tf_min`) → 48 признаков f12. Минутки плоские в зоне входа
+/// (low 100,25 > 100,1985, high 100,29 < полосы касания 100,299), уровень 100,5; два члена — в минутах `t − 960` и `t − 480`,
+/// `t` = 12:00 суток 21. `spikes`: пик high 100,6 в минутах `t − 100 … t − 91` (подход) и одиночный пик в минуте `t − 380` —
+/// внутри свечи второго члена только при свече 240 мин (там он не считается).
+fn level_case(tf: i64, spikes: bool) -> Result<[f64; NF]> {
+    let n = (DAYS_TOTAL * 1440) as usize;
+    let mut m = flat_minutes(
+        n,
+        100_27000000,
+        100_29000000,
+        100_25000000,
+        100_27000000,
+        1_000_000,
+    );
+    let base_ms = parse_date("2026-09-01")? * DAY_MS;
+    let day = 21;
+    let sig_ms = day * DAY_MS + 12 * 3_600_000;
+    let t = sig_ms / 60_000;
+    let (a_min, b_min) = (t - 960, t - 480);
+    let born = b_min + tf + 60;
+    if spikes {
+        for x in (t - 100)..(t - 90) {
+            m.h[x as usize] = 100_60000000;
+        }
+        m.h[(t - 380) as usize] = 100_60000000;
+    }
+    let (r, p2) = (100_50000000i64, 100_40000000i64);
+    let dir = tempfile::tempdir()?;
+    let p = dir.path().join("long-sigsx.csv");
+    std::fs::write(
+        &p,
+        format!(
+            "sym,level,sig_ms,dist_e8,level_px_e8,born,end,first_bar,natr_e8,members,tf_min\n\
+             ZZZUSDT,7,{sig_ms},99502,{r},{born},{born},{},400000,{}:{r}|{}:{p2},{tf}\n",
+            a_min / tf,
+            a_min / tf,
+            b_min / tf
+        ),
+    )?;
+    let sig = read_sigsx(&p, None)?.remove("ZZZUSDT").expect("монета")[0].clone();
+    let sig_abs = base_ms + sig_ms;
+    let src = MemSrc {
+        day: base_ms.div_euclid(DAY_MS) + day,
+        t: vec![
+            sig_abs - 50 * 60_000,
+            sig_abs - 10 * 60_000,
+            sig_abs,
+            sig_abs + 5000,
+        ],
+        p: vec![100_00000000, 100_10000000, 100_40000000, 100_45000000],
+    };
+    let (rows, st) = coin_rows(
+        &src,
+        &refs(),
+        &CoinCtx::new(m),
+        "ZZZUSDT",
+        1,
+        base_ms,
+        DAYS_TOTAL,
+        &[sig],
+    )?;
+    assert_eq!(st.locate_fail, 0);
+    Ok(rows[0].feats.expect("признаки"))
+}
+
+fn close(a: f64, b: f64) -> bool {
+    (a - b).abs() <= 1e-9 * b.abs().max(1.0)
+}
+
+/// Ожидание из определения (минуты, свеча `tf`), без общих с f12 констант: возраст, касания, подход, свежесть, глубина отскоков.
+fn check_level_case(tf: i64, spikes: bool) -> Result<()> {
+    let f = level_case(tf, spikes)?;
+    let at = |name: &str| f[NAMES.iter().position(|&x| x == name).unwrap_or(usize::MAX)];
+    let t = 21 * 1440 + 720;
+    let b_min = t - 480;
+    let born = b_min + tf + 60;
+    let bad = std::cell::RefCell::new(Vec::new());
+    let want = |name: &str, v: f64| {
+        let g = at(name);
+        if !close(g, v) {
+            bad.borrow_mut().push(format!("{name}: {g} ≠ {v}"));
+        }
+    };
+    want("n_piv", 2.0);
+    want("age_h", 16.0);
+    want("since_born_h", (t - born) as f64 / 60.0);
+    let (ep, mx) = if spikes {
+        (
+            if tf == 240 { 1.0 } else { 2.0 },
+            10_000_000f64 / 100_50000000f64 * 1e4,
+        )
+    } else {
+        (0.0, 0.0)
+    };
+    want("pierce_ep", ep);
+    want("touch_ep", ep);
+    want("pierce_max_bp", mx);
+    let none_h = (t - (b_min + tf)) as f64 / 60.0; // члены без касаний после них: от конца свечи последнего члена
+    want("since_touch_h", if spikes { 91.0 / 60.0 } else { none_h });
+    let d0 = (100_50000000f64 - 100_25000000.0) / 100_50000000.0 * 1e4;
+    let d1 = (100_40000000f64 - 100_25000000.0) / 100_40000000.0 * 1e4;
+    want("depth_min_bp", d0.min(d1));
+    want("depth_mean_bp", (d0 + d1) / 2.0);
+    want("approach_dur_min", if spikes { 90.0 } else { 960.0 });
+    want(
+        "since_touch_prior_h",
+        if spikes { 91.0 / 60.0 } else { none_h },
+    );
+    want("touch_prior_none", if spikes { 0.0 } else { 1.0 });
+    let bad = bad.into_inner();
+    assert!(bad.is_empty(), "FAILED tf={tf} spikes={spikes}: {bad:?}");
+    Ok(())
+}
+
+#[test]
+fn level_candle_size_30_min() -> Result<()> {
+    check_level_case(30, false)?;
+    check_level_case(30, true)
+}
+
+#[test]
+fn level_candle_size_240_min() -> Result<()> {
+    check_level_case(240, false)?;
+    check_level_case(240, true)
+}
+
+#[test]
+fn level_candle_size_60_min() -> Result<()> {
+    check_level_case(60, false)?;
+    check_level_case(60, true)
 }
