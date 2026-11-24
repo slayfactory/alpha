@@ -8,7 +8,7 @@
 `spawn_verify_sidecar`, `fsync`, `let _ = append_gap_row`, `timeout`/`pong` в `conn.rs`, запись в
 потоке решений, `[lints]`/`clippy.toml`, `let _ = rec.flush()`, `io_threads`, дата T45 против
 деплоя), плюс **боевой сервер `139.99.91.22` прочитан по SSH** (только чтение, 2026-09-16 ≈ 23:40 UTC).
-Кросс-документы: план работ — [dev-plan-2026-09-17.md](../../plan/dev-plan-2026-09-17.md) (этап A); спека — [bounce-spec](bounce-spec-2026-09-17.md); остальные видео — [transcripts](transcripts-2026-09-17.md); цепочка — [roadmap](../../findings/roadmap-2026-09-17.md).
+Кросс-документы: план работ — [dev-plan-2026-09-17.md](../plan/dev-plan-2026-09-17.md) (этап A); спека — [bounce-spec](bounce-spec-2026-09-17.md); остальные видео — [transcripts](transcripts-2026-09-17.md); цепочка — [roadmap](../../findings/roadmap-2026-09-17.md).
 Точка отсчёта — `docs/ARCHITECTURE.md` A1–A9, `docs/archive/findings/audit-2026-09-12.md`, `docs/findings/collector-2026-09-12.md`,
 семь запретов `interfaces.md`; ниже — только дельта и то, чего они не покрывают.
 
@@ -154,7 +154,7 @@
 
 ## 7. Сводная таблица проблем
 
-Колонка «Тикет» — куда ушло в [dev-plan-2026-09-17.md](../../plan/dev-plan-2026-09-17.md).
+Колонка «Тикет» — куда ушло в [dev-plan-2026-09-17.md](../plan/dev-plan-2026-09-17.md).
 
 Приоритет: **критично** — теряются данные или их потеря невидима; **важно** — ложная уверенность,
 блокер следующего шага или срок; **косметика** — не меняет результат сейчас.

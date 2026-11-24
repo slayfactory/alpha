@@ -1,7 +1,7 @@
 # 48 — Снятие инструмента и замена пула на идущей записи (A8.1)
 
 **Требования:** директива владельца 2026-09-17 («коллектор при любых обстоятельствах»: «смена монет,
-удаление, добавление, апокалипсис»), A8 §Дополнения `docs/plan/dev-plan-2026-09-17.md`, порядок
+удаление, добавление, апокалипсис»), A8 §Дополнения `docs/archive/plan/dev-plan-2026-09-17.md`, порядок
 подтикетов — `.memory/projects/active/alpha.md` §ПЕРЕДАЧА. **Не отменяет** В-40 (hot-add, T34/тикет 34).
 **Blocked by:** —
 **Зона:** `src/feed/mod.rs` (`DynamicPool::remove`), `src/feed/live.rs` (остановка шарда, пересборка
@@ -9,7 +9,7 @@
 (`Writer::get_mut`), `src/commands/lob/session.rs` (`check_pool_file`, `close_symbol`, `is_active`,
 правило «дописанного файла»), `session/sink.rs` (`FrameSink::close`, `ClosedSink`, `SymbolState.active`),
 `session/summary.rs` (`pool_removals`), тесты `session/tests.rs` и `feed/live/tests.rs`, `CLAUDE.md`,
-`docs/COMMANDS.md`, `docs/plan/dev-plan-2026-09-17.md`. **Не трогать:** `bybit/conn.rs` (переподписка на
+`docs/COMMANDS.md`, `docs/archive/plan/dev-plan-2026-09-17.md`. **Не трогать:** `bybit/conn.rs` (переподписка на
 живом сокете — по-прежнему нет; снятие идёт остановкой шарда), `bybit/ws.rs`, `record.rs`, горячий путь
 `write_market_event`/`flush_symbol_batch` (кроме одного `if !active` до записи).
 **Волна:** 13
@@ -69,7 +69,7 @@
 - [x] `cargo test --release --target-dir target-ci` — **791 passed, 0 failed, 5 ignored**; clippy
       `-D warnings` и `fmt --check` чисто
 - [x] `CLAUDE.md` (команды: как снять монету, чем заменить; грабли), `docs/COMMANDS.md` (строка
-      `lob session`, грабли пула, «снять монету / заменить пул»), `docs/plan/dev-plan-2026-09-17.md`
+      `lob session`, грабли пула, «снять монету / заменить пул»), `docs/archive/plan/dev-plan-2026-09-17.md`
       (A8.1 сделан), `//!` в `session.rs`
 - [x] **живой прогон** 2026-09-17 (локально, `data/a81-live`, 3 монеты: HYPEUSDT, LSKUSDT,
       NEARUSDT, один сокет, `--minutes 5`): строка LSKUSDT убрана атомарной заменой файла в
