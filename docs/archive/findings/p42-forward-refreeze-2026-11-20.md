@@ -5,7 +5,7 @@
 
 ## G-626a — байт в байт против TK-621
 
-`L_base` и `S_base` с `t24=12`, окна `wa` / `wb` / `wc`: 24 файла (`{trades,daily,coinday,entryrej}.csv` стороны клетки × 2 клетки × 3 окна) против `/data/p42-tk621/out/all_t24/` (бинарь `a112684a`): **различий 0**. Швы окон G3 (6 клеток): различий 0, `forced` 0. Артефакты: `docs/findings/p42-gmk-honest-2026-11-19/{gate-a.json,seams.json,run.json}`.
+`L_base` и `S_base` с `t24=12`, окна `wa` / `wb` / `wc`: 24 файла (`{trades,daily,coinday,entryrej}.csv` стороны клетки × 2 клетки × 3 окна) против `/data/p42-tk621/out/all_t24/` (бинарь `a112684a`): **различий 0**. Швы окон G3 (6 клеток): различий 0, `forced` 0. Артефакты: `docs/archive/findings/p42-gmk-honest-2026-11-19/{gate-a.json,seams.json,run.json}`.
 Ориентир TK-621 воспроизведён: `S_base` +223,14 $ / 319 сделок (+0,700 $/сделку); `L_base` +193,17 $ / 428 сделок (+0,451 $/сделку).
 
 ## G-626c — G_mk заново на `all` с `t24=12` (допуск `S_mk1`)

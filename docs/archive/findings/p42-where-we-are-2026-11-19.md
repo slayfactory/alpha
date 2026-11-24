@@ -71,7 +71,7 @@ Files: srv /data/p42-tk624/table.json (daily series for equity curves), code doc
 - `tk593_check.py` + `tk593_shots.js` (прежняя страница целиком): **4151 проверка, 0 расхождений** на 1280 и 390; `tk606_check.js` («Признаки») 76 проверок, 0 отказов.
 - Клик-тест Sofia: ошибок консоли нет, горизонтальной прокрутки нет.
 - `test_tk606.py::test_semantic_checks_catch_bad_data` падает и на HEAD до моих правок (тест ждёт набор «идёт» без цифр, таких наборов больше нет) — не связано с TK-624.
-- Снимки: `docs/findings/p42-where-we-are-2026-11-19/*.png` (1280 и 390): `progress-top` — «Ход работ»; `where-top` / `where-block` — «Эквити» · «Где мы»; `feature-block` — блок признака; `features-breakability` — TK-604 в «Признаках»; `bases-short` — «Базы».
+- Снимки: `docs/archive/findings/p42-where-we-are-2026-11-19/*.png` (1280 и 390): `progress-top` — «Ход работ»; `where-top` / `where-block` — «Эквити» · «Где мы»; `feature-block` — блок признака; `features-breakability` — TK-604 в «Признаках»; `bases-short` — «Базы».
 
 ## Отступления
 - Остаточные «бп» в старых вкладках («Цели TK-598»: цель T2 «прибыль, бп»; ось NATR на вкладке «Модель») не тронуты — это не новый текст, их менять = ломать прежние проверки.

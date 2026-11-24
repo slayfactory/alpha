@@ -54,4 +54,4 @@
 
 ## Артефакты
 
-`docs/findings/p42-catboost-targets-2026-11-18/`: `freeze/` (`frozen.json`, модели), `fit/` (подгонка, OOF, журнал), `gates/` (G-F, NaN, цензура `age_h`), `read/` (`pool.json`, `read-jul|aug|hold.json`, строки окон `rows-*.parquet`, маркеры `READ-*.started`), `FREEZE.md`. Код — `tools/p42/tk598_*.py`, тесты `test_tk598.py` (30, зелёные на srv). Данные на srv: `/data/p42-tk598/{out,feat,path,tab,fit,freeze,read,gates}`.
+`docs/archive/findings/p42-catboost-targets-2026-11-18/`: `freeze/` (`frozen.json`, модели), `fit/` (подгонка, OOF, журнал), `gates/` (G-F, NaN, цензура `age_h`), `read/` (`pool.json`, `read-jul|aug|hold.json`, строки окон `rows-*.parquet`, маркеры `READ-*.started`), `FREEZE.md`. Код — `tools/p42/tk598_*.py`, тесты `test_tk598.py` (30, зелёные на srv). Данные на srv: `/data/p42-tk598/{out,feat,path,tab,fit,freeze,read,gates}`.

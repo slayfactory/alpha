@@ -71,4 +71,4 @@
 
 ## Артефакты
 
-`docs/research/freeze/tk610-frozen.json`; `docs/findings/p42-catboost-retitr-2026-11-19/{read-aug.json, READ-aug.started}`; srv `/data/p42-tk610/{out, fit, score, gates, work, read, freeze}`; код `tools/p42/tk610_*.py` (`ec585fb1a`), тесты `tools/p42/test_tk610.py` (52).
+`docs/research/freeze/tk610-frozen.json`; `docs/archive/findings/p42-catboost-retitr-2026-11-19/{read-aug.json, READ-aug.started}`; srv `/data/p42-tk610/{out, fit, score, gates, work, read, freeze}`; код `tools/p42/tk610_*.py` (`ec585fb1a`), тесты `tools/p42/test_tk610.py` (52).

@@ -198,6 +198,6 @@
 
 ## 7. Артефакты
 - Протокол: `docs/research/P-42-level-breakout.md` §13.19. Движок: `src/breakout/{params,levels,tick,tick_cli,trade,cli,tick_tests}.rs`. Скрипты: `tools/p42/{path_report,stops_report,stops_md,charts,runcharts_s19c}.py|sh`, `tools/p42/variants-13.19.txt` (сетка), `tools/p42/variants-13.19-comb.txt` (сборка).
-- Результаты в репо (`docs/findings/p42-stops-exits-2026-11-18/`): `step1-summary.txt`, `paths-ow_e.csv`, `grid-report.txt` (+ `report-s19.json`), `comb-report.txt` (+ `report-s19c.json`).
+- Результаты в репо (`docs/archive/findings/p42-stops-exits-2026-11-18/`): `step1-summary.txt`, `paths-ow_e.csv`, `grid-report.txt` (+ `report-s19.json`), `comb-report.txt` (+ `report-s19c.json`).
 - На srv: `/data/p42-t566/out/{gate20,gate20b,s19,s19c}` (ворота, сетка, сборка), `/data/p42-t566/out/s19/variants-comb.txt`, бинари `/data/p42v2/bin/alpha-p42-v20`, `…-v20b`, шаг 1 — `/data/p42-t591/step1/`.
 - Запуск: `P42_DETAIL=1 bash tools/p42/runentry.sh s19 tools/p42/variants-13.19.txt /data/p42v2/bin/alpha-p42-v20`; отчёт — `P42_ROOT=/data/p42-charts/pkroot P42_FQ_COL=first_day_ge_12M python3 stops_report.py grid|comb|gate`; таблицы — `stops_md.py`.

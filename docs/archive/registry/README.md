@@ -12,9 +12,9 @@
 - Git Bash на Windows портит аргументы вида `/data/...` (→ `C:/Program Files/Git/data/...`): путь сервера писать с `MSYS_NO_PATHCONV=1`.
 
 ## Полный конфиг (владелец 06.10)
-Поле `config` строки = всё для повтора байт в байт: `cmdline`, `env` (ALPHA_*/PREWARM_*/EVENTS_*/…), `files` (скрипты и списки клеток — копия по sha256 в `docs/registry/files/<sha>`), `inputs` (sha пула, verdict.csv и др. входов), `binaries` (md5), `git`. `config_status` — «полный…» или «неполон: что не снято» явно.
+Поле `config` строки = всё для повтора байт в байт: `cmdline`, `env` (ALPHA_*/PREWARM_*/EVENTS_*/…), `files` (скрипты и списки клеток — копия по sha256 в `docs/archive/registry/files/<sha>`), `inputs` (sha пула, verdict.csv и др. входов), `binaries` (md5), `git`. `config_status` — «полный…» или «неполон: что не снято» явно.
 Снимает `tools/registry/snap.py` (на сервере `/data/registry/snap.py`), вызывается из `benchrun.sh`/`benchrun2.sh` до и после команды; манифест — `/data/registry/runs/<время>-<pid>.json`. Скрипты разворачиваются до глубины 3 по путям в тексте; нестандартные наборы (клетки по суткам) — `REG_GLOBS=glob1:glob2` перед запуском.
-Влить: забрать `/data/registry/auto.jsonl` и каталог `runs/` рядом, `registry.py import-auto <auto.jsonl>`; копии файлов — из `/data/registry/files/` в `docs/registry/files/`.
+Влить: забрать `/data/registry/auto.jsonl` и каталог `runs/` рядом, `registry.py import-auto <auto.jsonl>`; копии файлов — из `/data/registry/files/` в `docs/archive/registry/files/`.
 
 ## База (TK-068, схема v1) — решение по В-170
 SQLite 3 (миграции `tools/registry/migrations/NNN_*.sql`, версия — таблица `schema_version`; сборка — `tools/registry/db.py`).
@@ -38,7 +38,7 @@ JSON1 для расширения, один файл. Один источник 
 2. Прогоны на бинарнике X: `select r.id,r.ts,r.wall_s from runs r join run_binaries b on b.run_id=r.id where b.md5 like 'abcd%'`
 3. Конфиг прогона/клетки целиком: `select json_extract(config,'$.cmdline'),config from runs where id='R-…'`; клетки — `select c.* from run_cells rc join cells c on c.id=rc.cell_id where rc.run_id='R-…'`
 4. Что считано на пуле v171b за март: `select r.id,d.period_from,d.period_to from runs r join run_data d on d.run_id=r.id where d.pool='v171b' and d.period_from<='2026-03-31' and d.period_to>='2026-03-01'`
-5. Повторить прогон Z: `select cmdline, json_extract(config,'$.env'), json_extract(config,'$.files') from runs where id='Z'` (файлы по sha — `docs/registry/files/`)
+5. Повторить прогон Z: `select cmdline, json_extract(config,'$.env'), json_extract(config,'$.files') from runs where id='Z'` (файлы по sha — `docs/archive/registry/files/`)
 
 ## Автозапись
 - Замеры: `/data/benchrun.sh|benchrun2.sh wave|stand …` сами снимают манифест (snap.py) → `/data/registry/auto.jsonl`.

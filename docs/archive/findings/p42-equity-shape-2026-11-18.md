@@ -468,5 +468,5 @@ P&L по 4-часовым окнам закрытия UTC (00–04, 04–08, …
 
 ## 6. Где лежит
 
-- Код: `tools/p42/tk602_shape.py`, `tk602_report.py`, `test_tk602.py`; сырое — `docs/findings/p42-equity-shape-2026-11-18/{out,rep,shots-*}`.
+- Код: `tools/p42/tk602_shape.py`, `tk602_report.py`, `test_tk602.py`; сырое — `docs/archive/findings/p42-equity-shape-2026-11-18/{out,rep,shots-*}`.
 - Страница http://5.231.25.224:8090/ → «Эквити» → «Кривая | Форма» (`#equity/short|long/shape`).

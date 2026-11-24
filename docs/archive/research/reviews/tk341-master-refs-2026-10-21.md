@@ -5,7 +5,7 @@
 | PR81 слит | да | `gh pr view 81`: MERGED 12:05Z, d5e0a39 — предок origin/master |
 | tk0279 удалён, +203 ГБ | да | принято ранее (reviews/tk341-refs-tools) |
 | Г-135/136 «Отвергнута» | да | принято ранее |
-| ссылки на tk0279 в tools/ = 0 | **нет** | `git grep -n tk0279 origin/master -- tools docs/registry` — 6 строк |
+| ссылки на tk0279 в tools/ = 0 | **нет** | `git grep -n tk0279 origin/master -- tools docs/archive/registry` — 6 строк |
 
 Ссылки пришли в master слиянием PR82 (TK-343, ветка tk289) после приёмки PR81:
 
@@ -13,4 +13,4 @@
   `/data/tk0279/days9.txt` (каталог удалён; файл теперь `/data/tk0341/keep/days9.txt`).
 
 Вернуть: заменить путь на `/data/tk0341/keep/days9.txt` в 6 скриптах (или перенести их в docs/archive, если П-18 закрыт
-и перезапуск не нужен), PR в master; критерий — `git grep tk0279 origin/master -- tools docs/registry` = 0.
+и перезапуск не нужен), PR в master; критерий — `git grep tk0279 origin/master -- tools docs/archive/registry` = 0.
