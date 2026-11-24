@@ -33,7 +33,7 @@ VERDICTS = ("работает", "не работает", "не ясно", "оп�
 METRIC_COLS = ("side", "cell", "uni", "win", "trades", "usd", "mean_usd", "sharpe", "verdict", "same_data", "from_text", "src", "src_commit",
                "src_ptr", "extra")
 KINDS = ("verdict", "prereg", "amend", "freeze", "result", "step", "measure", "experiment", "correction", "note")
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 # почему у записи нет чисел (TK-661): строка metric_gap — объяснение пробела в БД, не в карточке
 GAP_REASONS = ("предрегистрация", "заморозка", "не запускалось", "числа не вписаны", "чисел сделок нет")
 HERE = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
@@ -236,6 +236,13 @@ INFL_TRIGGERS = "".join(
     "CREATE TRIGGER %s_nodelete BEFORE DELETE ON %s BEGIN SELECT RAISE(ABORT, 'chron: результаты влияния осей только добавляются'); END;\n" % (t, t, t, t)
     for t in INFL_TABLES)
 MIGRATE[8] = INFL_DDL + INFL_TRIGGERS
+MIGRATE[9] = """
+-- перенос файла в git (TK-704): строки link / metric неизменяемы и хранят прежний путь; перенос — новая строка «старый путь → новый» (файл или каталог с «/» на конце)
+CREATE TABLE file_move(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, old TEXT NOT NULL UNIQUE, new TEXT NOT NULL, reason TEXT, author TEXT, created TEXT NOT NULL, CHECK (old <> new));
+CREATE TRIGGER file_move_noupdate BEFORE UPDATE ON file_move BEGIN SELECT RAISE(ABORT, 'chron: переносы файлов только добавляются'); END;
+CREATE TRIGGER file_move_nodelete BEFORE DELETE ON file_move BEGIN SELECT RAISE(ABORT, 'chron: переносы файлов только добавляются'); END;
+"""
 FTS_SQL = "CREATE VIRTUAL TABLE fts USING fts5(node UNINDEXED, title, body, tokenize='trigram')"
 
 
@@ -309,6 +316,44 @@ def rel_for(dst, kb_types=None):
     if re.match(r"^(TK-\d+|G-\d{3})$", dst):
         return "task"
     return "protocol" if dst.startswith("P-") else "kb"
+
+
+# ───────────────────────── перенос файлов (TK-704) ─────────────────────────
+
+PATH_TAIL_RE = re.compile(r"^(.*?)(#.*|:\d+(?:-\d+)?)?$", re.S)
+
+
+def move_under(base, old):
+    """Путь base — это old (файл) или лежит в каталоге old («…/» на конце), либо сам этот каталог."""
+    return base == old or (old.endswith("/") and (base + "/" == old or base.startswith(old)))
+
+
+def move_path(p, moves):
+    """Путь после переносов [(old, new)]: точный файл или каталог-префикс; цепочка A → B → C; самое длинное совпадение первым;
+    хвост «#якорь» / «:строка» сохраняется. Цикл — ChronError."""
+    base, tail = PATH_TAIL_RE.match(p).groups()
+    for _ in range(len(moves) + 2):
+        hits = [(o, n) for o, n in moves if move_under(base, o)]
+        if not hits:
+            return base + (tail or "")
+        o, n = max(hits, key=lambda x: len(x[0]))
+        base = n + base[len(o):] if o.endswith("/") and base.startswith(o) else n.rstrip("/") if o.endswith("/") else n
+    raise ChronError("цикл переносов: %s" % p)
+
+
+def file_present(g, p, moves):
+    """Файл есть в git по записанному пути или по пути после переноса."""
+    return g.file_ok(p) or (bool(moves) and g.file_ok(move_path(p, moves)))
+
+
+def norm_move(old, new):
+    """Ввод пользователя → (old, new): без «./», со «/» вместо «\\»; каталог — «/» на конце у обоих."""
+    o, n = (re.sub(r"^(\./)+", "", x.strip().replace("\\", "/")) for x in (old, new))
+    if not o or not n or o.rstrip("/") == n.rstrip("/"):
+        raise ChronError("перенос: пути пусты или совпадают: «%s» → «%s»" % (old, new))
+    if o.endswith("/") != n.endswith("/"):
+        raise ChronError("перенос: каталог — «/» на конце у обоих путей: «%s» → «%s»" % (old, new))
+    return o, n
 
 
 # ───────────────────────── хранилище (исполняется там, где лежит БД) ─────────────────────────
@@ -646,6 +691,31 @@ class Store:
                 new += cur.rowcount
             self.c.execute("COMMIT")
             return {"new": new, "same": len(rows) - new}
+        except BaseException:
+            self.c.execute("ROLLBACK")
+            raise
+
+    def file_moves(self):
+        return [list(r) for r in self.c.execute("SELECT old, new FROM file_move ORDER BY id")]
+
+    def relink(self, pairs, reason=None, author=None):
+        """pairs: [[old, new]] → {new, same}: перенос файла / каталога в git (TK-704); строки link и metric не меняются, перенос — новой строкой.
+        Повтор той же пары не пишется; тот же old → другой new и цикл — отказ, ничего не записано."""
+        self.c.execute("BEGIN IMMEDIATE")
+        try:
+            moves = {o: n for o, n in self.c.execute("SELECT old, new FROM file_move")}
+            new = 0
+            for old, dst in pairs:
+                if old in moves:
+                    if moves[old] != dst:
+                        raise ChronError("%s уже перенесён → %s" % (old, moves[old]))
+                    continue
+                moves[old] = dst
+                move_path(old, list(moves.items()))
+                self.c.execute("INSERT INTO file_move(old, new, reason, author, created) VALUES (?,?,?,?,?)", (old, dst, reason, author, now()))
+                new += 1
+            self.c.execute("COMMIT")
+            return {"new": new, "same": len(pairs) - new}
         except BaseException:
             self.c.execute("ROLLBACK")
             raise
@@ -1161,7 +1231,7 @@ class Store:
         for t in ("entry_immutable", "entry_nodelete", "psec_locked", "psec_nodelete", "link_nodelete", "link_noupdate",
                   "psec_flag_noupdate", "psec_flag_nodelete", "metric_noupdate", "metric_nodelete", "psec_num_noupdate", "psec_num_nodelete",
                   "metric_gap_noupdate", "metric_gap_nodelete", "metric_fix_noupdate", "metric_fix_nodelete",
-                  *("%s_%s" % (t, w) for t in INFL_TABLES for w in ("noupdate", "nodelete"))):
+                  "file_move_noupdate", "file_move_nodelete", *("%s_%s" % (t, w) for t in INFL_TABLES for w in ("noupdate", "nodelete"))):
             if t not in trig:
                 issues.append("нет триггера %s" % t)
         for src, dst, rel in self.c.execute("SELECT src, dst, rel FROM link").fetchall():
@@ -1815,7 +1885,7 @@ def call(op, *args, **kw):
 
 
 RO_OPS = {"query", "search", "links_of", "get", "protocol_text", "protocols", "facets", "links_all", "stats", "fields_report", "check_db", "reconstruct",
-          "exists", "label", "metrics_query", "metrics_facets", "metrics_coverage", "metrics_sources", "entries_for_metrics", "cells_lookup", "cells_count"}
+          "exists", "label", "metrics_query", "metrics_facets", "metrics_coverage", "metrics_sources", "entries_for_metrics", "cells_lookup", "cells_count", "file_moves"}
 
 
 def rpc_main():
@@ -1823,7 +1893,7 @@ def rpc_main():
     os.environ.setdefault("CHRON_DB", SRV_DB)
     try:
         if req["op"] not in RO_OPS | {"add_entry", "add_psec", "edit_psec", "lock_psec", "flag_psec", "num_psec", "add_metrics", "add_gaps", "add_metric_fixes", "cells_put", "sync_kb", "import_docs",
-                                      "new_protocol"}:
+                                      "new_protocol", "relink"}:
             raise ChronError("операция %s недоступна" % req["op"])
         res = {"ok": call(req["op"], *req["args"], **req["kw"])}
     except (ChronError, sqlite3.Error) as e:
@@ -2285,15 +2355,16 @@ def cmd_check(a):
     gitl = [(s, d) for s, d, _ in links if node_kind(d) in ("commit", "file")]
     if root:
         g = Git(root)
+        moves = call("file_moves")
         ok = g.commits([d[7:] for _, d in gitl if d.startswith("commit:")])
         for s, d in gitl:
-            if (d.startswith("commit:") and not ok.get(d[7:])) or (d.startswith("file:") and not g.file_ok(d[5:])):
+            if (d.startswith("commit:") and not ok.get(d[7:])) or (d.startswith("file:") and not file_present(g, d[5:], moves)):
                 issues.append("битая ссылка: %s → %s (нет в git)" % (s, d))
         msrc = call("metrics_sources")
         okc = g.commits([c for _, c in msrc if c])
         for src, c in msrc:
             path = re.sub(r":\d+(-\d+)?$", "", src)
-            if not g.file_ok(path) and not (c and okc.get(c) and g.at(c, path)):
+            if not file_present(g, path, moves) and not (c and okc.get(c) and g.at(c, path)):
                 issues.append("число: файла нет в git: %s" % src)
             if c and not okc.get(c):
                 issues.append("число: коммита нет: %s (%s)" % (c, src))
@@ -2303,6 +2374,43 @@ def cmd_check(a):
         print(i)
     print("chron check: ссылок %d, ошибок %d" % (len(links), len(issues)))
     return 1 if issues else 0
+
+
+def cmd_relink(a):
+    """Перенос файла / каталога в git (TK-704): ссылки file: и источники чисел остаются как записаны, `check` находит файл по новому пути.
+    Только после коммита переноса: новый путь должен быть в git. Пары — `OLD NEW` или файл `--from` (строка «старый<TAB>новый»); `--dry-run` — только счёт затронутого."""
+    pairs = []
+    if a.old:
+        pairs.append(norm_move(a.old, a.new or ""))
+    if a.src:
+        for ln in Path(a.src).read_text(encoding="utf-8").splitlines():
+            if ln.strip() and not ln.lstrip().startswith("#"):
+                parts = ln.split("\t") if "\t" in ln else ln.split()
+                if len(parts) != 2:
+                    raise ChronError("строка «%s»: нужно «старый<TAB>новый»" % ln)
+                pairs.append(norm_move(*parts))
+    if not pairs:
+        raise ChronError("relink: пары не заданы (OLD NEW или --from файл)")
+    root = repo_root()
+    if root and not a.no_verify:
+        g = Git(root)
+        bad = [n for _, n in pairs if not g.file_ok(n)]
+        if bad:
+            raise ChronError("нового пути нет в git (сначала закоммитить перенос): %s" % ", ".join(bad[:5]))
+    known = {o: n for o, n in call("file_moves")}
+    links = {(s, d) for s, d, _ in call("links_all") if d.startswith("file:")}
+    msrc = {re.sub(r":\d+(-\d+)?$", "", src) for src, _ in call("metrics_sources")}
+    tot_l = tot_m = 0
+    for old, new in pairs:
+        n_l = sum(1 for _, d in links if move_under(PATH_TAIL_RE.match(d[5:]).group(1), old))
+        n_m = sum(1 for p in msrc if move_under(p, old))
+        tot_l, tot_m = tot_l + n_l, tot_m + n_m
+        print("%s → %s: ссылок file: %d, источников чисел %d%s" % (old, new, n_l, n_m, " (уже записан)" if known.get(old) == new else ""))
+    print("пар %d, ссылок file: %d, источников чисел %d" % (len(pairs), tot_l, tot_m))
+    if not a.dry_run:
+        r = call("relink", [list(p) for p in pairs], a.reason, author())
+        print("записано переносов новых %d, уже были %d" % (r["new"], r["same"]))
+    return 0
 
 
 def cmd_stats(a):
@@ -2893,6 +3001,14 @@ def main(argv=None):
     s.add_argument("spec")
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(fn=cmd_metrics_spec)
+    s = sp.add_parser("relink", help="перенос файла / каталога в git: ссылки file: и источники чисел находятся по новому пути (TK-704)")
+    s.add_argument("old", nargs="?", help="старый путь (каталог — «/» на конце)")
+    s.add_argument("new", nargs="?", help="новый путь")
+    s.add_argument("--from", dest="src", help="файл пар: «старый<TAB>новый» в строке")
+    s.add_argument("--reason", help="почему перенесено (например TK-705)")
+    s.add_argument("--dry-run", action="store_true", help="только сколько ссылок и источников затронуто")
+    s.add_argument("--no-verify", action="store_true", help="не проверять, что новый путь уже в git")
+    s.set_defaults(fn=cmd_relink)
     s = sp.add_parser("fields", help="перенесённые записи: заполненные поля и почему пусто")
     s.add_argument("--ids", action="store_true", help="номера записей по каждой причине")
     s.set_defaults(fn=cmd_fields)
