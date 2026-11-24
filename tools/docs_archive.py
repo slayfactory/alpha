@@ -24,7 +24,7 @@ TEXT_EXT = {".md", ".py", ".sh", ".rs", ".toml", ".json", ".jsonl", ".csv", ".tx
             ".service", ".timer", ".conf", ".tsv", ".sql", ".mjs", ".css", ".tpl", ".ipynb"}
 TOKEN = re.compile(r"docs/[^\s)\]>\"'`,;|*{}<\\]+")
 MDLINK = re.compile(r"(\]\(|src=\"|href=\")([^)\"#\s]+)")
-NO_REWRITE = ("data/", "src/", "docs/registry/", "docs/plan/runs.csv")  # данные и код: текст не правим (src — вывод --help)
+NO_REWRITE = ("data/", "src/", "tools/", "docs/registry/", "docs/plan/runs.csv")  # данные и код: текст не правим (src — вывод --help, tools — чужие правки TK-703); документ, на который они ссылаются, остаётся
 
 
 def git(*a):
