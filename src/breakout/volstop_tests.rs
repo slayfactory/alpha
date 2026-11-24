@@ -188,6 +188,7 @@ fn run(ticks: Vec<(i64, f64, bool)>, ex: &ExitCfg, vol_e8: i64) -> TickOut {
         rng: None,
         vol: vol_e8,
         volz: -1,
+        nxt: 0,
     };
     let mut it = ticks.into_iter();
     let mut next = move || it.next().map(|(ms, p, bm)| (ms, px(p), bm));

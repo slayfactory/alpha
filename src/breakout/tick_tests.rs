@@ -537,6 +537,7 @@ fn reentry_modes_consume_level_per_protocol() {
             lp: px(100.0),
             far: px(100.0),
             ws: false,
+            nxt: 0,
         });
         ticks.push(tk(t, 0, 99.6, false));
         ticks.push(tk(t, 10_000, 99.8, false)); // сигнал
@@ -1346,6 +1347,7 @@ fn esig(k: usize, lp: f64) -> TSig {
         lp: px(lp),
         far: px(lp),
         ws: false,
+        nxt: 0,
     }
 }
 
@@ -1571,6 +1573,7 @@ fn tape_entry_rejection_does_not_consume_level_and_is_listed() {
         lp: px(100.05),
         far: px(100.05),
         ws: false,
+        nxt: 0,
     };
     let syms = [s];
     let r = run_tick(&syms, &[sg], Side::Long, &ex, &p.port, &src);
@@ -1600,6 +1603,7 @@ fn run_lc(
         rng: None,
         vol: -1,
         volz: -1,
+        nxt: 0,
     };
     sim_fill_lc(
         &mut stream(ticks),
@@ -1872,6 +1876,7 @@ impl E2World {
             lp: px(100.0),
             far: px(99.9),
             ws: false,
+            nxt: 0,
         };
         run_tick(&self.syms, &[sg], Side::Long, &self.ex, &self.port, &src)
     }
@@ -1995,6 +2000,7 @@ fn lot2_decision_does_not_enter_after_lot1_exit_time() {
         lp: px(100.0),
         far: px(99.9),
         ws: false,
+        nxt: 0,
     };
     let d0 = (w.t1 / 1440) as i64 * DAY_MS;
     // лот 1 вошёл в 10 004 и закрыт в 30 004: T2 = 30 004 — не раньше выхода → нет второго лота
@@ -2505,6 +2511,7 @@ fn fsig(ms: i64) -> TSig {
         lp: 0,
         far: 0,
         ws: false,
+        nxt: 0,
     }
 }
 
@@ -2600,6 +2607,7 @@ fn filtered_run(
         lp: px(100.0),
         far: px(99.9),
         ws: false,
+        nxt: 0,
     };
     let mut sigs = vec![sg];
     if let Some((hi, fv)) = keep {
@@ -2675,6 +2683,7 @@ fn multi_run(
             lp: px(100.0),
             far: px(99.9),
             ws: false,
+            nxt: 0,
         })
         .collect();
     run_tick(&w.syms, &sigs, Side::Long, &w.ex, port, &src)
@@ -3206,6 +3215,7 @@ impl E2World {
             lp: px(100.0),
             far: px(99.9),
             ws: false,
+            nxt: 0,
         };
         run_tick_mk(&self.syms, &[sg], Side::Long, ex, &self.port, &src, mk)
     }
@@ -3737,6 +3747,7 @@ fn run_rng(
         rng,
         vol: -1,
         volz: -1,
+        nxt: 0,
     };
     sim_fill_lc(
         &mut stream(ticks),
@@ -4067,6 +4078,7 @@ impl E2World {
                 lp: px(100.0),
                 far: px(99.9),
                 ws: false,
+                nxt: 0,
             })
             .collect();
         super::tick::run_tick_ek(&self.syms, &sgs, Side::Long, ex, &self.port, &src, 0, ek)
@@ -4225,6 +4237,7 @@ fn ek_short_confirms_on_a_fall_of_k_bp_in_the_mirror_frame() {
         lp: -px(100.0),
         far: -px(100.1),
         ws: false,
+        nxt: 0,
     };
     let (d, end) = super::tick::ek_decision(&src, &w.syms[0], Side::Short, &sg, &ex, 10);
     assert_eq!(
@@ -4339,6 +4352,7 @@ impl E2World {
                 lp: px(100.0),
                 far: px(99.9),
                 ws: false,
+                nxt: 0,
             })
             .collect();
         super::tick::run_tick_xb(&self.syms, &sgs, Side::Long, ex, &self.port, &src, 0, 0, xb)
@@ -4506,6 +4520,7 @@ fn xb_short_fires_on_a_fall_to_the_threshold_below_the_floor_in_the_mirror_frame
         lp: -px(100.0),
         far: -px(100.1),
         ws: false,
+        nxt: 0,
     };
     let natr = exit_natr(&w.syms[0], &ex, w.t1);
     let (d, end) = xb_decision(&src, &w.syms[0], Side::Short, &sg, &ex, natr, 400);
@@ -5741,6 +5756,7 @@ fn prio_run(
             lp: px(100.0),
             far: px(99.9),
             ws: false,
+            nxt: 0,
         });
     }
     super::tick::sort_tsigs(&mut v);
@@ -5899,3 +5915,6 @@ fn prio_reorders_same_ms_signals_without_a_window_and_without_delay() {
         assert_eq!((r.rej[4], r.prio), (1, [0, 0, 0, 0, 0, moved]), "pr={pr}");
     }
 }
+
+// TK-697 (банк № 9): тесты ключей `tn` / `tno` — отдельным файлом
+mod tn_tests;

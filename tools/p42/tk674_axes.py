@@ -22,13 +22,15 @@ DEFAULTS = {"tf": 60, "k": 2, "d": 0.5, "n_bounce": 2, "tau": 0.2, "l_days": 7, 
             "w2": 50, "e2t": 0, "s2": 0,               # разделённый вход TK-677 (бинарь 93cb51a9): доля части B, триггер B за N тиков до уровня, общая цена стопа
             "nf": 0, "ev": 0, "ea": 0, "el": 0.05, "eh": 1, "sm": 0,     # TK-681 (бинарь 4e1fb286): источник фильтра живости, зона входа от волатильности (источник, коэффициент, зажим), мин. расстояние стопа от уровня
             "vf": 0, "vs": 0, "va": 0, "vb": 0, "vp": 0, "v0": 0, "vm": 0.5, "vz": 0, "vr": 0,
-            "e1t": 0}                                   # TK-688 (единый бинарь): вся ставка одной лимиткой за N тиков до уровня (В-176, В-178); 0 — выключен
+            "e1t": 0,                                   # TK-688 (единый бинарь): вся ставка одной лимиткой за N тиков до уровня (В-176, В-178); 0 — выключен
+            "tn": 0, "tno": 0,                          # TK-697 № 9 (ключ выхода): доля позиции, %, у первого тейка «следующий уровень − отступ»; tno — отступ, NATR (значим при tn > 0); 0 — выключен
+            "lk": 0, "ld": 0, "lsl": 0}                 # TK-697 № 1 (источник уровня lx = 4, наклонка): точек линии, давность старшей точки в сутках, предел наклона NATR60 в час (0 — без предела); значимы только при lx = 4
 FILT_KEYS = ("fa", "fo", "fv")
 # ключи, меняющие проход сигналов (SigCfg); остальные — только выход / портфель, клетка идёт на готовом проходе
-SIG_KEYS = ("k", "tf", "n_bounce", "d", "l_days", "lx", "natr_min", "t1h", "t24", "e",
+SIG_KEYS = ("k", "tf", "n_bounce", "d", "l_days", "lx", "lk", "ld", "lsl", "natr_min", "t1h", "t24", "e",
             "tau", "pk", "natr_p", "track", "color", "f", "r", "ban", "ap", "pb", "fh", "fk", "fm", "fb", "fg",
             "nf", "ev", "ea", "el", "eh")      # TK-680: остальные поля SigCfg (оси единичек §13.73.7); nf / ev / ea / el / eh — TK-681 (§13.73.14); sm — выход, на готовом проходе
-LEVEL_KEYS = ("k", "tf", "n_bounce", "d", "l_days", "lx")
+LEVEL_KEYS = ("k", "tf", "n_bounce", "d", "l_days", "lx", "lk", "ld", "lsl")
 POOL_KEYS = ("natr_min", "t1h", "t24")
 # поправка §13.73.2 (В-171): база стопа ≤ 4 % — лонг 3 %, шорт 4 % (якоря фиксированного стопа §13.74, L-293); s = 5 % — справочная колонка.
 # TK674_REBASE=1 включает новую базу; без переменной — прежняя карта (s = 5 %, L-292) воспроизводится как была.
@@ -108,6 +110,11 @@ def canon(line, filt=None):
         out.pop("rs", None)
     if "tt" not in out:
         out.pop("tb", None)
+    if "tn" not in out:
+        out.pop("tno", None)
+    if float(out.get("lx", 0)) != 4:            # TK-697 № 1: ключи линии значимы только при lx = 4
+        for k in ("lk", "ld", "lsl"):
+            out.pop(k, None)
     s = " ".join("%s=%s" % (k, out[k]) for k in sorted(out))
     if filt:
         s += (" " if s else "") + "F=" + "&".join(sorted("%s%s%s" % (f, o, num(x)) for f, o, x in filt))
@@ -240,8 +247,8 @@ def cell_assign(side, assign):
     if "t_low" in patch or "t_high" in patch:
         if float(patch.get("t_low", 1)) >= float(patch.get("t_high", 5)):
             return patch, filt, False, "t_low ≥ t_high"
-    if float(patch.get("lx", 0)) != 0 and float(patch.get("tf", 60)) != 60:
-        return patch, filt, False, "lx ≠ 0 требует tf = 60 (params.rs validate)"
+    if float(patch.get("lx", 0)) not in (0, 4) and float(patch.get("tf", 60)) != 60:
+        return patch, filt, False, "lx = 1, 2, 3 требует tf = 60 (params.rs validate)"
     if min_lot_usd(patch) < MIN_LOT_USD:
         return patch, filt, False, "наименьшая ступень тейка < 5 $"
     if filt:
