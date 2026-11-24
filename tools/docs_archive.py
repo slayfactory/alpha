@@ -3,6 +3,7 @@
 
   python tools/docs_archive.py plan  <путь>... [--keep ФАЙЛ] [--freeze ФАЙЛ] [--tsv ВЫХОД]
   python tools/docs_archive.py apply <путь>... [--keep ФАЙЛ] [--freeze ФАЙЛ] [--tsv ВЫХОД]
+  python tools/docs_archive.py plan|apply <путь>... --release tools/    # ссылки из tools/ не держат файл (их правит другая ветка)
   python tools/docs_archive.py lists <каталог> [--branches ТК,...]   # пересобрать keep.txt и freeze.txt
 
 Путь — файл или каталог под git. docs/<X> -> docs/archive/<X> (как docs/archive/findings). Не переносятся:
@@ -65,6 +66,7 @@ def build(args):
     files = [p for p in git("ls-files", "-z").split("\0") if p]
     fset = set(files)
     keep, freeze = read_list(args.keep), set(read_list(args.freeze))
+    release = tuple(args.release.split(",")) if args.release else ()  # ссылки оттуда не держат файл (их правит другая ветка)
     cand = [f for f in files if under(f, args.paths) and f.startswith("docs/") and not f.startswith(ARCH)
             and not under(f, keep) and f not in freeze]
     moves = {f: new_path(f) for f in cand}
@@ -77,7 +79,7 @@ def build(args):
     while True:
         held = set()
         for f, t in texts.items():
-            if t and f not in moves and (f in freeze or f.startswith(NO_REWRITE)):
+            if t and f not in moves and (f in freeze or f.startswith(NO_REWRITE)) and not f.startswith(release):
                 for tok in TOKEN.findall(t):
                     p, _ = token_path(tok)
                     if p in moves:
@@ -152,6 +154,7 @@ def main():
     ap.add_argument("--keep")
     ap.add_argument("--freeze")
     ap.add_argument("--tsv")
+    ap.add_argument("--release", help="префиксы (через запятую), ссылки из которых не держат переносимый файл: tools/ правит другая ветка")
     args = ap.parse_args()
     args.paths = [p.rstrip("/") for p in args.paths]
     if args.cmd == "lists":
