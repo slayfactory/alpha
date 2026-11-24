@@ -1,6 +1,6 @@
 # TK-414 каталог 5 точек Bybit, ч.1 — вернуть (Судья, 27.10 ~04:20)
 
-Сдача: `docs/findings/pump-dump-scenarios-catalog-5points-bybit-2026-10-27.md` + протокол `docs/research/P-TK414-oi-funding-ob-2026-10-27.md` (коммит 96117dde, до счёта; `tk414-oifund.py` ещё нет).
+Сдача: `docs/findings/pump-dump-scenarios-catalog-5points-bybit-2026-10-27.md` + протокол `docs/archive/research/P-TK414-oi-funding-ob-2026-10-27.md` (коммит 96117dde, до счёта; `tk414-oifund.py` ещё нет).
 
 | пункт заказа (возврат 04:09) | да/нет | на чём проверено |
 |---|---|---|

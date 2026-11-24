@@ -23,7 +23,7 @@
   нарушение прежней практики (в master уже лежат `pump-dump-episodes-sep-2026-10-27.csv` 26,6 МБ, `tk402-agg-2026-10-25.csv`
   21,2 МБ), но при следующей уборке — вынести в `data/` или Storage Box.
 - **З-2.** AGENTS.md ссылается на `docs/research/P-40-*` — в результате (и в master, и в tk479) протокола нет: единственная
-  копия `docs/research/P-40-convergence-statarb-lob.md` — в ветке `tk493-xdl9` (197 коммитов не в master). Отзывы П-40 в
+  копия `docs/archive/research/P-40-convergence-statarb-lob.md` — в ветке `tk493-xdl9` (197 коммитов не в master). Отзывы П-40 в
   `reviews/` и данные `docs/findings/p40-*` в ствол пришли, сам протокол — нет. Исправить: слить tk493-xdl9 (или перенести
   протокол) либо в AGENTS.md указать ветку. Также: AGENTS.md «cargo запрещён хуком» — в `.claude/settings.json` такого хука
   нет (только `bare_systemd_run.py`), как и в master; не регрессия, но формулировку проверить.

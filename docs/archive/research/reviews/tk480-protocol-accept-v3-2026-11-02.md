@@ -8,6 +8,6 @@
 
 | число | файл:строка | что |
 |---|---|---|
-| 19 | docs/research/P-32-statarb.md:75 | m₂ = m₁ = 19 — Холм этапа 2 по семье этапа 1 |
-| 1 470 | docs/research/P-32-statarb.md:73 | клетко-месяцев этапа 1 |
-| 72 | docs/research/P-32-statarb.md:74 | клеток этапа 2 на прошедшую клетку |
+| 19 | docs/archive/research/P-32-statarb.md:75 | m₂ = m₁ = 19 — Холм этапа 2 по семье этапа 1 |
+| 1 470 | docs/archive/research/P-32-statarb.md:73 | клетко-месяцев этапа 1 |
+| 72 | docs/archive/research/P-32-statarb.md:74 | клеток этапа 2 на прошедшую клетку |

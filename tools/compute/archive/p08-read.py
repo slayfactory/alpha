@@ -87,7 +87,7 @@ def main():
             rows[lab].setdefault("holm_sig", {})[pk] = ok
     july = [lab for lab, r in rows.items() if r["to_july"]]
     strip = lambda r: {k: v for k, v in r.items() if not k.startswith("_")}  # noqa: E731
-    out = {"protocol": "docs/research/P-08-new-code-7.md §6, §10.2 (В-146), §12 п. 18", "m_holm": m,
+    out = {"protocol": "docs/archive/research/P-08-new-code-7.md §6, §10.2 (В-146), §12 п. 18", "m_holm": m,
            "note": "август/сентябрь — развитие, не проверка; Г-36 найдена на этих данных; Г-78 мера 15 мин ≠ мере отбора",
            "bases": {k: strip(v) for k, v in bases.items()}, "cells": {k: strip(v) for k, v in rows.items()},
            "to_july": july}

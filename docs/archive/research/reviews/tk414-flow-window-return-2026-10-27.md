@@ -1,6 +1,6 @@
 # TK-414 окна «после дна паузы», Gate 37 инстр. — проверка Судьи (27.10 ~02:55)
 
-Сдача: `docs/findings/pump-dump-detector-flow-window-gate-2026-10-27.md`; протокол `docs/research/P-TK414-flow-window-2026-10-27.md`
+Сдача: `docs/findings/pump-dump-detector-flow-window-gate-2026-10-27.md`; протокол `docs/archive/research/P-TK414-flow-window-2026-10-27.md`
 и скрипты `tk414-flow2.py`/`tk414-flow2-sum.py` — коммит a744120c 02:41, счёт 02:41–02:47 (calc `flowgate2-*.csv`, rc=0).
 Сверка с возвратом `tk414-flow-gate-return-2026-10-27.md` (п.1–2).
 

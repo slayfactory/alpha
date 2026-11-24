@@ -113,7 +113,7 @@ def main():
         res[name] = r
         print(name, {pk: (v["usd"], v["wo_day_min"], v["wo_day_sign_flips"], v["wo_top_coin"], v.get("dsr_delta"))
                      for pk, v in r.items()})
-    json.dump({"protocol": "docs/research/P-08-new-code-7.md §8, §9 п. 3; условия Судьи 1–2 (P-08-2026-09-28-augsep)",
+    json.dump({"protocol": "docs/archive/research/P-08-new-code-7.md §8, §9 п. 3; условия Судьи 1–2 (P-08-2026-09-28-augsep)",
                "n_trials": N_TRIALS, "cells": res},
               open(os.path.join(A, "tmp-p08", "p08-final.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print("DONE p08-final.json")

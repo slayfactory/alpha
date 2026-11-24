@@ -9,7 +9,7 @@ pool-P), либо квантиль признака ЭТОЙ монеты за �
 import csv, sys, collections
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parents[2] / "docs/research/g015-hypothesis-bank-2026-10-22.csv"
+OUT = Path(__file__).resolve().parents[2] / "docs/archive/research/g015-hypothesis-bank-2026-10-22.csv"
 
 # q0 = квантиль 0,90 монеты за 7 сут. (верхний дециль), q99 = 0,99; lo = нижний 0,10. Горизонты: s10=10 с, m10=10 мин, h1=1 ч.
 # data: D20 = кэш касаний готов; SEC = посекундный ряд (TK-359); JRN = журнал стен (TK-363, возраст/съедание/снятие/перестановка).

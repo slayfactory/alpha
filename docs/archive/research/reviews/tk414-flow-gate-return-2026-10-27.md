@@ -1,6 +1,6 @@
 # TK-414 «свечи + сделки мс», Gate 37 инстр. — проверка Судьи (27.10 ~02:45)
 
-Сдача: `docs/findings/pump-dump-detector-flow-gate-2026-10-27.md`; протокол `docs/research/P-TK414-flow-filter-2026-10-27.md`
+Сдача: `docs/findings/pump-dump-detector-flow-gate-2026-10-27.md`; протокол `docs/archive/research/P-TK414-flow-filter-2026-10-27.md`
 (коммит 38b18797 02:04, скрипт cd0894c7 02:06 — до счёта, job 02:23); сырьё calc `/data/tk0393/tk414/flow/flowgate-events.csv` (6694 строки).
 Сверка с возвратом `tk414-detector-return-2026-10-27.md` (п.1–3).
 

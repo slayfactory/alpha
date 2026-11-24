@@ -1,6 +1,6 @@
 # Судья: П-19 «размер по номеру касания» (TK-290) — вернуть, 17.10
 
-Проверено по файлам: `docs/research/P-19-size-by-touch.md` (черновик 5c87b060), `docs/research/spec-m04-2026-10-12.md` §3–§4,
+Проверено по файлам: `docs/archive/research/P-19-size-by-touch.md` (черновик 5c87b060), `docs/research/spec-m04-2026-10-12.md` §3–§4,
 `src/lob/levels.rs:705-720, 1605-1625`, `master:src/commands/lob/backtest/plan.rs:497`, `master:src/commands/lob/bounce_grid/sets.rs:52`.
 
 | пункт заказа / протокола | да/нет | на чём проверено |
@@ -57,6 +57,6 @@
 
 | число | файл:строка |
 |---|---|
-| 414 | docs/research/P-19-size-by-touch.md:76 |
-| 16,6 | docs/research/P-19-size-by-touch.md:76 |
-| 5,0 | docs/research/P-19-size-by-touch.md:117 |
+| 414 | docs/archive/research/P-19-size-by-touch.md:76 |
+| 16,6 | docs/archive/research/P-19-size-by-touch.md:76 |
+| 5,0 | docs/archive/research/P-19-size-by-touch.md:117 |

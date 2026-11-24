@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TK-369 / G-016: генератор банка гипотез DEX<->CEX (протокол docs/research/P-25-g016-dex-cex-bank.md).
+"""TK-369 / G-016: генератор банка гипотез DEX<->CEX (протокол docs/archive/research/P-25-g016-dex-cex-bank.md).
 Строка банка = событие x условие x направление; горизонты, страты и контроль — общие (в протоколе).
 Пороги — квантили распределения самого пула/монеты по неделе 15-21.10 нарастающим итогом (causal), числа не подбираются.
     python tools/compute/tk369-bank.py [--out docs/research/g016-hypothesis-bank-2026-10-23.csv]
