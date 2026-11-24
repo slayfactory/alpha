@@ -338,7 +338,8 @@ def cmd_run(a):
     md5 = json.dumps(md5s)
     classes = set(a.cls.split(",")) if a.cls else set()
     unbuilt, cov_sha = bad_columns(a.cov) if classes else (set(), "")
-    params = dict(vmax=a.vmax, sigmax=a.sigmax, sigs=a.sigs, every=a.every, part=a.part, seed=a.seed, threads=a.threads, cap_gb=a.cap_gb, sides=sides, D0=st.D0.isoformat(), max_batches=a.max_batches, only_skipped=a.only_skipped,
+    unguarded = {x for x in a.unguarded.split(",") if x}
+    params = dict(vmax=a.vmax, sigmax=a.sigmax, sigs=a.sigs, every=a.every, part=a.part, unguarded=sorted(unguarded), seed=a.seed, threads=a.threads, cap_gb=a.cap_gb, sides=sides, D0=st.D0.isoformat(), max_batches=a.max_batches, only_skipped=a.only_skipped,
                   classes=sorted(classes), excluded=EXCLUDED if classes else "", cov_sha=cov_sha)
     row = db.execute("SELECT cellset, dry FROM mass_run WHERE run_id=?", (a.run_id,)).fetchone()
     if row and (row[0] != a.cellset or row[1] != int(a.dry)):
@@ -375,11 +376,14 @@ def cmd_run(a):
                     db.executemany("INSERT OR REPLACE INTO mass_skip VALUES(?,?,?,?)", [(a.run_id, c["cid"], w.name, "нет строк базы") for c in cells])
                     db.commit()
                     continue
-                runnable, skips = [], []
+                runnable, skips, lowcov = [], [], {}
                 for c in cells:
                     if redo is not None and c["cid"] not in redo:
                         continue                                            # только пары, пропущенные в запуске R0 (столбцы построены позже)
                     bad = [(f, covered(tab, cache, f)) for f in c["feats"] if covered(tab, cache, f) < COVER_MIN]
+                    if bad and side in unguarded:
+                        lowcov[c["cid"]] = "низкое покрытие %s" % ",".join("%s %.2f" % x for x in bad)             # охрана выключена приказом координатора: пустое проходит, как в строках БД Jul–Nov
+                        bad = []
                     (skips.append((a.run_id, c["cid"], w.name, "охват %s" % ",".join("%s %.2f" % x for x in bad))) if bad else runnable.append(c))
                 db.executemany("INSERT OR REPLACE INTO mass_skip VALUES(?,?,?,?)", skips)
                 db.commit()
@@ -410,7 +414,7 @@ def cmd_run(a):
                     if rc == 0:
                         for c in cur:
                             n, usd, errs, notes, ds, pn, ct = cell_window(st, p8, w, side, os.path.join(out, "k%d" % c["cid"]), bool(c["filter"]), strict_key="B" in classes and cell_class(c["feats"], unbuilt) == "B")
-                            cw.append((a.run_id, c["cid"], w.name, n, usd, ";".join(errs), ";".join(notes)))
+                            cw.append((a.run_id, c["cid"], w.name, n, usd, ";".join(errs), ";".join(notes + ([lowcov[c["cid"]]] if c["cid"] in lowcov else []))))
                             days += [(a.run_id, c["cid"], d, p, k) for d, p, k in zip(ds, pn, ct)]
                     db.executemany("INSERT OR REPLACE INTO mass_cw VALUES(?,?,?,?,?,?,?)", cw)
                     db.executemany("INSERT OR REPLACE INTO mass_day VALUES(?,?,?,?,?)", [(r, c, d, p, k) for r, c, d, p, k in days])
@@ -549,6 +553,7 @@ def main(argv=None):
             s.add_argument("--threads", type=int, default=2)
             s.add_argument("--cap-gb", type=int, default=6)
             s.add_argument("--max-batches", type=int, default=0)
+            s.add_argument("--unguarded", default="", help="стороны (long,short), для которых охрана охвата < 0,7 выключена: клетка считается, в mass_cw.note — «низкое покрытие <признак доля>» (приказ координатора 24.11 для short-B)")
             s.add_argument("--part", default="0/1", help="K/N: считать партии с номером ≡ K (mod N) в списке партий окна × стороны; части одного run-id идут параллельными процессами, закрыть run-id — запуском без --part")
             s.add_argument("--only-skipped", default="", help="run-id прежнего запуска: считать только пары клетка × окно из его mass_skip (после достройки столбцов)")
     a = ap.parse_args(argv)
