@@ -2,7 +2,7 @@
 """TK-700 (В-183): массовый прогон клеток c539 движком по месяцам январь–июнь 2026 (посуточный P&L каждой клетки → TK-692). Замок — только на запуск (run-id), одного чтения нет.
 
   python3 tk700_mass.py plan  --cellset all1 [--dry] [--wins m01,…] [--sides long,short]         # клетки, охват по окнам, партии, без движка
-  python3 tk700_mass.py run   --run-id R --cellset all1 [--dry] [--wins …] [--sides …] [--vmax 400 --sigmax 26] [--sigs N --seed S] [--max-batches K] [--only-skipped R0] [--threads 2] [--cap-gb 6]
+  python3 tk700_mass.py run   --run-id R --cellset all1 [--dry] [--wins …] [--sides …] [--vmax 400 --sigmax 26] [--sigs N --seed S] [--every N] [--max-batches K] [--only-skipped R0] [--threads 2] [--cap-gb 6]
   python3 tk700_mass.py check --run-id R                                                         # dry: сверка с числами БД (сделки, Σ $, посуточный ряд) по клеткам набора
   python3 tk700_mass.py timing --run-id R [--cells 10000]                                          # время движка по партиям → минуты на 10 000 клеток в месяц
   python3 tk700_mass.py need  --cellset all1 [--cov /data/p42-tk700/cov/cov.json]                  # клетки по столбцам: не построены / не покрыты (`tk700_cov.py`) — без движка
@@ -206,6 +206,7 @@ def cmd_plan(a):
     unbuilt = bad_columns(a.cov)[0] if classes else set()
     for side in a.sides.split(","):
         cells = keep_classes(load_cells(db, a.cellset, side), classes, unbuilt)
+        cells = [c for c in cells if c["cid"] % a.every == 0]
         if a.sigs:
             cells = pick_sigs(cells, a.sigs, a.seed)
         tabs = tabs_for(m, side, classes)
@@ -337,7 +338,7 @@ def cmd_run(a):
     md5 = json.dumps(md5s)
     classes = set(a.cls.split(",")) if a.cls else set()
     unbuilt, cov_sha = bad_columns(a.cov) if classes else (set(), "")
-    params = dict(vmax=a.vmax, sigmax=a.sigmax, sigs=a.sigs, seed=a.seed, threads=a.threads, cap_gb=a.cap_gb, sides=sides, D0=st.D0.isoformat(), max_batches=a.max_batches, only_skipped=a.only_skipped,
+    params = dict(vmax=a.vmax, sigmax=a.sigmax, sigs=a.sigs, every=a.every, seed=a.seed, threads=a.threads, cap_gb=a.cap_gb, sides=sides, D0=st.D0.isoformat(), max_batches=a.max_batches, only_skipped=a.only_skipped,
                   classes=sorted(classes), excluded=EXCLUDED if classes else "", cov_sha=cov_sha)
     row = db.execute("SELECT cellset, dry FROM mass_run WHERE run_id=?", (a.run_id,)).fetchone()
     if row and (row[0] != a.cellset or row[1] != int(a.dry)):
@@ -354,8 +355,8 @@ def cmd_run(a):
     try:
         for side in sides:
             binary = BINS[side]
-            cells = keep_classes(load_cells(db, a.cellset, side), classes, unbuilt)
-            print("%s: клеток к счёту %d (классы %s)" % (side, len(cells), ",".join(sorted(classes)) or "все"), flush=True)
+            cells = [c for c in keep_classes(load_cells(db, a.cellset, side), classes, unbuilt) if c["cid"] % a.every == 0]
+            print("%s: клеток к счёту %d (классы %s%s)" % (side, len(cells), ",".join(sorted(classes)) or "все", ", каждая %d-я по cid" % a.every if a.every > 1 else ""), flush=True)
             if a.sigs:
                 cells = pick_sigs(cells, a.sigs, a.seed)
             other = db.execute("SELECT count(*) FROM cell WHERE cellset=? AND side=? AND bin!=?", (a.cellset, side, md5s[side])).fetchone()[0]
@@ -536,6 +537,7 @@ def main(argv=None):
             s.add_argument("--vmax", type=int, default=VMAX)
             s.add_argument("--sigmax", type=int, default=SIGMAX)
             s.add_argument("--sigs", type=int, default=0)
+            s.add_argument("--every", type=int, default=1, help="только клетки с cid кратным N (выборка для сухого прогона, все ключи сигналов остаются)")
             s.add_argument("--seed", type=int, default=1)
         if n in ("run", "check", "timing"):
             s.add_argument("--run-id", required=True)
