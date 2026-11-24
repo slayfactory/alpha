@@ -338,7 +338,7 @@ def cmd_run(a):
     md5 = json.dumps(md5s)
     classes = set(a.cls.split(",")) if a.cls else set()
     unbuilt, cov_sha = bad_columns(a.cov) if classes else (set(), "")
-    params = dict(vmax=a.vmax, sigmax=a.sigmax, sigs=a.sigs, every=a.every, seed=a.seed, threads=a.threads, cap_gb=a.cap_gb, sides=sides, D0=st.D0.isoformat(), max_batches=a.max_batches, only_skipped=a.only_skipped,
+    params = dict(vmax=a.vmax, sigmax=a.sigmax, sigs=a.sigs, every=a.every, part=a.part, seed=a.seed, threads=a.threads, cap_gb=a.cap_gb, sides=sides, D0=st.D0.isoformat(), max_batches=a.max_batches, only_skipped=a.only_skipped,
                   classes=sorted(classes), excluded=EXCLUDED if classes else "", cov_sha=cov_sha)
     row = db.execute("SELECT cellset, dry FROM mass_run WHERE run_id=?", (a.run_id,)).fetchone()
     if row and (row[0] != a.cellset or row[1] != int(a.dry)):
@@ -346,7 +346,10 @@ def cmd_run(a):
     if not row:
         db.execute("INSERT INTO mass_run VALUES(?,?,?,?,?,?,?,?)", (a.run_id, a.cellset, int(a.dry), ",".join(wins), md5, json.dumps(params), now(), "running"))
         db.commit()
-    key, lj_path, nonce, att = claim_run(m, a.run_id, dict(cellset=a.cellset, dry=a.dry, wins=wins))
+    part_k, part_n = (int(x) for x in a.part.split("/"))
+    if not (part_n >= 1 and 0 <= part_k < part_n):
+        raise SystemExit("--part K/N: 0 ≤ K < N")
+    key, lj_path, nonce, att = claim_run(m, a.run_id if part_n == 1 else "%s@p%d/%d" % (a.run_id, part_k, part_n), dict(cellset=a.cellset, dry=a.dry, wins=wins, part=a.part))
     token = lk.token_env(lj_path, nonce)
     lk.set_state(m["lock"], key, nonce, "started")
     done_b = {(r[0], r[1], r[2]) for r in db.execute("SELECT win, side, bkey FROM mass_batch WHERE run_id=? AND rc=0", (a.run_id,))}
@@ -382,7 +385,7 @@ def cmd_run(a):
                 db.commit()
                 for bi, cur in enumerate(make_batches(runnable, a.vmax, a.sigmax)):
                     bk = bkey_of(cur)
-                    if (w.name, side, bk) in done_b:
+                    if bi % part_n != part_k or (w.name, side, bk) in done_b:
                         continue
                     if a.max_batches and nb >= a.max_batches:
                         raise StopIteration
@@ -421,7 +424,8 @@ def cmd_run(a):
                     print("%s %s %s: вариантов %d, ключей %d, фильтров %d → движок %.0f с (ЦП %.0f с), разбор %.0f с, rc %d" % (
                         w.name, side, bk, len(cur), len({c['sig'] for c in cur}), len(cols), t1 - t0, cpu, time.time() - t2, rc), flush=True)
         lk.set_state(m["lock"], key, nonce, "done", extra=dict(seconds=round(time.time() - t_run, 1), batches=nb))
-        db.execute("UPDATE mass_run SET state='done' WHERE run_id=?", (a.run_id,))
+        if part_n == 1:                                                     # части запуска (--part) оставляют state=running; закрывает прогон без части (все партии готовы — пропуск)
+            db.execute("UPDATE mass_run SET state='done' WHERE run_id=?", (a.run_id,))
     except StopIteration:
         lk.set_state(m["lock"], key, nonce, "done", extra=dict(seconds=round(time.time() - t_run, 1), batches=nb, stopped="max-batches"))
     except BaseException as e:
@@ -545,6 +549,7 @@ def main(argv=None):
             s.add_argument("--threads", type=int, default=2)
             s.add_argument("--cap-gb", type=int, default=6)
             s.add_argument("--max-batches", type=int, default=0)
+            s.add_argument("--part", default="0/1", help="K/N: считать партии с номером ≡ K (mod N) в списке партий окна × стороны; части одного run-id идут параллельными процессами, закрыть run-id — запуском без --part")
             s.add_argument("--only-skipped", default="", help="run-id прежнего запуска: считать только пары клетка × окно из его mass_skip (после достройки столбцов)")
     a = ap.parse_args(argv)
     return {"plan": cmd_plan, "run": cmd_run, "check": cmd_check, "timing": cmd_timing, "need": cmd_need, "classes": cmd_classes}[a.cmd](a)
