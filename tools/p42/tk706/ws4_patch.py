@@ -18,8 +18,18 @@ def rep(s, old, new, cnt=1):
 t = open(D + 'tick.rs', 'rb').read().decode('utf-8').replace('\r\n', '\n')
 
 BLOCK = r'''// ---- TK-706 пучок (опыт H2): `sim_bundle` и сравнение с отдельными ходами ----
-/// Несколько ходов одного входа (одинаковые все аргументы, кроме `ExitCfg`) за один обход ленты: тик берётся и фильтруется один раз, затем каждому
-/// не выбывшему члену — `Walk::step`; вернувшие `true` снимаются; итог — по порядку `exs`.
+/// Член пучка: всё состояние одного хода (скаляры `WSt`, позиция, метки суток) — между кусками ленты лежит здесь, внутри куска — в локальных (как в одиночном пути).
+struct BMember<'a> {
+    ex: &'a ExitCfg,
+    s: i64,
+    e: i64,
+    st: WSt,
+    pos: Pos,
+    marks: Vec<(usize, i64)>,
+}
+
+/// Несколько ходов одного входа (одинаковые все аргументы, кроме `ExitCfg`) за один обход ленты: лента раскодируется и фильтруется (`t > entry_ms`) один раз в буфер из `CH` сделок, затем каждый
+/// не выбывший член проходит буфер своим циклом `walk_step` (состояние — в локальных, как у одиночного хода; вернувший `true` снимается); итог — по порядку `exs`.
 #[allow(clippy::too_many_arguments)]
 fn sim_bundle(
     next: &mut dyn FnMut() -> Option<(i64, i64, bool)>,
@@ -33,45 +43,64 @@ fn sim_bundle(
     entry_slip_bps: i64,
     stop_px: Option<i64>,
 ) -> Vec<TickOut> {
-    let mut ws: Vec<Walk> = exs
+    const CH: usize = 256;
+    let s = side.s();
+    let e = p0 + frac(p0.abs(), entry_slip_bps, 10_000);
+    let mut ms_: Vec<BMember> = exs
         .iter()
-        .map(|ex| {
-            Walk::new(
-                entry_ms,
-                p0,
-                side,
-                natr_e8,
-                ex,
-                lc,
-                notional,
-                entry_slip_bps,
-                stop_px,
-            )
+        .map(|ex| BMember {
+            ex,
+            s,
+            e,
+            st: WSt::new(entry_ms, p0),
+            pos: Pos::new(s, e, p0, entry_ms, natr_e8, ex, lc, notional, stop_px),
+            marks: Vec::new(),
         })
         .collect();
-    let mut live: Vec<usize> = (0..ws.len()).collect();
-    let mut after = || -> Option<(i64, i64, bool)> {
-        loop {
-            let t = next()?;
-            if t.0 > entry_ms {
-                return Some(t);
+    let mut live: Vec<usize> = (0..ms_.len()).collect();
+    let mut buf: Vec<(i64, i64)> = Vec::with_capacity(CH);
+    while !live.is_empty() {
+        buf.clear();
+        let mut ended = false;
+        while buf.len() < CH {
+            match next() {
+                Some((ms, px, _)) => {
+                    if ms > entry_ms {
+                        buf.push((ms, px));
+                    }
+                }
+                None => {
+                    ended = true;
+                    break;
+                }
             }
         }
-    };
-    while !live.is_empty() {
-        let Some((ms, px, _)) = after() else {
-            break;
-        };
         let mut i = 0;
         while i < live.len() {
-            if ws[live[i]].step(ms, px) {
+            let m = &mut ms_[live[i]];
+            let (ex, sg) = (m.ex, m.s);
+            let mut st = m.st;
+            let mut fin = false;
+            for &(ms, px) in &buf {
+                if walk_step(&mut st, &mut m.pos, &mut m.marks, ex, sg, ms, px) {
+                    fin = true;
+                    break;
+                }
+            }
+            m.st = st;
+            if fin {
                 live.swap_remove(i);
             } else {
                 i += 1;
             }
         }
+        if ended {
+            break;
+        }
     }
-    ws.into_iter().map(Walk::finish).collect()
+    ms_.into_iter()
+        .map(|m| walk_finish(m.st, m.pos, m.marks, m.ex, m.s, m.e, entry_ms))
+        .collect()
 }
 
 fn b4_cursor<'a>(src: &'a dyn TradeSrc, g: &'a B3Group) -> Cursor<'a> {
