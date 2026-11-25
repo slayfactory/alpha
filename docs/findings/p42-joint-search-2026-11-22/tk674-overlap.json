@@ -1,0 +1,20 @@
+{
+ "L": {
+  "first": "L1",
+  "second": "L2",
+  "trades_first": 174,
+  "trades_second": 227,
+  "common": 172,
+  "share_of_second": 0.7577,
+  "share_of_first": 0.9885
+ },
+ "S": {
+  "first": "S1",
+  "second": "S2",
+  "trades_first": 2158,
+  "trades_second": 1457,
+  "common": 1143,
+  "share_of_second": 0.7845,
+  "share_of_first": 0.5297
+ }
+}

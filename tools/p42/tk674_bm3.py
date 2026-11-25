@@ -56,7 +56,7 @@ def main(mapdir, out_json, out_md):
         maps[os.path.basename(f)] = open(f, encoding="utf-8").read()
     res, md = {}, ["# Счётчики стопов у клеток с `bm = 3` (TK-674, аудит TK-682)", "",
                    "Дельта без движка: файлы сделок готовых клеток. При `bm = 3` стоп после 1-го тейка стоит ниже входа, движок помечает такой выход «безубыток»; "
-                   "здесь он считается стопом. Ставка 500 $. «с убытком» — сделка целиком в минусе (первый тейк уже взят, поэтому часть таких выходов в плюсе).", ""]
+                   "здесь он считается стопом и показан отдельной колонкой: средний $ полных стопов и стопов после 1-го тейка не смешиваются. Ставка 500 $. «с убытком» — сделка целиком в минусе (первый тейк уже взят, поэтому часть таких выходов в плюсе).", ""]
     for side in "LS":
         keys = [r[0] for r in store.c.execute("SELECT DISTINCT ckey FROM metric WHERE side=? AND uni=? AND win=? AND ckey LIKE '%bm=3%'", (run.SIDENAME[side], run.UNI, run.WIN))]
         keys = [k for k in keys if "bm=3" in k.split()]
@@ -76,12 +76,12 @@ def main(mapdir, out_json, out_md):
                    len(cells), len(uniq), tot["stop"]["n"], f2(tot["stop"]["usd"]), tot["be"]["n"], tot["be"]["n_neg"], f2(tot["be"]["usd"]),
                    f2(tot["be"]["usd"] / tot["be"]["n"]) if tot["be"]["n"] else "—", tot["stop_all"]["n"], tot["stop"]["n"]), "",
                "Клетки, попавшие в карты (любая строка карты):", "",
-               "| клетка | сделок | Σ $ | Шарп | стопов было (ср. $) | «безубыток» (ср. $; с убытком; худший $) | стопов стало (ср. $) | карты |", "|---|---|---|---|---|---|---|---|"]
+               "| клетка | сделок | Σ $ | Шарп | полных стопов (ср. $) | стопов после 1-го тейка (ср. $; с убытком; худший $) | стопов всего | карты |", "|---|---|---|---|---|---|---|---|"]
         for k, ms in sorted(res[side]["in_maps"].items(), key=lambda kv: -(cells[kv[0]]["sharpe"] or -9)):
             c = cells[k]
-            md.append("| `%s` | %d | %s | %s | %d (%s) | %d (%s; %d; %s) | %d (%s) | %s |" % (
+            md.append("| `%s` | %d | %s | %s | %d (%s) | %d (%s; %d; %s) | %d | %s |" % (
                 c["cid"], c["n"], f2(c["usd"]), ("%.2f" % c["sharpe"]).replace(".", ",") if c["sharpe"] is not None else "—", c["stop"]["n"], f2(c["stop"]["mean"]),
-                c["be"]["n"], f2(c["be"]["mean"]), c["be"]["n_neg"], f2(c["be"]["worst"]), c["stop_all"]["n"], f2(c["stop_all"]["mean"]),
+                c["be"]["n"], f2(c["be"]["mean"]), c["be"]["n_neg"], f2(c["be"]["worst"]), c["stop_all"]["n"],
                 ", ".join(m.replace("map674", "").replace("-%s.json" % side, "") or "пары" for m in ms)))
         md.append("")
     json.dump(res, open(out_json, "w", encoding="utf-8"), ensure_ascii=False, indent=1)

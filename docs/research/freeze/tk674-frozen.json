@@ -1,0 +1,608 @@
+{
+ "version": "tk674-frozen-1",
+ "protocol": "П-42 TK-674: отбор кандидатов вперёд (≤ 2 на сторону) — PS-1010 (поправка к PS-999 п. 5 и prereg-13.73 §6.3); результат — L-426; код `tools/p42/tk674_select.py`",
+ "mark": "найдено на этих данных (c539, 01.07–13.11, ставка 500 $, маржа 250 $); прирост Шарпа к базе у всех четырёх ниже шума отбора; описательно",
+ "read_before_commit": "январь–июнь 2026 не читались и не считались этой записью: отбор — только по картам окна 01.07–13.11; движок не запускался",
+ "selection": {
+  "sel_sha256": "7feba66dc56512bc330dee0613452aa0798481b0c4b016df7be35f1818c6e539",
+  "copy": "select-674.json",
+  "maps": {
+   "map674bs3u-L": "21e14c1a4f3c9fa1050fabdeef5ff566343f20073d637636f64fd56a8fc6354d",
+   "map674bs4u-L": "58b3256eb04d0314be1f8ca1636b00bc059a4cf30396018597d3b2af9ca4b747",
+   "map674bs4u3-S": "3c1e8526639fff2e11a67957d8dbaeea54f4c5290c3462a313d23f9b5ae412f9"
+  },
+  "noise": {
+   "L": 6.21,
+   "S": 8.55
+  },
+  "m": {
+   "L": 202010,
+   "S": 1765704
+  },
+  "stats": {
+   "L": {
+    "winners": 1340,
+    "by_map": {
+     "map674bsx-L": 227,
+     "map674bs3u-L": 405,
+     "map674bs4u-L": 708
+    },
+    "excluded_tokens": {},
+    "axis_names": [
+     "big1800",
+     "busy",
+     "c",
+     "ch",
+     "cm",
+     "color",
+     "cons60",
+     "cw",
+     "d",
+     "e",
+     "e2t",
+     "ek",
+     "l_days",
+     "n24",
+     "n_tp",
+     "ok10_d5",
+     "ok10_d7",
+     "p",
+     "pb",
+     "q",
+     "rf",
+     "rr",
+     "t1h",
+     "t24",
+     "t_high",
+     "t_low",
+     "tj",
+     "tl",
+     "tpg",
+     "tpk",
+     "tpm60",
+     "tt",
+     "vpin1h",
+     "w2",
+     "zv6h"
+    ],
+    "excluded_axes": 0,
+    "not_forward": 0,
+    "duplicates": 518,
+    "distinct": 822,
+    "above_floor": 734,
+    "second_pool": 731
+   },
+   "S": {
+    "winners": 18334,
+    "by_map": {
+     "map674bsx-S": 1478,
+     "map674bs3uf-S": 10467,
+     "map674bs4u3-S": 6389
+    },
+    "excluded_tokens": {
+     "cid:approach_dur_min": 756,
+     "cid:bd_imb02": 42,
+     "cid:bd_thin30": 301,
+     "cid:bd_thin5": 450,
+     "cid:cc_15m": 997,
+     "cid:cc_1h": 1076,
+     "cid:pierce_max_bp": 599,
+     "cid:touch_ep": 672,
+     "key:approach_dur_min": 756,
+     "key:bd_imb02": 42,
+     "key:bd_thin30": 301,
+     "key:bd_thin5": 450,
+     "key:cc_15m": 997,
+     "key:cc_1h": 1076,
+     "key:pierce_max_bp": 599,
+     "key:touch_ep": 672
+    },
+    "axis_names": [
+     "a",
+     "accdv1_300",
+     "approach_dur_min",
+     "bd_imb02",
+     "bd_thin30",
+     "bd_thin5",
+     "bm",
+     "bt_1h",
+     "btc_mv5",
+     "cb_1h",
+     "cc_15m",
+     "cc_1h",
+     "ce_1h",
+     "ch",
+     "cl",
+     "cm",
+     "cons60",
+     "cw",
+     "d",
+     "e",
+     "e2",
+     "e2t",
+     "ea",
+     "ek",
+     "ev",
+     "fk",
+     "flat60",
+     "gap60_s",
+     "k",
+     "l_days",
+     "mk",
+     "n24",
+     "n60",
+     "n_bounce",
+     "n_tp",
+     "natr_exit_p",
+     "natr_min",
+     "natr_p",
+     "nf",
+     "ok10_d3",
+     "ok10_d30",
+     "p",
+     "pb",
+     "pierce_max_bp",
+     "q",
+     "rf",
+     "rr",
+     "rs",
+     "s",
+     "s2",
+     "sac10",
+     "sac60",
+     "since_born_h",
+     "t1h",
+     "t24",
+     "t_high",
+     "t_low",
+     "tb",
+     "tf",
+     "tfv10",
+     "tj",
+     "tl",
+     "touch_ep",
+     "tpg",
+     "tpk",
+     "tpm60",
+     "tt",
+     "tu",
+     "w2",
+     "zv6h"
+    ],
+    "excluded_axes": 4303,
+    "not_forward": 0,
+    "duplicates": 5614,
+    "distinct": 8417,
+    "above_floor": 8057,
+    "second_pool": 8042
+   }
+  }
+ },
+ "bases": {
+  "L": {
+   "ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+   "trades": 298,
+   "usd": 325.7,
+   "sharpe": 5.217
+  },
+  "S": {
+   "ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+   "trades": 172,
+   "usd": 133.93,
+   "sharpe": 3.635
+  }
+ },
+ "candidates": [
+  {
+   "id": "L1",
+   "side": "long",
+   "rank": 1,
+   "cid": "s3+CN60_q50+big1800.le_q80+vpin1h.ge_q20",
+   "ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 F=big1800<=0.29&cons60<=1&vpin1h>=0.2",
+   "tsig": "218bd806f991b26f6657d728c21b8691",
+   "axes": [
+    "F:big1800<=",
+    "F:cons60<=",
+    "F:vpin1h>="
+   ],
+   "source": {
+    "map": "map674bs3u-L.json",
+    "pair": "CN60|big1800.le|vpin1h.ge"
+   },
+   "found": {
+    "trades": 174,
+    "usd": 348.07,
+    "sharpe": 7.169,
+    "maxdd_usd": 17.1,
+    "maxdd_pct_margin": 6.8,
+    "gap_longest": 11,
+    "gap_mean": 2.62,
+    "rr": 2.143,
+    "lstop_usd": 15.415,
+    "worst_usd": 15.629,
+    "months": [
+     [
+      39,
+      23.27940199999999
+     ],
+     [
+      35,
+      78.811589
+     ],
+     [
+      46,
+      93.88439500000001
+     ],
+     [
+      38,
+      127.931078
+     ],
+     [
+      16,
+      24.163242999999994
+     ]
+    ],
+    "plateau_nb_mean": 6.362,
+    "noise": 6.21,
+    "base_sharpe": 5.217,
+    "base_usd": 325.7
+   },
+   "forward": {
+    "inputs": "да: сделки aggTrades и минутки собираются вперёд (как у цепочки tk626 → tk691)",
+    "engine_keys": "да: ключи движка клетки как в БД",
+    "feature_builder_forward": "НЕТ: big1800, cons60, vpin1h — построитель таблицы `--ftab` вперёд не сделан (задача до 30.11)",
+    "pipeline_hook": "НЕТ: `tk616_forward.py` не читает `tk674-frozen.json` (пятое звено цепочки — задача до 30.11)",
+    "computable_now": false,
+    "computable_after_tasks": "после построителя признаков вперёд"
+   }
+  },
+  {
+   "id": "L2",
+   "side": "long",
+   "rank": 2,
+   "cid": "busy0+s3+tpk3+big1800.le_q80+vpin1h.ge_q20",
+   "ckey": "busy=0 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 tpk=3 F=big1800<=0.29&vpin1h>=0.2",
+   "tsig": "c3513c0b3fd2cbf82c3982645cbf6f9e",
+   "axes": [
+    "F:big1800<=",
+    "F:vpin1h>=",
+    "busy",
+    "tpk"
+   ],
+   "source": {
+    "map": "map674bs4u-L.json",
+    "pair": "tpk|busy|big1800.le|vpin1h.ge"
+   },
+   "found": {
+    "trades": 227,
+    "usd": 382.52,
+    "sharpe": 7.072,
+    "maxdd_usd": 19.13,
+    "maxdd_pct_margin": 7.7,
+    "gap_longest": 11,
+    "gap_mean": 2.63,
+    "rr": 2.81,
+    "lstop_usd": 15.415,
+    "worst_usd": 15.629,
+    "months": [
+     [
+      49,
+      42.433202
+     ],
+     [
+      49,
+      78.21804
+     ],
+     [
+      60,
+      79.605065
+     ],
+     [
+      49,
+      141.931463
+     ],
+     [
+      20,
+      40.332981000000004
+     ]
+    ],
+    "plateau_nb_mean": 6.587,
+    "noise": 6.21,
+    "base_sharpe": 5.217,
+    "base_usd": 325.7
+   },
+   "forward": {
+    "inputs": "да: сделки aggTrades и минутки собираются вперёд (как у цепочки tk626 → tk691)",
+    "engine_keys": "да: ключи движка клетки как в БД",
+    "feature_builder_forward": "НЕТ: big1800, vpin1h — построитель таблицы `--ftab` вперёд не сделан (задача до 30.11)",
+    "pipeline_hook": "НЕТ: `tk616_forward.py` не читает `tk674-frozen.json` (пятое звено цепочки — задача до 30.11)",
+    "computable_now": false,
+    "computable_after_tasks": "после построителя признаков вперёд"
+   }
+  },
+  {
+   "id": "S1",
+   "side": "short",
+   "rank": 1,
+   "cid": "e20+e2t2+n_bounce1+natr_p60+rr1+s4",
+   "ckey": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_p=60 pb=1 pk=1 rf=0.2 rr=1 rs=2 s=4 t24=12 tb=0.1 tt=20",
+   "tsig": "519a8a2794282f52e692695dbc06593b",
+   "axes": [
+    "e2",
+    "e2t",
+    "n_bounce",
+    "natr_p",
+    "rr"
+   ],
+   "source": {
+    "map": "map674bs4u3-S.json",
+    "pair": "rr|n_bounce|split|natr_p"
+   },
+   "found": {
+    "trades": 2158,
+    "usd": 1358.97,
+    "sharpe": 11.275,
+    "maxdd_usd": 40.28,
+    "maxdd_pct_margin": 16.1,
+    "gap_longest": 13,
+    "gap_mean": 1.72,
+    "rr": 1.961,
+    "lstop_usd": 20.415,
+    "worst_usd": 20.95,
+    "months": [
+     [
+      502,
+      353.021947
+     ],
+     [
+      536,
+      374.41325
+     ],
+     [
+      442,
+      245.134078
+     ],
+     [
+      470,
+      294.17461000000003
+     ],
+     [
+      208,
+      92.22734099999998
+     ]
+    ],
+    "plateau_nb_mean": 9.38,
+    "noise": 8.55,
+    "base_sharpe": 3.635,
+    "base_usd": 133.93
+   },
+   "forward": {
+    "inputs": "да: сделки aggTrades и минутки собираются вперёд (как у цепочки tk626 → tk691)",
+    "engine_keys": "да: ключи движка клетки как в БД",
+    "feature_builder_forward": "не нужен: у клетки нет столбцов фильтра",
+    "pipeline_hook": "НЕТ: `tk616_forward.py` не читает `tk674-frozen.json` (пятое звено цепочки — задача до 30.11)",
+    "computable_now": false,
+    "computable_after_tasks": true
+   }
+  },
+  {
+   "id": "S2",
+   "side": "short",
+   "rank": 2,
+   "cid": "e20+e2t2+n_bounce1+natr_min0.6+nf1+q100+s4",
+   "ckey": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_min=0.6 nf=1 pb=1 pk=1 q=100 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+   "tsig": "723c4d1455d900b0e9b24327fb35460d",
+   "axes": [
+    "e2",
+    "e2t",
+    "n_bounce",
+    "natr_min",
+    "nf",
+    "q"
+   ],
+   "source": {
+    "map": "map674bs4u3-S.json",
+    "pair": "q|n_bounce|split|nf1"
+   },
+   "found": {
+    "trades": 1457,
+    "usd": 1254.2,
+    "sharpe": 11.373,
+    "maxdd_usd": 40.37,
+    "maxdd_pct_margin": 16.1,
+    "gap_longest": 16,
+    "gap_mean": 1.62,
+    "rr": 2.012,
+    "lstop_usd": 20.415,
+    "worst_usd": 20.95,
+    "months": [
+     [
+      306,
+      374.625108
+     ],
+     [
+      356,
+      350.561235
+     ],
+     [
+      324,
+      235.22030500000002
+     ],
+     [
+      339,
+      246.015516
+     ],
+     [
+      132,
+      47.78165100000001
+     ]
+    ],
+    "plateau_nb_mean": 9.555,
+    "noise": 8.55,
+    "base_sharpe": 3.635,
+    "base_usd": 133.93
+   },
+   "forward": {
+    "inputs": "да: сделки aggTrades и минутки собираются вперёд (как у цепочки tk626 → tk691)",
+    "engine_keys": "да: ключи движка клетки как в БД",
+    "feature_builder_forward": "не нужен: у клетки нет столбцов фильтра",
+    "pipeline_hook": "НЕТ: `tk616_forward.py` не читает `tk674-frozen.json` (пятое звено цепочки — задача до 30.11)",
+    "computable_now": false,
+    "computable_after_tasks": true
+   }
+  }
+ ],
+ "thresholds": {
+  "rule": "пороги меток `_q…` и значения фильтров — числа в `ckey` кандидата (`F=<признак><знак><порог>`); квантильные файлы только происхождение; вперёд не пересчитываются",
+  "thr674": {
+   "path": "/data/p42-tk674c/res/thr674.json",
+   "sha256": "7205062cffcf08b14636c8e0909eab118299c15244de330ac9b2f8a05147dd82",
+   "same_as": "/data/p42-tk674c/res/thr674-c539.json"
+  },
+  "thr38": {
+   "path": "docs/findings/p42-turnover-grid-2026-11-20/res/thr38.json",
+   "sha256": "4287f5a1dcc467ba4bd2658762b36dff60a1af3ecbd8c92eb164a5dfa3821bfd"
+  }
+ },
+ "binary": {
+  "freeze": {
+   "path": "/data/p42-tk683/bin/alpha-tk706memo-plain.357a66c1",
+   "md5": "357a66c14605c3a228d18defbe35bb22",
+   "sha256": "377df19cfaebda788bcc7637a95996af06d14d4eb7e2a78b14bfdf46a2c3de74",
+   "gate": "/data/p42-tk683/res/gate683gmm2.json",
+   "gate_sha256": "8540f6dd3888707607565c8938f0137859430c61dacac7e992ebae2cbf0bce2e",
+   "gate_note": "TK-706: 549 клеток байт в байт, bad 0, критик PASS"
+  },
+  "also_used": {
+   "path": "/data/p42-tk683/bin/alpha-tk683l-plain.562f6899",
+   "md5": "562f689967dde28ebce44f4a00f1b7af",
+   "sha256": "03c9cfd4b45f057fe1b03f00b62c7c72f8793c5068e6a021d689f794f9ab2e8e",
+   "gate": "/data/p42-tk683/res/gate683l1.json",
+   "gate_sha256": "745a8685819eca07866b5faaff360e07b3fa8d1b8726d1e83fc51c68475067e6"
+  },
+  "pgo_approved": {
+   "path": "/data/p42-tk683/bin/alpha-tk706pgo-plain.06367f45",
+   "md5": "06367f45fad0d7c5c1031d82dfa03615",
+   "sha256": "96ea56fb68f3a7f13e8f78f5e996a7bd734eea6c48eaef6f8c307623f0cd2fb3",
+   "note": "одобрен TK-706 для замены на границе партии; клетки отбора им не считались"
+  },
+  "equivalence": {
+   "path": "/data/p42-tk674c/res/eqbins674.json",
+   "md5": [
+    "9387e0a9328ff606016ae5451fc7a682",
+    "b328555bfc973b72fb091e55e37ebbe2",
+    "0bb3b9313fc9c64764911125c9ff61e3",
+    "c64d5ed7355fd85b2d924b4d595a6f48",
+    "c400af112bda3396d807b2ba882aea8b",
+    "562f689967dde28ebce44f4a00f1b7af",
+    "8759375e02b496f865b160b05e74726d",
+    "357a66c14605c3a228d18defbe35bb22",
+    "06367f45fad0d7c5c1031d82dfa03615"
+   ],
+   "note": "реестр бинарей, прошедших гейт «байт в байт» к бинарю h (c64d5ed7); клетки отбора посчитаны бинарями этого реестра"
+  }
+ },
+ "environment": {
+  "file": "/data/p42-tk674c/env-s4.sh",
+  "engine": "breakout tick, ключи клетки `ckey` как в БД c539; TK674_UNI=c539, TK674_REBASE=1",
+  "universe": "c539 (539 крипто-контрактов; tk691-frozen.json `universe`, contracts_sha256 4b51e9aad05b4652c50bc6030ba11aaa1fa362ecf5e3b877b1bac735e514d328)"
+ },
+ "cost_model": "как `docs/research/freeze/tk691-frozen.json` `cost_model` (ставка 500 $, плечо 2, комиссия тейкер 3,5 бп минус 10 % возврата, проскальзывание 1 бп на ногу, задержка 4 мс `lat=4 latx=4`)",
+ "gate": {
+  "status": "пройден",
+  "tool": "tools/p42/tk674_gate_cells.py gate",
+  "result": "tk674-gate-cells.json",
+  "result_sha256": "ad1f3eaf55d4afac8279899527d413a0974ca4f5d72c305ef144e50fe893c84f",
+  "checked_freeze_sha256": "398e5fd00bb66a7603e9c6e42cfa0958564df00d2651144508db3335517bfd4b",
+  "checked_note": "шлюз читал версию файла заморозки без блока шлюза (sha256 выше); блок шлюза и пересечение добавлены после",
+  "binary": {
+   "path": "/data/p42-tk683/bin/alpha-tk706memo-plain.357a66c1",
+   "md5": "357a66c14605c3a228d18defbe35bb22",
+   "sha256": "377df19cfaebda788bcc7637a95996af06d14d4eb7e2a78b14bfdf46a2c3de74"
+  },
+  "code_sha256": {
+   "tk674_run.py": "2fcc7e372123ea1ba5e0dc42602db861c769a593f24aab935e610dfa0be7993c",
+   "tk674_axes.py": "ecc4d6ae11bc7b7a36d3d20d34705b6d6f56403eae39f9d926c3cdf26269be59",
+   "tk604_run.py": "bb5dcccaec9594862aec0eb6e5f757ed39363d75ce2f7474462e61b82b1e82e6",
+   "tk625_run.py": "1c3fd91cb497dac7e07c7237e1b7fc4aea965e1ab0fae39a8caae00d3d2e6f8c"
+  },
+  "thr674_sha256": "7205062cffcf08b14636c8e0909eab118299c15244de330ac9b2f8a05147dd82",
+  "cells": {
+   "L1": {
+    "ok": true,
+    "tsig_equal": true,
+    "windows": {
+     "wa": true,
+     "wb": true,
+     "wc": true
+    },
+    "trades": 174,
+    "usd": 348.069707
+   },
+   "L2": {
+    "ok": true,
+    "tsig_equal": true,
+    "windows": {
+     "wa": true,
+     "wb": true,
+     "wc": true
+    },
+    "trades": 227,
+    "usd": 382.520751
+   },
+   "S1": {
+    "ok": true,
+    "tsig_equal": true,
+    "windows": {
+     "wa": true,
+     "wb": true,
+     "wc": true
+    },
+    "trades": 2158,
+    "usd": 1358.971226
+   },
+   "S2": {
+    "ok": true,
+    "tsig_equal": true,
+    "windows": {
+     "wa": true,
+     "wb": true,
+     "wc": true
+    },
+    "trades": 1457,
+    "usd": 1254.203815
+   }
+  },
+  "what": "каждая клетка × три окна (wa / wb / wc) замороженным бинарём `357a66c1`, средой `env-s4.sh`, ключом клетки и таблицами фильтров партии: файлы сделок / суток / монет / отказов байт в байт с клеткой БД, `trades_sig` = `tsig`"
+ },
+ "overlap": {
+  "L": {
+   "first": "L1",
+   "second": "L2",
+   "trades_first": 174,
+   "trades_second": 227,
+   "common": 172,
+   "share_of_second": 0.7577,
+   "share_of_first": 0.9885
+  },
+  "S": {
+   "first": "S1",
+   "second": "S2",
+   "trades_first": 2158,
+   "trades_second": 1457,
+   "common": 1143,
+   "share_of_second": 0.7845,
+   "share_of_first": 0.5297
+  },
+  "note": "общих сделок / сделок (2); только печать, порога нет (PS-1010 п. 6)",
+  "result": "tk674-overlap.json",
+  "result_sha256": "21c743da53b3dfd1ab28d1fdf194c00cc2f4018da87b828e454ec13a446c670d"
+ },
+ "reading_rule": {
+  "window": "январь–июнь 2026 после заморозки; правило — prereg-13.73 §8: n ≥ 100, Σ > 0 (блочный бутстреп по суткам, блок 5, 20 000, seed 674), лучше базы стороны (Холм)",
+  "status": "по В-183 п. 3 январь–июнь после счёта TK-692 / TK-700 видены, не чистая отложенная выборка: «подтверждено» там — описательно",
+  "clean_check": "первая чистая проверка — точка вперёд 30.11 (перезаморозка на крипте, `tk691-frozen.json`); для этих клеток нужны построители признаков вперёд — отдельной задачей",
+  "trading": "торговля — только словом владельца"
+ },
+ "ref": "kb/task/TK-674.md; PS-1010; L-425; L-426"
+}
