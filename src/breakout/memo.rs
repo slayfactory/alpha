@@ -105,7 +105,7 @@ impl MoveMemo {
         if let Some(a) = found {
             let n = self.hits.fetch_add(1, Relaxed);
             self.hold_all_ms.fetch_add(hold_ms(&a), Relaxed);
-            if self.verify_every > 0 && n % self.verify_every == 0 {
+            if self.verify_every > 0 && n.is_multiple_of(self.verify_every) {
                 let fresh = compute();
                 self.checked.fetch_add(1, Relaxed);
                 if fresh != *a {
