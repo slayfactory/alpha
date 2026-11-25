@@ -1,0 +1,338 @@
+{
+ "binary": {
+  "path": "/data/p42-tk683/bin/alpha-tk706memo-plain.357a66c1",
+  "md5": "357a66c14605c3a228d18defbe35bb22",
+  "sha256": "377df19cfaebda788bcc7637a95996af06d14d4eb7e2a78b14bfdf46a2c3de74"
+ },
+ "code": {
+  "tk674_run.py": "2fcc7e372123ea1ba5e0dc42602db861c769a593f24aab935e610dfa0be7993c",
+  "tk674_axes.py": "ecc4d6ae11bc7b7a36d3d20d34705b6d6f56403eae39f9d926c3cdf26269be59",
+  "tk604_run.py": "bb5dcccaec9594862aec0eb6e5f757ed39363d75ce2f7474462e61b82b1e82e6",
+  "tk625_run.py": "1c3fd91cb497dac7e07c7237e1b7fc4aea965e1ab0fae39a8caae00d3d2e6f8c"
+ },
+ "thr674": "7205062cffcf08b14636c8e0909eab118299c15244de330ac9b2f8a05147dd82",
+ "freeze_sha256": "398e5fd00bb66a7603e9c6e42cfa0958564df00d2651144508db3335517bfd4b",
+ "cells": {
+  "L1": {
+   "ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 F=big1800<=0.29&cons60<=1&vpin1h>=0.2",
+   "cid": "s3+CN60_q50+big1800.le_q80+vpin1h.ge_q20",
+   "line": "lat=4 latx=4 pk=1 pb=1 fh=4 fk=120 fm=50 fb=0.5 ew=5 ex=0 rf=0.2 rs=20 t24=12 s=3 fa=f354 fo=lo fv=0.5",
+   "ftab": "/data/p42-tk674c/ftab6743",
+   "windows": {
+    "wa": {
+     "files": {
+      "trades.csv": {
+       "equal": true,
+       "sha256": "7984e00eda0674a8b2e6bf32ddd6a21b988806754dffb466dee4dfb1a8405b38"
+      },
+      "daily.csv": {
+       "equal": true,
+       "sha256": "0aa553551ecfac89c234f123f11b5c097ecf474f523a8ab7b42dbc2da0dffca5"
+      },
+      "coinday.csv": {
+       "equal": true,
+       "sha256": "5dc35c11613ca8498af217cc5de822a2043453a1efdbad88fd524230d541fe17"
+      },
+      "entryrej.csv": {
+       "equal": true,
+       "sha256": "2f5229e07e9ae5ed463e4521d77d7c8046304452b61a99faaa5fc1070859e37b"
+      }
+     },
+     "equal": true
+    },
+    "wb": {
+     "files": {
+      "trades.csv": {
+       "equal": true,
+       "sha256": "ae6093ab39e6c591078ce9a0dbc43d32bf416d055119208bc75584b09bb5557c"
+      },
+      "daily.csv": {
+       "equal": true,
+       "sha256": "42883240463a6935d25435b105a8d95f882a57cf41e9103823c13bf67e4e55e6"
+      },
+      "coinday.csv": {
+       "equal": true,
+       "sha256": "a558fd275dbed847a480d39e71ad4826145c9d4660d9dd8bda30e85cc1bb5ac2"
+      },
+      "entryrej.csv": {
+       "equal": true,
+       "sha256": "ae43f901e01faff9cc0195fec2f51f4effbe233d0263ddba0ad9ecb15f0b57d7"
+      }
+     },
+     "equal": true
+    },
+    "wc": {
+     "files": {
+      "trades.csv": {
+       "equal": true,
+       "sha256": "f31c91dfa2dd210da3a4dd0f1d28ff9881d3e4532fd9b05c489303d6100466a6"
+      },
+      "daily.csv": {
+       "equal": true,
+       "sha256": "14e4f3af81bb72c3df2b678ad9709b392b6f20f49d31602d17e913f6394b80f2"
+      },
+      "coinday.csv": {
+       "equal": true,
+       "sha256": "45feb873428151d050436ade26b40c0fe6253710719df071f4979cc161b11463"
+      },
+      "entryrej.csv": {
+       "equal": true,
+       "sha256": "768fbaf203e2ec4336f77b2be205576b876cf8146e2ce895cd75e202a991e0e3"
+      }
+     },
+     "equal": true
+    }
+   },
+   "metrics": {
+    "trades": 174,
+    "usd": 348.069707,
+    "sharpe": 7.169269,
+    "trades_sig": "218bd806f991b26f6657d728c21b8691"
+   },
+   "errs": [],
+   "tsig_equal": true,
+   "ok": true
+  },
+  "L2": {
+   "ckey": "busy=0 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 tpk=3 F=big1800<=0.29&vpin1h>=0.2",
+   "cid": "busy0+s3+tpk3+big1800.le_q80+vpin1h.ge_q20",
+   "line": "lat=4 latx=4 pk=1 pb=1 fh=4 fk=120 fm=50 fb=0.5 ew=5 ex=0 rf=0.2 rs=20 t24=12 tpk=3 busy=0 s=3 fa=f216 fo=lo fv=0.5",
+   "ftab": "/data/p42-tk674c/ftab6744r03",
+   "windows": {
+    "wa": {
+     "files": {
+      "trades.csv": {
+       "equal": true,
+       "sha256": "712ae8eaa82f782d9d18d37d39b53afd2d2e37625cb5317df5e1b63ba6b1c4e8"
+      },
+      "daily.csv": {
+       "equal": true,
+       "sha256": "b13487ca341303ed0406daac247013be2c3c0ad30e7868522e2b6becb35ec271"
+      },
+      "coinday.csv": {
+       "equal": true,
+       "sha256": "4b4edddec57cf1f869a7544da9e8869bbd2973b6a9f6fc2f8c8659f694469138"
+      },
+      "entryrej.csv": {
+       "equal": true,
+       "sha256": "2f5229e07e9ae5ed463e4521d77d7c8046304452b61a99faaa5fc1070859e37b"
+      }
+     },
+     "equal": true
+    },
+    "wb": {
+     "files": {
+      "trades.csv": {
+       "equal": true,
+       "sha256": "155ea79cd6196fdfc23ed9ff240cdd6eb7197bc4daf87db728353f64bbe44a9e"
+      },
+      "daily.csv": {
+       "equal": true,
+       "sha256": "54ecb23308d09c85446bf024cc21002a8e32ef047970ad9b5bd7aff6d2344340"
+      },
+      "coinday.csv": {
+       "equal": true,
+       "sha256": "050ffa27a1cd409723bbee756c8778af8cb1780aea4092d5bed35fc36f8f398c"
+      },
+      "entryrej.csv": {
+       "equal": true,
+       "sha256": "ad59b0934f294c6da53b20523f4c1d185aada5c276acdc801125a7936491cac8"
+      }
+     },
+     "equal": true
+    },
+    "wc": {
+     "files": {
+      "trades.csv": {
+       "equal": true,
+       "sha256": "887ba9dd84fa1ce71f491d43e116310d3206f83f677811fd60da9db10f7ad380"
+      },
+      "daily.csv": {
+       "equal": true,
+       "sha256": "fed2ee1290f7b9d033ae7d48c4cdb86adf3d63149f245ad0f2b2c0164fbe2b53"
+      },
+      "coinday.csv": {
+       "equal": true,
+       "sha256": "aaea8842a436cd88f921ab250833b338246fa434f9547c15585e4bdd61f2fb8c"
+      },
+      "entryrej.csv": {
+       "equal": true,
+       "sha256": "23fa5de9fc36ebf6a3bf8500550e80459b9db647490d5fcf1469e358593454ea"
+      }
+     },
+     "equal": true
+    }
+   },
+   "metrics": {
+    "trades": 227,
+    "usd": 382.520751,
+    "sharpe": 7.072315,
+    "trades_sig": "c3513c0b3fd2cbf82c3982645cbf6f9e"
+   },
+   "errs": [],
+   "tsig_equal": true,
+   "ok": true
+  },
+  "S1": {
+   "ckey": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_p=60 pb=1 pk=1 rf=0.2 rr=1 rs=2 s=4 t24=12 tb=0.1 tt=20",
+   "cid": "e20+e2t2+n_bounce1+natr_p60+rr1+s4",
+   "line": "lat=4 latx=4 pk=1 pb=1 fh=4 fk=120 fm=50 fb=0.5 ew=5 ex=0 tt=20 tb=0.1 rf=0.2 rs=2 bm=1 e=0.15 e2=0.05 t24=12 rr=1 n_bounce=1 e2=0 e2t=2 natr_p=60 s=4",
+   "ftab": null,
+   "windows": {
+    "wa": {
+     "files": {
+      "trades.csv": {
+       "equal": true,
+       "sha256": "813241e37d2f9e874163dfbe0813b199d557754cadf57f2becb51b5a733f53f0"
+      },
+      "daily.csv": {
+       "equal": true,
+       "sha256": "01230e18d94ca29dacc83f38a35a05458eafd2a11bab230c543d3ba204ac7a22"
+      },
+      "coinday.csv": {
+       "equal": true,
+       "sha256": "192de975ef5e88dacb69a6d248b4db14c272976271593f5964bf3936a373a19e"
+      },
+      "entryrej.csv": {
+       "equal": true,
+       "sha256": "a4122809b2a747e8b9e16d0576c44879481a68c7d30f3c6e725378ad1c29b31c"
+      }
+     },
+     "equal": true
+    },
+    "wb": {
+     "files": {
+      "trades.csv": {
+       "equal": true,
+       "sha256": "082b6b8fedd96e8a9640e2f9b8d71d0f8dfd44d5da8908395f6a83a51e3e26ce"
+      },
+      "daily.csv": {
+       "equal": true,
+       "sha256": "d43c37513e981c9207f2381e9411dbbfb4b8f21a8fc13714278b50518b1c87f5"
+      },
+      "coinday.csv": {
+       "equal": true,
+       "sha256": "e04b91f89c541ab69ac886d01c1283c954da80d67e55f252b18fe82843a787fe"
+      },
+      "entryrej.csv": {
+       "equal": true,
+       "sha256": "dcef8f6183706d3395d874d3dada5a0d988a5dfac0b8a7464970b4854ff4ef9f"
+      }
+     },
+     "equal": true
+    },
+    "wc": {
+     "files": {
+      "trades.csv": {
+       "equal": true,
+       "sha256": "c843f7266ea2c104caee6a8db4f996de0addf0768c875e9b4c78bb34998f9420"
+      },
+      "daily.csv": {
+       "equal": true,
+       "sha256": "ae0909d390324929095165bf1167b26d6ee51e981f43440b3f8f57a612f3bb9a"
+      },
+      "coinday.csv": {
+       "equal": true,
+       "sha256": "ed3e74211802e71e46b4cbdf4eb1039356a14648275bce073a217ae1aecfadac"
+      },
+      "entryrej.csv": {
+       "equal": true,
+       "sha256": "9349583957f5460e440700ffb0ad8c02f8a44d2ab1f68af14742d11581144599"
+      }
+     },
+     "equal": true
+    }
+   },
+   "metrics": {
+    "trades": 2158,
+    "usd": 1358.971226,
+    "sharpe": 11.275389,
+    "trades_sig": "519a8a2794282f52e692695dbc06593b"
+   },
+   "errs": [],
+   "tsig_equal": true,
+   "ok": true
+  },
+  "S2": {
+   "ckey": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_min=0.6 nf=1 pb=1 pk=1 q=100 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+   "cid": "e20+e2t2+n_bounce1+natr_min0.6+nf1+q100+s4",
+   "line": "lat=4 latx=4 pk=1 pb=1 fh=4 fk=120 fm=50 fb=0.5 ew=5 ex=0 tt=20 tb=0.1 rf=0.2 rs=2 bm=1 e=0.15 e2=0.05 t24=12 q=100 n_bounce=1 e2=0 e2t=2 nf=1 natr_min=0.6 s=4",
+   "ftab": null,
+   "windows": {
+    "wa": {
+     "files": {
+      "trades.csv": {
+       "equal": true,
+       "sha256": "329f6a8fda82b4fb628cf2c4a9cc47a547f288005bdfe389a957d457ef5dc1b0"
+      },
+      "daily.csv": {
+       "equal": true,
+       "sha256": "b555e569925f93be56d808641a62e11ca3ee1a007f8754992ac6a28ab8559c7c"
+      },
+      "coinday.csv": {
+       "equal": true,
+       "sha256": "37a2054bb0ef9a5082b0d02aa80102c466ce6d548b9d35d4e50d0e6aaaef1311"
+      },
+      "entryrej.csv": {
+       "equal": true,
+       "sha256": "569ed25b9ca07d87f361096924ccb99ca2d183322dd2e64aeba5b401584ae7cb"
+      }
+     },
+     "equal": true
+    },
+    "wb": {
+     "files": {
+      "trades.csv": {
+       "equal": true,
+       "sha256": "96659ed59f368acd154ebba539fb14802bb4d0d1920d9e2d6f5eccd05a8d28a0"
+      },
+      "daily.csv": {
+       "equal": true,
+       "sha256": "a5524b2dd29ba65e2a7b9adf91e237dd986c6a82d9bbf294fa5965d4d0176ec2"
+      },
+      "coinday.csv": {
+       "equal": true,
+       "sha256": "4d351355d60b08eb943f1117cd7758e6f0d252c6f6748d2889073463d63e647e"
+      },
+      "entryrej.csv": {
+       "equal": true,
+       "sha256": "3571325918b4ba5a445ac6e4952d8794ae8521695c3a7ab694f035c5a4c17d2a"
+      }
+     },
+     "equal": true
+    },
+    "wc": {
+     "files": {
+      "trades.csv": {
+       "equal": true,
+       "sha256": "ecfae0218d83984c7766bd53d19a405879d56facc1b12f83feece34f571bdc62"
+      },
+      "daily.csv": {
+       "equal": true,
+       "sha256": "000bb20e2caeec31966d7ed0980511f3bb3a503e620384c725cf27e7f30f65e5"
+      },
+      "coinday.csv": {
+       "equal": true,
+       "sha256": "a65f4dc20fad23dc1531a9561391b32cef044a2e9aa6405f02ae694e6244bda1"
+      },
+      "entryrej.csv": {
+       "equal": true,
+       "sha256": "70cedc951173cae7579da6c65deeb17e524ffd1dddb6f7308af8ee8233c973f7"
+      }
+     },
+     "equal": true
+    }
+   },
+   "metrics": {
+    "trades": 1457,
+    "usd": 1254.203815,
+    "sharpe": 11.373007,
+    "trades_sig": "723c4d1455d900b0e9b24327fb35460d"
+   },
+   "errs": [],
+   "tsig_equal": true,
+   "ok": true
+  }
+ },
+ "passed": true
+}

@@ -1,7 +1,10 @@
 //! Тесты `fast` (TK-681): края окон ускорения ленты и коротких окон потока (ручные значения), короткий markout и бары Кайла / Амихуда против прямых формул,
 //! связь с TOX13 (те же формулы на окнах TOX13 — побитово), отсутствие заглядывания за σ, хвост предыдущих суток, прогон по CSV.
 
-use super::fast::{accel, fast_features, markout_short, run, ACC_P, ACC_S, FAST, N_FAST};
+use super::fast::{
+    accel, fast_features, markout_short, run, sacd_features, ACC_P, ACC_S, FAST, N_FAST, N_SACD,
+    SACD,
+};
 use super::flow::{Ep, DAY_MS, HOUR_MS, MIN_MS};
 use super::tox::{
     bar_features, coin_rows, read_input, tox_features, vpin_fused, Scratch, ToxCfg, View, Win, TOX,
@@ -207,6 +210,75 @@ fn short_big_imbalance_and_sign_autocorr_hand_values() {
     // 29 сделок в окне 10 с — автокорреляция пуста (минимум 30)
     let w29 = win_from(&t[..30], &vec![1.0; 30], &v[..30], &b[..30]);
     assert!(ff(&w29, sig, 1, Some(10.0), 0)[fi("sac10")].is_nan());
+}
+
+/// Сторона записи по её номеру в окне.
+type Side = fn(i64) -> bool;
+
+/// TK-690: `sac10/30/60` пусты ровно когда окно не покрыто данными, записей окна < 30 или все записи одной стороны; `sacd` считает n и покупки независимо.
+#[test]
+fn sac_is_empty_exactly_for_uncovered_few_trades_or_one_side() {
+    let sig = 10 * HOUR_MS;
+    let ix = |k: &str| SACD.iter().position(|x| *x == k).unwrap();
+    // записи за 70 с до σ шагом 100 мс; сторона — по номеру записи: чередование / все покупки / все продажи / редкие покупки
+    let cases: [(i64, Side); 8] = [
+        (29, |i| i % 2 == 0),
+        (30, |i| i % 2 == 0),
+        (30, |_| true),
+        (30, |_| false),
+        (700, |i| i % 2 == 0),
+        (700, |_| true),
+        (700, |i| i % 97 == 0),
+        (0, |_| true),
+    ];
+    let mut seen = [0usize; 2]; // пустых / непустых по всем окнам
+    for (n, side) in cases {
+        for step in [100i64, 2_000] {
+            let t: Vec<i64> = (0..n).map(|i| sig - 1 - i * step).rev().collect();
+            let b: Vec<bool> = (0..n).map(side).collect();
+            let w = win_from(&t, &vec![1.0; t.len()], &vec![1.0; t.len()], &b);
+            for gap in [3_000i64, 20_000, 40_000, 100_000] {
+                let avail_from = sig - gap;
+                let f = fast_features(
+                    &w,
+                    sig,
+                    1,
+                    Some(10.0),
+                    Some(0),
+                    avail_from,
+                    &mut Scratch::default(),
+                );
+                let d = sacd_features(
+                    &w,
+                    sig,
+                    1,
+                    Some(10.0),
+                    Some(0),
+                    avail_from,
+                    &mut Scratch::default(),
+                );
+                assert_eq!(d.len(), N_SACD);
+                assert_eq!(d[ix("gap")], gap as f64);
+                for (w_s, sac, nk, bk) in [
+                    (10i64, "sac10", "n10", "nb10"),
+                    (30, "sac30", "n30", "nb30"),
+                    (60, "sac60", "n60", "nb60"),
+                ] {
+                    let (cnt, buys) = (d[ix(nk)], d[ix(bk)]);
+                    let want = t.iter().filter(|&&x| x >= sig - w_s * 1000).count() as f64;
+                    assert_eq!(cnt, want, "n окна {w_s} с");
+                    let empty = gap < w_s * 1000 || cnt < 30.0 || buys == 0.0 || buys == cnt;
+                    assert_eq!(
+                        f[fi(sac)].is_nan(),
+                        empty,
+                        "{sac}: n={n} шаг={step} gap={gap} n_окна={cnt} покупок={buys}"
+                    );
+                    seen[usize::from(!empty)] += 1;
+                }
+            }
+        }
+    }
+    assert!(seen[0] > 20 && seen[1] > 5, "покрыты оба исхода: {seen:?}");
 }
 
 /// Прямые формулы Кайла / Амихуда по `nb` барам длины `bar` перед σ (циклы по записям).

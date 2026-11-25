@@ -1,0 +1,235 @@
+diff --git a/src/breakout/tick.rs b/src/breakout/tick.rs
+index ad365f01d..c695f67b7 100644
+--- a/src/breakout/tick.rs
++++ b/src/breakout/tick.rs
+@@ -2107,90 +2107,143 @@ fn sim_tail_e(
+     entry_slip_bps: i64,
+     stop_px: Option<i64>,
+ ) -> TickOut {
++    // TK-706: состояние хода лежит в отдельных локальных (скаляры `WSt`, `pos`, `marks`) — как и до выноса шага: единая структура со всем состоянием
++    // (`Walk`) держала скаляры в памяти и стоила +10 % инструкций (w1, H1); пучок хранит ходы как `Walk`, одиночный путь — так
+     let s = side.s();
+     let e = p0 + frac(p0.abs(), entry_slip_bps, 10_000);
+     let mut pos = Pos::new(s, e, p0, entry_ms, natr_e8, ex, lc, notional, stop_px);
+-    let mut cur_day = (entry_ms / DAY_MS) as usize;
++    let mut st = WSt::new(entry_ms, p0);
+     let mut marks: Vec<(usize, i64)> = Vec::new();
+-    let mut last = (entry_ms, p0);
+-    let mut exit: Option<(i64, i64, ExitKind)> = None;
+-    let mut pending: Option<(i64, ExitKind)> = None;
++    while let Some((ms, px, _)) = next() {
++        if walk_step(&mut st, &mut pos, &mut marks, ex, s, ms, px) {
++            break;
++        }
++    }
++    walk_finish(st, pos, marks, ex, s, e, entry_ms)
++}
++
++/// TK-706: скалярное состояние хода по ленте (бывшие локальные `sim_tail_e`); без куч — в одиночном пути живёт в регистрах.
++#[derive(Clone, Copy)]
++struct WSt {
++    cur_day: usize,
++    last: (i64, i64),
++    exit: Option<(i64, i64, ExitKind)>,
++    pending: Option<(i64, ExitKind)>,
+     // v22 (`tl`): стоящий приказ трейла — (цена в рамe, момент, с которого он живёт, цена последней сделки до его прихода); `tl_info` — (мс срабатывания,
+     // настоящая цена) для вывода
+-    let mut lim: Option<(i64, i64, i64)> = None;
+-    let mut tl_info: Option<(i64, i64)> = None;
+-    let mut maker_exit = false;
+-    while let Some((ms, px, _)) = next() {
+-        let d = (ms / DAY_MS) as usize;
+-        while cur_day < d {
+-            marks.push((cur_day, s * last.1));
+-            cur_day += 1;
++    lim: Option<(i64, i64, i64)>,
++    tl_info: Option<(i64, i64)>,
++    maker_exit: bool,
++}
++
++impl WSt {
++    fn new(entry_ms: i64, p0: i64) -> WSt {
++        WSt {
++            cur_day: (entry_ms / DAY_MS) as usize,
++            last: (entry_ms, p0),
++            exit: None,
++            pending: None,
++            lim: None,
++            tl_info: None,
++            maker_exit: false,
+         }
+-        let p = s * px;
+-        last = (ms, p);
+-        if let Some((lpx, live, arrival)) = lim {
+-            if ms < live {
+-                // приказ в пути (задержка выхода): как окно задержки рыночного выхода — сделки только исполняют тейки
+-                pos.fill_takes(ms, p);
+-                lim = Some((lpx, live, p));
+-                continue;
+-            }
+-            // `tl = 2`: к приходу приказа цена уже строго за ним — приказ маркетабелен и исполняется как рыночный выход v21 (тейкер по сделке, с проскальзыванием)
+-            if ex.tl == 2 && arrival > lpx {
+-                exit = Some((ms, p, ExitKind::Trail));
+-                break;
+-            }
+-            lim = Some((lpx, live, i64::MIN));
+-            pos.lim = true;
+-            if let Some((due, kind)) = pending {
+-                if ms >= due {
+-                    exit = Some((ms, p, kind));
+-                    break;
+-                }
+-            }
+-            if p >= lpx {
+-                exit = Some((ms, lpx, ExitKind::Trail));
+-                maker_exit = true;
+-                break;
+-            }
+-            if pending.is_none() {
+-                if let Some(kind) = pos.on_trade(ms, p) {
+-                    if ex.lat_exit_ms > 0 {
+-                        pending = Some((ms + ex.lat_exit_ms, kind));
+-                    } else {
+-                        exit = Some((ms, p, kind));
+-                        break;
+-                    }
+-                }
+-            }
+-            continue;
++    }
++}
++
++/// Одна сделка ленты (время `ms`, цена `px`; `s` — знак стороны); `true` — ход кончен, выход записан в `w.exit`.
++#[inline(always)]
++#[allow(clippy::too_many_arguments)]
++fn walk_step(
++    w: &mut WSt,
++    pos: &mut Pos,
++    marks: &mut Vec<(usize, i64)>,
++    ex: &ExitCfg,
++    s: i64,
++    ms: i64,
++    px: i64,
++) -> bool {
++    let d = (ms / DAY_MS) as usize;
++    while w.cur_day < d {
++        marks.push((w.cur_day, s * w.last.1));
++        w.cur_day += 1;
++    }
++    let p = s * px;
++    w.last = (ms, p);
++    if let Some((lpx, live, arrival)) = w.lim {
++        if ms < live {
++            // приказ в пути (задержка выхода): как окно задержки рыночного выхода — сделки только исполняют тейки
++            pos.fill_takes(ms, p);
++            w.lim = Some((lpx, live, p));
++            return false;
++        }
++        // `tl = 2`: к приходу приказа цена уже строго за ним — приказ маркетабелен и исполняется как рыночный выход v21 (тейкер по сделке, с проскальзыванием)
++        if ex.tl == 2 && arrival > lpx {
++            w.exit = Some((ms, p, ExitKind::Trail));
++            return true;
+         }
+-        if let Some((due, kind)) = pending {
++        w.lim = Some((lpx, live, i64::MIN));
++        pos.lim = true;
++        if let Some((due, kind)) = w.pending {
+             if ms >= due {
+-                exit = Some((ms, p, kind));
+-                break;
++                w.exit = Some((ms, p, kind));
++                return true;
+             }
+-            pos.fill_takes(ms, p);
+-            continue;
+         }
+-        if let Some(kind) = pos.on_trade(ms, p) {
+-            if ex.tl > 0 && kind == ExitKind::Trail {
+-                lim = Some((pos.trail, ms + ex.lat_exit_ms, p));
+-                tl_info = Some((ms, s * pos.trail));
+-                continue;
+-            }
+-            // TK-669: «всё взято» — лимитки уже исполнены, выхода (и его задержки) нет
+-            if ex.lat_exit_ms > 0 && kind != ExitKind::Takes {
+-                pending = Some((ms + ex.lat_exit_ms, kind));
+-                continue;
++        if p >= lpx {
++            w.exit = Some((ms, lpx, ExitKind::Trail));
++            w.maker_exit = true;
++            return true;
++        }
++        if w.pending.is_none() {
++            if let Some(kind) = pos.on_trade(ms, p) {
++                if ex.lat_exit_ms > 0 {
++                    w.pending = Some((ms + ex.lat_exit_ms, kind));
++                } else {
++                    w.exit = Some((ms, p, kind));
++                    return true;
++                }
+             }
+-            exit = Some((ms, p, kind));
+-            break;
+         }
++        return false;
+     }
+-    let (xm, xp, kind) = exit.unwrap_or((last.0, last.1, ExitKind::Forced));
++    if let Some((due, kind)) = w.pending {
++        if ms >= due {
++            w.exit = Some((ms, p, kind));
++            return true;
++        }
++        pos.fill_takes(ms, p);
++        return false;
++    }
++    if let Some(kind) = pos.on_trade(ms, p) {
++        if ex.tl > 0 && kind == ExitKind::Trail {
++            w.lim = Some((pos.trail, ms + ex.lat_exit_ms, p));
++            w.tl_info = Some((ms, s * pos.trail));
++            return false;
++        }
++        // TK-669: «всё взято» — лимитки уже исполнены, выхода (и его задержки) нет
++        if ex.lat_exit_ms > 0 && kind != ExitKind::Takes {
++            w.pending = Some((ms + ex.lat_exit_ms, kind));
++            return false;
++        }
++        w.exit = Some((ms, p, kind));
++        return true;
++    }
++    false
++}
++
++/// Итог хода: без выхода по ленте — принудительный на последней сделке.
++fn walk_finish(
++    w: WSt,
++    pos: Pos,
++    marks: Vec<(usize, i64)>,
++    ex: &ExitCfg,
++    s: i64,
++    e: i64,
++    entry_ms: i64,
++) -> TickOut {
++    let (xm, xp, kind) = w.exit.unwrap_or((w.last.0, w.last.1, ExitKind::Forced));
+     // лимитный выход трейла — по цене приказа, мейкер, без проскальзывания; остальные выходы — тейкер с проскальзыванием
+-    let px_frame = if maker_exit {
++    let px_frame = if w.maker_exit {
+         xp
+     } else {
+         xp - frac(xp.abs(), ex.slip_bps, 10_000)
+@@ -2201,7 +2254,7 @@ fn sim_tail_e(
+             ms: xm,
+             px: s * px_frame,
+             u: pos.rem,
+-            maker: maker_exit,
++            maker: w.maker_exit,
+         });
+     }
+     TickOut {
+@@ -2212,7 +2265,7 @@ fn sim_tail_e(
+         kind,
+         takes: pos.next_tp as u32,
+         marks,
+-        tl: tl_info,
++        tl: w.tl_info,
+         floor: pos.floor,
+     }
+ }

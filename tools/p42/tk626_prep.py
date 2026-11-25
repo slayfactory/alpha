@@ -2,10 +2,12 @@
 """TK-626 / П-42 §13.28.1 п. 2 и 5: подготовка данных точки вперёд — вселенная `U_k = B ∪ N_k` и деревья окон. Без P&L, движок не запускается.
 Оркестрация и сеть — `tk626_prep.sh` (листинг S3 `tk621_list.py`, скачивание `tk621_dl.py`, REST-добор `tk621_restfill.py`, `breakout convert`); здесь — чистая логика (тестируется на синтетике):
 
-  python3 tk626_prep.py universe --list-dir L --base-dir B --d 2026-11-30 --out U [--prev U_prev]   # symbols-{all,crypto,tradfi}.txt, contracts.csv, L/missing.tsv, L/gaps.tsv
-  python3 tk626_prep.py check --out P --universe U --d 2026-11-30 [--windows w1]                                                   # ворота подготовки: каталоги у каждого контракта, нет суток позже D
-  python3 tk626_prep.py tree --out P --universe U --d 2026-11-30 --windows w1,w2 --freeze F [--dl DL] [--rest RF]                   # P/<окно>/{aggtrades,klines}: ссылки на опубликованные файлы
+  python3 tk626_prep.py universe --list-dir L --base-dir B --d 2026-11-30 --out U [--prev U_prev] [--only crypto]   # symbols-{all,crypto,tradfi}.txt, contracts.csv, L/missing.tsv, L/gaps.tsv (`--only` — только этот список)
+  python3 tk626_prep.py check --out P --universe U --d 2026-11-30 [--windows w1] [--universe-name crypto]           # ворота подготовки: каталоги у каждого контракта, нет суток позже D
+  python3 tk626_prep.py tree --out P --universe U --d 2026-11-30 --windows w1,w2 --freeze F [--dl DL] [--rest RF] [--universe-name crypto]   # P/<окно>/{aggtrades,klines}: ссылки на опубликованные файлы
 
+TK-710: после перезаморозки на c539 читается только `crypto` (`universe.read = [crypto]`, `check_universe_crypto`): дерево с контрактами TradFi остановило бы чтение охраной «монеты вне списка», поэтому для чтения «по вчера»
+(`tk710_thru.sh`) список скачивания и дерево — по `--only crypto` / `--universe-name crypto`; по умолчанию (`all`) поведение прежнее (точки L1…L5 заморозки tk626).
 Прирост `N_k` — USDT-перпетуалы с опубликованными aggTrades хотя бы в одни сутки 14.11…D, которых нет в базе B (775, TK-621) и у которых нет суток 01.07–13.11; класс — `contractType == TRADIFI_PERPETUAL`
 по exchangeInfo в момент первого появления (дальше — из `contracts.csv` предыдущей точки; смена класса — остановка), нет в exchangeInfo — крипто. Порядок монет: база как в базовом списке, затем прирост по (первые сутки, символ),
 поэтому список точки k — префикс списка точки k + 1. Класс базовых контрактов — из базовых списков, не из exchangeInfo."""
@@ -170,8 +172,9 @@ def cmd_universe(a):
     lists, rows = build_universe(contracts, files, base, a.d, read_prev_classes(a.prev))
     write_universe(a.out, lists, rows)
     new = [r for r in rows if not r["in_base"]]
-    miss = missing_rows(files, lists["all"], a.d)
-    gaps, tail = gap_rows(files, lists["all"], a.d)
+    scope = a.only or "all"
+    miss = missing_rows(files, lists[scope], a.d)
+    gaps, tail = gap_rows(files, lists[scope], a.d)
     with open(os.path.join(a.list_dir, "missing.tsv"), "w", encoding="utf-8", newline="\n") as f:
         f.writelines("\t".join(map(str, r)) + "\n" for r in miss)
     with open(os.path.join(a.list_dir, "gaps.tsv"), "w", encoding="utf-8", newline="\n") as f:
@@ -179,6 +182,7 @@ def cmd_universe(a):
     absent = sorted(set(base["all"]) - {s for (k, s), v in files.items() if k == "aggTrades" and any(FIRST_BASE <= x <= a.d for x in v)})
     print("вселенная до %s: all %d (база %d + прирост %d), crypto %d, tradfi %d; прирост TradFi %d" % (a.d, len(lists["all"]), len(base["all"]), len(new), len(lists["crypto"]), len(lists["tradfi"]),
                                                                                               sum(r["tradfi"] for r in new)))
+    print("список скачивания: %s" % scope)
     print("к скачиванию %d файлов; провалов внутри листинга %d; хвост без суток D (последние 3 суток, возможное запаздывание публикации) %d; базовых без суток в листинге %d %s" % (
         len(miss), len(gaps), len(tail), len(absent), absent[:5]))
     return 0
@@ -193,7 +197,7 @@ def cmd_tree(a):
     names = a.windows.split(",") if a.windows else (pt or {}).get("windows", [])
     if not names:
         raise GuardError("не заданы окна (--windows)")
-    syms = read_symbols(os.path.join(a.universe, "symbols-all.txt"))
+    syms = read_symbols(os.path.join(a.universe, "symbols-%s.txt" % a.universe_name))
     last = fw.d(a.d)
     kl, tr, fund = sources(a.dl, a.rest)
     for n in names:
@@ -212,7 +216,7 @@ def cmd_tree(a):
 def cmd_check(a):
     """Ворота подготовки (§13.28.1 п. 5): у каждого контракта `all_k` есть каталог в `aggtrades/` и `klines/` каждого окна; файлов позже D и монет вне `all_k` нет (`check_tree_days`)."""
     fz = fw.load_freeze(a.freeze)
-    syms = read_symbols(os.path.join(a.universe, "symbols-all.txt"))
+    syms = read_symbols(os.path.join(a.universe, "symbols-%s.txt" % a.universe_name))
     pt = next((p for p in fz["points"] if p["d"] == a.d), None)
     names = a.windows.split(",") if a.windows else (pt or {}).get("windows", [])
     wins = [w for w in fw.windows_of(fz) if w.name in names]
@@ -237,6 +241,7 @@ def main(argv=None):
     u.add_argument("--d", required=True)
     u.add_argument("--out", required=True)
     u.add_argument("--prev", default="")
+    u.add_argument("--only", default="", choices=["", *UNI], help="списки missing.tsv / gaps.tsv — только этого списка вселенной (по умолчанию all)")
     t = sp.add_parser("tree")
     t.add_argument("--out", required=True)
     t.add_argument("--universe", required=True)
@@ -246,12 +251,14 @@ def main(argv=None):
     t.add_argument("--dl", default="/data/p42-tk616/fwd/dl")
     t.add_argument("--rest", default="/data/p42-tk616/fwd/rest")
     t.add_argument("--allow-test", action="store_true")
+    t.add_argument("--universe-name", default="all", choices=UNI, help="список вселенной, по которому строится дерево (crypto — чтение c539, TK-710)")
     c = sp.add_parser("check")
     c.add_argument("--out", required=True)
     c.add_argument("--universe", required=True)
     c.add_argument("--d", required=True)
     c.add_argument("--windows", default="")
     c.add_argument("--freeze", default=fw.FREEZE)
+    c.add_argument("--universe-name", default="all", choices=UNI)
     a = ap.parse_args(argv)
     try:
         return {"universe": cmd_universe, "tree": cmd_tree, "check": cmd_check}[a.cmd](a)

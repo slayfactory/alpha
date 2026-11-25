@@ -868,7 +868,7 @@ fn px_from_store(d: &StoredDay, abs_day: i64) -> Option<PxDay> {
     }
     let base = abs_day * DAY_MS;
     Some(PxDay {
-        t: d.ticks.iter().map(|k| base + i64::from(k.off)).collect(),
+        t: d.ticks.iter().map(|k| base + i64::from(k.off())).collect(),
         p: d.ticks.iter().map(|k| k.px).collect(),
         unsorted: d.stat.unsorted_files > 0,
     })

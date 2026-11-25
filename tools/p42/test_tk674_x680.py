@@ -15,7 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import tk674_axes as ax  # noqa: E402
 
-# эталон до правки (код после слияния TK-680, без TK674_X680): подпись осей / сеток пар / списка пропущенных пар и ключ базы стороны
+# эталон до правки (код после слияния TK-680 и TK-697 (причина строки пропуска lx), без TK674_X680): подпись осей / сеток пар / списка пропущенных пар и ключ базы стороны
 GOLD = {
     ("plain", "L"): dict(axes="9fa536424685844e", n_axes=34, pairs=525, skipped=36, skip_hash="86f3e9811921d26c", cells=8620, grid_hash="14a9e4b6adb09732",
                          base="ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 t24=12"),

@@ -158,19 +158,23 @@ def add_columns(side, st, tabs, cl=None, ctx=None, hist=None):
             v[keep] = cosig15(sym[keep], ms[keep])
             tabs[w.name]["cosig15"] = v
     extra = set()
-    fam = {"t697": a80.T697_FAM_NAMES, "t697b": a80.T697B_NAMES, "t701": a80.T701_NAMES}.get(a80.SET, ())     # наборы t697 / t697b / t701: столбцы семейств — из своих файлов, не из таблицы TK-671
-    have |= set(fam)
+    setcols = {"t681": a80.FAST_NAMES, "t697": a80.T697_FAM_NAMES, "t697b": a80.T697B_NAMES, "t701": a80.T701_NAMES}.get(a80.SET) if cl is None else None   # наборы TK-681 / 697 / 701: столбцы не из parquet TK-671; режим X680 (`cl` задан) — только sac10 / sac60 / accdv1_300 ниже
+    sset = a80.SET if setcols else ""
+    if setcols:
+        have |= set(setcols)
     if hist:
         extra = set(pq.ParquetFile(a80.HIST_EXTRA % ENGNAME[side]).schema.names) - have
         have |= extra
         rid = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["row_id"])["row_id"].to_numpy()
     cl = a80.column_list(coverage_cols()) if cl is None else cl
     srcs = lambda src: src if isinstance(src, tuple) else (src,)
-    fast = set(fam) or {x for _, src, _ in cl for x in srcs(src) if x in a80.FAST_NAMES and x not in have}     # столбцы TK-681, которых нет в таблице TK-671 (X680: sac10 / sac60 / accdv1_300 стороны S)
+    fast = {x for _, src, _ in cl for x in srcs(src) if x in a80.FAST_NAMES and x not in have}     # столбцы TK-681, которых нет в таблице TK-671 (X680: sac10 / sac60 / accdv1_300 стороны S)
     have |= fast
     absent = [name for name, src, _ in cl if not all(x in have for x in srcs(src)) and name not in tabs[st.TRADE_WINDOWS[0].name]]
     cl = [c for c in cl if c[0] not in absent]
     need = sorted({x for _, src, _ in cl for x in srcs(src) if x in have})
+    if setcols:
+        fast = set(setcols)
     df = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["win", "sym", "meta_sig_ms", "meta_base_pass"] + (["row_id"] if fast else []) + [x for x in need if x not in extra and x not in fast])
     if extra:                                       # ok10_d3 / d5: файл tk680_hist.py, строки в порядке таблицы TK-671 (ключ сверяется)
         ex = pd.read_parquet(a80.HIST_EXTRA % ENGNAME[side])
@@ -181,7 +185,7 @@ def add_columns(side, st, tabs, cl=None, ctx=None, hist=None):
     df = df[df["meta_base_pass"] > 0].copy()
     df["win"], df["sym"] = df["win"].astype(str), df["sym"].astype(str)
     if fast:
-        df = t701_join(side) if a80.SET == "t701" else t697b_join(side) if a80.SET == "t697b" else (t697_join(side, df) if a80.SET == "t697" else fast_join(side, df))
+        df = t701_join(side) if sset == "t701" else t697b_join(side) if sset == "t697b" else (t697_join(side, df) if sset == "t697" else fast_join(side, df))
     df["_pri"] = (df["meta_base_pass"] != 1).astype(int)
     df = df.sort_values("_pri", kind="stable").drop_duplicates(["win", "sym", "meta_sig_ms"])
     rep = {}

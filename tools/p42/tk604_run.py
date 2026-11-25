@@ -67,12 +67,18 @@ def say(*a):
     print(time.strftime("%H:%M:%S"), *a, flush=True)
 
 
+def _no_core():
+    """Потомку — без дампа памяти (TK-706: бинарь p42 с panic=abort при сбое пишет SIGABRT-дамп ≈ 35 ГБ через systemd-coredump)."""
+    import resource
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+
 def run(cmd, env=None, log=None):
     e = dict(os.environ)
     e.update(env or {})
     t = time.time()
     with open(log, "w") if log else open(os.devnull, "w") as f:
-        r = subprocess.run(cmd, env=e, stdout=f, stderr=subprocess.STDOUT)
+        r = subprocess.run(cmd, env=e, stdout=f, stderr=subprocess.STDOUT, preexec_fn=_no_core if os.name == "posix" else None)
     say("rc=%d %.0f с: %s" % (r.returncode, time.time() - t, " ".join(cmd)[:160]))
     if r.returncode != 0:
         raise st.GuardError("команда вернула %d (журнал %s)" % (r.returncode, log))

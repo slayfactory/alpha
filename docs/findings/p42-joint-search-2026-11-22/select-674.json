@@ -1,0 +1,506 @@
+{
+ "L": {
+  "base": {
+   "ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+   "sharpe": 5.217484892395193,
+   "usd": 325.695352,
+   "n": 298,
+   "maxdd": 41.37047799999999,
+   "maxdd_pct": 16.548191199999994,
+   "kpi": {
+    "gap_longest": 16,
+    "gap_mean": 3.1463414634146343,
+    "gap_tail": 7,
+    "highs": 41,
+    "longest": 12,
+    "p90": 8.0,
+    "tail": 7,
+    "under_share": 0.6617647058823529
+   },
+   "rr": 1.6049212322409978,
+   "s": 3.0,
+   "lstop": 15.415,
+   "worst": 16.439890000000002,
+   "n_over": 6,
+   "n_stop": 16,
+   "mean_usd": 1.092937422818792,
+   "under_share": 0.6617647058823529
+  },
+  "stats": {
+   "winners": 1340,
+   "by_map": {
+    "map674bsx-L": 227,
+    "map674bs3u-L": 405,
+    "map674bs4u-L": 708
+   },
+   "excluded_tokens": {},
+   "axis_names": [
+    "big1800",
+    "busy",
+    "c",
+    "ch",
+    "cm",
+    "color",
+    "cons60",
+    "cw",
+    "d",
+    "e",
+    "e2t",
+    "ek",
+    "l_days",
+    "n24",
+    "n_tp",
+    "ok10_d5",
+    "ok10_d7",
+    "p",
+    "pb",
+    "q",
+    "rf",
+    "rr",
+    "t1h",
+    "t24",
+    "t_high",
+    "t_low",
+    "tj",
+    "tl",
+    "tpg",
+    "tpk",
+    "tpm60",
+    "tt",
+    "vpin1h",
+    "w2",
+    "zv6h"
+   ],
+   "excluded_axes": 0,
+   "not_forward": 0,
+   "duplicates": 518,
+   "distinct": 822,
+   "above_floor": 734,
+   "second_pool": 731
+  },
+  "noise": 6.206293187554905,
+  "m": 202010,
+  "sigma": 1.2556005282138776,
+  "candidates": [
+   {
+    "rank": 1,
+    "src": "map674bs3u-L",
+    "pair": "CN60|big1800.le|vpin1h.ge",
+    "axes": [
+     "F:big1800<=",
+     "F:cons60<=",
+     "F:vpin1h>="
+    ],
+    "cell": {
+     "ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 F=big1800<=0.29&cons60<=1&vpin1h>=0.2",
+     "cid": "s3+CN60_q50+big1800.le_q80+vpin1h.ge_q20",
+     "sharpe": 7.169269242679437,
+     "usd": 348.069707,
+     "n": 174,
+     "maxdd": 17.097692000000052,
+     "maxdd_pct": 6.839076800000021,
+     "gap_longest": 11,
+     "gap_mean": 2.62,
+     "p90": 5.5,
+     "tail": 5,
+     "rr": 2.142792186740082,
+     "months": [
+      [
+       39,
+       23.27940199999999
+      ],
+      [
+       35,
+       78.811589
+      ],
+      [
+       46,
+       93.88439500000001
+      ],
+      [
+       38,
+       127.931078
+      ],
+      [
+       16,
+       24.163242999999994
+      ]
+     ],
+     "plateau": true,
+     "nb_mean": 6.362297667635996,
+     "gain": 1.9517843502842442,
+     "tsig": "218bd806f991b26f6657d728c21b8691",
+     "s": 3.0,
+     "lstop": 15.415,
+     "worst": 15.628841,
+     "n_over": 2,
+     "n_stop": 6,
+     "mean_usd": 2.000400614942529,
+     "under_share": 0.5073529411764706,
+     "moved": 3,
+     "syn": null,
+     "gain_sub": 0.13218171380191013,
+     "ref5_key": "ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 t24=12 F=big1800<=0.29&cons60<=1&vpin1h>=0.2",
+     "ref5": null
+    }
+   },
+   {
+    "rank": 2,
+    "src": "map674bs4u-L",
+    "pair": "tpk|busy|big1800.le|vpin1h.ge",
+    "axes": [
+     "F:big1800<=",
+     "F:vpin1h>=",
+     "busy",
+     "tpk"
+    ],
+    "cell": {
+     "ckey": "busy=0 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 tpk=3 F=big1800<=0.29&vpin1h>=0.2",
+     "cid": "busy0+s3+tpk3+big1800.le_q80+vpin1h.ge_q20",
+     "sharpe": 7.07231472097755,
+     "usd": 382.520751,
+     "n": 227,
+     "maxdd": 19.132655,
+     "maxdd_pct": 7.653061999999999,
+     "gap_longest": 11,
+     "gap_mean": 2.63265306122449,
+     "p90": 6.0,
+     "tail": 7,
+     "rr": 2.8100965918935614,
+     "months": [
+      [
+       49,
+       42.433202
+      ],
+      [
+       49,
+       78.21804
+      ],
+      [
+       60,
+       79.605065
+      ],
+      [
+       49,
+       141.931463
+      ],
+      [
+       20,
+       40.332981000000004
+      ]
+     ],
+     "plateau": true,
+     "nb_mean": 6.5871506924514405,
+     "gain": 1.854829828582357,
+     "tsig": "c3513c0b3fd2cbf82c3982645cbf6f9e",
+     "s": 3.0,
+     "lstop": 15.415,
+     "worst": 15.628841,
+     "n_over": 3,
+     "n_stop": 7,
+     "mean_usd": 1.6851134405286345,
+     "under_share": 0.5367647058823529,
+     "moved": 4,
+     "syn": null,
+     "gain_sub": -0.007661791926961037,
+     "ref5_key": "busy=0 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 t24=12 tpk=3 F=big1800<=0.29&vpin1h>=0.2",
+     "ref5": null
+    }
+   }
+  ]
+ },
+ "S": {
+  "base": {
+   "ckey": "bm=1 e=0.15 e2=0.05 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+   "sharpe": 3.634620380797188,
+   "usd": 133.93154000000004,
+   "n": 172,
+   "maxdd": 25.810879000000007,
+   "maxdd_pct": 10.324351600000002,
+   "kpi": {
+    "gap_longest": 41,
+    "gap_mean": 4.5,
+    "gap_tail": 10,
+    "highs": 28,
+    "longest": 40,
+    "p90": 26.5,
+    "tail": 10,
+    "under_share": 0.7132352941176471
+   },
+   "rr": 1.8281071997705163,
+   "s": 4.0,
+   "lstop": 20.415,
+   "worst": 20.405789,
+   "n_over": 0,
+   "n_stop": 6,
+   "mean_usd": 0.7786717441860468,
+   "under_share": 0.7132352941176471
+  },
+  "stats": {
+   "winners": 18334,
+   "by_map": {
+    "map674bsx-S": 1478,
+    "map674bs3uf-S": 10467,
+    "map674bs4u3-S": 6389
+   },
+   "excluded_tokens": {
+    "cid:approach_dur_min": 756,
+    "cid:bd_imb02": 42,
+    "cid:bd_thin30": 301,
+    "cid:bd_thin5": 450,
+    "cid:cc_15m": 997,
+    "cid:cc_1h": 1076,
+    "cid:pierce_max_bp": 599,
+    "cid:touch_ep": 672,
+    "key:approach_dur_min": 756,
+    "key:bd_imb02": 42,
+    "key:bd_thin30": 301,
+    "key:bd_thin5": 450,
+    "key:cc_15m": 997,
+    "key:cc_1h": 1076,
+    "key:pierce_max_bp": 599,
+    "key:touch_ep": 672
+   },
+   "axis_names": [
+    "a",
+    "accdv1_300",
+    "approach_dur_min",
+    "bd_imb02",
+    "bd_thin30",
+    "bd_thin5",
+    "bm",
+    "bt_1h",
+    "btc_mv5",
+    "cb_1h",
+    "cc_15m",
+    "cc_1h",
+    "ce_1h",
+    "ch",
+    "cl",
+    "cm",
+    "cons60",
+    "cw",
+    "d",
+    "e",
+    "e2",
+    "e2t",
+    "ea",
+    "ek",
+    "ev",
+    "fk",
+    "flat60",
+    "gap60_s",
+    "k",
+    "l_days",
+    "mk",
+    "n24",
+    "n60",
+    "n_bounce",
+    "n_tp",
+    "natr_exit_p",
+    "natr_min",
+    "natr_p",
+    "nf",
+    "ok10_d3",
+    "ok10_d30",
+    "p",
+    "pb",
+    "pierce_max_bp",
+    "q",
+    "rf",
+    "rr",
+    "rs",
+    "s",
+    "s2",
+    "sac10",
+    "sac60",
+    "since_born_h",
+    "t1h",
+    "t24",
+    "t_high",
+    "t_low",
+    "tb",
+    "tf",
+    "tfv10",
+    "tj",
+    "tl",
+    "touch_ep",
+    "tpg",
+    "tpk",
+    "tpm60",
+    "tt",
+    "tu",
+    "w2",
+    "zv6h"
+   ],
+   "excluded_axes": 4303,
+   "not_forward": 0,
+   "duplicates": 5614,
+   "distinct": 8417,
+   "above_floor": 8057,
+   "second_pool": 8042
+  },
+  "noise": 8.546967459869485,
+  "m": 1765704,
+  "sigma": 1.5935155623102943,
+  "candidates": [
+   {
+    "rank": 1,
+    "src": "map674bs4u3-S",
+    "pair": "rr|n_bounce|split|natr_p",
+    "axes": [
+     "e2",
+     "e2t",
+     "n_bounce",
+     "natr_p",
+     "rr"
+    ],
+    "cell": {
+     "ckey": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_p=60 pb=1 pk=1 rf=0.2 rr=1 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "cid": "e20+e2t2+n_bounce1+natr_p60+rr1+s4",
+     "sharpe": 11.275389205956525,
+     "usd": 1358.971226,
+     "n": 2158,
+     "maxdd": 40.282089999999926,
+     "maxdd_pct": 16.11283599999997,
+     "gap_longest": 13,
+     "gap_mean": 1.7215189873417722,
+     "p90": 4.0,
+     "tail": 0,
+     "rr": 1.9609924352748367,
+     "months": [
+      [
+       502,
+       353.021947
+      ],
+      [
+       536,
+       374.41325
+      ],
+      [
+       442,
+       245.134078
+      ],
+      [
+       470,
+       294.17461000000003
+      ],
+      [
+       208,
+       92.22734099999998
+      ]
+     ],
+     "plateau": true,
+     "nb_mean": 9.379735078489295,
+     "gain": 7.640768825159338,
+     "tsig": "519a8a2794282f52e692695dbc06593b",
+     "s": 4.0,
+     "lstop": 20.415,
+     "worst": 20.949541999999997,
+     "n_over": 6,
+     "n_stop": 78,
+     "mean_usd": 0.6297364346617238,
+     "under_share": 0.41911764705882354,
+     "moved": 4,
+     "syn": null,
+     "gain_sub": 1.0994300166348108,
+     "ref5_key": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_p=60 pb=1 pk=1 rf=0.2 rr=1 rs=2 t24=12 tb=0.1 tt=20",
+     "split": {
+      "a_only": 10.415,
+      "a_b": 20.415,
+      "n": 2839,
+      "n_b": 1463,
+      "stop_a": {
+       "n": 81,
+       "mean": 9.973298395061725
+      },
+      "stop_ab": {
+       "n": 17,
+       "mean": 20.17587605882353
+      }
+     },
+     "ref5": null
+    }
+   },
+   {
+    "rank": 2,
+    "src": "map674bs4u3-S",
+    "pair": "q|n_bounce|split|nf1",
+    "axes": [
+     "e2",
+     "e2t",
+     "n_bounce",
+     "natr_min",
+     "nf",
+     "q"
+    ],
+    "cell": {
+     "ckey": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_min=0.6 nf=1 pb=1 pk=1 q=100 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+     "cid": "e20+e2t2+n_bounce1+natr_min0.6+nf1+q100+s4",
+     "sharpe": 11.373006585123248,
+     "usd": 1254.203815,
+     "n": 1457,
+     "maxdd": 40.366489,
+     "maxdd_pct": 16.146595599999998,
+     "gap_longest": 16,
+     "gap_mean": 1.6153846153846154,
+     "p90": 6.0,
+     "tail": 10,
+     "rr": 2.011943926046159,
+     "months": [
+      [
+       306,
+       374.625108
+      ],
+      [
+       356,
+       350.561235
+      ],
+      [
+       324,
+       235.22030500000002
+      ],
+      [
+       339,
+       246.015516
+      ],
+      [
+       132,
+       47.78165100000001
+      ]
+     ],
+     "plateau": true,
+     "nb_mean": 9.55478740455422,
+     "gain": 7.73838620432606,
+     "tsig": "723c4d1455d900b0e9b24327fb35460d",
+     "s": 4.0,
+     "lstop": 20.415,
+     "worst": 20.949541999999997,
+     "n_over": 3,
+     "n_stop": 50,
+     "mean_usd": 0.8608125017158545,
+     "under_share": 0.4264705882352941,
+     "moved": 4,
+     "syn": null,
+     "gain_sub": 1.3446910126266616,
+     "ref5_key": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_min=0.6 nf=1 pb=1 pk=1 q=100 rf=0.2 rs=2 t24=12 tb=0.1 tt=20",
+     "split": {
+      "a_only": 10.415,
+      "a_b": 20.415,
+      "n": 1917,
+      "n_b": 980,
+      "stop_a": {
+       "n": 52,
+       "mean": 9.963429576923078
+      },
+      "stop_ab": {
+       "n": 11,
+       "mean": 19.912609181818183
+      }
+     },
+     "ref5": null
+    }
+   }
+  ]
+ }
+}

@@ -1,0 +1,298 @@
+{
+ "version": "tk708-frozen-1",
+ "protocol": "TK-708 (L-428, L-434): четыре линии TK-674 (L1, L2 — лонг с фильтром big1800 / cons60 / vpin1h, S1, S2 — шорт) в проверке вперёд; читаются на c539 теми же ключами движка и тем же бинарём, что в шлюзе TK-674; признаки лонг-линий строятся вперёд `tk708_feat.py` (дамп потока → alpha-feat f12 → flow → tox → составной столбец) и сверены с таблицей исследования и parquet TK-671 (ворота feat) и с выходами шлюза (ворота replay)",
+ "decision": "α новых линий нет (α = 0, описательно): решение координатора `thr_ty6ae9r46y` (25.11.2026) — линии TK-674 печатаются на точках без α и без слов «подтверждено / опровергнуто»; поправка α — только решением координатора до чтения точки; охрана NaN жёсткая: линия на сутки «нет данных», если суточная доля пустых значений признака среди кандидатов суток выше максимальной суточной доли исследования (`nan_guard`)",
+ "read_before_commit": "суток ≥ 14.11 не читалось: ворота feat и replay идут по окнам wa / wb / wc (сутки ≤ 13.11, `check_tree_days`), файл собран из результатов этих ворот и файлов TK-674",
+ "base_freeze": {
+  "file": "docs/research/freeze/tk626-frozen.json",
+  "version": "tk626-frozen-1",
+  "sha256": "b9bd9258b076483c7e545b73eeb9491feae218391446338f21ffbc5dd9e88b5d",
+  "untouched": true
+ },
+ "prev_candidate4": {
+  "file": "docs/research/freeze/tk691-frozen.json",
+  "version": "tk691-frozen-1",
+  "sha256": "ecce3aac2e03fa9c1259741edfa2ef12d13ee77bd1c65cf2381d348d9cc6d1f1",
+  "untouched": true,
+  "note": "решающая и читаемая вселенная `crypto` (c539), N лонга, возврат α — этого файла; линии TK-674 их не меняют"
+ },
+ "tk674": {
+  "file": "docs/research/freeze/tk674-frozen.json",
+  "version": "tk674-frozen-1",
+  "sha256": "0cd4412cd75f82233d39334cc1fc92af221b474f2cd2757545d31b9dc9e2c547",
+  "untouched": true,
+  "note": "ключи линий, фильтры, бинарь движка — единственный источник; файл не меняется; шлюз — tk674-gate-cells.json (sha256 ad1f3eaf55d4afac8279899527d413a0974ca4f5d72c305ef144e50fe893c84f)"
+ },
+ "binary": {
+  "path": "/data/p42-tk683/bin/alpha-tk706memo-plain.357a66c1",
+  "md5": "357a66c14605c3a228d18defbe35bb22",
+  "sha256": "377df19cfaebda788bcc7637a95996af06d14d4eb7e2a78b14bfdf46a2c3de74"
+ },
+ "binary_note": "бинарь движка линий = `binary.freeze` файла tk674-frozen.json; клеточные бинари tk626 / tk638 / tk641 / tk670 не меняются",
+ "feature_binaries": {
+  "f12": {
+   "path": "/data/p42-tk610/bin/alpha-feat-f12d-65519d8ff44e5be924f662609f9d54f7",
+   "md5": "65519d8ff44e5be924f662609f9d54f7",
+   "sha256": "9c1e05240c750e58f90303ea254e86391e17289af158292f02c29ceb44d08f93"
+  },
+  "flow": {
+   "path": "/data/p42-tk639/bin/alpha-feat.44ca3843",
+   "md5": "44ca38439554b15120d5a906ec346157",
+   "sha256": "d37510b75443024cc1bc1ae255c6d007709905e0e1e774e975f28a03d6c2a2d3"
+  },
+  "tox": {
+   "path": "/data/p42-tk671/bin/alpha-feat-tox-ed78ac4c408073f5f7343538c99b1cf3",
+   "md5": "ed78ac4c408073f5f7343538c99b1cf3",
+   "sha256": "64c902f0a7e5aa3e7e24b10c48b82605a851c152867f267173848f7039d740c1"
+  }
+ },
+ "f12_days": 80,
+ "flow_mode": "flow",
+ "cells": {
+  "L1": {
+   "side": "L",
+   "ckey": "ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 F=big1800<=0.29&cons60<=1&vpin1h>=0.2",
+   "plain": "ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12",
+   "text": "big1800<=0.29&cons60<=1&vpin1h>=0.2",
+   "col": "f354",
+   "keys": "ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 fa=f354 fo=lo fv=0.5",
+   "vid": "c9a0fa0d674b7",
+   "filter": [
+    [
+     "big1800",
+     "<=",
+     0.29
+    ],
+    [
+     "cons60",
+     "<=",
+     1.0
+    ],
+    [
+     "vpin1h",
+     ">=",
+     0.2
+    ]
+   ]
+  },
+  "L2": {
+   "side": "L",
+   "ckey": "busy=0 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 tpk=3 F=big1800<=0.29&vpin1h>=0.2",
+   "plain": "busy=0 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 tpk=3",
+   "text": "big1800<=0.29&vpin1h>=0.2",
+   "col": "f216",
+   "keys": "busy=0 ew=5 fh=4 fm=50 lat=4 latx=4 pb=1 pk=1 rf=0.2 rs=20 s=3 t24=12 tpk=3 fa=f216 fo=lo fv=0.5",
+   "vid": "c2947454074a5",
+   "filter": [
+    [
+     "big1800",
+     "<=",
+     0.29
+    ],
+    [
+     "vpin1h",
+     ">=",
+     0.2
+    ]
+   ]
+  },
+  "S1": {
+   "side": "S",
+   "ckey": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_p=60 pb=1 pk=1 rf=0.2 rr=1 rs=2 s=4 t24=12 tb=0.1 tt=20",
+   "plain": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_p=60 pb=1 pk=1 rf=0.2 rr=1 rs=2 s=4 t24=12 tb=0.1 tt=20",
+   "text": "",
+   "col": "",
+   "keys": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_p=60 pb=1 pk=1 rf=0.2 rr=1 rs=2 s=4 t24=12 tb=0.1 tt=20",
+   "vid": "c4a945232c618",
+   "filter": []
+  },
+  "S2": {
+   "side": "S",
+   "ckey": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_min=0.6 nf=1 pb=1 pk=1 q=100 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+   "plain": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_min=0.6 nf=1 pb=1 pk=1 q=100 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+   "text": "",
+   "col": "",
+   "keys": "bm=1 e=0.15 e2t=2 ew=5 fh=4 fm=50 lat=4 latx=4 n_bounce=1 natr_min=0.6 nf=1 pb=1 pk=1 q=100 rf=0.2 rs=2 s=4 t24=12 tb=0.1 tt=20",
+   "vid": "c8c920b414333",
+   "filter": []
+  }
+ },
+ "cells_note": "L1 / L2 — лонг, ключи движка + `fa=<столбец> fo=lo fv=0.5` (столбец «проходит» из составного правила `tk674_run._pass`: пусто проходит); S1 / S2 — шорт, только ключи движка (таблиц нет); имена столбцов — как в шлюзе TK-674",
+ "nan_guard": {
+  "max_daily_share": {
+   "L1": {
+    "big1800": 0.0,
+    "cons60": 0.0,
+    "vpin1h": 0.0
+   },
+   "L2": {
+    "big1800": 0.0,
+    "vpin1h": 0.0
+   }
+  },
+  "detail": {
+   "L1": {
+    "big1800": {
+     "max_credited_share": 0.0,
+     "day": "2026-11-13",
+     "window": "wc",
+     "rows": 1,
+     "nan": 0
+    },
+    "cons60": {
+     "max_credited_share": 0.0,
+     "day": "2026-11-13",
+     "window": "wc",
+     "rows": 1,
+     "nan": 0
+    },
+    "vpin1h": {
+     "max_credited_share": 0.0,
+     "day": "2026-11-13",
+     "window": "wc",
+     "rows": 1,
+     "nan": 0
+    }
+   },
+   "L2": {
+    "big1800": {
+     "max_credited_share": 0.0,
+     "day": "2026-11-13",
+     "window": "wc",
+     "rows": 1,
+     "nan": 0
+    },
+    "vpin1h": {
+     "max_credited_share": 0.0,
+     "day": "2026-11-13",
+     "window": "wc",
+     "rows": 1,
+     "nan": 0
+    }
+   }
+  },
+  "rule": "порог = максимальная суточная доля пустых значений признака среди кандидатов на ЗАЧЁТНЫХ сутках трёх окон исследования (ворота feat); на точке: доля пустых среди кандидатов суток > порога → линия на эти сутки «нет данных» (все кандидаты суток исключены, сделок нет); сутки и доли печатаются"
+ },
+ "gate": {
+  "feat": {
+   "ok": true,
+   "result": "C:/Program Files/Git/data/p42-tk708/gate-feat.json",
+   "result_sha256": "bb922703ed1c87a1ce180f6f5277e6eea69f8047364f335200692577a916bb81",
+   "description": "ключи (sym, sig_ms) построителя вперёд ⊇ таблицы исследования (только здесь = 0), составной столбец равен таблице исследования, значения cons60 / big1800 / vpin1h равны parquet TK-671 по битам float32",
+   "windows": {
+    "L1": {
+     "wa": {
+      "rows": 260,
+      "common": 260,
+      "only_here": 0,
+      "only_research": 0,
+      "column_mismatch": 0,
+      "not_in_parquet_among_common": 18,
+      "value_mismatch": {
+       "big1800": 0,
+       "cons60": 0,
+       "vpin1h": 0
+      }
+     },
+     "wb": {
+      "rows": 328,
+      "common": 328,
+      "only_here": 0,
+      "only_research": 0,
+      "column_mismatch": 0,
+      "not_in_parquet_among_common": 129,
+      "value_mismatch": {
+       "big1800": 0,
+       "cons60": 0,
+       "vpin1h": 0
+      }
+     },
+     "wc": {
+      "rows": 273,
+      "common": 273,
+      "only_here": 0,
+      "only_research": 0,
+      "column_mismatch": 0,
+      "not_in_parquet_among_common": 103,
+      "value_mismatch": {
+       "big1800": 0,
+       "cons60": 0,
+       "vpin1h": 0
+      }
+     }
+    },
+    "L2": {
+     "wa": {
+      "rows": 260,
+      "common": 260,
+      "only_here": 0,
+      "only_research": 0,
+      "column_mismatch": 0,
+      "not_in_parquet_among_common": 18,
+      "value_mismatch": {
+       "big1800": 0,
+       "vpin1h": 0
+      }
+     },
+     "wb": {
+      "rows": 328,
+      "common": 328,
+      "only_here": 0,
+      "only_research": 0,
+      "column_mismatch": 0,
+      "not_in_parquet_among_common": 129,
+      "value_mismatch": {
+       "big1800": 0,
+       "vpin1h": 0
+      }
+     },
+     "wc": {
+      "rows": 273,
+      "common": 273,
+      "only_here": 0,
+      "only_research": 0,
+      "column_mismatch": 0,
+      "not_in_parquet_among_common": 103,
+      "value_mismatch": {
+       "big1800": 0,
+       "vpin1h": 0
+      }
+     }
+    }
+   }
+  },
+  "replay": {
+   "ok": true,
+   "result": "C:/Program Files/Git/data/p42-tk708/gate-replay.json",
+   "result_sha256": "d824ab2d473dbffec6a475e562e24817acf2eed0f243c99545bc8e819e701319",
+   "description": "прогон вперёд по прошлым окнам wa / wb / wc (c539, замороженные бинари): sha256 `{long,short}-{trades,daily,coinday,entryrej}.csv` четырёх линий = шлюзу TK-674 (`tk674-gate-cells.json`)",
+   "tree_files": 235464,
+   "cells": {
+    "L1": {
+     "vid": "c9a0fa0d674b7",
+     "equal": true
+    },
+    "L2": {
+     "vid": "c2947454074a5",
+     "equal": true
+    },
+    "S1": {
+     "vid": "c4a945232c618",
+     "equal": true
+    },
+    "S2": {
+     "vid": "c8c920b414333",
+     "equal": true
+    }
+   }
+  }
+ },
+ "alpha_note": "α нет (α = 0): клетки `T674_L1` … `T674_S2` на точках печатаются «описательно»; Σ α заморозки не меняется (0,05)",
+ "reading_rule": {
+  "one_reading": "одно прочтение на точку: линии идут тем же прогоном `run_point`, что клетки пакета (маркер `READ-<точка>.started` — до движка; бинарь линий и три alpha-feat сверены ДО маркера)",
+  "skip": "любая охрана линии (бинарь признаков, ключи f12, locate_fail / natr_mismatch, no_key, сбой инструмента) — линия не читается, причина печатается, остальные идут",
+  "points": "30.11 (входы ≤ 26.11), 31.12, 31.01.2027, 28.02, 31.03.2027 — как у цепочки; префикс-охрана точек действует и для линий"
+ },
+ "tool_note": "`tk616_forward.py` с шестым звеном (`load_candidate5` / `apply_candidate5` / `resolve_candidate5`, `replay-tk708`), `tk708_feat.py`, `tk708_gate.py` и тесты `tests/test_tk708.py` — коммитом ДО чтения L1 (30.11); правил этого файла не меняет",
+ "ref": "kb/task/TK-708.md; kb/task/TK-674.md; docs/research/freeze/tk674-frozen.json, tk674-gate-cells.json"
+}

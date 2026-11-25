@@ -22,6 +22,7 @@ import tk616_forward as fw  # noqa: E402
 
 fw.REQUIRE_CANDIDATE3 = False                         # прежние тесты — без `tk670-frozen.json`; охрана «нет кандидата 3 — остановка» проверяется в `strict3()`
 fw.REQUIRE_CANDIDATE4 = False                         # TK-691: то же для `tk691-frozen.json` (`strict4()` в `test_tk691.py`)
+fw.REQUIRE_CANDIDATE5 = False                         # TK-708: то же для `tk708-frozen.json` (`strict5()` в `test_tk708.py`)
 DS_BYTES = b"synthetic-ds-binary"
 
 

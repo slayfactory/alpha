@@ -137,6 +137,16 @@ class Canary(unittest.TestCase):
 class SplitUnion(unittest.TestCase):
     """PS-990: остаток уровня партиями — упаковка комбинаций и объединение файлов уровня."""
 
+    def test_stage2_filter(self):
+        import tk674_level as lv
+        cand = [(-5, ("a.ge", "b.le", "c.ge", "d.le"), 3), (-4, ("a.ge", "bd_thin5.le", "c.ge", "d.le"), 3), (-3, ("a.ge", "f12x.le", "c.ge", "d.ge"), 3),
+                (-2, ("a.ge", "b.le", "c.ge", "e.le"), 3), (-1, ("a.ge", "b.le", "c.ge", "g.le"), 3)]
+        exn = {frozenset(("a.ge", "b.le", "c.ge", "e.le"))}
+        names = lambda r: [c[1][1] for c in r]
+        self.assertEqual(names(lv.stage2_filter(cand, exn, {"f12x"}, ("bd_",))), ["b.le", "b.le"])           # ступень 1, bd_ и f12 убраны, порядок ранга цел
+        self.assertEqual(names(lv.stage2_filter(cand, exn, set(), ())), ["b.le", "bd_thin5.le", "f12x.le", "b.le"])
+        self.assertEqual(names(lv.stage2_filter(cand, set(), {"f12x"}, ())), ["b.le", "bd_thin5.le", "b.le", "b.le"])
+
     def test_fits(self):
         import tk674_level as lv
         self.assertTrue(lv.fits(dict(taken=[], n_new=0), 70000, 40000))                  # пустая партия берёт любую комбинацию (крупнее cap — своя партия)
