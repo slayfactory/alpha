@@ -336,6 +336,7 @@ def cmd_run(a):
     sides = a.sides.split(",")
     md5s = {s: hashlib.md5(open(BINS[s], "rb").read()).hexdigest() for s in sides}
     md5 = json.dumps(md5s)
+    hold = os.environ.get("TK700_HOLD_FILE", "")
     eng = os.environ.get("TK700_ENGINE", "")                                # подмена исполняемого файла движка (LTO TK-706, результаты клеток побайтно равны): файл и md5 заданы вместе; сверка клеток с БД — по BINS
     eng_md5 = hashlib.md5(open(eng, "rb").read()).hexdigest() if eng else ""
     if eng and eng_md5 != os.environ.get("TK700_ENGINE_MD5", ""):
@@ -405,6 +406,8 @@ def cmd_run(a):
                         continue
                     if a.max_batches and nb >= a.max_batches:
                         raise StopIteration
+                    while hold and os.path.exists(hold):                    # окно «srv целиком» (TK706_HOLD): новая партия не стартует, пока файл есть; идущая партия дорабатывает
+                        time.sleep(20)
                     nb += 1
                     out = os.path.join(OUT_ROOT, a.run_id, "%s-%s-%s" % (w.name, side, bk))
                     shutil.rmtree(out, ignore_errors=True)
