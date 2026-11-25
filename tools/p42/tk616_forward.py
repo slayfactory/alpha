@@ -28,6 +28,12 @@ TK-708 (L-428): шестой файл цепочки `tk708-frozen.json` — ч�
 TK-691 / §13.77: пятый файл цепочки `tk691-frozen.json` (перезаморозка на c539, В-175): `universe.read` = `decision` = `crypto` (TradFi не читается, `check_universe_crypto`), порог N лонга по правилу tk638 на c539 (`filter.N` поверх tk638),
   клетки `L_n24` / `L_mk2` / `D_S`, не прошедшие ворота c539 (`gates`), не читаются, их α возвращена (`L_n24` / `L_mk2` → `S_base`, `D_S` → `S_mk1`); файл обязателен всегда (нет — остановка); C1 — sha256 четырёх предыдущих звеньев.
 
+TK-710 (В-185, слова владельца 25.11: «ну по вчера скачай допрогони» … «форвард для завтра мы не делаем просто я вчера подгружаю»; «если надо сделать честный форвард просто моделируй из данных»): команда `thru` — то же чтение
+  замороженных клеток и линий, но по сутки D = «вчера» (любая завершённая сутки ≥ F0 + 4), многократно: у каждого прогона свой id чтения `thru-<D>[-rN]` (маркер `READ-<id>.started`, каталог данных `<root>/<id>`, таблицы,
+  `point-<id>.json`), прежние чтения остаются. Геометрия окон — как у точек (окна по зачёту ≤ D), входы по правилу заморозки ≤ D − 4 сут. («закрытые») и дополнительно ≤ D («по вчера», сделки, закрытые обрезкой конца
+  данных, помечены `forced`); α = 0, вердикта нет — описание (сделок, Σ $, $/сделку, шарп, просадка $ и % маржи, перехай). Префикс-охраны предыдущей точки нет (нет предшественницы).
+  TK616F_GO=1 python3 tk616_forward.py thru --through 2026-11-24 --read-id thru-2026-11-24 --root … --bin … (остальные ключи — как у `point`)   # подготовка данных — `tk710_thru.sh`
+
   python3 tk616_forward.py plan  [--freeze …]                       # точки, окна, вселенные, состояние охран — без чтения данных и без запуска движка
   TK616F_GO=1 python3 tk616_forward.py point L2 --bin <alpha-mk> --feat-bin <alpha-feat> [--freeze-sha256 … --freeze-commit … --candidate-sha256 … --candidate-commit …]   # ОДНО чтение точки: движок по окнам и вселенным, таблицы, охраны, вердикт
   python3 tk616_forward.py replay-ds --bin <alpha-mk> --ds-bin <alpha-lx> --replay-root /data/p42-tk670/replay-c --windows-root /data/p42-tk621 --ref-dir /data/p42-tk668/e4/cells --tick-store /data/p42-tk599/tick-store --sig-cache …   # C3 TK-670
@@ -103,6 +109,9 @@ CAND5_NAME, CAND5_VERSION = "tk708-frozen.json", "tk708-frozen-1"    # TK-708: �
 REQUIRE_CANDIDATE5 = True                              # нет `tk708-frozen.json` рядом с `--freeze` — остановка (линии TK-674 без него не читаются); False — только тесты прежнего поведения
 T674_NAME, T674_VERSION = "tk674-frozen.json", "tk674-frozen-1"    # заморозка отбора TK-674: ключи линий, фильтры, бинарь движка — единственный источник (файл не меняется)
 CAND5_PREFIX = "T674_"                                 # имя клетки линии в таблицах и отчёте: `T674_L1` … (id линий L1 / L2 совпали бы с id точек)
+THRU_PREFIX = "thru-"                                  # TK-710: id повторяемого чтения «по вчера» — `thru-<сутки D>[-rN]`
+_THRU_ID = re.compile(r"^thru-(\d{4}-\d{2}-\d{2})(-r\d+)?$")
+MARGIN_USD = 250.0                                     # маржа на сделку $500 (В-93 / В-169): просадка в % маржи — как у `joint_describe`
 DS_ALPHA_FLOOR_S_BASE = 0.02                          # В-167: пол α(S_base); кандидат берёт α только из долей S_mk1 / L_base (≥ 0,005 остаётся у каждой)
 DS_ALPHA_DONORS = ("S_mk1", "L_base")
 DS_MISSING_MAX_SHARE = 0.01                            # C2 `D_S`: доля пар (монета, сутки зачёта) без klines предыдущих суток, выше которой `D_S` на точке не читается
@@ -226,6 +235,27 @@ def get_point(fz, pid):
         if p["id"] == pid:
             return p
     raise GuardError("точка %r не из заморозки: %s" % (pid, [p["id"] for p in fz["points"]]))
+
+
+def through_point(fz, through, rid, today):
+    """TK-710: синтетическая точка повторяемого чтения «по вчера». `through` — последние сутки данных D (завершённые, UTC), `rid` — id чтения `thru-<D>[-rN]` (каталог данных и маркер носят его имя, не совпадают
+    с id точек заморозки). Входы «закрытых» сделок по правилу заморозки ≤ D − 4 сут. (нужны зачётные сутки: D − 4 ≥ F0); окна — те, чей зачёт начинается не позже D (как у точек). α точки нет → «описательно»."""
+    try:
+        D = d(through)
+    except ValueError:
+        raise GuardError("--through %r: нужна дата YYYY-MM-DD" % through)
+    m = _THRU_ID.match(rid)
+    if not m or m.group(1) != D.isoformat():
+        raise GuardError("id чтения %r: нужен вид thru-%s[-rN]" % (rid, D.isoformat()))
+    if not today > D:
+        raise GuardError("чтение %s: сутки %s ещё не закончились (сегодня UTC %s) — читать нельзя" % (rid, D, today))
+    to = D - datetime.timedelta(days=TAIL_DAYS)
+    if to < F0:
+        raise GuardError("чтение %s: входы ≤ D − %d сут. = %s раньше начала накопления %s — зачётных суток нет" % (rid, TAIL_DAYS, to, F0))
+    need = [w.name for w in windows_of(fz) if w.lod <= D and w.hid >= F0]
+    if not need:
+        raise GuardError("чтение %s: ни одно окно заморозки не покрывает сутки до %s" % (rid, D))
+    return {"id": rid, "d": D.isoformat(), "entries_to": to.isoformat(), "windows": need, "decision": False, "through": True}
 
 
 def check_point_date(pt, today):
@@ -573,6 +603,27 @@ def decide(point, is_last, st):
     if is_last and st["mean"] < 0 and st["worst_days"] < 0 and st["worst_coins"] < 0:
         return "опровергнуто"
     return "не ясно"
+
+
+def describe_rows(rows, last_day, margin=MARGIN_USD):
+    """TK-710: описание линии по зачётным строкам (входы F0 … `last_day`) — без вердикта: сделок, forced (закрыты концом данных), Σ $ (gross − fees при $500), $/сделку, шарп, макс. просадка суточного ряда
+    ($ и % маржи), перехай (дней до нового максимума: самый долгий, p90, хвост; `lib.drawdown_kpi`), суток зачёта и сколько из них со сделками. Суточный ряд — по дате входа, как у `joint_describe`."""
+    ndays = (last_day - F0).days + 1
+    S, N, _, _ = daily(rows, ndays)
+    n = len(rows)
+    cum = np.concatenate([[0.0], np.cumsum(S)])
+    dd = float((np.maximum.accumulate(cum) - cum).max())
+    under, peak, since = [], -1e18, 0                                    # перехай (сутки под водой подряд) — как `lib.drawdown_kpi` (В-120), без импорта `lib` (на srv нет `selection_bias`)
+    for v in np.cumsum(S):
+        if v > peak:
+            peak, since = v, 0
+        else:
+            since += 1
+        under.append(since)
+    kpi = {"longest": max(under), "p90": float(np.percentile(under, 90)), "tail": under[-1]}
+    return {"first_day": F0.isoformat(), "last_day": last_day.isoformat(), "days": ndays, "days_with_trades": int((N > 0).sum()), "n": n, "forced": sum(1 for r in rows if r[6] == "forced"),
+            "sum": float(S.sum()), "mean": float(S.sum() / n) if n else float("nan"), "sharpe": sharpe_of(S), "maxdd": dd, "maxdd_pct_margin": dd / margin * 100,
+            "gap_longest": kpi["longest"], "gap_p90": kpi["p90"], "gap_tail": kpi["tail"], "best_day": float(S.max()), "worst_day": float(S.min())}
 
 
 def sharpe_of(S):
@@ -1535,8 +1586,9 @@ def run_point(a, runner=None, today=None, repo=REPO):
     run_cand = cand is not None and cinfo["candidate_read"] and CAND_CELL not in nr
     run_ds_cell = c3 is not None and c3info["candidate3_read"] and CAND3_CELL not in nr
     run_t708 = c5 is not None and c5info["candidate5_read"]
-    pt = get_point(fz, a.point)
     today = today or datetime.datetime.now(datetime.timezone.utc).date()
+    thru = getattr(a, "through", "")
+    pt = through_point(fz, thru, getattr(a, "read_id", "") or THRU_PREFIX + thru, today) if thru else get_point(fz, a.point)
     check_point_date(pt, today)
     md5, sha = check_binary(a.bin, fz)
     if run_ds_cell:
@@ -1545,7 +1597,7 @@ def run_point(a, runner=None, today=None, repo=REPO):
     wins_used = [wins_all[n] for n in pt["windows"]]
     D, to = d(pt["d"]), d(pt["entries_to"])
     pdir = os.path.join(a.root, pt["id"])
-    prev = prev_point(fz, pt["id"])
+    prev = None if thru else prev_point(fz, pt["id"])                    # «по вчера» — без предшественницы: префикс-охраны и охраны манифеста между точками нет
     prev_rows, prev_lists, prev_man = None, None, None
     if prev is not None:
         pp = tables_path(a.root, prev["id"])
@@ -1566,7 +1618,8 @@ def run_point(a, runner=None, today=None, repo=REPO):
             raise GuardError("данные между точками изменились (%d): %s" % (len(bad), bad[:3]))
     claim_read(a.root, pt["id"], {"point": pt["id"], "bin_md5": md5, "bin_sha256": sha, "freeze_commit": commit, "freeze_sha256": fsha, "tree_files": ntree,
                                  "universe_sha256": uni["sha256"], "universe_n": {n: len(v) for n, v in uni["lists"].items()}, "contracts_sha256": uni["contracts_sha256"],
-                                 **cinfo, **c2info, **c3info, **c4info, **c5info, "utc": datetime.datetime.now(datetime.timezone.utc).isoformat()})
+                                 **cinfo, **c2info, **c3info, **c4info, **c5info, **({"through": pt["d"], "read_id": pt["id"], "entries_to": pt["entries_to"]} if thru else {}),
+                                 "utc": datetime.datetime.now(datetime.timezone.utc).isoformat()})
     reqs = reqs_of(fz)
     tabs, byw, n24, ds_info, t708_info = {}, {}, {}, {}, {}
     rn = runner or rr.SubprocessRunner()
@@ -1628,7 +1681,10 @@ def run_point(a, runner=None, today=None, repo=REPO):
     sk, dk = key_of("S_base", fz["universe"]["decision"]), key_of(CAND3_CELL, fz["universe"]["decision"])
     if sk in rows and dk in rows:                                        # совместное чтение с S_base — ОПИСАТЕЛЬНО, без вердикта и без α (раздел «вместе с S_base» отчёта TK-668)
         joint = joint_describe(rows[sk], rows[dk], to)
-    res = {"point": pt, "freeze_commit": commit, "freeze_sha256": fsha, "bin_md5": md5, "stats": stats, "seams": {k: len(x) for k, x in seam.items()},
+    thru_res = None
+    if thru:                                                             # TK-710: «закрытые» (входы ≤ D − 4, правило заморозки) и «по вчера» (входы ≤ D, `forced` — закрыты концом данных)
+        thru_res = {k: {"closed": describe_rows(rows[k], to), "through": describe_rows(splice_rows(byw[k], wins_used, D), D)} for k in byw}
+    res = {"point": pt, "thru": thru_res, "freeze_commit": commit, "freeze_sha256": fsha, "bin_md5": md5, "stats": stats, "seams": {k: len(x) for k, x in seam.items()},
            "prefix": {"forced_prev": forced, "diffs": {c: len(x) for c, x in pref.items()}}, "n24": n24, "candidate": cinfo, "candidate2": c2info, "candidate3": c3info, "candidate4": c4info, "candidate5": c5info, "tk708": t708_info, "ds": ds_info, "joint": joint, "tree_files": ntree, "manifest_files": len(man),
            "universe": {"n": {n: len(v) for n, v in uni["lists"].items()}, "sha256": uni["sha256"]}}
     json.dump(res, open(os.path.join(a.root, "point-%s.json" % pt["id"]), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=float)
@@ -1640,6 +1696,10 @@ def run_point(a, runner=None, today=None, repo=REPO):
         json.dump(t708_info, open(os.path.join(a.root, "READ-%s.tk708.json" % pt["id"]), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     open(os.path.join(a.root, "READ-%s.done" % pt["id"]), "w").close()
     print(render(res))
+    if thru:
+        print(render_thru(res))
+        with open(os.path.join(a.root, "report-%s.md" % pt["id"]), "w", encoding="utf-8", newline="\n") as f:
+            f.write(render(res) + "\n" + render_thru(res))
     return 0
 
 
@@ -1695,6 +1755,20 @@ def render(res):
     return "\n".join(L) + "\n"
 
 
+def render_thru(res):
+    """TK-710: таблица описания по линиям — «закрытые» (входы ≤ D − 4) и «по вчера» (входы ≤ D); без вердикта."""
+    pt = res["point"]
+    L = ["# TK-710 — чтение %s: данные до %s; сделки $500, маржа %.0f $; описательно (без вердикта, α = 0)" % (pt["id"], pt["d"], MARGIN_USD), "",
+         "| клетка | вселенная | входы | суток (со сделками) | сделок | forced | ΣS $ | $/сделку | шарп | просадка $ (% маржи) | перехай: самый долгий / p90 / хвост, сут. |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for k, v in sorted(res["thru"].items()):
+        cell, uni = k.split("|")
+        for tag, x in (("≤ D − 4 (закрытые)", v["closed"]), ("≤ D (по вчера)", v["through"])):
+            L.append("| %s | %s | %s %s…%s | %d (%d) | %d | %d | %s | %s | %s | %s (%s %%) | %d / %s / %d |" % (
+                cell, uni, tag, x["first_day"], x["last_day"], x["days"], x["days_with_trades"], x["n"], x["forced"], f2(x["sum"]), f2(x["mean"], 3), f2(x["sharpe"], 2),
+                f2(x["maxdd"], 1), f2(x["maxdd_pct_margin"], 1), x["gap_longest"], f2(x["gap_p90"], 1), x["gap_tail"]))
+    return "\n".join(L) + "\n"
+
+
 def cmd_plan(a):
     fz = load_freeze(a.freeze)
     print("заморозка: бинарь md5 %s; семейство %s; α %s; доли %s; вселенные %s, решающая %s" % (
@@ -1746,8 +1820,10 @@ def cmd_plan(a):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["plan", "point", "replay-n24", "replay-mk2", "replay-ds", "replay-tk708"])
+    ap.add_argument("cmd", choices=["plan", "point", "thru", "replay-n24", "replay-mk2", "replay-ds", "replay-tk708"])
     ap.add_argument("point", nargs="?", default="")
+    ap.add_argument("--through", default="", help="thru: последние сутки данных D (UTC, завершённые) — чтение «по вчера» (TK-710)")
+    ap.add_argument("--read-id", default="", help="thru: id чтения `thru-<D>[-rN]` (по умолчанию `thru-<D>`); данные — `<root>/<id>`, повторное id запрещено, новое чтение — новый id")
     ap.add_argument("--freeze", default=FREEZE)
     ap.add_argument("--freeze-commit", default="")
     ap.add_argument("--freeze-sha256", default="")
@@ -1809,8 +1885,13 @@ def main(argv=None):
             return replay_ds(a)
         if a.cmd == "replay-tk708":
             return replay_tk708(a)
+        if a.cmd == "thru":
+            if not a.through:
+                raise GuardError("thru: укажите --through <сутки D>")
+            return run_point(a)
         if not a.point:
             raise GuardError("point: укажите L1…L5")
+        a.through = a.read_id = ""                                       # `point` — только точки заморозки (одно чтение); «по вчера» — команда `thru`
         return run_point(a)
     except GuardError as e:
         print("ОСТАНОВКА (охрана): %s" % e, file=sys.stderr)

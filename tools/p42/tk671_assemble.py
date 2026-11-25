@@ -76,6 +76,29 @@ def rust_blocks(win, side, key):
     return out
 
 
+def merge_families(fams, order, index):
+    """Блоки признаков семейств (по `index` = row_id строк) → (float32-таблица признаков, `cov` с `families`, `dups`, `renamed`): первый блок оставляет имя, дубль с равными значениями снимается, с разными — переименовывается `<имя>__<семейство>` (TK-690: вынесено из `main` без изменений, тот же код у набора строк потоков)."""
+    cov = dict(families={}, dups=[], renamed=[])
+    cols, seen = {}, {}
+    for n in order:
+        f = fams[n].reindex(index)
+        miss = int(fams[n].index.difference(index).size)
+        cov["families"][n] = dict(columns=f.shape[1], missing_rows=int(len(index) - fams[n].index.isin(index).sum()), extra_rows=miss)
+        for c in f.columns:
+            v = f[c].to_numpy(dtype=np.float64)
+            if c in cols:
+                w = cols[c]
+                same = np.array_equal(np.isnan(v), np.isnan(w)) and np.allclose(v[~np.isnan(v)], w[~np.isnan(w)], rtol=1e-6, atol=1e-9)
+                if same:
+                    cov["dups"].append(dict(col=c, dropped_from=n, kept_from=seen[c]))
+                    continue
+                cov["renamed"].append(dict(col=c, family=n, kept_from=seen[c]))
+                c = f"{c}__{n}"
+            cols[c] = v
+            seen[c] = n
+    return pd.DataFrame({c: v.astype(np.float32) for c, v in cols.items()}, index=index), cov
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--win", required=True, choices=("wa", "wb", "wc"))
@@ -101,25 +124,9 @@ def main():
             f = f.set_index("row_id")
         fams[n] = f
     order = [n for n in ["rules", "f12", "flow_deriv", "tcount", "tsize", "tox"] + PY_FAMS if n in fams]
-    cov = dict(win=a.win, side=a.side, rows=len(rows), families={}, dups=[], renamed=[])
-    cols, seen = {}, {}
-    for n in order:
-        f = fams[n].reindex(rows.index)
-        miss = int(fams[n].index.difference(rows.index).size)
-        cov["families"][n] = dict(columns=f.shape[1], missing_rows=int(len(rows) - fams[n].index.isin(rows.index).sum()), extra_rows=miss)
-        for c in f.columns:
-            v = f[c].to_numpy(dtype=np.float64)
-            if c in cols:
-                w = cols[c]
-                same = np.array_equal(np.isnan(v), np.isnan(w)) and np.allclose(v[~np.isnan(v)], w[~np.isnan(w)], rtol=1e-6, atol=1e-9)
-                if same:
-                    cov["dups"].append(dict(col=c, dropped_from=n, kept_from=seen[c]))
-                    continue
-                cov["renamed"].append(dict(col=c, family=n, kept_from=seen[c]))
-                c = f"{c}__{n}"
-            cols[c] = v
-            seen[c] = n
-    feat = pd.DataFrame({c: v.astype(np.float32) for c, v in cols.items()}, index=rows.index)
+    cov = dict(win=a.win, side=a.side, rows=len(rows))
+    feat, part = merge_families(fams, order, rows.index)
+    cov.update(part)
     const = [c for c in feat.columns if feat[c].nunique(dropna=True) <= 1]
     cov["constant_columns"] = const
     cov["nonnan"] = {c: round(float(feat[c].notna().mean()), 4) for c in feat.columns}
