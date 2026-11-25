@@ -872,9 +872,10 @@ class N24Runner(FakeRunner):
         t0ms = fw.t0_ms(t0d)
         lim = fw.t0_ms(min(self.last_day, t0d + datetime.timedelta(days=rf.TRADE_END))) + DAY
         tsyms, tms, cols = rr.rfx.read_ftab(tab)
-        val = {(s, int(m)): cols["N24_q60"][i] for i, (s, m) in enumerate(zip(tsyms, tms))}
         for line in open(vfile, encoding="utf-8"):
             vid, keys = line.rstrip("\n").split(" ", 1)
+            col = cols[keys.split("fa=")[1].split()[0]]                                                    # столбец фильтра варианта (TK-708: у линий свои имена; у `L_n24` — N24_q60)
+            val = {(s, int(m)): col[i] for i, (s, m) in enumerate(zip(tsyms, tms))}
             stream = self.stream(rr.Engine.stream_need(rf.Req("L", keys, False)).vid, t0d, syms) + [("ZZZUSDT", 7 + i) for i in range(self.extra_cands)]
             kept, dropped, no_key = [], 0, 0
             for c, m in stream:
