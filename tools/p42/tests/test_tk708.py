@@ -250,14 +250,14 @@ def win(x, name="w1"):
     return {w.name: w for w in fw.windows_of(fw.load_freeze(x.e.freeze))}[name]
 
 
-def build(x, root, runner, cell_id="L1", nan_guard=None, reuse=False):
+def build(x, root, runner, cell_id="L1", nan_guard=None, reuse=False, research_keys=None):
     """`build_filter_table` линии `cell_id` в окне w1 (вселенная crypto). → (info, vals, syms, ms, paths, w, need, cell)."""
     w = win(x)
     paths = mk_paths(root)
     eng = rr.Engine(paths, runner, SYMS, x.e.e7, 1, None, ensure_tables=lambda needs: None, windows=(w,), prefix="t")
     cell = f7.cells_of(x.t674)[cell_id]
     need = rr.Engine.stream_need(f7.req_of(cell))
-    info, vals, syms, ms = f7.build_filter_table(paths, runner, eng, w, need, cell, x.e.fb, 1, "", 80, (w.lod, w.hid), nan_guard, "flow", reuse)
+    info, vals, syms, ms = f7.build_filter_table(paths, runner, eng, w, need, cell, x.e.fb, 1, "", 80, (w.lod, w.hid), nan_guard, "flow", reuse, research_keys)
     return info, vals, syms, ms, paths, w, need, cell
 
 
@@ -342,6 +342,21 @@ def test_filter_table_equals_independent_recomputation_with_float32_and_key_mapp
         assert info["f12"]["locate_fail"] == 0 and info["credited_range"] == [w.lod.isoformat(), w.hid.isoformat()]
         assert len(info["ftab_sha256"]) == 64 and info["credited"] > 0
 
+
+def test_research_keys_make_rows_outside_the_parquet_read_empty_for_big1800_and_vpin1h_only_in_the_column():
+    with T.tmp() as t:
+        x = ctx5(t)
+        info0, vals0, syms0, ms0, *_ = build(x, os.path.join(t, "p0"), Runner5(D("2026-11-30")))
+        keys = [(s, int(m)) for s, m in zip(syms0, ms0)]
+        known = set(keys[::2])
+        info, vals, syms, ms, paths, w, need, cell = build(x, os.path.join(t, "p1"), Runner5(D("2026-11-30")), research_keys={w_name: known for w_name in ("w1",)})
+        _, _, cols = read_ftab(paths.need_tab(w.name, need))
+        miss = np.array([k not in known for k in keys])
+        want = f7.composite({"cons60": vals0["cons60"], "big1800": np.where(miss, np.nan, vals0["big1800"]), "vpin1h": np.where(miss, np.nan, vals0["vpin1h"])}, cell["filter"])
+        assert [bool(v) for v in cols["f708_L1"]] == want.tolist() and info["emulated_absent"] == int(miss.sum()) > 5
+        assert want.tolist() != f7.composite(vals0, cell["filter"]).tolist()                                # на этих данных эмуляция меняет столбец
+        assert all(np.array_equal(vals[f], vals0[f], equal_nan=True) for f in vals0) and info["nan"] == info0["nan"] and info["guard_days"] == []   # значения и охрана — настоящие
+        assert "emulated_absent" not in info0
 
 def test_empty_feature_passes_and_the_nan_guard_excludes_a_whole_day():
     with T.tmp() as t:

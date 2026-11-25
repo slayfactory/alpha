@@ -294,8 +294,10 @@ def write_ftab(path, syms, ms, name, col):
         f.write("sym,sig_ms,%s\n" % name + "".join("%s,%d,%s\n" % (s, m, "1.0" if v else "0.0") for s, m, v in zip(syms, ms, col)))
 
 
-def build_filter_table(paths, runner, eng, w, need, cell, bins, threads, tick_store, days, lohi, nan_guard=None, flow_mode="flow", reuse=False):
+def build_filter_table(paths, runner, eng, w, need, cell, bins, threads, tick_store, days, lohi, nan_guard=None, flow_mode="flow", reuse=False, research_keys=None):
     """Таблица `--ftab` лонг-линии в окне `w`: дамп потока → признаки → составной столбец (охрана NaN по суткам) → `ftab.csv` в `paths.need_tab`. `lohi` — зачётные даты окна (печать долей).
+    `research_keys` ({окно: {(монета, sig_ms)}}) — только ворота: строки вне parquet TK-671 исследование читало пустыми (big1800, vpin1h → NaN → проходит; cons60 шёл из таблицы TK-638 и был определён), составной столбец считается так же;
+    значения, суточная доля пустых и охрана — по настоящим. В боевом пути (`tk616_forward`) не передаётся.
     → (информация окна, значения признаков, монеты, sig_ms) — значения нужны воротам."""
     syms, ms, dump = dump_stream(paths, runner, eng, w, need, reuse)
     vals, extra = compute_features(paths, runner, w, syms, ms, dump, bins, threads, tick_store, days, need.vid, flow_mode, reuse)
@@ -304,7 +306,14 @@ def build_filter_table(paths, runner, eng, w, need, cell, bins, threads, tick_st
     stats = day_stats(vals, feats, ms, off)
     flagged = guard_days(stats, feats, nan_guard) if nan_guard else []
     bad = {datetime.date.fromisoformat(x["day"]) for x in flagged}
-    keep = composite(vals, cell["filter"])
+    cvals = vals
+    emu = 0
+    if research_keys is not None:
+        known = research_keys.get(w.name, ())
+        miss = np.array([(s_, int(m_)) not in known for s_, m_ in zip(syms, ms)], dtype=bool)
+        emu = int(miss.sum())
+        cvals = {f: (np.where(miss, np.nan, v) if f != "cons60" else v) for f, v in vals.items()}
+    keep = composite(cvals, cell["filter"])
     if bad:
         keep = keep & np.array([day_of(int(m) + off) not in bad for m in ms], dtype=bool)
     tab = paths.need_tab(w.name, need)
@@ -316,6 +325,8 @@ def build_filter_table(paths, runner, eng, w, need, cell, bins, threads, tick_st
             "nan": {f: {"all": int(np.isnan(vals[f]).sum()), "credited": int((np.isnan(vals[f]) & cr).sum())} for f in feats},
             "rows_on_missing_day": miss_cur, "rows_on_missing_prev_day": miss_prev, "guard_days": flagged, "guard_rows": int(sum(stats[datetime.date.fromisoformat(x)]["rows"] for x in {y["day"] for y in flagged})),
             "ftab_sha256": rr.file_hashes(tab)[0], "f12": extra["f12"]}
+    if research_keys is not None:
+        info["emulated_absent"] = emu
     return info, vals, syms, ms
 
 
@@ -334,7 +345,7 @@ def read_tables(paths, req, wins):
     return {w.name: rf.read_trades_csv(os.path.join(paths.out(w.name), req.vid, rf.ENGINE_SIDE[req.side] + "-trades.csv")) for w in wins}
 
 
-def run_cells(paths, runner, symbols_text, bin_path, threads, wins, cells, bins, tick_store, lohi_of, days=F12_DAYS, nan_guard=None, flow_mode="flow", reuse=False):
+def run_cells(paths, runner, symbols_text, bin_path, threads, wins, cells, bins, tick_store, lohi_of, days=F12_DAYS, nan_guard=None, flow_mode="flow", reuse=False, research_keys=None):
     """Четыре линии одной вселенной. S1 / S2 — один вызов движка с замороженными ключами; каждая лонг-линия — своя таблица потока и свой вызов (`ensure_tables` не нужен: таблица записана до него).
     Любая `GuardError` линии — линия НЕ читается (причина в `info`), остальные идут. `nan_guard` — {линия: {признак: макс. суточная доля}}.
     → ({линия: {окно: таблица сделок}}, {линия: info})."""
@@ -359,7 +370,7 @@ def run_cells(paths, runner, symbols_text, bin_path, threads, wins, cells, bins,
         try:
             need = rr.Engine.stream_need(req)
             for w in wins:
-                x["windows"][w.name] = build_filter_table(paths, runner, eng, w, need, c, bins, threads, tick_store, days, lohi_of(w), (nan_guard or {}).get(i), flow_mode, reuse)[0]
+                x["windows"][w.name] = build_filter_table(paths, runner, eng, w, need, c, bins, threads, tick_store, days, lohi_of(w), (nan_guard or {}).get(i), flow_mode, reuse, research_keys)[0]
             eng.launch([req])
             tabs[i] = read_tables(paths, req, wins)
         except GuardError as e:

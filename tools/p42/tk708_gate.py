@@ -3,7 +3,7 @@
 
   python3 tk708_gate.py feat   --bin <357a66c1> --f12-bin … --flow-bin … --tox-bin … [--windows wa,wb,wc] [--cells L1,L2] [--flow-mode flow|all] --root /data/p42-tk708/gate-feat --out gate-feat.json
       построитель признаков вперёд (`tk708_feat.build_filter_table`) на тех же окнах и потоках: (1) ключи (sym, sig_ms) таблицы исследования и построителя — общие / только там / только здесь (печать);
-      (2) значения cons60 / big1800 / vpin1h = parquet TK-671 ПО БИТАМ float32 (пустое = пустому); (3) составной столбец = столбец таблицы исследования (`fa` клетки из `tk674-gate-cells.json`) на общих ключах — равен;
+      (2) значения cons60 / big1800 / vpin1h = parquet TK-671 ПО БИТАМ float32 на строках parquet (пустое = пустому; строки вне parquet исследование читало с пустыми big1800 / vpin1h, cons60 — из таблицы TK-638: их значения не сравниваются, составной столбец считается так же — `research_keys`); (3) составной столбец = столбец таблицы исследования (`fa` клетки из `tk674-gate-cells.json`) на общих ключах — равен;
       (4) максимальная суточная доля пустых значений по признакам линии на зачётных сутках (порог охраны NaN вперёд, решение координатора). Ворота пройдены: нет ключей «только здесь», (2) и (3) без расхождений.
   python3 tk708_gate.py replay --bin … --f12-bin … --flow-bin … --tox-bin … --root /data/p42-tk708/gate-replay --out gate-replay.json
       прогон вперёд по прошлому окну: `tk708_feat.run_cells` (охрана NaN выключена) → sha256 `{long,short}-{trades,daily,coinday,entryrej}.csv` = `tk674-gate-cells.json` у каждой линии и окна."""
@@ -116,6 +116,7 @@ def cmd_feat(a):
     t674, gate, cells, paths, text, bins, meta = setup(a, wins)
     eng = rr.Engine(paths, rr.SubprocessRunner(), text, a.bin, a.threads, None, ensure_tables=lambda needs: None, windows=tuple(wins), prefix="g")
     pq = parquet_values(a.parquet)
+    rkeys = {w_: set(d_) for w_, d_ in pq.items()}
     res = {"meta": meta, "flow_mode": a.flow_mode, "cells": {}, "ok": True}
     for i, c in cells.items():
         if c["side"] != "L" or (a.cells and i not in a.cells.split(",")):
@@ -125,7 +126,7 @@ def cmd_feat(a):
         need = rr.Engine.stream_need(f708.req_of(c))
         ref_dir, ref_col = gate["cells"][i]["ftab"], c["col"]
         for w in wins:
-            info, vals, syms, ms = f708.build_filter_table(paths, rr.SubprocessRunner(), eng, w, need, c, bins, a.threads, a.tick_store, a.days, (w.lod, w.hid), None, a.flow_mode, a.reuse)
+            info, vals, syms, ms = f708.build_filter_table(paths, rr.SubprocessRunner(), eng, w, need, c, bins, a.threads, a.tick_store, a.days, (w.lod, w.hid), None, a.flow_mode, a.reuse, rkeys)
             mine = {(s, int(m)): k for k, (s, m) in enumerate(zip(syms, ms))}
             rsyms, rms, rcols = rr.rfx.read_ftab(os.path.join(ref_dir, "%s-L.csv" % w.name))
             if ref_col not in rcols:
@@ -141,7 +142,7 @@ def cmd_feat(a):
                 p = pqw.get(k)
                 if p is None:
                     absent += 1
-                    p = (np.float32("nan"),) * len(RES_FEATS)
+                    continue
                 for j, f in enumerate(RES_FEATS):
                     if f in feats and not same_f32(vals[f][mine[k]], p[j]):
                         val_bad[f].append((k[0], k[1], float(vals[f][mine[k]]), float(p[j])))
@@ -187,7 +188,8 @@ def cmd_replay(a):
     t674, gate, cells, paths, text, bins, meta = setup(a, wins)
     if a.cells:
         cells = {i: c for i, c in cells.items() if i in a.cells.split(",")}
-    tabs, info = f708.run_cells(paths, rr.SubprocessRunner(), text, a.bin, a.threads, wins, cells, bins, a.tick_store, lambda w: (w.lod, w.hid), days=a.days, nan_guard=None, flow_mode=a.flow_mode, reuse=a.reuse)
+    pq = parquet_values(a.parquet)
+    tabs, info = f708.run_cells(paths, rr.SubprocessRunner(), text, a.bin, a.threads, wins, cells, bins, a.tick_store, lambda w: (w.lod, w.hid), days=a.days, nan_guard=None, flow_mode=a.flow_mode, reuse=a.reuse, research_keys={w_: set(d_) for w_, d_ in pq.items()})
     cmp_ = f708.compare_gate(paths, {i: c for i, c in cells.items() if i in tabs}, wins, gate)
     res = {"meta": meta, "flow_mode": a.flow_mode, "info": info, "cells": {}, "ok": False}
     for i in cells:
