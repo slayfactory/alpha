@@ -9,7 +9,7 @@ ROOT=${TK671_ROOT:-/data/p42-tk700/p671}
 PY=${TK700_PY:-/data/tk592/venv/bin/python}
 D=${3:-/data/p42-tk700/prod/all-$WIN/dumps}
 TW=${TK700_TWIN_DUMPS:-$D}          # ворота wa: источники — прежние дампы TK-671, ключи базы — дампы L_ind / S_ind / D_ind ворот G1
-case $WIN in wa|wb|wc) ;; *) export TK700_WINSET=h1 ;; esac
+case $WIN in wa|wb|wc) ;; n1) export TK700_WINSET=n1 ;; *) export TK700_WINSET=h1 ;; esac
 export PYTHONUTF8=1
 S=$(date +%s)
 $PY "$HERE/tk671_lvl.py" build --side "$SIDE" --win "$WIN" --dumps "$D" --twin-dumps "$TW" --out "$ROOT/lvl-full/$WIN-$SIDE" > "$ROOT/lvl-$WIN-$SIDE.log" 2>&1 || { echo "lvl $WIN $SIDE rc=$?" | tee -a "$ROOT/chain.log"; exit 1; }

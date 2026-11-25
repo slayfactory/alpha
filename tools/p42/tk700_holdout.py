@@ -38,7 +38,7 @@ TOL_USD = 1e-6
 
 def modes(dry):
     """Корни и окна режима. H1: окна отложенной выборки; dry: wa / wb / wc."""
-    if not dry:
+    if not dry and os.environ.get("TK700_WINSET") != "n1":                      # n1 — окно дельты 14.11–24.11 (`tk700_win.apply_n1`), замок и корни те же
         os.environ["TK700_WINSET"] = "h1"
     import tk604_stats as st
     return dict(dry=dry, st=st, lock=ROOT + ("/lock-dry" if dry else "/lock"), out=ROOT + ("/dry" if dry else "/read"), wins=[w.name for w in st.TRADE_WINDOWS])

@@ -10,7 +10,11 @@
   python3 tk700_win.py show                    # геометрия окон
   python3 tk700_win.py trees [--apply]         # символические ссылки /data/p42-tk621/m0N/{cache,aggtrades,klines} на деревья TK-695 / TK-686
   python3 tk700_win.py universe [--apply]      # c539 ∩ список месяца → /data/p42-tk700/universe/<окно>.txt (+ счётчики по месяцам)
-  python3 tk700_win.py env <окно>              # присваивания для sh: T0, SIGSX (14:<до>), TREE, SYMS, LW — окна m01…m06 и ворот wa / wb / wc / wa20 (прогрев 20 суток)
+  python3 tk700_win.py env <окно>              # присваивания для sh: T0, SIGSX (14:<до>), TREE, SYMS, LW — окна m01…m06, n1 и ворот wa / wb / wc / wa20 (прогрев 20 суток)
+  python3 tk700_win.py trees --apply n1        # то же для окна n1; universe --apply n1 — c539 ∩ список TK-710 (последние сутки 24.11)
+
+Окно `n1` (приказ координатора 25.11, дельта TK-692): 14.11–24.11 (11 суток), T0 = 25.10, прогрев 20 суток из прежних деревьев TK-621 (≤ 13.11) и общего `fwd/dl` TK-710 (14–24.11). Живёт только при `TK700_WINSET=n1`
+(`apply_n1`): те же сутки от `D0` = 01.01.2026 (14.11 = сутки 317), что ряды `mass_day` H1 и `h2-chron-A-short`; окна m01…m06 при этом не подключаются.
 """
 from __future__ import annotations
 
@@ -37,6 +41,11 @@ _SPEC = (
     ("m05", "may", "2026-04-11", "2026-05-01", "2026-05-31", "/data/p42-tk695/may", "/data/p42-tk695/may/plan/universe.json"),
     ("m06", "jun", "2026-05-12", "2026-06-01", "2026-06-30", "/data/p42-tk686/wj", "/data/p42-tk686/plan-crypto/universe.json"),
 )
+# окно n1 вне `_SPEC` (геометрия H1 — 181 сутки от 01.01 — для него не годится): 14.11…последние опубликованные сутки; контракты — c539 ∩ список TK-710 на 24.11
+_SPEC_N1 = (
+    ("n1", "nov", "2026-10-25", "2026-11-14", "2026-11-24", "/data/p42-tk700/n1", "/data/p42-tk710/fwd0/plan/universe.json"),
+)
+N1_NAMES = tuple(s[0] for s in _SPEC_N1)
 NAMES = tuple(s[0] for s in _SPEC)
 MONTH_TAG = {s[0]: s[1] for s in _SPEC}
 LAST_DAY = datetime.date(2026, 7, 1)                            # T0 + 50 у июня; данные позже не читаются (последние зачётные сутки — 30.06)
@@ -54,12 +63,12 @@ def winset():
 
 
 def win_choices(base=("wa", "wb", "wc")):
-    """Допустимые окна скриптов подготовки: прежние wa / wb / wc, а при `TK700_WINSET=h1` — окна отложенной выборки m01…m06 (таблицы окон `tk604_stats` тогда подменены на H1)."""
-    return NAMES if winset() == "h1" else tuple(base)
+    """Допустимые окна скриптов подготовки: прежние wa / wb / wc, при `TK700_WINSET=h1` — окна отложенной выборки m01…m06 (таблицы окон `tk604_stats` подменены на H1), при `n1` — окно n1."""
+    return NAMES if winset() == "h1" else N1_NAMES if winset() == "n1" else tuple(base)
 
 
 def spec(name):
-    for s in _SPEC:
+    for s in _SPEC + _SPEC_N1:
         if s[0] == name:
             return dict(name=s[0], month=s[1], t0=s[2], lo=s[3], hi=s[4], root=s[5], universe=s[6])
     raise KeyError(name)
@@ -133,9 +142,43 @@ def apply(st):
     install_fence()
 
 
+def check_n1():
+    """Геометрия n1: T0 = lo − 20 суток; зачёт внутри торговой части сетки (T0 + 14 … T0 + 30), данные кончаются hi (последние опубликованные сутки)."""
+    for n, _, t0, lo, hi, _, _ in _SPEC_N1:
+        t0d, lod, hid = (datetime.date.fromisoformat(x) for x in (t0, lo, hi))
+        assert (lod - t0d).days == WARMUP_DAYS, (n, "прогрев", (lod - t0d).days)
+        assert lod > datetime.date(2026, 11, 13) and lod <= hid, (n, "зачёт — после 13.11")
+        assert (hid - t0d).days >= GRID_START_DAY, (n, "зачёт короче сетки")
+    return True
+
+
+def apply_n1(st):
+    """Подмена таблиц окон `tk604_stats` на окно n1 (14.11–24.11): ряд суток — от того же `D0` = 01.01.2026, что у H1; без склейки месяцев (одно окно, не покрывает D0…hi)."""
+    check_n1()
+    s = _SPEC_N1[0]
+    last = datetime.date.fromisoformat(s[4])
+    w = st.Window(s[0], s[2], s[3], s[4])
+    st.D0, st.LAST_DAY = D0, last
+    st.NDAYS = (last - D0).days + 1
+    st.MONTH_NAMES = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov")
+    st.MONTH_LEN = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, last.day)
+    st.MONTH_OF_DAY = st.np.repeat(st.np.arange(11), st.MONTH_LEN)
+    st.MIN_TRADES = (20,) * 10 + (8,)
+    st.TRADE_WINDOWS = st.HIST_WINDOWS = (w,)
+    st.ALLOWED_WINDOWS = N1_NAMES
+    st.GRID_START_DAY = GRID_START_DAY
+    st.COUNT_DAYS = (last - w.t0d).days - GRID_START_DAY + 1
+    st.TRADE_END = st.GRID_START_DAY + st.COUNT_DAYS - 1                  # 30 = T0 + 30 = 24.11
+    st.LAST_MS = int((datetime.datetime(last.year, last.month, last.day, tzinfo=datetime.timezone.utc) + datetime.timedelta(days=1)).timestamp() * 1000)
+    st.check_isolation((w,))
+    assert w.lod >= w.t0d + datetime.timedelta(days=st.GRID_START_DAY) and w.hid <= w.t0d + datetime.timedelta(days=st.TRADE_END)
+    assert (st.NDAYS, (w.lod - D0).days, (w.hid - D0).days) == (328, 317, 327), "ряд суток n1 ≠ 317…327 от 01.01.2026"
+    install_fence()
+
+
 # ---- охрана P&L -------------------------------------------------------------------------------------------------------------------
 
-H1_PATH_MARKERS = tuple("/%s/" % n for n in NAMES) + ("/data/p42-tk700/", "/data/p42-tk695/", "/data/p42-tk686/wj")
+H1_PATH_MARKERS = tuple("/%s/" % n for n in NAMES + N1_NAMES) + ("/data/p42-tk700/", "/data/p42-tk695/", "/data/p42-tk686/wj")
 
 
 class FenceError(Exception):
@@ -212,12 +255,13 @@ def cmd_env(name):
 
 def cmd_show():
     check_spec()
-    for n, mt, t0, lo, hi, root, _ in _SPEC:
+    check_n1()
+    for n, mt, t0, lo, hi, root, _ in _SPEC + _SPEC_N1:
         print(n, mt, "T0", t0, "зачёт", lo, hi, "SIGSX", sigsx_arg(n), root)
 
 
-def cmd_trees(apply_):
-    for n in NAMES:
+def cmd_trees(apply_, names=NAMES):
+    for n in names:
         d = tree_dir(n)
         for k, tgt in tree_targets(n).items():
             ok = os.path.isdir(tgt)
@@ -232,19 +276,20 @@ def cmd_trees(apply_):
                 os.symlink(tgt, link)
 
 
-def cmd_universe(apply_):
+def cmd_universe(apply_, names=NAMES):
     c = read_symbols(C539)
-    out = {}
-    for n in NAMES:
+    cj = os.path.join(ROOT, "universe", "counts.json")
+    out = json.load(open(cj, encoding="utf-8")) if os.path.exists(cj) and names != NAMES else {}
+    for n in names:
         u = universe(n, c)
         out[n] = len(u)
-        print(n, MONTH_TAG[n], "список месяца", len(read_symbols(spec(n)["universe"])), "∩ c539", len(u))
+        print(n, spec(n)["month"], "список месяца", len(read_symbols(spec(n)["universe"])), "∩ c539", len(u))
         if apply_:
             os.makedirs(os.path.dirname(universe_file(n)), exist_ok=True)
             with open(universe_file(n), "w", encoding="utf-8", newline="\n") as f:
                 f.write(",".join(u) + "\n")
     if apply_:
-        with open(os.path.join(ROOT, "universe", "counts.json"), "w", encoding="utf-8") as f:
+        with open(cj, "w", encoding="utf-8") as f:
             json.dump(out, f, indent=1)
 
 
@@ -257,6 +302,6 @@ if __name__ == "__main__":
     elif a[0] == "show":
         cmd_show()
     elif a[0] == "trees":
-        cmd_trees("--apply" in a)
+        cmd_trees("--apply" in a, N1_NAMES if "n1" in a else NAMES)
     else:
-        cmd_universe("--apply" in a)
+        cmd_universe("--apply" in a, N1_NAMES if "n1" in a else NAMES)

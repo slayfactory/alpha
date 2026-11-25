@@ -669,3 +669,8 @@ if os.environ.get("TK700_WINSET") == "h1":
     _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import tk700_win as _tk700_win
     _tk700_win.apply(_sys.modules[__name__])
+elif os.environ.get("TK700_WINSET") == "n1":                                   # TK-700: окно n1 (14.11–24.11, дельта TK-692) — `tk700_win.apply_n1`
+    import sys as _sys
+    _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import tk700_win as _tk700_win
+    _tk700_win.apply_n1(_sys.modules[__name__])

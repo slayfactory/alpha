@@ -18,6 +18,7 @@ import os
 import sys
 
 H1_WINS = ("m01", "m02", "m03", "m04", "m05", "m06")
+N1 = "n1"                                                   # окно дельты 14.11–24.11 (TK-692): ноябрьские метки кластеров — из прежнего `REFRESH_WINDOW` (месяц 11 → wc), в H1 не подменяются
 H1_UNIVERSE = "/data/p42-tk621/universe/symbols-crypto.txt"
 H1_LABELS = "/data/p42-tk700/fam/coin/clusters"
 H1_ZIP = "/data/p42-tk700/dl/book/zip"
@@ -36,9 +37,9 @@ def main(argv=None):
     ap.add_argument("--universe", default=None)
     ap.add_argument("--zip", default=None)
     a = ap.parse_args(argv)
-    h1 = a.win in H1_WINS
+    h1 = a.win in H1_WINS or a.win == N1
     if h1:
-        os.environ["TK700_WINSET"] = "h1"
+        os.environ["TK700_WINSET"] = "n1" if a.win == N1 else "h1"
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import numpy as np
     import pandas as pd
@@ -47,13 +48,22 @@ def main(argv=None):
     if a.fam == "coin":
         import tk636_feat as f6
         import tk671_coin as c
-        if h1:
+        if a.win != N1 and h1:
             f6.REFRESH_WINDOW.update({i + 1: n for i, n in enumerate(H1_WINS)})
         coins = c.universe_coins(a.universe or (H1_UNIVERSE if h1 else c.SYMS_FILE))
         labels_dir = a.labels_dir or (H1_LABELS if h1 else c.LABELS_DIR)
         os.makedirs(labels_dir, exist_ok=True)
         ev = (np.array([], dtype=object), np.array([], dtype=np.int64)) if h1 else None
-        df = c.compute(rows, a.win, a.side, a.procs, labels_dir=labels_dir, coins=coins, info=info, events=ev)
+        labels = None
+        if a.win == N1:                                     # метки ноября — по 14 суткам до 01.11 из кэша wc (`REFRESH_WINDOW[11]`); при WINSET=n1 окна wc в таблице нет — добавляем его только на время расчёта меток
+            import tk604_stats as st
+            keep = st.TRADE_WINDOWS
+            st.TRADE_WINDOWS = keep + (st.WC,)
+            try:
+                labels = c.month_labels([11], coins, labels_dir=labels_dir, procs=a.procs)
+            finally:
+                st.TRADE_WINDOWS = keep
+        df = c.compute(rows, a.win, a.side, a.procs, labels_dir=labels_dir, coins=coins, info=info, events=ev, labels=labels)
         if h1:
             df[[x for x in df.columns if x.startswith("peer")]] = np.nan
     else:

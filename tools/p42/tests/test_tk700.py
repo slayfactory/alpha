@@ -24,6 +24,44 @@ class Windows(unittest.TestCase):
         self.assertTrue(w.check_spec())
         self.assertEqual([w.sigsx_arg(n) for n in w.NAMES], ["14:50", "14:47", "14:50", "14:49", "14:50", "14:49"])
 
+    def test_n1_geometry(self):
+        self.assertTrue(w.check_n1())
+        self.assertEqual(w.sigsx_arg("n1"), "14:30")
+        self.assertEqual(w.env_of("n1")["TREE"], "/data/p42-tk621/n1")
+        self.assertEqual(w.universe_file("n1"), w.ROOT + "/universe/n1.txt")
+        self.assertEqual(w.win_choices(), ("wa", "wb", "wc"))                       # без TK700_WINSET окна n1 нет в выборе скриптов
+        self.assertNotIn("n1", w.NAMES)                                              # геометрия H1 (181 сутки от 01.01) на n1 не распространяется
+        self.assertTrue(w.check_spec())
+
+    def test_n1_apply_series_days(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("tk604_stats_n1", os.path.join(HERE, "..", "tk604_stats.py"))
+        st = importlib.util.module_from_spec(spec)
+        sys.modules["tk604_stats_n1"] = st                                           # dataclass Window ищет свой модуль в sys.modules
+        try:
+            spec.loader.exec_module(st)
+        finally:
+            sys.modules.pop("tk604_stats_n1", None)
+        old_inst = w._installed
+        w._installed = True                                                          # охрану Popen в тесте не ставим
+        try:
+            w.apply_n1(st)
+        finally:
+            w._installed = old_inst
+        win = st.TRADE_WINDOWS[0]
+        self.assertEqual((win.name, win.t0, win.lo, win.hi), ("n1", "2026-10-25", "2026-11-14", "2026-11-24"))
+        self.assertEqual((st.D0.isoformat(), st.NDAYS, st.TRADE_END), ("2026-01-01", 328, 30))
+        self.assertEqual(int(st.abs_day(win, [0, 20 * st.DAY_MS])[1]), 317)          # сутки 14.11 — как у ряда H1 / h2-chron-A-short (01.07 = 181, 13.11 = 316)
+        self.assertEqual((win.hid - st.D0).days, 327)
+        st.check_dates(win.t0, win.hi)
+        with self.assertRaises(st.GuardError):
+            st.check_dates(win.t0, "2026-11-25")                                     # сутки позже последних опубликованных не читаются
+
+    def test_n1_fence_marker(self):
+        with self.assertRaises(w.FenceError):
+            w.check_cmd("/data/p42-tk700/bin/alpha-lx breakout tick --cache /data/p42-tk621/n1/cache --out /data/x".split(), {})
+        w.check_cmd("/data/p42-tk700/bin/alpha-lx breakout tick --cache /data/p42-tk621/n1/cache --out /data/x".split(), {"P42_SIGSX_ONLY": "1"})
+
     def test_universe_inside_c539(self):
         with tempfile.TemporaryDirectory() as d:
             sp = w.spec("m02")

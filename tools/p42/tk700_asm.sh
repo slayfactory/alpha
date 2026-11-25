@@ -8,7 +8,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=${TK671_ROOT:-/data/p42-tk700/p671}; export TK671_ROOT=$ROOT
 PY=${TK700_PY:-/data/tk592/venv/bin/python}
 export PYTHONUTF8=1
-case $WIN in m0*) export TK700_WINSET=h1 ;; esac
+case $WIN in m0*) export TK700_WINSET=h1 ;; n1) export TK700_WINSET=n1 ;; esac
 for F in $FAMS; do
   [ "$F" = "-" ] && continue
   mkdir -p "$ROOT/fam/$F"
