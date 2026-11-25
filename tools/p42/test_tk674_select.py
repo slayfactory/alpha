@@ -38,6 +38,33 @@ class Select(unittest.TestCase):
         self.assertTrue(sel.is_excluded(cell("s4+age_h.ge_q50", BASE, 5), BASE))      # ось только в cid
         self.assertFalse(sel.is_excluded(cell("s4+q100+ok10_d5.le@h_le0", BASE + " q=100 F=ok10_d5<=0", 5), BASE))
 
+    def test_exclusion_by_key_and_by_cid_separately(self):
+        key_only = cell("s4+x", BASE + " F=pierce_max_bp<=5", 5)                       # ось только в ключе клетки
+        cid_only = cell("s4+depth_mean_bp.le_q30", BASE, 5)                            # ось только в токенах cid
+        for w in (key_only, cid_only):
+            self.assertTrue(sel.is_excluded(w, BASE))
+        self.assertEqual(sel.excluded_tokens(key_only, sel.axes_of(key_only["ckey"], BASE)), {"key:pierce_max_bp"})
+        self.assertEqual(sel.excluded_tokens(cid_only, sel.axes_of(cid_only["ckey"], BASE)), {"cid:depth_mean_bp"})
+        both = cell("s4+touch_ep.le_q50", BASE + " F=touch_ep<=3", 5)
+        self.assertEqual(sel.excluded_tokens(both, sel.axes_of(both["ckey"], BASE)), {"key:touch_ep", "cid:touch_ep"})
+        for name in sel.F12_AXES:                                                      # каждая f12-ось из PS-999 п. 3 снимается и по ключу, и по cid
+            self.assertTrue(sel.is_excluded(cell("s4+" + name + ".le_q50", BASE + " F=" + name + "<=3", 5), BASE), name)
+            self.assertTrue(sel.is_excluded(cell("s4+" + name + ".le_q50", BASE, 5), BASE), name)
+            self.assertTrue(sel.is_excluded(cell("s4+x", BASE + " F=" + name + ">=3", 5), BASE), name)
+
+    def test_forward(self):
+        srcs = {"q": {"engine"}, "tpm60": {"trades"}, "ok10_d5": {"history"}, "bd_thin5": {"book"}, "oi_c1": {"metrics"}, "mix": {"candles", "funding"}}
+        ok = lambda ck: sel.forward_ok(sel.axes_of(ck, BASE), srcs)
+        self.assertTrue(ok(BASE + " q=100 F=tpm60<=0.3&ok10_d5<=0"))
+        self.assertFalse(ok(BASE + " F=bd_thin5<=0.2"))
+        self.assertFalse(ok(BASE + " F=oi_c1>=1"))
+        self.assertFalse(ok(BASE + " F=mix>=1"))                                       # один из источников не вперёд
+        self.assertFalse(ok(BASE + " zzz=1"))                                          # неизвестная ось — не вперёд
+        real = sel.feature_sources()
+        for name in ("tpm60", "vpin1h", "ok10_d5", "q", "rr"):
+            self.assertIn(name, real, name)
+        self.assertEqual(real["bd_thin5"], {"book"})
+
     def test_jaccard_and_pick(self):
         self.assertEqual(sel.jaccard(frozenset("ab"), frozenset("bc")), 1 / 3)
         mk = lambda s, gap, dd: dict(w=dict(sharpe=s, gap_longest=gap, maxdd=dd))

@@ -3,7 +3,7 @@
   python3 tk674_select.py --counts [--dir DIR]            — только числа пула (без Шарпа и $): сколько победителей, сколько снято исключениями, дублей, выше пола
   python3 tk674_select.py [--dir DIR] [--out sel.json]    — отбор: таблица кандидатов и верх ранга
 Пул стороны — `winner` каждой комбинации карт: лонг `map674bsx-L` + `map674bs3u-L` + `map674bs4u-L`, шорт `map674bsx-S` + `map674bs3uf-S` + `map674bs4u3-S`.
-Исключения (до ранга): победитель, чья клетка отличается от базы стороны по оси `bd_*` / `cc_*` или по f12-оси PS-999 п. 3. Дубль (одинаковый `tsig` — те же сделки) — одна клетка, с меньшим числом отличий от базы.
+Исключения (до ранга): победитель, чья клетка отличается от базы стороны по оси `bd_*` / `cc_*` или по f12-оси PS-999 п. 3; не считаемый вперёд (ось, источник которой — не из `FORWARD_SRC`, по `tools/p42/ml_features.json`; неизвестное имя — не считается). Дубль (одинаковый `tsig` — те же сделки) — одна клетка, с меньшим числом отличий от базы.
 Пол: Шарп строго выше базы стороны и Σ не ниже базы. (1) — наибольший Шарп; разница ≤ 0,1 → меньший самый длинный перехай (`gap_longest`), затем меньшая просадка. (2) — то же среди клеток с Жаккаром осей ≤ 0,5 к (1) и другим `tsig`; нет такой — второго нет."""
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ DIR = os.path.join(HERE, "..", "..", "docs", "findings", "p42-joint-search-2026-
 MAPS = {"L": ("map674bsx-L", "map674bs3u-L", "map674bs4u-L"), "S": ("map674bsx-S", "map674bs3uf-S", "map674bs4u3-S")}
 F12_AXES = ("age_h", "approach_dur_min", "pierce_ep", "pierce_max_bp", "touch_ep", "since_touch_h", "depth_min_bp", "depth_mean_bp", "since_touch_prior_h", "touch_prior_none")
 EXCL_PREFIX = ("bd_", "cc_")
+FORWARD_SRC = {"engine", "trades", "candles", "levels", "history", "contracts", "daily"}     # источники, которые строит свежий конвейер вперёд; не берутся: book (bookDepth), metrics, funding, premium, pnl
+FEATURES = os.path.join(HERE, "ml_features.json")
 TIE = 0.1
 JACCARD_MAX = 0.5
 STAKE, MARGIN = 500.0, 250.0
@@ -61,6 +63,28 @@ def is_excluded(w, base_ck):
     return any(excluded_axis(tok.split("_q")[0].split("@")[0]) for tok in w["cid"].split("+"))
 
 
+def feature_sources(path=FEATURES):
+    """Имя признака / оси движка → множество источников (`src` вкладки «Признаки»)."""
+    out = {}
+    for st in json.load(open(path, encoding="utf-8"))["sets"]:
+        for g in st["groups"]:
+            for f in g["features"]:
+                out.setdefault(f["name"], set()).update(f["src"])
+    return out
+
+
+def forward_ok(axes, srcs):
+    """Клетка считается вперёд, если у каждой её оси известен источник и он входит в `FORWARD_SRC`."""
+    return all(srcs.get(axis_name(a)) is not None and srcs[axis_name(a)] <= FORWARD_SRC for a in axes)
+
+
+def excluded_tokens(w, axes):
+    """Какие исключаемые оси есть у клетки: по ключу клетки (`key:<имя>`) и по токенам cid (`cid:<имя>`)."""
+    out = {"key:" + axis_name(a) for a in axes if excluded_axis(axis_name(a))}
+    out |= {"cid:" + t.split("_q")[0].split("@")[0].split(".")[0] for t in w["cid"].split("+") if excluded_axis(t.split("_q")[0].split("@")[0])}
+    return out
+
+
 def jaccard(a, b):
     u = a | b
     return len(a & b) / len(u) if u else 1.0
@@ -95,8 +119,19 @@ def build(side, d):
     st = dict(winners=len(pool), by_map={n: sum(1 for c in pool if c["src"] == n) for n in MAPS[side]})
     for c in pool:
         c["axes"] = axes_of(c["w"]["ckey"], base["ckey"])
-    kept = [c for c in pool if not is_excluded(c["w"], base["ckey"])]
-    st["excluded_axes"] = len(pool) - len(kept)
+    tok = {}
+    for c in pool:
+        for t in excluded_tokens(c["w"], c["axes"]):
+            tok[t] = tok.get(t, 0) + 1
+    st["excluded_tokens"] = dict(sorted(tok.items()))
+    st["axis_names"] = sorted({axis_name(a) for c in pool for a in c["axes"]})
+    kept0 = [c for c in pool if not is_excluded(c["w"], base["ckey"])]
+    st["excluded_axes"] = len(pool) - len(kept0)
+    srcs = feature_sources()
+    for c in kept0:
+        c["forward"] = forward_ok(c["axes"], srcs)
+    kept = [c for c in kept0 if c["forward"]]
+    st["not_forward"] = len(kept0) - len(kept)
     best = {}                                                        # дубль по `tsig`: одна клетка с меньшим числом отличий от базы, затем по ключу (детерминированно)
     for c in kept:
         k = c["w"]["tsig"] or c["w"]["ckey"]
@@ -118,9 +153,9 @@ def build(side, d):
 
 def line(c, base, noise, tag):
     w = c["w"]
-    return ("%s %s [%s / %s]\n    сд. %d · Σ %+.0f $ (%+.2f $/сд.) · Шарп %.2f (+%.2f к базе %.2f, шум %.2f) · просадка %.0f $ (%.0f %% маржи) · перехай %d / %.1f сут. · R:R %.2f · стоп-убыток %.1f $, худшая %.1f $ · плато %.2f · осей %d" % (
+    return ("%s %s [%s / %s]\n    сд. %d · Σ %+.0f $ (%+.2f $/сд.) · Шарп %.2f (+%.2f к базе %.2f, шум %.2f) · просадка %.0f $ (%.0f %% маржи) · перехай %d / %.1f сут. · R:R %.2f · стоп-убыток %.1f $, худшая %.1f $ · плато %.2f · осей %d · вперёд: %s" % (
         tag, w["cid"], c["src"], c["pair"], w["n"], w["usd"], w["mean_usd"], w["sharpe"], w["sharpe"] - base["sharpe"], base["sharpe"], noise, w["maxdd"], 100 * w["maxdd"] / MARGIN, w["gap_longest"],
-        w["gap_mean"], w["rr"], w["lstop"], w["worst"], w["nb_mean"] or 0, len(c["axes"])))
+        w["gap_mean"], w["rr"], w["lstop"], w["worst"], w["nb_mean"] or 0, len(c["axes"]), "да" if c["forward"] else "нет"))
 
 
 def main():
@@ -135,9 +170,11 @@ def main():
         r = build(side, a.dir)
         res[side] = r
         st, b = r["stats"], r["base"]
-        print("== %s: победителей в пуле %d (%s); без осей bd_* / cc_* / f12 −%d; дублей по tsig −%d; различных %d; выше пола %d; m %d, σ %.3f, шум %.2f" % (
-            side, st["winners"], ", ".join("%s %d" % kv for kv in st["by_map"].items()), st["excluded_axes"], st["duplicates"], st["distinct"], st["above_floor"], r["m"], r["sigma"], r["noise"]))
+        print("== %s: победителей в пуле %d (%s); без осей bd_* / cc_* / f12 −%d; не считаются вперёд −%d; дублей по tsig −%d; различных %d; выше пола %d; m %d, σ %.3f, шум %.2f" % (
+            side, st["winners"], ", ".join("%s %d" % kv for kv in st["by_map"].items()), st["excluded_axes"], st["not_forward"], st["duplicates"], st["distinct"], st["above_floor"], r["m"], r["sigma"], r["noise"]))
         if a.counts:
+            print("   исключаемые оси по победителям пула (key — по ключу клетки, cid — по токенам): %s" % (", ".join("%s %d" % kv for kv in st["excluded_tokens"].items()) or "нет"))
+            print("   оси карт стороны (%d): %s" % (len(st["axis_names"]), ", ".join(st["axis_names"])))
             continue
         print("   база: сд. %d · Σ %+.0f $ · Шарп %.2f · просадка %.0f $ · перехай %d · R:R %.2f" % (b["n"], b["usd"], b["sharpe"], b["maxdd"], b["gap_longest"] if "gap_longest" in b else b["kpi"]["gap_longest"], b["rr"]))
         top = sorted(r["up"], key=lambda c: -c["w"]["sharpe"])[:a.top]
