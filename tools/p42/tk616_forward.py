@@ -613,8 +613,14 @@ def describe_rows(rows, last_day, margin=MARGIN_USD):
     n = len(rows)
     cum = np.concatenate([[0.0], np.cumsum(S)])
     dd = float((np.maximum.accumulate(cum) - cum).max())
-    import lib as _lib
-    kpi = _lib.drawdown_kpi(S)
+    under, peak, since = [], -1e18, 0                                    # перехай (сутки под водой подряд) — как `lib.drawdown_kpi` (В-120), без импорта `lib` (на srv нет `selection_bias`)
+    for v in np.cumsum(S):
+        if v > peak:
+            peak, since = v, 0
+        else:
+            since += 1
+        under.append(since)
+    kpi = {"longest": max(under), "p90": float(np.percentile(under, 90)), "tail": under[-1]}
     return {"first_day": F0.isoformat(), "last_day": last_day.isoformat(), "days": ndays, "days_with_trades": int((N > 0).sum()), "n": n, "forced": sum(1 for r in rows if r[6] == "forced"),
             "sum": float(S.sum()), "mean": float(S.sum() / n) if n else float("nan"), "sharpe": sharpe_of(S), "maxdd": dd, "maxdd_pct_margin": dd / margin * 100,
             "gap_longest": kpi["longest"], "gap_p90": kpi["p90"], "gap_tail": kpi["tail"], "best_day": float(S.max()), "worst_day": float(S.min())}
