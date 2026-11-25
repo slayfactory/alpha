@@ -43,6 +43,19 @@
           {
             "type": "command",
             "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/kb_check.py\""
+          },
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/no_child_spawn.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__bb-bridge__bb_workflow_run|Workflow",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/no_child_spawn.py\""
           }
         ]
       }
