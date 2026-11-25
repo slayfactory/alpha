@@ -160,14 +160,16 @@ class Runner5(V.Rec):
     `extra_cands` — кандидатов движка сверх таблицы (no_key).
     Выходы движка дополняются `daily / coinday / entryrej` (для сверки sha256 ворот)."""
 
-    def __init__(self, last_day, nan=None, vals=None, f12_json=None, drop_f12=False, swap_tox=False, drop_flow=False, fail=None, extra_cands=0):
+    def __init__(self, last_day, nan=None, vals=None, f12_json=None, drop_f12=False, swap_tox=False, drop_flow=False, fail=None, extra_cands=0, boom=None):
         super().__init__(last_day)
-        self.extra_cands = extra_cands
+        self.extra_cands, self.boom = extra_cands, boom                                        # boom — подстрока команды, на которой раннер бросает ValueError (не охрана)
         self.engine_cmds = []
         self.nan, self.vals, self.drop_f12, self.swap_tox, self.drop_flow, self.fail, self.tools = nan or {}, vals or {}, drop_f12, swap_tox, drop_flow, fail or {}, []
         self.f12_json = {"locate_fail": 0, "natr_mismatch": 0, "rows": 0} if f12_json is None else f12_json
 
     def run(self, cmd, env=None, log=None):
+        if self.boom and self.boom in " ".join(cmd):
+            raise ValueError("boom")
         if len(cmd) > 1 and cmd[1] in TOOLS:
             self.tools.append(cmd)
             return self.tool(cmd, log)
@@ -638,6 +640,29 @@ def test_point_passes_cap_gb_to_every_engine_call_from_the_option_or_the_environ
     assert set(point(cap_gb=6)) == {"6"}                                                                       # `--cap-gb` — на каждом вызове (база и четыре линии)
     assert set(point(env="4")) == {"4"} and set(point(env="4", cap_gb=7)) == {"7"}                             # `P42_CAP_GB`; ключ сильнее среды
     assert fw.cap_gb_of(argparse.Namespace(cap_gb=0)) == 0 and fw.cap_gb_of(argparse.Namespace()) == 0
+
+
+def test_unexpected_error_in_tk674_lines_or_ds_does_not_stop_the_point():
+    for boom, who in (("alpha-feat-f12", "tk708"), ("--variants", "ds")):                                    # f12 — признаки линий L1 / L2; `--variants` на бинаре `D_S` — клетка `D_S`
+        with strict_all5(), T.tmp() as t:
+            x = ctx5(t)
+            e = x.e
+            V.prep4(e, "L1", D("2026-11-30"))
+            if who == "ds":
+                boom = e.ds
+            rc, r = run5(x, "L1", D("2026-12-01"), D("2026-11-30"), runner=Runner5(D("2026-11-30"), boom=os.path.basename(boom) if who == "tk708" else boom))
+            assert rc == 0 and os.path.exists(os.path.join(e.fwd, "READ-L1.done"))                              # точка дошла до конца, отчёт записан
+            p1 = T.read_json(e.fwd, "point-L1.json")
+            if who == "tk708":
+                info = p1["tk708"]["crypto"]
+                assert set(info) == {"L1", "L2", "S1", "S2"} and all(info[i]["status"] == "skip" and "непредвиденная ошибка ValueError: boom" in info[i]["reason"] for i in ("L1", "L2"))
+                assert all(info[i]["status"] == "read" for i in ("S1", "S2"))                                      # шорт-линии не страдают от ошибки лонг-линий
+                assert {"T674_S1|crypto", "T674_S2|crypto"} <= set(p1["stats"]) and not any(k.startswith(("T674_L1", "T674_L2")) for k in p1["stats"]) and {k.split("|")[0] for k in p1["stats"]} >= {"S_base", "L_base", "D_S"}
+                assert "НЕ ЧИТАЛАСЬ — непредвиденная ошибка ValueError" in fw.render(p1)
+            else:
+                ds = p1["ds"]["crypto"]
+                assert ds["status"] == "skip" and "непредвиденная ошибка ValueError: boom" in ds["reason"] and "D_S|crypto" not in p1["stats"]
+                assert {k.split("|")[0] for k in p1["stats"]} >= {"S_base", "L_base", "T674_L1", "T674_S1"}      # остальные клетки и линии TK-674 считаются
 
 
 def test_run_point_skips_only_the_failed_line_and_prints_the_reason():

@@ -294,6 +294,15 @@ def write_ftab(path, syms, ms, name, col):
         f.write("sym,sig_ms,%s\n" % name + "".join("%s,%d,%s\n" % (s, m, "1.0" if v else "0.0") for s, m, v in zip(syms, ms, col)))
 
 
+def unexpected_reason(e):
+    """Причина «не читалась» при непредвиденной ошибке (не `GuardError`): тип и текст."""
+    return "непредвиденная ошибка %s: %s" % (type(e).__name__, e)
+
+
+def reason_of(e):
+    return str(e) if isinstance(e, GuardError) else unexpected_reason(e)
+
+
 def build_filter_table(paths, runner, eng, w, need, cell, bins, threads, tick_store, days, lohi, nan_guard=None, flow_mode="flow", reuse=False, research_keys=None):
     """Таблица `--ftab` лонг-линии в окне `w`: дамп потока → признаки → составной столбец (охрана NaN по суткам) → `ftab.csv` в `paths.need_tab`. `lohi` — зачётные даты окна (печать долей).
     `research_keys` ({окно: {(монета, sig_ms)}}) — только ворота: строки вне parquet TK-671 исследование читало пустыми (big1800, vpin1h → NaN → проходит; cons60 шёл из таблицы TK-638 и был определён), составной столбец считается так же;
@@ -358,10 +367,10 @@ def run_cells(paths, runner, symbols_text, bin_path, threads, wins, cells, bins,
             for i, c in shorts.items():
                 tabs[i] = read_tables(paths, req_of(c), wins)
                 info[i] = {"status": "read", "reason": "", "side": "S", "keys": c["keys"], "vid": c["vid"]}
-        except GuardError as e:
+        except Exception as e:  # noqa: BLE001 — охрана или непредвиденная ошибка: шорт-линии не читаются, лонг-линии идут
             for i, c in shorts.items():
                 tabs.pop(i, None)
-                info[i] = {"status": "skip", "reason": str(e), "side": "S", "keys": c["keys"], "vid": c["vid"]}
+                info[i] = {"status": "skip", "reason": reason_of(e), "side": "S", "keys": c["keys"], "vid": c["vid"]}
     for i, c in cells.items():
         if c["side"] != "L":
             continue
@@ -373,8 +382,8 @@ def run_cells(paths, runner, symbols_text, bin_path, threads, wins, cells, bins,
                 x["windows"][w.name] = build_filter_table(paths, runner, eng, w, need, c, bins, threads, tick_store, days, lohi_of(w), (nan_guard or {}).get(i), flow_mode, reuse, research_keys)[0]
             eng.launch([req])
             tabs[i] = read_tables(paths, req, wins)
-        except GuardError as e:
-            x["reason"] = str(e)
+        except Exception as e:  # noqa: BLE001 — охрана или непредвиденная ошибка линии: линия не читается (причина в `info`), остальные идут
+            x["reason"] = reason_of(e)
             for w in wins:
                 m = filter_meta(paths, w, req.vid)
                 if m and w.name in x["windows"]:

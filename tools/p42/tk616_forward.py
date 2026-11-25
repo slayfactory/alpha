@@ -1583,13 +1583,22 @@ def run_point(a, runner=None, today=None, repo=REPO):
                 tabs[key_of(CAND_CELL, u)] = t24
                 byw[key_of(CAND_CELL, u)] = {w.name: rows_of(t24[w.name], w) for w in wins_used}
         if run_ds_cell:                                                  # C2 `D_S`: доля пар без klines предыдущих суток > 1 % или любая охрана — клетка не читается, остальные считаются
-            tds, ds_info[u] = run_ds(paths, rn, uni["text"][u], a.ds_bin, a.threads, wins_used, c3, uni["lists"][u], lambda w: (max(w.lod, F0), min(w.hid, to)))
+            try:
+                tds, ds_info[u] = run_ds(paths, rn, uni["text"][u], a.ds_bin, a.threads, wins_used, c3, uni["lists"][u], lambda w: (max(w.lod, F0), min(w.hid, to)))
+            except Exception as e:  # noqa: BLE001 — непредвиденная ошибка `D_S` (не охрана): клетка не читается, причина в `ds_info`, точка и остальные клетки идут
+                tds, ds_info[u] = None, {"status": "skip", "reason": f708.unexpected_reason(e), "missing_share": None, "missing_pairs": None, "pairs": None, "windows": {}}
+                print("ВНИМАНИЕ: %s не читалась (вселенная %s): %s" % (CAND3_CELL, u, ds_info[u]["reason"]), file=sys.stderr)
             if tds is not None:
                 tabs[key_of(CAND3_CELL, u)] = tds
                 byw[key_of(CAND3_CELL, u)] = {w.name: rows_of(tds[w.name], w) for w in wins_used}
         if run_t708:                                                     # TK-708: любая охрана линии — линия не читается, остальные считаются; охрана NaN признаков — сутки линии «нет данных»
-            t7, t708_info[u] = f708.run_cells(paths, rn, uni["text"][u], a.tk674_bin, a.threads, wins_used, c5["cells_run"], feat_bins_of(a), a.tick_store, lambda w: (max(w.lod, F0), min(w.hid, to)),
-                                              days=c5["f12_days"], nan_guard=c5["nan_guard"]["max_daily_share"], flow_mode=c5["flow_mode"])
+            try:
+                t7, t708_info[u] = f708.run_cells(paths, rn, uni["text"][u], a.tk674_bin, a.threads, wins_used, c5["cells_run"], feat_bins_of(a), a.tick_store, lambda w: (max(w.lod, F0), min(w.hid, to)),
+                                                  days=c5["f12_days"], nan_guard=c5["nan_guard"]["max_daily_share"], flow_mode=c5["flow_mode"])
+            except Exception as e:  # noqa: BLE001 — непредвиденная ошибка линий TK-674 (не охрана): все четыре линии вселенной «не читались», причина в `t708_info`, остальные клетки точки идут
+                t7, t708_info[u] = {}, {i: dict({"status": "skip", "reason": f708.unexpected_reason(e), "side": c["side"], "keys": c["keys"], "vid": c["vid"]}, **({"filter": c["text"], "windows": {}} if c["side"] == "L" else {}))
+                                        for i, c in c5["cells_run"].items()}
+                print("ВНИМАНИЕ: линии TK-674 не читались (вселенная %s): %s" % (u, f708.unexpected_reason(e)), file=sys.stderr)
             for i, tb in t7.items():
                 tabs[key_of(CAND5_PREFIX + i, u)] = tb
                 byw[key_of(CAND5_PREFIX + i, u)] = {w.name: rows_of(tb[w.name], w) for w in wins_used}
