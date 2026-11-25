@@ -247,7 +247,14 @@
     "base_sharpe": 5.217,
     "base_usd": 325.7
    },
-   "forward_computable": true
+   "forward": {
+    "inputs": "да: сделки aggTrades и минутки собираются вперёд (как у цепочки tk626 → tk691)",
+    "engine_keys": "да: ключи движка клетки как в БД",
+    "feature_builder_forward": "НЕТ: big1800, cons60, vpin1h — построитель таблицы `--ftab` вперёд не сделан (задача до 30.11)",
+    "pipeline_hook": "НЕТ: `tk616_forward.py` не читает `tk674-frozen.json` (пятое звено цепочки — задача до 30.11)",
+    "computable_now": false,
+    "computable_after_tasks": "после построителя признаков вперёд"
+   }
   },
   {
    "id": "L2",
@@ -304,7 +311,14 @@
     "base_sharpe": 5.217,
     "base_usd": 325.7
    },
-   "forward_computable": true
+   "forward": {
+    "inputs": "да: сделки aggTrades и минутки собираются вперёд (как у цепочки tk626 → tk691)",
+    "engine_keys": "да: ключи движка клетки как в БД",
+    "feature_builder_forward": "НЕТ: big1800, vpin1h — построитель таблицы `--ftab` вперёд не сделан (задача до 30.11)",
+    "pipeline_hook": "НЕТ: `tk616_forward.py` не читает `tk674-frozen.json` (пятое звено цепочки — задача до 30.11)",
+    "computable_now": false,
+    "computable_after_tasks": "после построителя признаков вперёд"
+   }
   },
   {
    "id": "S1",
@@ -362,7 +376,14 @@
     "base_sharpe": 3.635,
     "base_usd": 133.93
    },
-   "forward_computable": true
+   "forward": {
+    "inputs": "да: сделки aggTrades и минутки собираются вперёд (как у цепочки tk626 → tk691)",
+    "engine_keys": "да: ключи движка клетки как в БД",
+    "feature_builder_forward": "не нужен: у клетки нет столбцов фильтра",
+    "pipeline_hook": "НЕТ: `tk616_forward.py` не читает `tk674-frozen.json` (пятое звено цепочки — задача до 30.11)",
+    "computable_now": false,
+    "computable_after_tasks": true
+   }
   },
   {
    "id": "S2",
@@ -421,7 +442,14 @@
     "base_sharpe": 3.635,
     "base_usd": 133.93
    },
-   "forward_computable": true
+   "forward": {
+    "inputs": "да: сделки aggTrades и минутки собираются вперёд (как у цепочки tk626 → tk691)",
+    "engine_keys": "да: ключи движка клетки как в БД",
+    "feature_builder_forward": "не нужен: у клетки нет столбцов фильтра",
+    "pipeline_hook": "НЕТ: `tk616_forward.py` не читает `tk674-frozen.json` (пятое звено цепочки — задача до 30.11)",
+    "computable_now": false,
+    "computable_after_tasks": true
+   }
   }
  ],
  "thresholds": {
@@ -482,8 +510,31 @@
  "cost_model": "как `docs/research/freeze/tk691-frozen.json` `cost_model` (ставка 500 $, плечо 2, комиссия тейкер 3,5 бп минус 10 % возврата, проскальзывание 1 бп на ногу, задержка 4 мс `lat=4 latx=4`)",
  "gate": {
   "status": "не запущен",
-  "evidence": "клетки отбора — строки БД c539, посчитанные бинарями реестра `eqbins674.json`; канарейки (5–10 клеток на окно и партию) байт в байт (L-419, L-425); гейт TK-706 для memo `357a66c1` — 549 клеток байт в байт",
-  "pending": "повтор самих клеток-кандидатов замороженным бинарём на 01.07–13.11 со сверкой `tsig` — по решению координатора (окно на srv, один движок за раз)"
+  "evidence": "клетки отбора — строки БД c539, посчитанные бинарями реестра `eqbins674.json`; канарейки байт в байт (L-419, L-425); гейт TK-706 для memo `357a66c1` — 549 клеток байт в байт",
+  "pending": "повтор клеток-кандидатов замороженным бинарём: `tools/p42/tk674_gate_cells.py gate` (окно на srv, один движок за раз)"
+ },
+ "overlap": {
+  "L": {
+   "first": "L1",
+   "second": "L2",
+   "trades_first": 174,
+   "trades_second": 227,
+   "common": 172,
+   "share_of_second": 0.7577,
+   "share_of_first": 0.9885
+  },
+  "S": {
+   "first": "S1",
+   "second": "S2",
+   "trades_first": 2158,
+   "trades_second": 1457,
+   "common": 1143,
+   "share_of_second": 0.7845,
+   "share_of_first": 0.5297
+  },
+  "note": "общих сделок / сделок (2); только печать, порога нет (PS-1010 п. 6)",
+  "result": "tk674-overlap.json",
+  "result_sha256": "21c743da53b3dfd1ab28d1fdf194c00cc2f4018da87b828e454ec13a446c670d"
  },
  "reading_rule": {
   "window": "январь–июнь 2026 после заморозки; правило — prereg-13.73 §8: n ≥ 100, Σ > 0 (блочный бутстреп по суткам, блок 5, 20 000, seed 674), лучше базы стороны (Холм)",

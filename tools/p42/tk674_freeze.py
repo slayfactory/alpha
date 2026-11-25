@@ -36,10 +36,21 @@ def sha256(path):
     return h.hexdigest()
 
 
+def fwd(axes):
+    """Что нужно вперёд (после 13.11): входы собираются (сделки aggTrades / минутки), ключи движка работают; признаки фильтра `F=` — столбцы таблицы `--ftab`, построителя вперёд для них нет (в `tk616_forward.py` построен только `n24`)."""
+    feats = sorted(a[2:].rstrip("<>=") for a in axes if a.startswith("F:"))
+    return dict(inputs="да: сделки aggTrades и минутки собираются вперёд (как у цепочки tk626 → tk691)", engine_keys="да: ключи движка клетки как в БД",
+                feature_builder_forward=("не нужен: у клетки нет столбцов фильтра" if not feats else "НЕТ: " + ", ".join(feats) + " — построитель таблицы `--ftab` вперёд не сделан (задача до 30.11)"),
+                pipeline_hook="НЕТ: `tk616_forward.py` не читает `tk674-frozen.json` (пятое звено цепочки — задача до 30.11)", computable_now=False,
+                computable_after_tasks=True if not feats else "после построителя признаков вперёд")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sel", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--gate", default=None, help="результат шлюза (`tk674_gate_cells.py gate`, в git) — статус и sha в файл")
+    ap.add_argument("--overlap", default=None, help="пересечение сделок (`tk674_gate_cells.py overlap`) — в файл (только печать, порога нет)")
     ap.add_argument("--select-copy", default=None, help="копия результата отбора рядом с картами (в git)")
     a = ap.parse_args()
     sel = json.load(open(a.sel, encoding="utf-8"))
@@ -57,7 +68,17 @@ def main():
             cands.append(dict(id=IDS[(side, c["rank"])], side="long" if side == "L" else "short", rank=c["rank"], cid=w["cid"], ckey=w["ckey"], tsig=w["tsig"], axes=c["axes"], source=dict(map=c["src"] + ".json", pair=c["pair"]),
                               found=dict(trades=w["n"], usd=round(w["usd"], 2), sharpe=round(w["sharpe"], 3), maxdd_usd=round(w["maxdd"], 2), maxdd_pct_margin=round(100 * w["maxdd"] / 250, 1), gap_longest=w["gap_longest"], gap_mean=round(w["gap_mean"], 2),
                                          rr=round(w["rr"], 3), lstop_usd=round(w["lstop"], 3), worst_usd=round(w["worst"], 3), months=w["months"], plateau_nb_mean=round(w["nb_mean"], 3), noise=round(sel[side]["noise"], 2),
-                                         base_sharpe=round(sel[side]["base"]["sharpe"], 3), base_usd=round(sel[side]["base"]["usd"], 2)), forward_computable=True))
+                                         base_sharpe=round(sel[side]["base"]["sharpe"], 3), base_usd=round(sel[side]["base"]["usd"], 2)), forward=fwd(c["axes"])))
+    gate = dict(status="не запущен", evidence="клетки отбора — строки БД c539, посчитанные бинарями реестра `eqbins674.json`; канарейки байт в байт (L-419, L-425); гейт TK-706 для memo `357a66c1` — 549 клеток байт в байт",
+                pending="повтор клеток-кандидатов замороженным бинарём: `tools/p42/tk674_gate_cells.py gate` (окно на srv, один движок за раз)")
+    if a.gate:
+        g = json.load(open(a.gate, encoding="utf-8"))
+        gate = dict(status="пройден" if g["passed"] else "НЕ ПРОЙДЕН", tool="tools/p42/tk674_gate_cells.py gate", result=os.path.basename(a.gate), result_sha256=sha256(a.gate), binary=g["binary"], code_sha256=g["code"], thr674_sha256=g["thr674"],
+                    cells={k: dict(ok=v["ok"], tsig_equal=v["tsig_equal"], windows={w: x["equal"] for w, x in v["windows"].items()}, trades=v["metrics"]["trades"], usd=v["metrics"]["usd"]) for k, v in g["cells"].items()},
+                    what="каждая клетка × три окна (wa / wb / wc) замороженным бинарём `357a66c1`, средой `env-s4.sh`, ключом клетки и таблицами фильтров партии: файлы сделок / суток / монет / отказов байт в байт с клеткой БД, `trades_sig` = `tsig`")
+    overlap = dict(status="не посчитано")
+    if a.overlap:
+        overlap = dict(json.load(open(a.overlap, encoding="utf-8")), note="общих сделок / сделок (2); только печать, порога нет (PS-1010 п. 6)", result=os.path.basename(a.overlap), result_sha256=sha256(a.overlap))
     out = dict(
         version="tk674-frozen-1",
         protocol="П-42 TK-674: отбор кандидатов вперёд (≤ 2 на сторону) — PS-1010 (поправка к PS-999 п. 5 и prereg-13.73 §6.3); результат — L-426; код `tools/p42/tk674_select.py`",
@@ -73,9 +94,8 @@ def main():
         binary=dict(freeze=SRV["bin_freeze"], also_used=SRV["bin_s2"], pgo_approved=SRV["bin_pgo"], equivalence=SRV["eqbins"]),
         environment=dict(file="/data/p42-tk674c/env-s4.sh", engine="breakout tick, ключи клетки `ckey` как в БД c539; TK674_UNI=c539, TK674_REBASE=1", universe="c539 (539 крипто-контрактов; tk691-frozen.json `universe`, contracts_sha256 4b51e9aad05b4652c50bc6030ba11aaa1fa362ecf5e3b877b1bac735e514d328)"),
         cost_model="как `docs/research/freeze/tk691-frozen.json` `cost_model` (ставка 500 $, плечо 2, комиссия тейкер 3,5 бп минус 10 % возврата, проскальзывание 1 бп на ногу, задержка 4 мс `lat=4 latx=4`)",
-        gate=dict(status="не запущен",
-                  evidence="клетки отбора — строки БД c539, посчитанные бинарями реестра `eqbins674.json`; канарейки (5–10 клеток на окно и партию) байт в байт (L-419, L-425); гейт TK-706 для memo `357a66c1` — 549 клеток байт в байт",
-                  pending="повтор самих клеток-кандидатов замороженным бинарём на 01.07–13.11 со сверкой `tsig` — по решению координатора (окно на srv, один движок за раз)"),
+        gate=gate,
+        overlap=overlap,
         reading_rule=dict(
             window="январь–июнь 2026 после заморозки; правило — prereg-13.73 §8: n ≥ 100, Σ > 0 (блочный бутстреп по суткам, блок 5, 20 000, seed 674), лучше базы стороны (Холм)",
             status="по В-183 п. 3 январь–июнь после счёта TK-692 / TK-700 видены, не чистая отложенная выборка: «подтверждено» там — описательно",
