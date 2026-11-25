@@ -343,6 +343,19 @@ def test_filter_table_equals_independent_recomputation_with_float32_and_key_mapp
         assert len(info["ftab_sha256"]) == 64 and info["credited"] > 0
 
 
+def test_engine_cap_gb_is_passed_only_when_set():
+    with T.tmp() as t:
+        x = ctx5(t)
+        w = win(x)
+        cmds = {}
+        for cap in (0, 6):
+            paths = mk_paths(os.path.join(t, "c"))
+            paths.cap_gb = cap
+            eng = rr.Engine(paths, None, SYMS, x.e.e7, 1, None, ensure_tables=lambda needs: None, windows=(w,), prefix="t")
+            cmds[cap] = eng.command(w, "/v/b1.txt", "/o/wb", None)[0]
+        assert "--cap-gb" not in cmds[0] and cmds[6][cmds[6].index("--cap-gb") + 1] == "6" and cmds[6][:len(cmds[0])] == cmds[0]
+
+
 def test_research_keys_make_rows_outside_the_parquet_read_empty_for_big1800_and_vpin1h_only_in_the_column():
     with T.tmp() as t:
         x = ctx5(t)

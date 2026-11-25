@@ -65,7 +65,7 @@ def setup(a, wins):
         elif os.path.realpath(link) != os.path.realpath(src):
             raise rf.GuardError("%s указывает не на %s" % (link, src))
     ntree = fw.check_tree_days(a.root, wins, fw.d(fw.LISTING_AFTER))
-    paths = rr.Paths(a.root, tick_store=a.tick_store, sig_cache="")
+    paths = rr.Paths(a.root, tick_store=a.tick_store, sig_cache="", cap_gb=a.cap_gb)
     text = rr.read_symbols(a.symbols_file)[0]
     bins = {n: getattr(a, n + "_bin") for n in f708.FEAT_BIN_NAMES}
     hashes = {}
@@ -224,6 +224,7 @@ def main(argv=None):
     ap.add_argument("--cells", default="")
     ap.add_argument("--reuse", action="store_true", help="дамп потока и выходы alpha-feat с меткой `.ok` в `--root` не пересчитываются (только ворота: feat после replay на том же корне)")
     ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--cap-gb", type=int, default=0, help="`--cap-gb` движка (память под сутки сделок; по умолчанию у движка 24 ГБ → 26–33 ГБ на процесс); результат не меняет, TK-683")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     try:
