@@ -4,7 +4,7 @@
 export RUSTUP_HOME=/opt/rbuild/rustup CARGO_HOME=/opt/rbuild/cargo PATH=/opt/rbuild/cargo/bin:$PATH LC_ALL=C
 NAME=${1:?имя бинаря}
 LOG=/root/perf706/bins/build-$NAME.log
-cd /root/perf706/src-memo || exit 1
+cd ${SRC:-/root/perf706/src-memo} || exit 1
 t0=$(date +%s)
 cargo build --profile p42 --offline --bin alpha --target-dir /root/perf706/tgt-$NAME -j${J:-2} >> $LOG 2>&1
 rc=$?

@@ -4,6 +4,7 @@
 L=/root/perf706/hold-log.txt; H1=/data/p42-tk700/HOLD-a3; H2=/data/p42-tk674c/HOLD
 busy(){ for p in $(pgrep -f "breakout tick"); do grep -q "tk706-" /proc/$p/cgroup 2>/dev/null || return 0; done; return 1; }
 LAB=${1:?метка}; shift
+exec 9>/root/perf706/hold.lock; flock 9   # окна не пересекаются: второй ждёт первого (TK-706, 25.11)
 touch $H1 $H2; trap 'rm -f $H1 $H2; echo "$LAB lifted $(date -u +%T) rc=$RC" >> $L' EXIT
 echo "$LAB set $(date -u +%T)" >> $L
 while busy; do touch $H1 $H2; sleep 5; done
