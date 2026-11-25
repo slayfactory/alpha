@@ -53,7 +53,7 @@ def coverage_cols():
 
 
 def fast_join(side, df):
-    """Набор t681: к строкам df (win, row_id, sym, meta_sig_ms) — 50 столбцов FAST из `fast.csv` TK-681; ключ окно + row_id, строки сверяются по монете и sig_ms; строка без пары — ошибка."""
+    """Столбцы FAST (sac10, sac60, accdv1_300 …) из `fast.csv` TK-681 к строкам df (win, row_id, sym, meta_sig_ms): ключ окно + row_id, строки сверяются по монете и sig_ms; нет пары или другая монета / sig_ms — стоп."""
     import pandas as pd
     parts = []
     for w in a80.T681_WINS:
@@ -133,15 +133,19 @@ def t701_join(side):
     return pd.concat(parts, ignore_index=True)
 
 
-def add_columns(side, st, tabs):
-    """Столбцы таблицы TK-671 к строкам кандидатов базы (ключ окно + sym + sig_ms, строка с meta_base_pass > 0, бит 1 раньше бита 2); нет строки — пусто (проходит)."""
+def add_columns(side, st, tabs, cl=None, ctx=None, hist=None):
+    """Столбцы таблицы TK-671 к строкам кандидатов базы (ключ окно + sym + sig_ms, строка с meta_base_pass > 0, бит 1 раньше бита 2); нет строки — пусто (проходит).
+    По умолчанию — столбцы набора процесса (TK680_SET). Режим TK674_X680 (`tk674_x680.column_specs`) задаёт сам: `cl` — [(имя, источник, знаки)], `ctx` — считать cosig15
+    (набор «контекст»), `hist` — взять ok10_d3 / d5 из файла tk680_hist.py (набор «история пробоев»); маски те же, что в счёте единичек этих наборов."""
     import numpy as np
     import pandas as pd
     import pyarrow.parquet as pq
+    ctx = (a80.SET == "ctx") if ctx is None else ctx
+    hist = (a80.SET == "hist") if hist is None else hist
     have = set(pq.ParquetFile(a80.PARQUET % ENGNAME[side]).schema.names)
-    if a80.SET == "ctx":
+    if ctx:
         crypto = None
-        if os.environ.get("TK674_UNI") == "c539":      # §13.73.18: на c539 «другие монеты» — только крипто-монеты (сигналы TradFi в составе нет)
+        if os.environ.get("TK674_UNI") == "c539":      # §13.73.18: на c539 «другие монеты» — только крипто-монеты (сигналов TradFi в составе нет)
             import tk625_run as r5
             crypto = sorted(r5.Uni("c539").coins())
         for w in st.TRADE_WINDOWS:
@@ -154,24 +158,23 @@ def add_columns(side, st, tabs):
             v[keep] = cosig15(sym[keep], ms[keep])
             tabs[w.name]["cosig15"] = v
     extra = set()
-    if a80.SET == "t681":
-        have |= set(a80.FAST_NAMES)
-    if a80.SET == "t697":
-        have |= set(a80.T697_FAM_NAMES)
-    if a80.SET == "t697b":
-        have |= set(a80.T697B_NAMES)
-    if a80.SET == "t701":
-        have |= set(a80.T701_NAMES)
-    if a80.SET == "hist":
+    setcols = {"t681": a80.FAST_NAMES, "t697": a80.T697_FAM_NAMES, "t697b": a80.T697B_NAMES, "t701": a80.T701_NAMES}.get(a80.SET) if cl is None else None   # наборы TK-681 / 697 / 701: столбцы не из parquet TK-671; режим X680 (`cl` задан) — только sac10 / sac60 / accdv1_300 ниже
+    sset = a80.SET if setcols else ""
+    if setcols:
+        have |= set(setcols)
+    if hist:
         extra = set(pq.ParquetFile(a80.HIST_EXTRA % ENGNAME[side]).schema.names) - have
         have |= extra
         rid = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["row_id"])["row_id"].to_numpy()
-    cl = a80.column_list(coverage_cols())
+    cl = a80.column_list(coverage_cols()) if cl is None else cl
     srcs = lambda src: src if isinstance(src, tuple) else (src,)
+    fast = {x for _, src, _ in cl for x in srcs(src) if x in a80.FAST_NAMES and x not in have}     # столбцы TK-681, которых нет в таблице TK-671 (X680: sac10 / sac60 / accdv1_300 стороны S)
+    have |= fast
     absent = [name for name, src, _ in cl if not all(x in have for x in srcs(src)) and name not in tabs[st.TRADE_WINDOWS[0].name]]
     cl = [c for c in cl if c[0] not in absent]
     need = sorted({x for _, src, _ in cl for x in srcs(src) if x in have})
-    fast = set(a80.FAST_NAMES) if a80.SET == "t681" else (set(a80.T697_FAM_NAMES) if a80.SET == "t697" else (set(a80.T697B_NAMES) if a80.SET == "t697b" else (set(a80.T701_NAMES) if a80.SET == "t701" else set())))
+    if setcols:
+        fast = set(setcols)
     df = pd.read_parquet(a80.PARQUET % ENGNAME[side], columns=["win", "sym", "meta_sig_ms", "meta_base_pass"] + (["row_id"] if fast else []) + [x for x in need if x not in extra and x not in fast])
     if extra:                                       # ok10_d3 / d5: файл tk680_hist.py, строки в порядке таблицы TK-671 (ключ сверяется)
         ex = pd.read_parquet(a80.HIST_EXTRA % ENGNAME[side])
@@ -182,7 +185,7 @@ def add_columns(side, st, tabs):
     df = df[df["meta_base_pass"] > 0].copy()
     df["win"], df["sym"] = df["win"].astype(str), df["sym"].astype(str)
     if fast:
-        df = t701_join(side) if a80.SET == "t701" else t697b_join(side) if a80.SET == "t697b" else (t697_join(side, df) if a80.SET == "t697" else fast_join(side, df))
+        df = t701_join(side) if sset == "t701" else t697b_join(side) if sset == "t697b" else (t697_join(side, df) if sset == "t697" else fast_join(side, df))
     df["_pri"] = (df["meta_base_pass"] != 1).astype(int)
     df = df.sort_values("_pri", kind="stable").drop_duplicates(["win", "sym", "meta_sig_ms"])
     rep = {}

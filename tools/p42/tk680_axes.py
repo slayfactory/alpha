@@ -51,16 +51,18 @@ GRID_OLD = {"natr_min": _o(0.2, 0.4, 0.6, 0.8), "t1h": _o(0.25, 0.5, 1, 2), "t24
             "fb": _o(0.25, 0.5, 1), "e": ({"0.1", "0.15", "0.3", "0.5"}, {"0.05", "0.1", "0.15", "0.3", "0.5"}), "ew": _o(5, 20, 100), "p": _o(1, 2, 3, 5, 8)}
 
 
-def engine_axes(side):
-    if SET == "grid":
+def engine_axes(side, sset=None):
+    """Оси ключей набора `sset` (по умолчанию — набор процесса TK680_SET; режим TK674_X680 читает карты всех наборов)."""
+    sset = SET if sset is None else sset
+    if sset == "grid":
         return grid_axes(side)
-    if SET in ("hist", "ctx", "t697", "t697b", "t701"):
+    if sset in ("hist", "ctx", "t697", "t697b", "t701"):
         return []
-    if SET == "t697k":
+    if sset == "t697k":
         return t697k_axes(side)
-    if SET == "t681":
+    if sset == "t681":
         return t681_axes(side)
-    if SET == "new":
+    if sset == "new":
         return new_axes(side)
     S = side == "S"
     out = [

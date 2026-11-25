@@ -207,13 +207,16 @@ pub(super) fn from_store(d: &StoredDay, abs_day: i64) -> Option<DayTrades> {
         QTY_P10[usize::from(d.qty_dec)]
     };
     Some(DayTrades {
-        t: d.ticks.iter().map(|tk| base + i64::from(tk.off)).collect(),
+        t: d.ticks
+            .iter()
+            .map(|tk| base + i64::from(tk.off()))
+            .collect(),
         v: d.ticks
             .iter()
             .zip(&d.qty)
             .map(|(tk, &q)| (tk.px as f64 / 1e8) * (q as f64 / p10))
             .collect(),
-        buy: d.ticks.iter().map(|tk| !tk.bm).collect(),
+        buy: d.ticks.iter().map(|tk| !tk.bm()).collect(),
         unsorted: d.stat.unsorted_files > 0,
     })
 }
@@ -231,14 +234,17 @@ pub(super) fn from_store_p(d: &StoredDay, abs_day: i64) -> Option<DayTradesP> {
         QTY_P10[usize::from(d.qty_dec)]
     };
     Some(DayTradesP {
-        t: d.ticks.iter().map(|tk| base + i64::from(tk.off)).collect(),
+        t: d.ticks
+            .iter()
+            .map(|tk| base + i64::from(tk.off()))
+            .collect(),
         p: d.ticks.iter().map(|tk| tk.px as f64 / 1e8).collect(),
         v: d.ticks
             .iter()
             .zip(&d.qty)
             .map(|(tk, &q)| (tk.px as f64 / 1e8) * (q as f64 / p10))
             .collect(),
-        buy: d.ticks.iter().map(|tk| !tk.bm).collect(),
+        buy: d.ticks.iter().map(|tk| !tk.bm()).collect(),
         unsorted: d.stat.unsorted_files > 0,
     })
 }

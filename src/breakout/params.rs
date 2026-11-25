@@ -136,7 +136,7 @@ impl std::fmt::Debug for SigCfg {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ExitCfg {
     pub natr_p: usize,
     pub n_tp: usize,
