@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # TK-700 (srv): очередь месяцев H1 — на каждый месяц: цепочка A long → H → B long → B short (без охраны охвата) и A short двумя частями (--part 0/2, 1/2),
 # затем закрывающий проход (досчитывает недостающие партии, ставит state=done) и сводка `tk700_month_stats.py` в /data/p42-tk700/log/month-<mon>.done.
-# Использование (юнитом): systemd-run --unit=tk700-queue --slice=tk700.slice -p MemoryMax=2G -E WAIT_FIRST="tk700-feb-A-short-p0 …" bash /data/p42-tk700/code/tk700_queue.sh m03 m04 m05 m06
+# Использование (юнитом): systemd-run --unit=tk700-queue --slice=tk700.slice -p LimitCORE=0 -p MemoryMax=2G -E WAIT_FIRST="tk700-feb-A-short-p0 …" bash /data/p42-tk700/code/tk700_queue.sh m03 m04 m05 m06
 set -uo pipefail
 CODE=/data/p42-tk700/code
 LOG=/data/p42-tk700/log
@@ -23,13 +23,13 @@ for M in "$@"; do
   N=${MON[$M]}
   [ -n "${HOLD_FILE:-}" ] && while [ -e "$HOLD_FILE" ]; do sleep 30; done
   echo "$(date -u +%FT%TZ) месяц $M ($N): старт"
-  systemd-run --unit=tk700-$N-lite --slice=tk700.slice -p CPUWeight=400 -p Nice=5 -p MemoryMax=18G /bin/bash -c "
+  systemd-run --unit=tk700-$N-lite --slice=tk700.slice -p LimitCORE=0 -p CPUWeight=400 -p Nice=5 -p MemoryMax=18G /bin/bash -c "
     $RUN h1-$N-A --cellset all1 --wins $M --sides long --class A --threads 3 $ARGS >> $LOG/h1-$N-A.log 2>&1
     $RUN h1-$N-H --cellset all2 --wins $M --class H --threads 3 $ARGS >> $LOG/h1-$N-H.log 2>&1
     $RUN h1-$N-B --cellset all2 --wins $M --class B --sides long --threads 3 $ARGS >> $LOG/h1-$N-B.log 2>&1
     $RUN h1-$N-B-short --cellset all2 --wins $M --class B --sides short --unguarded short --threads 3 $ARGS >> $LOG/h1-$N-B-short.log 2>&1" > /dev/null
   for k in 0 1; do
-    systemd-run --unit=tk700-$N-A-short-p$k --slice=tk700.slice -p CPUWeight=800 -p Nice=5 -p MemoryMax=20G /bin/bash -c \
+    systemd-run --unit=tk700-$N-A-short-p$k --slice=tk700.slice -p LimitCORE=0 -p CPUWeight=800 -p Nice=5 -p MemoryMax=20G /bin/bash -c \
       "$RUN h1-$N-A-short --cellset all1 --wins $M --sides short --class A --threads 3 --part $k/2 $ARGS >> $LOG/h1-$N-A-short-p$k.log 2>&1" > /dev/null
   done
   sleep 30

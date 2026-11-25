@@ -336,17 +336,29 @@ def cmd_run(a):
     sides = a.sides.split(",")
     md5s = {s: hashlib.md5(open(BINS[s], "rb").read()).hexdigest() for s in sides}
     md5 = json.dumps(md5s)
+    eng = os.environ.get("TK700_ENGINE", "")                                # подмена исполняемого файла движка (LTO TK-706, результаты клеток побайтно равны): файл и md5 заданы вместе; сверка клеток с БД — по BINS
+    eng_md5 = hashlib.md5(open(eng, "rb").read()).hexdigest() if eng else ""
+    if eng and eng_md5 != os.environ.get("TK700_ENGINE_MD5", ""):
+        raise SystemExit("движок %s: md5 %s ≠ TK700_ENGINE_MD5" % (eng, eng_md5))
     classes = set(a.cls.split(",")) if a.cls else set()
     unbuilt, cov_sha = bad_columns(a.cov) if classes else (set(), "")
     unguarded = {x for x in a.unguarded.split(",") if x}
     params = dict(vmax=a.vmax, sigmax=a.sigmax, sigs=a.sigs, every=a.every, part=a.part, unguarded=sorted(unguarded), seed=a.seed, threads=a.threads, cap_gb=a.cap_gb, sides=sides, D0=st.D0.isoformat(), max_batches=a.max_batches, only_skipped=a.only_skipped,
-                  classes=sorted(classes), excluded=EXCLUDED if classes else "", cov_sha=cov_sha)
+                  classes=sorted(classes), excluded=EXCLUDED if classes else "", cov_sha=cov_sha, engine=eng_md5)
     row = db.execute("SELECT cellset, dry FROM mass_run WHERE run_id=?", (a.run_id,)).fetchone()
     if row and (row[0] != a.cellset or row[1] != int(a.dry)):
         raise SystemExit("run-id %s уже занят набором %s (dry=%s)" % (a.run_id, row[0], row[1]))
     if not row:
         db.execute("INSERT OR IGNORE INTO mass_run VALUES(?,?,?,?,?,?,?,?)", (a.run_id, a.cellset, int(a.dry), ",".join(wins), md5, json.dumps(params), now(), "running"))
         db.commit()
+    elif eng:                                                               # запись о подмене движка в params прежнего запуска (какая партия чем считана — по времени mass_batch.done против `engine_swaps.at`)
+        pj = json.loads(db.execute("SELECT params FROM mass_run WHERE run_id=?", (a.run_id,)).fetchone()[0])
+        if eng_md5 not in [x["md5"] for x in pj.get("engine_swaps", [])]:
+            pj.setdefault("engine_swaps", []).append(dict(at=now(), md5=eng_md5, path=eng))
+            db.execute("UPDATE mass_run SET params=? WHERE run_id=?", (json.dumps(pj), a.run_id))
+            db.commit()
+    if eng:
+        print("движок: %s md5 %s" % (eng, eng_md5), flush=True)
     part_k, part_n = (int(x) for x in a.part.split("/"))
     if not (part_n >= 1 and 0 <= part_k < part_n):
         raise SystemExit("--part K/N: 0 ≤ K < N")
@@ -358,7 +370,7 @@ def cmd_run(a):
     t_run = time.time()
     try:
         for side in sides:
-            binary = BINS[side]
+            binary = eng or BINS[side]
             cells = [c for c in keep_classes(load_cells(db, a.cellset, side), classes, unbuilt) if c["cid"] % a.every == 0]
             print("%s: клеток к счёту %d (классы %s%s)" % (side, len(cells), ",".join(sorted(classes)) or "все", ", каждая %d-я по cid" % a.every if a.every > 1 else ""), flush=True)
             if a.sigs:

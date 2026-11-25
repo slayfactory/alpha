@@ -1,5 +1,7 @@
 #!/bin/bash
 # usage: run-mass.sh <run-id> <args after run --run-id R ...>
 cd /data/p42-tk700/code && export PYTHONUTF8=1 TK674_REBASE=1
+# движок LTO TK-706 (ворота 549 клеток побайтно равны, критик PASS, 25.11): подмена исполняемого файла, md5 сверяется в tk700_mass.py
+export TK700_ENGINE=/data/p42-tk683/bin/alpha-tk706lto-plain.8759375e TK700_ENGINE_MD5=8759375e02b496f865b160b05e74726d
 R=$1; shift
 /data/tk592/venv/bin/python tk700_mass.py run --run-id $R "$@"
