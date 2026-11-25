@@ -19,7 +19,8 @@ for side in ("long", "short"):
     out.append(f"#### A-{M} {side} (E = 1; ряд вне выборки, ставка 500 $, маржа 250 $)\n")
     out += block(f"### A-{M} {side}"); out.append("")
 nxt = [l for l in rep if l.startswith('Следующий выбор (month')]
-out.append("@@NEXT@@ лонг — " + nxt[0].split(': ',1)[1] + "; шорт — " + nxt[1].split(': ',1)[1] + ".\n")
+if len(nxt) >= 2:   # у последнего месяца (июнь) следующего выбора нет
+    out.append("@@NEXT@@ лонг — " + nxt[0].split(': ',1)[1] + "; шорт — " + nxt[1].split(': ',1)[1] + ".\n")
 rr = {'long': [], 'short': []}; cur = None
 for l in log:
     if 'replay long' in l and l.startswith('['): cur = 'long'
