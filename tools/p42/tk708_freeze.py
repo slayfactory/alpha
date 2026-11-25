@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """П-42 (TK-708, L-428 / L-434): сборка `tk708-frozen.json` — шестое звено цепочки tk626 → tk638 → tk641 → tk670 → tk691 → tk708: четыре линии TK-674 (L1, L2 — лонг с фильтром признаков, S1, S2 — шорт) в проверке вперёд на c539.
 Файл собирается из готовых результатов ворот `tk708_gate.py feat` и `tk708_gate.py replay` (на srv) и `tk674-frozen.json` / `tk674-gate-cells.json` (не меняются); суток ≥ 14.11 не читает.
+  python3 tk708_freeze.py merge-replay --parts gate-replay-wa.json gate-replay-wb.json gate-replay-wc.json --out gate-replay.json
   python3 tk708_freeze.py build --gate-feat gate-feat.json --gate-replay gate-replay.json [--freeze-dir docs/research/freeze] [--feat-srv-path …] [--replay-srv-path …] --out docs/research/freeze/tk708-frozen.json"""
 from __future__ import annotations
 
@@ -136,17 +137,54 @@ def build(a):
     return 0
 
 
+def merge_replay(parts):
+    """Один результат ворот replay из частей по окнам (`tk708_gate.py replay --windows <окно>` — движок счёта на одно окно умещается в память srv, на три сразу — нет). Части: одно окно, тот же `meta` (деревья, бинари), режим потока, линии, ключи и vid; окна не повторяются.
+    → результат ворот в формате `replay` (все окна). Любое расхождение частей — STOP."""
+    first = parts[0]
+    out = {"meta": first["meta"], "flow_mode": first["flow_mode"], "info": {}, "cells": {}, "ok": True}
+    for pt in parts:
+        if pt["meta"] != first["meta"] or pt["flow_mode"] != first["flow_mode"] or set(pt["cells"]) != set(first["cells"]):
+            stop("части replay: meta / режим потока / линии разные")
+        for i, x in pt["cells"].items():
+            y = out["cells"].setdefault(i, {"status": "read", "vid": x["vid"], "keys": x["keys"], "windows": {}, "equal": True})
+            if x["vid"] != y["vid"] or x["keys"] != y["keys"]:
+                stop("части replay: линия %s: vid / ключи разные" % i)
+            dup = set(x["windows"]) & set(y["windows"])
+            if dup:
+                stop("части replay: линия %s: окно %s повторяется" % (i, sorted(dup)))
+            y["windows"].update(x["windows"])
+            y["status"] = y["status"] if y["status"] != "read" else x["status"]
+            y["equal"] = y["equal"] and x["equal"]
+            f = pt["info"][i]
+            g = out["info"].setdefault(i, dict(f, windows={}))
+            g["windows"].update(f.get("windows", {}))
+            if f["status"] != "read":
+                g["status"], g["reason"] = f["status"], f["reason"]
+    out["ok"] = all(v["equal"] and v["status"] == "read" for v in out["cells"].values())
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["build"])
+    ap.add_argument("cmd", choices=["build", "merge-replay"])
+    ap.add_argument("--parts", nargs="+", default=[], help="merge-replay: gate-replay-<окно>.json")
     ap.add_argument("--freeze-dir", default=os.path.join(HERE, "..", "..", "docs", "research", "freeze"))
-    ap.add_argument("--gate-feat", required=True)
-    ap.add_argument("--gate-replay", required=True)
+    ap.add_argument("--gate-feat", default="")
+    ap.add_argument("--gate-replay", default="")
     ap.add_argument("--feat-srv-path", default="", help="путь gate-feat.json на srv (по умолчанию — переданный)")
     ap.add_argument("--replay-srv-path", default="")
     ap.add_argument("--f12-days", type=int, default=f708.F12_DAYS)
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
+    if a.cmd == "merge-replay":
+        if len(a.parts) < 2:
+            stop("merge-replay: нужно ≥ 2 частей (--parts)")
+        res = merge_replay([load(x) for x in a.parts])
+        json.dump(res, open(a.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=float)
+        print("replay (части %d): %s, окна %s -> %s" % (len(a.parts), "ok" if res["ok"] else "НЕ ok", sorted({w for x in res["cells"].values() for w in x["windows"]}), a.out))
+        return 0 if res["ok"] else 3
+    if not a.gate_feat or not a.gate_replay:
+        stop("build: нужны --gate-feat и --gate-replay")
     return build(a)
 
 

@@ -139,6 +139,39 @@ def test_every_gate_difference_stops_the_build():
             stops(t, needle, gf, gr)
 
 
+def test_merge_replay_joins_one_window_parts_and_stops_on_any_difference():
+    _gf, gr = gates()
+    parts = []
+    for w in WINS:
+        pt = json.loads(json.dumps(gr))
+        pt["info"] = {i: {"status": "read", "reason": "", "vid": x["vid"], "keys": x["keys"], "side": "L", "windows": {w: {"rows": 5}}} for i, x in pt["cells"].items()}
+        for x in pt["cells"].values():
+            x["windows"] = {w: x["windows"][w]}
+        parts.append(pt)
+    m = z.merge_replay(parts)
+    assert m["ok"] is True and all(sorted(x["windows"]) == sorted(WINS) and x["equal"] and x["status"] == "read" for x in m["cells"].values()) and m["meta"] == gr["meta"]
+    assert all(sorted(x["windows"]) == sorted(WINS) for x in m["info"].values())
+    with tmp() as t:
+        z.check_replay(m, real_cells()[2])
+        out = os.path.join(t, "m.json")
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = z.main(["merge-replay", "--parts"] + [write(t, "p%d.json" % k, pt) for k, pt in enumerate(parts)] + ["--out", out])
+        assert rc == 0 and json.load(open(out, encoding="utf-8")) == m
+    bad = json.loads(json.dumps(parts))
+    bad[1]["cells"]["L1"]["equal"] = False
+    assert z.merge_replay(bad)["ok"] is False
+    for mut, needle in ((lambda b: b[1]["meta"].__setitem__("tree_files", 1), "meta"), (lambda b: b[1]["cells"]["L1"].__setitem__("vid", "x"), "vid"),
+                        (lambda b: b[1]["cells"]["L1"]["windows"].update(wa=b[0]["cells"]["L1"]["windows"]["wa"]), "повторяется"), (lambda b: b[1]["cells"].pop("S2"), "линии")):
+        b = json.loads(json.dumps(parts))
+        mut(b)
+        try:
+            z.merge_replay(b)
+        except SystemExit as e:
+            assert needle in str(e)
+        else:
+            raise AssertionError(needle)
+
+
 def test_real_committed_file_loads_when_present():
     p = fw.candidate5_path(fw.FREEZE)
     if not os.path.exists(p):
