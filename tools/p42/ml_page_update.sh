@@ -7,6 +7,7 @@
 #   сверяет каждую линию с летописью (/data/chron/chron.sqlite) и принятыми числами — расхождение останавливает выкладку.
 # Вид «Веер» — data/fan/ (tk684_fan.py: все клетки перебора c539 из летописи; TK-696 25.11: с четвёрками шорта ≈ 1,4 млн клеток — десятки минут, юнит Nice 19, память ≤ 16 ГБ); строится, если каталога ещё нет,
 #   пересчитать после новых клеток: REBUILD_FAN=1 bash tools/p42/ml_page_update.sh; готовый каталог (после пробной сборки) выложить без пересчёта: FAN_FROM=/data/p42-tk696/stage/site/data/fan bash tools/p42/ml_page_update.sh
+#   TK-696 (25.11): веер с 01.01.2026 — готовый каталог v2 (136 суток) + массовый прогон TK-700: <venv>/bin/python $CODE/tk684_fan_ext.py <каталог v2> /data/p42-tk700/mass/mass.sqlite <каталог выхода> (systemd-run, Nice 19, ≤ 16 ГБ, ≈ 30 мин), затем FAN_FROM=<каталог выхода>.
 # Пробная копия (TK-696): STAGE=1 — всё то же в /data/p42-tk696/stage (страница на :8095, живую :8090 не трогает; копия живой страницы создаётся при первом запуске): STAGE=1 REBUILD_FAN=1 bash tools/p42/ml_page_update.sh
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/../_ssh.sh"
@@ -18,7 +19,7 @@ else ROOT=/data/pages/ml; SRCD=/data/pages/_src; CODE=/data/p42-tk624/code; PORT
 python -c "import json,sys; json.load(open('ml_features.json', encoding='utf-8'))" || { echo "ml_features.json — не JSON"; exit 2; }
 ssh "${KEY[@]}" "$HOST" "mkdir -p $SRCD $CODE && { [ '$ROOT' = /data/pages/ml ] || [ -d $ROOT ] || cp -a /data/pages/ml $ROOT; }"
 tar -c ml_features.schema.json tk593_page.py tk593_template.html tk684_fan.js ml_page_server.py | ssh "${KEY[@]}" "$HOST" "tar -x -C $SRCD"
-tar -c tk684_equity.py tk684_metrics.py tk684_variants.json tk684_fan.py | ssh "${KEY[@]}" "$HOST" "tar -x -C $CODE"
+tar -c tk684_equity.py tk684_metrics.py tk684_variants.json tk684_fan.py tk684_fan_ext.py | ssh "${KEY[@]}" "$HOST" "tar -x -C $CODE"
 # TK-684 / TK-680: не затирать опись признаков, выложенную из другой ветки и более новую (22.11: выкладка из ветки без TK-681 откатила вкладку «Признаки»;
 # охрана по наибольшему № не ловила ветку с пропуском № 252–307) — заливаем, только если все имена живого файла есть в локальном
 FT_NAMES='import json,sys; print(" ".join(x["name"] for s in json.load(open(sys.argv[1], encoding="utf-8"))["sets"] for g in s["groups"] for x in g["features"]))'

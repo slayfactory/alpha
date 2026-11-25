@@ -150,3 +150,20 @@ def test_fan_pack_layout_parts_and_axes(tmp_path, monkeypatch):
         assert len(meta["k"]) == n
     names = [a["name"] for a in I["axes"]]
     assert "rf" in names and "q" in names and "TPM60" in names
+
+
+def test_fan_ext_vector_metrics_match_scalar():
+    """TK-696: tk684_fan_ext.vmetrics (numpy, целые центы) == tk684_metrics.daily_metrics по ряду; суточные ряды 317 суток, нулевые, плоские, с касанием пика."""
+    np = __import__("numpy")
+    import tk684_fan_ext as ext
+    rng = np.random.default_rng(3)
+    S = (rng.normal(0, 400, (300, 317)) * (rng.random((300, 317)) < 0.3)).astype(np.int32)
+    S[0], S[1], S[2], S[3] = 0, np.where(np.arange(317) % 2, 100, -100), np.where(np.arange(317) < 10, 100, 0), np.where(np.arange(317) == 316, 5, 0)
+    S[4, :4] = [100, -100, 100, 0]                                       # касание пика — не новый максимум
+    sh, dd, gp, mn, mx = ext.vmetrics(S)
+    for i in range(len(S)):
+        m = mt.daily_metrics(S[i] / 100.0)
+        c = np.cumsum(S[i]) / 100.0
+        assert (m["sharpe"] is None and np.isnan(sh[i])) or abs(m["sharpe"] - sh[i]) <= 1e-9 * max(1, abs(m["sharpe"])), i
+        assert abs(m["dd"] - dd[i]) < 1e-9 and m["gap"] == gp[i], (i, m, dd[i], gp[i])
+        assert abs(min(0, c.min()) - mn[i]) < 1e-9 and abs(max(0, c.max()) - mx[i]) < 1e-9

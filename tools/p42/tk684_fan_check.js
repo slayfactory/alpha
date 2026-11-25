@@ -51,7 +51,7 @@ const MS_MAX = 250;      // кадр на самом большом наборе
       const P = await unpack(name);
       return (window.__T.packs[name] = {N: P.N, D: P.D, NF: P.NF, level: P.level, F: new Float32Array(P.F), ids: new Uint32Array(P.ids), axp: new Uint16Array(P.axp), aoff: P.aoff, meta: P.meta, bytes: P.bytes});
     };
-    window.__T.find = async (p, key) => { for (const name of Object.keys(window.__T.I.files).filter(n => n[0] === p)) { const P = await window.__T.load(name); const i = P.meta.k.indexOf(key); if (i >= 0) return {name, level: P.level, f: [...P.F.subarray(i * P.NF, i * P.NF + 5)]}; } return null; };
+    window.__T.find = async (p, key) => { for (const name of Object.keys(window.__T.I.files).filter(n => n[0] === p)) { const P = await window.__T.load(name); const i = P.meta.k.indexOf(key); if (i >= 0) return {name, level: P.level, f: [...P.F.subarray(i * P.NF, i * P.NF + 5)], ext: P.NF > 13 && P.F[i * P.NF + 13] > 0, tail: P.NF > 14 && P.F[i * P.NF + 14] > 0}; } return null; };
     window.__T.hasAx = (P, i, axi) => { for (let q = P.aoff[i]; q < P.aoff[i + 1]; q++) if (P.axp[2 * q] === axi) return true; return false; };
     // клетки файла по id: ключ, поля, накопленный итог суточных центов (файл распаковывается заново и не кэшируется)
     window.__T.sample = async (name, ids) => { const P = await unpack(name); return {bytes: P.bytes, rows: ids.map(id => { const i = P.ids.indexOf(id); let c = 0; for (let d = 0; d < P.D; d++) c += P.cents[i * P.D + d]; return {key: P.meta.k[i], f: [...P.F.subarray(i * P.NF, i * P.NF + P.NF)], cum: c / 100}; })}; };
@@ -123,7 +123,9 @@ const MS_MAX = 250;      // кадр на самом большом наборе
   for (const [p, key, lv, want] of [['S', 'e20+e2t2+n_bounce1+natr_p60+rr1+s4', 4, [2158, 1358.97, 11.275, 40.28, 13]], ['S', 'e20+e2t2+n_bounce1+natr_min0.6+nf1+q100+s4', 4, [1457, 1254.2, 11.373, 40.37, 16]],
     ['L', 's3+CN60_q50+big1800.le_q80+vpin1h.ge_q20', 3, [174, 348.07, 7.169, 17.1, 11]], ['L', 'busy0+s3+tpk3+big1800.le_q80+vpin1h.ge_q20', 4, [227, 382.52, 7.072, 19.13, 11]]]) {
     const r = await page.evaluate(([p, key]) => window.__T.find(p, key), [p, key]);
-    ok(r && r.level === lv && r.f[0] === want[0] && Math.abs(r.f[1] - want[1]) < 0.006 && Math.abs(r.f[2] - want[2]) < 0.006 && Math.abs(r.f[3] - want[3]) < 0.006 && r.f[4] === want[4], 'замороженная линия в веере ' + key + ': ' + JSON.stringify(r));
+    // клетка с рядом января–июня или хвостом 14–24.11 считается по своему окну (01.01–24.11): числа 01.07–13.11 остаются у клеток без них; у остальных — сделок не меньше
+    const win = r && !r.ext && !r.tail;
+    ok(r && r.level === lv && (win ? r.f[0] === want[0] && Math.abs(r.f[1] - want[1]) < 0.006 && Math.abs(r.f[2] - want[2]) < 0.006 && Math.abs(r.f[3] - want[3]) < 0.006 && r.f[4] === want[4] : r.f[0] >= want[0]), 'замороженная линия в веере ' + key + ': ' + JSON.stringify(r));
   }
   // 3. уровни обеих сторон: число линий == независимый счёт; время кадра
   const clickLv = async lv => { await page.click(`#fan-lv button[data-lv="${lv}"]`); rep.clicks++; await ready(); };
@@ -152,7 +154,7 @@ const MS_MAX = 250;      // кадр на самом большом наборе
   }
   await shot('sliders');
   // движение ползунка по самому большому набору (все линии шорта): кадры
-  for (const k of ['sh', 'sum', 'n', 'gap']) { await setSl(k, k === 'gap' ? 136 : -1e9); }
+  for (const k of ['sh', 'sum', 'n', 'gap']) { await setSl(k, k === 'gap' ? 1e9 : -1e9); }
   for (const v of [400, 300, 200, 150, 120, 100, 90]) { await setSl('dd', v); frames.push((await dom()).ms); }
   rep.ms.frames = frames; rep.ms.max = Math.max(...frames, ...Object.values(rep.ms).filter(x => typeof x === 'number'));
   ok(rep.ms.max < MS_MAX, `время кадра ${rep.ms.max.toFixed(0)} мс ≥ ${MS_MAX}`);
@@ -251,6 +253,31 @@ const MS_MAX = 250;      // кадр на самом большом наборе
   const both = v.rows.find(r => r.line === 'both'), la = K.single[J.default.long];
   ok(both && +both.v.n === la.n + +pinRow.v.n && Math.abs(+both.v.sum - (la.sum + +pinRow.v.sum)) < 0.01 && v.paths.length === 3 && Math.abs(v.paths.find(p => p[0] === 'var.both')[1] - (la.sum + +pinRow.v.sum)) < 0.7, 'шорт + лонг с клеткой веера: ' + JSON.stringify([both && both.v, v.paths]).slice(0, 300));
   await shot('open-in-variants');
+  // 6б. веер с 01.01 (TK-696): ось 328 суток (01.01–24.11), поля ext и tail, подпись окна, ось вида «Варианты» у клетки с рядом января–июня и хвостом 14–24.11
+  const I2 = await page.evaluate(() => ({days: FAN.index.days, start: FAN.index.start_ms, off: FAN.index.off, ext_n: FAN.index.ext_n, tail_n: FAN.index.tail_n, tail_from: FAN.index.tail_from, nf: FAN.index.fields.length, last: FAN.index.fields[FAN.index.fields.length - 1]}));
+  eq([I2.days, I2.start, I2.off, I2.tail_from, I2.last, I2.nf], [328, Date.UTC(2026, 0, 1), 181, 317, 'tail', 15], 'ось веера с 01.01');
+  ok(I2.ext_n > 100000 && I2.tail_n > 100000, 'клеток с январём–июнем и с хвостом: ' + I2.ext_n + ' / ' + I2.tail_n);
+  const [pinExt, pinTail] = await page.evaluate(t => { const c = fanCell(t); return [fanIsExt(c.P, c.i), fanIsTail(c.P, c.i)]; }, tok);
+  const sub0 = await page.evaluate(() => document.getElementById('eq-sub').textContent);
+  ok(/01\.01–/.test(sub0) === pinExt && /–24\.11\.2026/.test(sub0) === pinTail, 'подпись окна у выбранной клетки (ext ' + pinExt + ', tail ' + pinTail + '): ' + sub0);
+  const xt = await page.evaluate(() => {      // клетка с рядом января–июня из загруженных пакетов шорта: токен и числа пакета
+    for (const n in FAN.packs) { const P = FAN.packs[n]; if (P.side !== 'short') continue; const NF = FAN.index.fields.length; for (let i = 0; i < P.N; i++) if (P.F[i * NF + F_EXT] > 0 && P.F[i * NF + F_TAIL] > 0 && !Number.isNaN(P.F[i * NF + F_SH])) { let jan = 0; for (let d = 0; d < FAN.index.off; d++) jan += P.cents[i * FAN.index.days + d]; if (jan) { const D = FAN.index.days, x = []; for (let k = 0; k < D; k++) x.push(P.cents[i * D + k] / 100); const mean = x.reduce((a, b) => a + b, 0) / D, sd = Math.sqrt(x.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (D - 1)); let c = 0, pk = 0, dd = 0, hi = 0, last = -1, gap = 0; x.forEach((v, k) => { c += v; pk = Math.max(pk, c); dd = Math.max(dd, pk - c); if (c > hi + 1e-9) { gap = Math.max(gap, k - last); last = k; hi = c; } }); gap = Math.max(gap, D - 1 - last);
+      return {js: [mean / sd * Math.sqrt(365), dd, gap], pk: [P.F[i * NF + F_SH], P.F[i * NF + F_DD], P.F[i * NF + F_GAP]], tok: fanTok(P, i), n: P.F[i * NF + F_N], sum: P.F[i * NF + F_USD], jan: jan / 100, cum: fanCumRow(P, i, new Float64Array(FAN.index.days))[FAN.index.days - 1]}; } } }
+    return null; });
+  ok(xt && xt.tok, 'в загруженных пакетах шорта нет клетки с рядом января–июня');
+  await page.evaluate(t => fanOpen(t), xt.tok); await page.waitForFunction(t => [...document.querySelectorAll('table[data-vtable] tbody tr')].some(r => r.dataset.ids && r.dataset.ids.includes(t)), xt.tok);
+  const xv = await page.evaluate(() => ({sub: document.getElementById('eq-sub').textContent, rows: [...document.querySelectorAll('table[data-vtable] tbody tr')].map(r => ({line: r.dataset.line, v: Object.fromEntries([...r.querySelectorAll('td.num')].map(c => [c.dataset.f, c.dataset.v]))})),
+    paths: [...document.querySelectorAll('#eq-view path[data-chart^="var."]')].map(p => [p.dataset.chart, +p.dataset.final]), ticks: [...document.querySelectorAll('#eq-view svg text')].map(t => t.textContent).filter(t => /^\d\d\.\d\d$/.test(t) || /\d\d\.\d\d\./.test(t)).slice(0, 3)}));
+  const xs = xv.rows.find(r => r.line === 'short'), xb = xv.rows.find(r => r.line === 'both'), xl = xv.rows.find(r => r.line === 'long');
+  ok(/01\.01–24\.11\.2026/.test(xv.sub), 'подпись «Вариантов» с клеткой с рядом января–июня и хвостом: ' + xv.sub);
+  ok(xs && +xs.v.n === xt.n && Math.abs(+xs.v.sum - xt.sum) < 0.01 && xs.v.rr === '' && xs.v.worst === '', 'строка клетки с рядом января–июня == пакет, R:R и худшая «—»: ' + JSON.stringify([xs && xs.v, xt]).slice(0, 300));
+  ok(xb && +xb.v.n === +xl.v.n + xt.n && Math.abs(+xb.v.sum - (+xl.v.sum + xt.sum)) < 0.01 && xb.v.rr === '' && xb.v.worst === '' && xb.v.sharpe !== '' && +xb.v.gap > 0, 'шорт + лонг с клеткой с рядом января–июня: ' + JSON.stringify(xb && xb.v).slice(0, 300));
+  const xp = Object.fromEntries(xv.paths);
+  ok(Math.abs(xp['var.short'] - xt.cum) < 0.01 && Math.abs(xp['var.both'] - (xt.cum + xp['var.long'])) < 0.7, 'кривые: шорт == суточные центы пакета, сумма == лонг + шорт: ' + JSON.stringify([xv.paths, xt.cum]));
+  ok(Math.abs(xt.cum - xt.sum) < 0.7, 'сумма клетки == накопленный ряд: ' + JSON.stringify(xt));
+  ok(Math.abs(xt.js[0] - xt.pk[0]) < 1e-3 && Math.abs(xt.js[1] - xt.pk[1]) < 1e-3 && xt.js[2] === xt.pk[2], 'Шарп / просадка / перехай клетки == независимый счёт по суточным центам (328 суток): ' + JSON.stringify([xt.js, xt.pk]));
+  await shot('open-ext-in-variants');
+  await page.evaluate(t => fanOpen(t), tok); await page.waitForFunction(t => [...document.querySelectorAll('table[data-vtable] tbody tr')].some(r => r.dataset.ids && r.dataset.ids.includes(t)), tok);      // назад к образцу — дальше шаги прежнего теста
   // вторая избранная — кнопкой в «Вариантах»; ссылка «Вариантов» с токеном воспроизводится
   await page.click(`.vr-pick[data-pick="short"] button[data-var="${tok2}"]`); rep.clicks++; await page.waitForTimeout(200);
   const h2 = await page.evaluate(() => decodeURIComponent(location.hash));

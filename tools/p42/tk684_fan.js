@@ -2,10 +2,15 @@
 // Данные — data/fan/ (tk684_fan.py: суточные ряды и метрики клеток из летописи), подгружаются по уровням при открытии вида.
 // Клетка = «токен» <L|S><уровень><id строки metric в 36-ричной>: закреплённый образец и избранное живут в хеше, открываются в виде «Варианты».
 const FAN = {index: null, packs: {}, sets: {}, busy: 0, err: null, view: null, hover: null};
-const F_N = 0, F_USD = 1, F_SH = 2, F_DD = 3, F_GAP = 4, F_NW = 5, F_MW = 6, F_NL = 7, F_ML = 8, F_WORST = 9, F_SPLIT = 10, F_MN = 11, F_MX = 12;
+const F_N = 0, F_USD = 1, F_SH = 2, F_DD = 3, F_GAP = 4, F_NW = 5, F_MW = 6, F_NL = 7, F_ML = 8, F_WORST = 9, F_SPLIT = 10, F_MN = 11, F_MX = 12, F_EXT = 13, F_TAIL = 14;
+// ось веера: с 01.01.2026 по 24.11 (index.start_ms, 328 суток); клетка с рядом января–июня — поле ext = 1 (у остальных нули до index.off, 01.07), с хвостом 14–24.11 — tail = 1 (у остальных нули с index.tail_from, 14.11); в старом каталоге (136 суток от 01.07) нет ни start_ms, ни ext, ни tail
+const fanStart = () => (FAN.index && FAN.index.start_ms != null ? FAN.index.start_ms : V.start_ms), fanOff = () => (FAN.index && FAN.index.off) || 0;
+const fanFlag = (P, i, f) => { const NF = FAN.index.fields.length; return NF > f && P.F[i * NF + f] > 0; }, fanIsExt = (P, i) => fanFlag(P, i, F_EXT), fanIsTail = (P, i) => fanFlag(P, i, F_TAIL);
 const FAN_LV = [['1', 'единички'], ['2', 'пары'], ['3', 'тройки'], ['4', 'четвёрки'], ['split', 'вход двумя частями'], ['all', 'все']];
 const FAN_SL = [['dd', 'Просадка ≤, $', F_DD, 'max', 1], ['gap', 'Перехай ≤, сут.', F_GAP, 'max', 1], ['n', 'Сделок ≥', F_N, 'min', 1], ['sum', 'Сумма ≥, $', F_USD, 'min', 1], ['sh', 'Шарп ≥', F_SH, 'min', 0.1]];
 const FAN_TOP = [0, 20, 50, 100, 500], FAN_ROWS = 30, FAN_LINES = 300, FAN_DENS_MAX = 12000, FAN_SIM_N = 50, FAN_NEAR_MAX = 100000;
+// число линий в кадре и под курсором — по бюджету работы «линии × сутки»: при оси длиннее 136 суток (TK-696, 328) выборка короче, кадр остаётся в прежних 250 мс
+const fanBudget = n => Math.round(n * Math.min(1, 136 / FAN.index.days));
 const FAN_COL = {anchor: '#18181b', pin: '#c0265b', fav: ['#1baf7a', '#6250d6', '#b8860b', '#0e7490', '#a3369c', '#008300']};
 const FAN_DEF = () => ({lv: '2', ax: null, top: 0, by: 'sh', dd: null, gap: null, n: null, sum: null, sh: null, pin: null, sim: false, sk: null, sd: 'd'});
 // порядок таблицы по столбцу (клик по заголовку, повторный клик — наоборот): ключи — «Линия», столбцы V_COLS, «Сходство»; первый клик: имя и «меньше — лучше» (просадка, перехай) — по возрастанию, остальные — по убыванию
@@ -88,8 +93,8 @@ function fanM(c) {      // метрики клетки из пакета — ч�
 function fanVariant(tok) {
   const c = fanCell(tok); if (!c) return null;
   const D = FAN.index.days, NF = FAN.index.fields.length, F = c.P.F, o = c.i * NF, d = [], v = [], t = [];
-  for (let k = 0; k < D; k++) { const x = c.P.cents[c.i * D + k] / 100; if (x) { d.push(k); v.push(x); t.push(V.start_ms + (k + 1) * 86400e3 - 1); } }
-  return {id: tok, side: c.P.side, group: 'fan', label: fanNoBp(c.P.keys[c.i]), key: c.P.keys[c.i], status: c.P.level ? 'подобрано на этих данных' : '', d, v, t, m: fanM(c),
+  for (let k = 0; k < D; k++) { const x = c.P.cents[c.i * D + k] / 100; if (x) { d.push(k); v.push(x); t.push(fanStart() + (k + 1) * 86400e3 - 1); } }
+  return {id: tok, side: c.P.side, group: 'fan', fan: true, ext: fanIsExt(c.P, c.i), tail: fanIsTail(c.P, c.i), label: fanNoBp(c.P.keys[c.i]), key: c.P.keys[c.i], status: c.P.level ? 'подобрано на этих данных' : '', d, v, t, m: fanM(c),
     agg: {n: F[o + F_N], sum: F[o + F_USD], nw: F[o + F_NW], sw: F[o + F_NW] * F[o + F_MW], nl: F[o + F_NL], sl: F[o + F_NL] * F[o + F_ML], worst: F[o + F_WORST]}};
 }
 // догрузить пакеты токенов (образец, избранное, выбранные в «Вариантах») и перерисовать вид
@@ -220,7 +225,7 @@ function fanDraw() {
   Object.assign(X, {lo, hi, m, pw, ph, Y, Xd});
   g.font = '11px Inter,ui-sans-serif,system-ui,sans-serif'; g.fillStyle = '#71717a'; g.strokeStyle = '#efeff1'; g.lineWidth = 1;
   ticks(lo, hi, 5).forEach(v => { g.beginPath(); g.moveTo(m.l, Y(v) + .5); g.lineTo(w - m.r, Y(v) + .5); g.stroke(); g.textAlign = 'right'; g.fillText(num(v, 0), m.l - 7, Y(v) + 3.5); });
-  g.textAlign = 'center'; for (let d = 0; d <= D; d += w < 560 ? 28 : 14) g.fillText(fday(V.start_ms + d * 86400e3), Xd(d), hh - m.b + 15);
+  g.textAlign = 'center'; for (let d = 0; d <= D; d += (w < 560 ? 28 : 14) * (D > 200 ? 2 : 1)) g.fillText(fday(fanStart() + d * 86400e3), Xd(d), hh - m.b + 15);
   const base = fanRGB(V_COL[side]), axv = sel.axi >= 0 ? I.axes[sel.axi].vals.length : 0;
   const colOf = j => { if (sel.axi < 0) return base; const v = fanAxVal(S.sp[j], S.si[j], sel.axi); return v >= 0 ? fanHue(v, axv) : base; };
   if (sel.shown.length > FAN_LINES) {
@@ -228,7 +233,7 @@ function fanDraw() {
     const gw = Math.min(Math.round(pw), D * 2), gh = Math.round(ph), cnt = new Uint32Array(gw * gh), mix = axv ? new Float32Array(gw * gh * 3) : null, ky = gh / (hi - lo);
     const xa = new Int32Array(D + 1), fr = new Float64Array(gw), shown = sel.shown;
     // очень много линий: плотность по выборке — по одной из каждых stp подряд (место внутри блока меняется), с весом блока; счётчики и границы осей — по всем
-    const stp = Math.max(1, Math.ceil(shown.length / FAN_DENS_MAX)), ns = Math.ceil(shown.length / stp);
+    const stp = Math.max(1, Math.ceil(shown.length / fanBudget(FAN_DENS_MAX))), ns = Math.ceil(shown.length / stp);
     for (let d = 0; d <= D; d++) xa[d] = Math.min(Math.ceil(d * gw / D), gw);
     for (let d = 0; d < D; d++) for (let x = xa[d]; x < xa[d + 1]; x++) fr[x] = (x - d * gw / D) / (gw / D);
     for (let s = 0; s < ns; s++) {
@@ -285,13 +290,13 @@ function fanNearest(ev) {
   if (x < X.m.l - 4 || x > X.w - X.m.r + 4 || !X.sel.shown.length) return null;
   const d = Math.max(0, Math.min(D - 1, Math.round((x - X.m.l) / X.pw * D) - 1)), v = X.hi - (y - X.m.t) / X.ph * (X.hi - X.lo);
   let best = -1, bd = Infinity;
-  const shown = X.sel.shown, stp = Math.max(1, Math.ceil(shown.length / FAN_NEAR_MAX));      // очень много линий — ближайшая среди выборки (как и рисуется выборка)
+  const shown = X.sel.shown, stp = Math.max(1, Math.ceil(shown.length / fanBudget(FAN_NEAR_MAX)));      // очень много линий — ближайшая среди выборки (как и рисуется выборка)
   for (let q = 0; q < shown.length; q += stp) { const j = shown[q], cn = X.S.sp[j].cents, o = X.S.si[j] * D; let c = 0; for (let k = 0; k <= d; k++) c += cn[o + k]; const e = Math.abs(c / 100 - v); if (e < bd) { bd = e; best = j; } }
   return best < 0 ? null : {P: X.S.sp[best], i: X.S.si[best], d};
 }
 function fanTip(c, ev) {
   const mm = fanM(c), D = FAN.index.days;
-  tip.innerHTML = `<div class="t">${fanNoBp(c.P.keys[c.i])}</div>` + (c.d == null ? '' : `<div class="r"><span>${fday(V.start_ms + c.d * 86400e3)}</span><span>${money(fanCum(c.P, c.i, c.d))} $</span></div>`)
+  tip.innerHTML = `<div class="t">${fanNoBp(c.P.keys[c.i])}</div>` + (c.d == null ? '' : `<div class="r"><span>${fday(fanStart() + c.d * 86400e3)}</span><span>${money(fanCum(c.P, c.i, c.d))} $</span></div>`)
     + [['Сделок', V_FMT.n(mm.n)], ['Сумма, $', V_FMT.sum(mm.sum)], ['Шарп (год)', mm.sharpe == null ? '—' : V_FMT.sharpe(mm.sharpe)], ['Просадка, $', V_FMT.dd(mm.dd)], ['Перехай, сут.', mm.gap]].map(([k, v]) => `<div class="r"><span>${k}</span><span>${v}</span></div>`).join('');
   tip.style.display = 'block'; moveTip(ev);
 }
