@@ -30,6 +30,7 @@ import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+from tk700_win import win_choices  # noqa: E402
 
 PROD, ASM, DATA = "/data/p42-tk671/prod", "/data/p42-tk671/asm", "/data/p42-tk671/data"
 SRC_TF = np.array([30, 30, 30, 60, 60, 60, 240, 240, 240, 60, 60, 60], dtype=np.int64)
@@ -292,7 +293,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
     p = sp.add_parser("prep")
-    p.add_argument("--win", required=True, choices=("wa", "wb", "wc"))
+    p.add_argument("--win", required=True, choices=win_choices())
     p.add_argument("--side", required=True, choices=("long", "short"))
     p.add_argument("--out", required=True)
     p.add_argument("--which", default="tf", choices=("tf", "all"))
@@ -305,7 +306,7 @@ def main():
     p.add_argument("--new", required=True)
     p.set_defaults(fn=cmd_gate_bin)
     p = sp.add_parser("gate-py")
-    p.add_argument("--win", required=True, choices=("wa", "wb", "wc"))
+    p.add_argument("--win", required=True, choices=win_choices())
     p.add_argument("--side", required=True, choices=("long", "short"))
     p.add_argument("--dir", required=True)
     p.add_argument("--new", required=True)

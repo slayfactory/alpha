@@ -24,6 +24,7 @@ import pyarrow.parquet as pq
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+from tk700_win import win_choices  # noqa: E402
 
 SOURCES = ["p30n1", "p30n2", "p30n3", "p60n1", "p60n2", "p60n3", "p240n1", "p240n2", "p240n3", "lxD", "lxW", "lxP"]
 MIN_MS, DAY_MS = 60_000, 86_400_000
@@ -74,7 +75,7 @@ def build(side, win, dumps, out, gap_min=60, sources=None, twin=None):
             tk = set(zip(tr["sym"].tolist(), tr["sig_ms"].tolist()))
             # сигналы базы без входа (`entryrej`: вход не состоялся) — тоже строки: заполнение входа — будущее, членство в наборе от него зависеть не должно
             rj = tw.replace("-trades.csv", "-entryrej.csv")
-            if os.path.exists(rj):
+            if rj != tw and os.path.exists(rj):          # TK-700: при `--twin-dumps` путь — дамп `-sigsx.csv`, entryrej отдельно нет (ключи дампа уже полные)
                 er = pacsv.read_csv(rj, convert_options=pacsv.ConvertOptions(include_columns=["sym", "sig_ms"], column_types={"sym": pa.string()})).to_pandas()
                 tk |= set(zip(er["sym"].tolist(), er["sig_ms"].tolist()))
                 stat["sources"].setdefault(src, {})["twin_entryrej"] = int(len(er))
@@ -128,18 +129,22 @@ def main():
     sp = ap.add_subparsers(dest="cmd", required=True)
     b = sp.add_parser("build")
     b.add_argument("--side", required=True, choices=["long", "short"])
-    b.add_argument("--win", required=True, choices=["wa", "wb", "wc"])
+    b.add_argument("--win", required=True, choices=win_choices())
     b.add_argument("--dumps", required=True)
     b.add_argument("--out", required=True)
     b.add_argument("--gap-min", type=int, default=60)
     b.add_argument("--sources")
     b.add_argument("--twin", help="каталог twin-<окно>/out с L_ind / S_ind / D_ind (tk671_twin.sh): добавка строк-сигналов базы")
+    b.add_argument("--twin-dumps", help="TK-700: каталог `dumps` режима `tk700_sig.sh ind` (L_ind / S_ind / D_ind без P&L): ключи базы — по `<side>-sigsx.csv` вместо сделок и entryrej двойников (ворота G1)")
     a = ap.parse_args()
     tw = None
-    if a.twin:
-        tw = {"p60n2": os.path.join(a.twin, "L_ind" if a.side == "long" else "S_ind", f"{a.side}-trades.csv")}
+    if a.twin and a.twin_dumps:
+        raise SystemExit("--twin и --twin-dumps вместе нельзя")
+    if a.twin or a.twin_dumps:
+        d, fn = (a.twin, "%s-trades.csv") if a.twin else (a.twin_dumps, "%s-sigsx.csv")
+        tw = {"p60n2": os.path.join(d, "L_ind" if a.side == "long" else "S_ind", fn % a.side)}
         if a.side == "short":
-            tw["lxD"] = os.path.join(a.twin, "D_ind", "short-trades.csv")
+            tw["lxD"] = os.path.join(d, "D_ind", fn % "short")
     s = build(a.side, a.win, a.dumps, a.out, a.gap_min, a.sources.split(",") if a.sources else None, tw)
     print(json.dumps({k: v for k, v in s.items() if k != "sources"}, ensure_ascii=False))
 

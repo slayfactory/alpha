@@ -17,6 +17,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+from tk700_win import win_choices  # noqa: E402
 ROOT = "/data/p42-tk634"
 BIN = "/data/p42-tk609/bin/alpha-feat-v6c.992cde46"
 BIN_MD5_PREFIX = "992cde46"
@@ -85,7 +86,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("cmd", choices=["build"])
     ap.add_argument("--uni", required=True, choices=("h775", "o566"))
-    ap.add_argument("--window", required=True, choices=("wa", "wb", "wc"))
+    ap.add_argument("--window", required=True, choices=win_choices())
     ap.add_argument("--side", required=True, choices=("L", "S"))
     ap.add_argument("--procs", type=int, default=4)
     ap.add_argument("--force", action="store_true")
