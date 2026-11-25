@@ -32,6 +32,7 @@ def main():
     ap.add_argument("level")
     ap.add_argument("n1", type=int)
     ap.add_argument("--n2", type=int, default=None)
+    ap.add_argument("--m", type=int, default=None, help="основное m чтения (PS-1006 C2: различные клетки объединения); шум = σ·√(2 ln m), справочно — шум карты (все клетки шорта в БД)")
     ap.add_argument("--anchor", type=float, default=3.63)
     a = ap.parse_args()
     m = json.load(open(a.map, encoding="utf-8"))
@@ -41,6 +42,10 @@ def main():
     bad = sum(1 for p, t in zip(pairs, taken) if abs(p["score"] - t["score"]) > 1e-9)
     print("карта: четвёрок %d, клеток %d, m %d, σ %.3f, шум %.2f; порядок карты = порядок отбора: расхождений %d" % (len(pairs), m["n_cells"], m["m"], m["sharpe_sd"], m["noise_max"], bad))
     noise = m["noise_max"]
+    if a.m:
+        import math
+        noise_ref, noise = noise, m["sharpe_sd"] * math.sqrt(2 * math.log(a.m))
+        print("основное m %d → шум %.2f (σ %.3f); справочно шум карты %.2f при m %d" % (a.m, noise, m["sharpe_sd"], noise_ref, m["m"]))
     cuts = [0, a.n1] + ([a.n2] if a.n2 else []) + [len(pairs)]
     ss = [stage_stats(pairs, lo, hi, a.anchor, noise) for lo, hi in zip(cuts, cuts[1:])]
     for k, s in enumerate(ss, 1):
