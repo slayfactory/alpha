@@ -47,6 +47,10 @@ const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'Н
   const BY = Object.fromEntries(J.variants.map(v => [v.id, v]));
   const longs = J.variants.filter(v => v.side === 'long'), shorts = J.variants.filter(v => v.side === 'short');
   const close = (a, b) => Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b));
+  // TK-696 (25.11): четыре замороженные линии — группа «заморожено 25.11», числа == принятым в летописи (S1 / S2 — L-428; L1 / L2 — настоящие значения признаков, L-434)
+  const FROZEN = {fs1: [2158, 1358.97, 11.275, 40.28, 13], fs2: [1457, 1254.2, 11.373, 40.37, 16], fl1: [174, 348.07, 7.169, 17.1, 11], fl2: [227, 382.62, 7.073, 19.13, 11]};
+  for (const [id, [n, sum, sh, dd, gap]] of Object.entries(FROZEN)) { const k = K.single[id]; ok(BY[id] && BY[id].group === 'frozen' && BY[id].status === 'заморожено 25.11' && k && k.n === n && Math.abs(k.sum - sum) < 0.006 && Math.abs(k.sharpe - sh) < 0.006 && Math.abs(k.dd - dd) < 0.006 && k.gap === gap, 'замороженная линия ' + id + ': ' + JSON.stringify([BY[id] && BY[id].status, k])); }
+  eq(J.groups.map(g => g.label), ['', 'заморожено 25.11'], 'группы вариантов');
   // таблица == данные: строки по выбранным линиям, числа (data-v) и текст ячеек
   const checkTable = (d, l, s, m) => {
     const want = [];

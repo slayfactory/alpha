@@ -46,7 +46,8 @@ def load(side, d):
 
 def chron_row(db, cell, side):
     """(принятые метрики, каталоги сделок по окнам) — строка `metric` клетки на вселенной варианта, основное окно (последняя по id)."""
-    r = db.execute("select trades, usd, sharpe, extra from metric where cell = ? and side = ? and uni = ? and win = ? order by id desc limit 1", (cell, side, SRC["universe"], SRC.get("win", "01.07–13.11"))).fetchone()
+    # строки без каталогов сделок (отбор / заморозка / поправки L-426, L-434 — только числа) не считаются: берётся последняя строка клетки с extra.dirs
+    r = db.execute("select trades, usd, sharpe, extra from metric where cell = ? and side = ? and uni = ? and win = ? and extra like '%\"dirs\"%' order by id desc limit 1", (cell, side, SRC["universe"], SRC.get("win", "01.07–13.11"))).fetchone()
     assert r, "летопись: нет строки metric для клетки %s (%s)" % (cell, side)
     ex = json.loads(r[3] or "{}")
     out = {"n": r[0], "sum": r[1], "sharpe": r[2], "dd": ex.get("maxdd"), "gap": (ex.get("kpi") or {}).get("gap_longest"), "worst": (ex.get("lmax") or {}).get("worst"), "rr": (ex.get("rr") or {}).get("rr")}
