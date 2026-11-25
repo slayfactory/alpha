@@ -2,7 +2,9 @@
 
 use super::*;
 use crate::breakout::memo::{MoveKey, MoveMemo};
-use crate::breakout::tick::TickResult;
+use crate::breakout::tick::{
+    level_ctx, sim_fill_lc_s, sim_fill_mem, Cursor as TickCursor, LevelCtx, TickResult,
+};
 
 struct MemoSrc<'a> {
     inner: &'a MemSrc,
@@ -164,4 +166,135 @@ fn get_or_compute_computes_each_key_once_and_the_key_includes_every_argument() {
     // различных ключей 3: `entry_ms` и `stop_px` входят в ключ
     assert_eq!(calls, 3);
     assert_eq!(memo.counts(), (5, 2, 3, 0));
+}
+
+/// Ход по ленте от места `(day, idx)` — как до TK-706 (внешний старт читал сделки с индекса сигнала + 1).
+fn reference(
+    src: &MemSrc,
+    day: usize,
+    idx: usize,
+    entry_ms: i64,
+    p0: i64,
+    p: &Params,
+    lc: LevelCtx,
+) -> TickOut {
+    let mut cur = TickCursor::new(src, "TEST", day, idx);
+    sim_fill_lc_s(
+        &mut || cur.next_tick(),
+        entry_ms,
+        p0,
+        Side::Long,
+        1_000_000,
+        &p.exit,
+        Some(lc),
+        NOTIONAL_U,
+        0,
+        None,
+    )
+}
+
+#[test]
+fn derived_stream_start_equals_every_valid_cursor_start() {
+    // C1: место старта чтения выводится из `entry_ms`; результат равен счёту от любого корректного места (до первой сделки со временем > `entry_ms`)
+    let (syms, sigs, src, p) = memo_world();
+    let lc = level_ctx(&syms[0], Side::Long, &sigs[0], &p.exit);
+    let t1 = BORN + 100;
+    let day = t1 / 1440;
+    let entry_ms = day as i64 * DAY_MS + (t1 % 1440) as i64 * MIN_MS + 20_000; // время третьей сделки (индекс 2)
+    let p0 = px(99.8);
+    let derived = sim_fill_mem(
+        &src,
+        "TEST",
+        entry_ms,
+        p0,
+        Side::Long,
+        1_000_000,
+        &p.exit,
+        lc,
+        NOTIONAL_U,
+        0,
+        None,
+    );
+    assert!(derived.exit_ms > entry_ms);
+    for idx in [0, 1, 2, 3] {
+        assert_eq!(
+            derived,
+            reference(&src, day, idx, entry_ms, p0, &p, lc),
+            "старт с индекса {idx}"
+        );
+    }
+}
+
+#[test]
+fn derived_stream_start_crosses_midnight_and_skips_a_day_without_file() {
+    let (syms, sigs, _, p) = memo_world();
+    let lc = level_ctx(&syms[0], Side::Long, &sigs[0], &p.exit);
+    let day = (BORN + 100) / 1440;
+    let last = DAY_MS as u32 - 1000;
+    let mut m = HashMap::new();
+    m.insert(
+        ("TEST".to_string(), day),
+        Arc::new(vec![
+            Tick::new(px(99.0), 1000, false),
+            Tick::new(px(99.5), last, false),
+        ]),
+    );
+    // следующие сутки без файла, через одни — сделка ниже стопа
+    m.insert(
+        ("TEST".to_string(), day + 2),
+        Arc::new(vec![Tick::new(px(80.0), 1000, true)]),
+    );
+    let src = MemSrc(m);
+    let entry_ms = day as i64 * DAY_MS + i64::from(last);
+    let p0 = px(99.5);
+    let derived = sim_fill_mem(
+        &src,
+        "TEST",
+        entry_ms,
+        p0,
+        Side::Long,
+        1_000_000,
+        &p.exit,
+        lc,
+        NOTIONAL_U,
+        0,
+        None,
+    );
+    assert_eq!(derived.exit_ms, (day as i64 + 2) * DAY_MS + 1000);
+    assert_eq!(derived, reference(&src, day, 0, entry_ms, p0, &p, lc));
+    // вход раньше всех сделок суток и вход в сутки без файла
+    let early = sim_fill_mem(
+        &src,
+        "TEST",
+        day as i64 * DAY_MS + 500,
+        p0,
+        Side::Long,
+        1_000_000,
+        &p.exit,
+        lc,
+        NOTIONAL_U,
+        0,
+        None,
+    );
+    assert_eq!(
+        early,
+        reference(&src, day, 0, day as i64 * DAY_MS + 500, p0, &p, lc)
+    );
+    let no_file = sim_fill_mem(
+        &src,
+        "TEST",
+        (day as i64 + 1) * DAY_MS + 5,
+        p0,
+        Side::Long,
+        1_000_000,
+        &p.exit,
+        lc,
+        NOTIONAL_U,
+        0,
+        None,
+    );
+    assert_eq!(
+        no_file,
+        reference(&src, day + 1, 0, (day as i64 + 1) * DAY_MS + 5, p0, &p, lc)
+    );
 }

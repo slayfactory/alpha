@@ -2011,14 +2011,14 @@ pub fn sim_fill_lc_s(
     )
 }
 
-/// TK-706: ход лота по ленте монеты `coin` от места `(day, idx)` (сделки после `entry_ms`; место старта — только где начать чтение) с памятью исходов запуска:
-/// ход — чистая функция аргументов и ленты, поэтому равный ключ (`MoveKey`: все аргументы по значению + монета) берёт готовый исход; без памяти (`move_memo` = `None`) —
-/// прежний счёт по свежему курсору. Ход лота 2 — тот же вызов с `m2` / `q0` / `lot2_n` / `stop2`.
+/// TK-706: ход лота по ленте монеты `coin` (сделки строго после `entry_ms`) с памятью исходов запуска: ход — чистая функция аргументов и ленты, поэтому равный
+/// ключ (`MoveKey`: все аргументы по значению + монета) берёт готовый исход; без памяти (`move_memo` = `None`) — прежний счёт по свежему курсору. Место старта
+/// чтения **выводится из `entry_ms`** (сутки входа, первая сделка со временем > `entry_ms` — двоичный поиск), а не берётся извне: ключ определяет ход целиком
+/// (условие C1 критика). Ход лота 2 — тот же вызов с `m2` / `q0` / `lot2_n` / `stop2`.
 #[allow(clippy::too_many_arguments)]
-fn sim_fill_mem(
+pub(super) fn sim_fill_mem(
     src: &dyn TradeSrc,
     coin: &str,
-    start: (usize, usize),
     entry_ms: i64,
     p0: i64,
     side: Side,
@@ -2030,7 +2030,12 @@ fn sim_fill_mem(
     stop_px: Option<i64>,
 ) -> TickOut {
     let mut compute = || {
-        let mut cur = Cursor::new(src, coin, start.0, start.1);
+        let day = (entry_ms.max(0) / DAY_MS) as usize;
+        let base = day as i64 * DAY_MS;
+        let idx = src.day(coin, day).map_or(0, |v| {
+            v.partition_point(|x| base + i64::from(x.off()) <= entry_ms)
+        });
+        let mut cur = Cursor::new(src, coin, day, idx);
         sim_fill_lc_s(
             &mut || cur.next_tick(),
             entry_ms,
@@ -3498,9 +3503,8 @@ pub fn run_tick_xb(
             match dec {
                 EntryDec::Next => simulate_tick(src, sym, side, sg, natr, ex),
                 EntryDec::Fill { ms, p0 } => {
-                    let start = (usize::from(sg.day), sg.idx as usize + 1);
                     let t1 = sim_fill_mem(
-                        src, &sym.name, start, ms, p0, side, natr, ex, lc, lot_n, entry_slip, None,
+                        src, &sym.name, ms, p0, side, natr, ex, lc, lot_n, entry_slip, None,
                     );
                     if maker {
                         res.mk[0] += 1;
@@ -3553,8 +3557,8 @@ pub fn run_tick_xb(
                             } => {
                                 res.lot2[usize::from(!immediate)] += 1;
                                 tr2 = Some(sim_fill_mem(
-                                    src, &sym.name, start, m2, q0, side, natr, ex, lc, lot2_n,
-                                    entry_slip, stop2,
+                                    src, &sym.name, m2, q0, side, natr, ex, lc, lot2_n, entry_slip,
+                                    stop2,
                                 ));
                             }
                             Lot2Dec::Cancel => res.lot2[2] += 1,

@@ -6,7 +6,7 @@ NAME=${1:?имя бинаря}
 LOG=/root/perf706/bins/build-$NAME.log
 cd /root/perf706/src-memo || exit 1
 t0=$(date +%s)
-cargo build --profile p42 --offline --bin alpha --target-dir /root/perf706/tgt-$NAME -j2 >> $LOG 2>&1
+cargo build --profile p42 --offline --bin alpha --target-dir /root/perf706/tgt-$NAME -j${J:-2} >> $LOG 2>&1
 rc=$?
 cp /root/perf706/tgt-$NAME/p42/alpha /root/perf706/bins/$NAME 2>>$LOG
 echo "== $NAME rc=$rc took $(( $(date +%s)-t0 )) s $(md5sum /root/perf706/bins/$NAME | cut -c1-8)" >> $LOG
