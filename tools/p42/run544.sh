@@ -4,7 +4,8 @@
 # Использование: bash tools/p42/run544.sh run|tick <name> [бинарь на srv]
 set -euo pipefail
 KIND="${1:?run|tick}"; NAME="${2:?name}"; SRV=/data/p42-544; LOC=data/p42v2-544; BIN="${3:-/data/p42v2/bin/alpha-p42-v11}"; TH=6
-K=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15)
+. "$(dirname "${BASH_SOURCE[0]}")/../_ssh.sh"
+K=("${SSH_ID[@]}" -o ConnectTimeout=15)
 H=root@5.231.25.224
 cd "$(dirname "$0")/../.."
 ssh "${K[@]}" "$H" "mkdir -p $SRV/out; [ -e $SRV/cache ] || ln -s /data/p42v2/cache $SRV/cache"

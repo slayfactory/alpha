@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 """PreToolUse (Bash/PowerShell): отказ голому `systemd-run … CPUQuota` на сервере счёта (TK-133 С-49, правило 06.10).
 
-Новое производство — только `python3 /data/sched/alsched.py submit …` (пакование ядер, бюджет памяти); замеры —
-`/data/benchrun.sh`. Голый systemd-run мимо демона ломает учёт ядер (сумма заданий ≤ 1500 %).
-Обход: `alsched` или `benchrun` в той же команде (submit/обёртка), либо переменная ALPHA_BARE_SYSTEMD_RUN_OK=1."""
+calc выведен (В-102, TK-703: связка alsched/benchrun удалена): любой `systemd-run … CPUQuota` на нём — отказ.
+Обход — только переменная ALPHA_BARE_SYSTEMD_RUN_OK=1."""
 import json, os, re, sys
 
 HOST = os.environ.get("RPV_GUARD_HEAVY_HOST", "89.163.242.211")
 ON_CALC = re.compile(re.escape(HOST) + r"|(?:^|[\s@'\"])calc(?:$|[\s'\"])")
 RUN = re.compile(r"(?:^|[\s;&|(`'\"])systemd-run\s")
 QUOTA = re.compile(r"CPUQuota", re.I)
-MSG = ("Голый systemd-run … CPUQuota на сервере счёта запрещён (правило 06.10 17:40, С-49): новое производство — "
-       "python3 /data/sched/alsched.py submit --cls prod --name N --max-runtime T --cores N --mem G -- команда; "
-       "замеры — /data/benchrun.sh wave|stand.")
+MSG = ("calc выведен (В-102): systemd-run … CPUQuota на нём запрещён, связка alsched/benchrun удалена (TK-703). "
+       "Счёт и сборки — srv (юнит systemd-run на srv, CPUQuota по правилам AGENTS.md).")
 
 
 def verdict(cmd):
@@ -20,8 +18,6 @@ def verdict(cmd):
     if os.environ.get("ALPHA_BARE_SYSTEMD_RUN_OK") == "1":
         return None
     if not (RUN.search(cmd) and QUOTA.search(cmd) and ON_CALC.search(cmd)):
-        return None
-    if "alsched" in cmd or "benchrun" in cmd:
         return None
     return MSG
 

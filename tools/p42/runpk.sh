@@ -4,7 +4,8 @@
 # Использование: bash tools/p42/runpk.sh 544|566 [бинарь на srv]
 set -euo pipefail
 U="${1:?544|566}"; BIN="${2:-/data/p42v2/bin/alpha-p42-v13}"; SRV=/data/p42-t$U; TH=6; NAME=pk
-K=(-i /c/Users/Георгий/.ssh/id_rsa -o UserKnownHostsFile=/c/Users/Георгий/.ssh/known_hosts -o ConnectTimeout=15)
+. "$(dirname "${BASH_SOURCE[0]}")/../_ssh.sh"
+K=("${SSH_ID[@]}" -o ConnectTimeout=15)
 H=root@5.231.25.224
 ssh "${K[@]}" "$H" "cat > $SRV/variants-$NAME.txt" <<EOS
 b0 lat=4 latx=4

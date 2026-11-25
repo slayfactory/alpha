@@ -107,6 +107,7 @@ impl SigmaSeries {
         Some((end_cum - start_cum).max(0.0).sqrt())
     }
 
+    #[cfg(test)]
     /// Число секунд в ряду.
     pub fn len_secs(&self) -> usize {
         self.cum_sq.len()

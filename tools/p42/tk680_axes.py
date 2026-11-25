@@ -51,14 +51,18 @@ GRID_OLD = {"natr_min": _o(0.2, 0.4, 0.6, 0.8), "t1h": _o(0.25, 0.5, 1, 2), "t24
             "fb": _o(0.25, 0.5, 1), "e": ({"0.1", "0.15", "0.3", "0.5"}, {"0.05", "0.1", "0.15", "0.3", "0.5"}), "ew": _o(5, 20, 100), "p": _o(1, 2, 3, 5, 8)}
 
 
-def engine_axes(side):
-    if SET == "grid":
+def engine_axes(side, sset=None):
+    """Оси ключей набора `sset` (по умолчанию — набор процесса TK680_SET; режим TK674_X680 читает карты всех наборов)."""
+    sset = SET if sset is None else sset
+    if sset == "grid":
         return grid_axes(side)
-    if SET in ("hist", "ctx"):
+    if sset in ("hist", "ctx", "t697", "t697b", "t701"):
         return []
-    if SET == "t681":
+    if sset == "t697k":
+        return t697k_axes(side)
+    if sset == "t681":
         return t681_axes(side)
-    if SET == "new":
+    if sset == "new":
         return new_axes(side)
     S = side == "S"
     out = [
@@ -157,12 +161,66 @@ T681_SM = (0.1, 0.2, 0.3, 0.5)                   # минимальное рас
 T681_SM_PARENT = (("sl", dict(sl=3.5)), ("cw", dict(cw=30, cl=0, ch=1000, cm=0.5)), ("nx", dict(nx=3.5)))
 FAST_NAMES = (["tfv30", "tfn30", "vpin300", "bigimb10", "bigimb30", "bigimb60", "sac10", "sac30", "sac60", "mk1_10", "mk1_30", "mk5_30", "mk5_60", "mk10_60", "kyle1m", "amih1m",
                "kyle5m", "amih5m"] + ["acc%s%d_%d" % (k, s_, P) for s_ in (1, 5, 10, 30) for P in (60, 300) for k in ("n", "v", "dn", "dv")])
-COVER_MIN = 0.7 if SET == "t681" else 0.0       # столбец, определённый менее чем у такой доли кандидатов базы (зачётный диапазон), активным не бывает — только описание (критик PS-974: пустая половина стоит в тихих минутах)
+COVER_MIN = 0.7 if SET in ("t681", "t697", "t697b", "t701") else 0.0       # столбец, определённый менее чем у такой доли кандидатов базы (зачётный диапазон), активным не бывает — только описание (критик PS-974: пустая половина стоит в тихих минутах)
+
+
+# поправка TK-697 (признаки из разбора сделок трейдера пробоев; семейства `m697` / `h697` / `l697` строк TK-671 + `mk_rel_s60 / 240 / 1440` таблицы TK-671):
+# набор TK680_SET=t697 (свой каталог TK674_ROOT). Пороги — квантили 20 / 40 / 60 / 80 по кандидатам базы; для счётчиков `ls_*` — числа (≥ 1 / 2 / 3, ≤ 0 / 1 / 2, как ok10_*);
+# для расстояний `bl_*_ahead_n` / `bl_*_back_n` к квантилям добавлены назначенные критиком 1 / 2 / 4 NATR. Исключение из правила окна ≤ 60 мин (HMAX): `pm_*` (24 / 48 / 72 ч), `hl_*`
+# (30 / 90 / 365 сут.), `mk_rel_s240` / `mk_rel_s1440` / `mk_rel_sd` (4 ч, 24 ч, с 00:00 UTC) — «предыстория по природе» (решение координатора 23.11).
+T697_FAM = "/data/p42-tk697/fam/%s/%s-%s.parquet"      # семейство, окно, сторона; индекс row_id
+T697_EXT = "/data/p42-tk697/fam/ext/%s-%s.parquet"      # окно, сторона: строки сигналов базы без строки таблицы TK-671 (`tk697_ext.py`, row_id < 0)
+T697_ROWS = "/data/p42-tk671/prod/lvl-%s-%s/rows.parquet"      # окно, сторона: row_id, sym, sig_ms (сверка строк)
+T697_FAMS = {
+    "m697": ([f"sw_d{w}" for w in (15, 30, 60)] + [f"sw_a{w}" for w in (15, 30, 60)] + [f"pm_p{h}" for h in (24, 48, 72)] + [f"pm_n{h}" for h in (24, 48, 72)]
+             + ["pm_sharp", "mk_rel_sd", "rn_p", "rn_n"]),
+    "h697": [f"hl_{k}_{u}{n}" for u in ("p", "n") for k in ("hi", "lo") for n in (30, 90, 365)],
+    "l697": [f"ls_c{k}p" for k in (1, 2, 3)] + [f"ls_c{k}n" for k in (2, 4, 8)] + [f"bl_{r}_{x}" for r in ("btc", "eth") for x in ("ahead_n", "back_n", "brk60")],
+}
+T697_TABLE = ["mk_rel_s60", "mk_rel_s240", "mk_rel_s1440"]       # уже в таблице TK-671 (семейство mkt)
+T697_FAM_NAMES = [c for f in T697_FAMS.values() for c in f]
+T697_NAMES = T697_FAM_NAMES + T697_TABLE
+T697_COUNT = [f"ls_c{k}p" for k in (1, 2, 3)] + [f"ls_c{k}n" for k in (2, 4, 8)]
+
+
+# поправка TK-697 (вторая, 24.11; ось выбрана после просмотра P&L TK-698 на этих данных): набор TK680_SET=t697b — два столбца рынка `btc_mv15` = s · (BTC close[t−1] / close[t−16] − 1) · 1e4 (бп, f12 `btc_mv15`)
+# и `mk_btc_s60` = s · (BTC close[t−1] / close[t−61] − 1) (доля, семейство mkt TK-671); s = +1 лонг, −1 шорт; > 0 — BTC шёл в сторону сделки. Свой каталог TK674_ROOT. Пороги — квантили 20 / 40 / 60 / 80 по кандидатам
+# базы состава c539 и порог 0 (знак); обе стороны порога (≤ / ≥) = 10 клеток на столбец и сторону. Столбцы считает `tk697_b.py` по минуткам BTCUSDT для ВСЕХ сигналов базы (таблица TK-671 и сигналы без её строки).
+T697B_FAM = "/data/p42-tk697/fam/b697/%s-%s.parquet"      # окно, сторона: индекс row_id (< 0), столбцы sym, sig_ms, btc_mv15, mk_btc_s60
+T697B_NAMES = ["btc_mv15", "mk_btc_s60"]
+T697B_ZERO = ("z0", 0.0)                                  # порог по знаку: ≥ 0 — BTC шёл по ходу сделки, ≤ 0 — против
+
+
+# поправка TK-697 (третья, PS-1002; ключи движка № 9 `tn` / `tno` и № 1 `lx = 4`, бинарь `alpha-tk697-plain.906c0999`): набор TK680_SET=t697k — только оси ключей, столбцов нет. Единички вокруг центра:
+# каждая ось меняет один ключ, остальные — в центре. Центр — середина списка значений (не по P&L): `tn` 50 %, `lk` 3, `ld` 3 суток; `lsl` 0 (без предела) и `tf` 60 — значения по умолчанию.
+# Клетки лежат на базе стороны (стоп лонга 3 % / шорта 4 %); `lx = 4` меняет проход сигналов (9 проходов на сторону), `tn` / `tno` — только выход (проход базы).
+T697K_TN, T697K_TNO = (25, 50, 100), (0.1, 0.25)
+T697K_TN_C = 50
+T697K_LK, T697K_LD, T697K_LSL = (2, 3, 4), (1, 3, 5), (0.5, 1, 2)
+T697K_LINE = dict(lx=4, lk=3, ld=3)             # центр наклонки: lsl = 0 (без предела), tf = 60 (база)
+
+
+def t697k_axes(side):
+    """Оси набора t697k: `tn` (25 / 50 / 100 при tno = 0), `tno` (0 / 0,1 / 0,25 при tn = 50), `lk` (2 / 3 / 4 при ld = 3), `ld` (1 / 3 / 5 при lk = 3), `lsl` (0 / 0,5 / 1 / 2 в центре),
+    `lx` (tf 30 / 60 в центре). Клетка центра одна на все оси (одинаковый ключ); 14 клеток на сторону."""
+    c = T697K_LINE
+    return [
+        ("tn", [("off", {})] + [(ax.num(v), dict(tn=v)) for v in T697K_TN], "off"),
+        ("tno", [("off", {})] + [(ax.num(o), dict(tn=T697K_TN_C, tno=o) if o else dict(tn=T697K_TN_C)) for o in (0,) + T697K_TNO], "off"),
+        ("lk", [("off", {})] + [(ax.num(k), dict(c, lk=k)) for k in T697K_LK], "off"),
+        ("ld", [("off", {})] + [(ax.num(d), dict(c, ld=d)) for d in T697K_LD], "off"),
+        ("lsl", [("off", {})] + [(ax.num(v), dict(c, lsl=v) if v else dict(c)) for v in (0,) + T697K_LSL], "off"),
+        ("lx", [("off", {}), ("tf30", dict(c, tf=30)), ("tf60", dict(c))], "off"),
+    ]
+# поправка TK-701 (единички, 24.11; ось выбрана после просмотра P&L TK-701 на этих данных): набор TK680_SET=t701 — три столбца `tfv60`, `pre_n5`, `oi_c1` (`tk701_sig.py`, все сигналы базы h775 окна и стороны).
+# Пороги — квантили 20 / 40 / 60 / 80 по кандидатам базы состава c539, порога 0 нет; обе стороны порога (≤ / ≥) = 8 клеток на столбец и сторону. Свой каталог TK674_ROOT.
+T701_FAM = "/data/p42-tk701s/fam/c701/%s-%s.parquet"      # окно, сторона: индекс row_id (< 0), столбцы sym, sig_ms, tfv60, pre_n5, oi_c1
+T701_NAMES = ["tfv60", "pre_n5", "oi_c1"]
 
 
 def nan_cols():
     """Столбцы, у которых пустое значение пропускает фильтр и поэтому считается отдельно (сделки с пустым значением, их Σ $)."""
-    return list(HIST_COLS) if SET == "hist" else (list(FAST_NAMES) if SET == "t681" else [])
+    return (list(HIST_COLS) if SET == "hist" else (list(FAST_NAMES) if SET == "t681" else (list(T697_NAMES) if SET == "t697" else (list(T697B_NAMES) if SET == "t697b" else (list(T701_NAMES) if SET == "t701" else [])))))
 
 
 def t681_volq():
@@ -222,12 +280,18 @@ def column_list(coverage_cols):
     """[(имя покрытия, источник parquet | (числитель, знаменатель), направления)] — все столбцы покрытия, кроме COL_SKIP."""
     if SET == "hist":
         return [(c, c, ("le", "ge")) for c in HIST_COLS]
-    if SET in ("grid", "new"):
+    if SET in ("grid", "new", "t697k"):
         return []
     if SET == "ctx":
         return [(c, c, ("le",)) for c in CTX_COLS]
     if SET == "t681":
         return [(c, c, ("le", "ge")) for c in FAST_NAMES]
+    if SET == "t697b":
+        return [(c, c, ("le", "ge")) for c in T697B_NAMES]
+    if SET == "t701":
+        return [(c, c, ("le", "ge")) for c in T701_NAMES]
+    if SET == "t697":       # окно > 60 мин — исключение поправки TK-697 (`horizon_skip` не вызывается)
+        return [(c, c, ("le", "ge")) for c in T697_NAMES]
     out = []
     for c in coverage_cols:
         if c in COL_SKIP or horizon_skip(c):

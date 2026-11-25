@@ -26,6 +26,24 @@ def _tokens(ck):
     return dict(t.split("=", 1) for t in ck.split(" ") if "=" in t)
 
 
+def _cell_dir(d):
+    """Каталог клетки; убранный в архив (tk674c: `cells-arch/<окно-сторона>/<хэш>.tar.zst`) распаковывается в TK680_ARCH_TMP (по умолчанию /tmp/tk680-arch): клетка базы лежит в БД с каталогом tk674c (TK-697)."""
+    if os.path.isdir(d):
+        return d
+    import subprocess
+    root, rest = d.split("/cells/", 1)
+    ws, h, cid = rest.split("/")[:3]
+    ar = os.path.join(root, "cells-arch", ws, h + ".tar.zst")
+    tmp = os.path.join(os.environ.get("TK680_ARCH_TMP", "/tmp/tk680-arch"), ws)
+    out = os.path.join(tmp, h, cid)
+    if not os.path.isdir(out):
+        if not os.path.exists(ar):
+            raise SystemExit("каталог клетки %s убран, архива нет" % d)
+        os.makedirs(tmp, exist_ok=True)
+        subprocess.run(["tar", "--zstd", "-xf", ar, "-C", tmp], check=True)
+    return out
+
+
 def _stats(row, side, ck):
     """Зачётные сделки клетки — как `tk604_stats.splice`: по окнам, вход в сутках окна; сверка с числом сделок и Σ $ клетки.
     Разделённый вход (`e2` > 0 в ключе клетки, у шорта база): полные стопы делятся по размеру убытка на «A + B» (вся ставка) и «только A» (часть A, ≈ половина ставки);
@@ -38,7 +56,7 @@ def _stats(row, side, ck):
     cut = 0.75 * (500.0 * float(row["extra"]["lmax"]["s"]) / 100.0 + ms.COST_USD)
     full, after, nets, only_a, a_b = [], [], [], [], []
     for w in st.TRADE_WINDOWS:
-        with open(os.path.join(row["extra"]["dirs"][w.name], "%s-trades.csv" % ENGNAME[side]), encoding="utf-8", newline="") as f:
+        with open(os.path.join(_cell_dir(row["extra"]["dirs"][w.name]), "%s-trades.csv" % ENGNAME[side]), encoding="utf-8", newline="") as f:
             rows = list(csv.DictReader(f))
         d = st.abs_day(w, [int(r["entry_ms"]) for r in rows])
         lo_i, hi_i = (w.lod - st.D0).days, (w.hid - st.D0).days

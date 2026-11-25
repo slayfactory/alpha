@@ -1,9 +1,0 @@
-# П-42 §13.72 (TK-672): шаги прохода для `guard.py plan --steps` (В-213). Формат: имя<TAB>выход<TAB>входы через :<TAB>команда. Готовое TK-671 внесено `guard.py adopt` (реестр /data/p42-tk672/registry — копия реестра TK-671).
-siglv	/data/p42-tk671/prod/siglv-wc-short	/data/p42-tk621/wa:/data/p42-tk621/wb:/data/p42-tk621/wc	bash /data/p42-tk671/code/siglv-all.sh
-twin	/data/p42-tk671/gate-pf/wc/out	/data/p42-tk621/wa:/data/p42-tk621/wb:/data/p42-tk621/wc	bash -c "for W in wa wb wc; do bash /data/p42-tk671/code/p/tk671_twin.sh $W /data/p42-tk671/gate-pf/$W 2; done"
-bkep	/data/p42-tk671/fam/bkep/wc.csv	/data/p42-tk599/tick-store	bash /data/p42-tk671/code/bkep-all.sh
-data671	/data/p42-tk671/data/short.parquet	/data/p42-tk671/asm:/data/p42-tk671/prod	bash /data/p42-tk671/code/data-build.sh
-rules	/data/p42-tk672/data/short.parquet	/data/p42-tk671/data	python3 /data/p42-tk672/code/p/tk672_rules.py --side short
-fit-cb	/data/p42-tk672/fit/cb/FIT-DONE	/data/p42-tk672/data	bash /data/p42-tk672/code/p/tk672_fit_all.sh cb 4
-fit-lgb	/data/p42-tk672/fit/lgb/FIT-DONE	/data/p42-tk672/data	bash /data/p42-tk672/code/p/tk672_fit_all.sh lgb 4
-report	/data/p42-tk672/report/tables.json	/data/p42-tk672/fit:/data/p42-tk671/gate-pf	python3 /data/p42-tk672/code/p/tk672_report.py

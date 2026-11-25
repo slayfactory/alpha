@@ -2,7 +2,7 @@
 """П-42, TK-680: singles.json для таблицы покрытия — по карте единичек каждого набора (основной L-321, история L-324, сетки L-325, контекст L-326) и стороне
 два поля на имя ключа / столбца: «где» (значения оси) и «вердикт» (чтение карты: активна / не активна, шум отбора, $, Sharpe, просадка, перехай, R:R).
   python tools/p42/tk680_singles_json.py            — docs/findings/p42-titration-coverage-2026-11-22/singles.json (читает map674b1-{L,S}.json и подкаталоги hist/ grid/ ctx/)
-  python tools/p42/tk680_singles_json.py --search   — search-values.json: «Перебор» для страницы «Признаки» (имя → строка значений единичек)
+  python tools/p42/tk680_singles_json.py --search   — search-values.json: «Перебор» для страницы «Признаки» (имя → строка значений единичек); дополняет файл, прежние строки не меняет
 Доллары — ставка 500 $; описательно, найдено на этих данных; без бп и медиан."""
 from __future__ import annotations
 
@@ -13,9 +13,11 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.normpath(os.path.join(HERE, "..", "..", "docs", "findings", "p42-titration-coverage-2026-11-22"))
-SETS = [("main", "", "L-321", "PS-960"), ("hist", "hist/", "L-324", "PS-961"), ("grid", "grid/", "L-325", "PS-962"), ("ctx", "ctx/", "L-326", "PS-968"), ("t681", "t681/", "L-331", "PS-974")]
+SETS = [("main", "", "L-321", "PS-960"), ("hist", "hist/", "L-324", "PS-961"), ("grid", "grid/", "L-325", "PS-962"), ("ctx", "ctx/", "L-326", "PS-968"), ("t681", "t681/", "L-331", "PS-974"),
+        ("t697", "c539/t697/", "L-394", "PS-1000"), ("t697b", "c539/t697b/", "L-395", "PS-1001"), ("t697k", "c539/t697k/", "L-414", "PS-1003")]       # TK-697: c539, поправки PS-1000 / PS-1001 / PS-1003; вердикты L-394 / L-395 / L-414
 SIDE_RU = {"L": "Л", "S": "Ш"}
 UNIT = {"btc_mv5": " %", "cosig15": " монет"}              # единицы порогов столбцов контекста
+NO_PAGE = {"mk_btc_s60"}                                    # TK-697 t697b: столбца нет на странице «Признаки» (не из списка трейдера, № 1–362) — строки «Перебор» ему нет
 NOTE = {"ew": "значение 0 — модель входа по минуте, упрощение, не кандидат (вне активных осей и пар)"}
 
 
@@ -44,7 +46,9 @@ def lab(label, direction=None):
         return "%s %s" % (SYM[m.group(1)], m.group(2).replace(".", ","))
     if direction and re.match(r"^q\d+$", str(label)):
         return "%s %s" % (SYM[direction], label)
-    if direction and re.match(r"^v\d+$", str(label)):                # дискретный столбец: порог — само значение
+    if direction and re.match(r"^v-?\d+$", str(label)):                # дискретный столбец: порог — само значение
+        return "%s %s" % (SYM[direction], str(label)[1:])
+    if direction and re.match(r"^z\d+$", str(label)):                  # t697b: порог 0 (знак хода BTC) — «≥ 0» / «≤ 0»
         return "%s %s" % (SYM[direction], str(label)[1:])
     return str(label).replace(".", ",")
 
@@ -60,6 +64,8 @@ def cut_text(d, labels, unit=""):
 def load():
     out = {}
     for sk, sub, entry, ps in SETS:
+        if not os.path.exists(os.path.join(DIR, sub, "map674b1-L.json")):      # карты набора лежат не во всех ветках (t681 — на srv): набор пропускается
+            continue
         out[sk] = {s: json.load(open(os.path.join(DIR, sub, "map674b1-%s.json" % s), encoding="utf-8")) for s in "LS"}
     return out
 
@@ -104,7 +110,7 @@ def build():
     maps = load()
     names = {}                                                     # имя → {набор: {сторона: [оси]}}
     for sk, sub, entry, ps in SETS:
-        for side in "LS":
+        for side in "LS" if sk in maps else "":
             m = maps[sk][side]
             for a in m["axes"]:
                 if not titrated(sk, a):
@@ -129,8 +135,10 @@ def build():
                 w = "значения %s (* — база %s)" % (w, str(base).replace(".", ","))
             else:
                 w = "срез кандидатов базы по порогу, значения: %s" % w
-            tag = {"main": "единички", "hist": "семейство ok10_*, пороги — числа пробоев", "grid": "сетка шире прежней", "ctx": "ось контекста", "t681": "ключи и столбцы TK-681"}[sk]
-            where.append("TK-680 %s (%s), h775, стоп Л 3 %% / Ш 4 %%, %s: %s" % (entry, ps, tag, w))
+            tag = {"main": "единички", "hist": "семейство ok10_*, пороги — числа пробоев", "grid": "сетка шире прежней", "ctx": "ось контекста", "t681": "ключи и столбцы TK-681",
+                   "t697": "столбцы разбора сделок трейдера", "t697b": "ось хода BTC, выбрана после просмотра P&L TK-698 на этих данных",
+                   "t697k": "ключи движка: тейк у следующего уровня и наклонная линия"}[sk]
+            where.append("%s %s (%s), %s, стоп Л 3 %% / Ш 4 %%, %s: %s" % ((("TK-697", entry, ps, "c539") if sk.startswith("t697") else ("TK-680", entry, ps, "h775")) + (tag, w)))
             sv, gains = [], []
             for side in "LS":
                 axes = sides.get(side)
@@ -160,11 +168,13 @@ def search_values(names, maps):
     """«Перебор» для вкладки: значения единичек по имени (ключи — без базового значения; столбцы — по направлениям)."""
     out = {}
     for n, per in sorted(names.items()):
+        if n in NO_PAGE:
+            continue
         sk = next(s for s, *_ in SETS if s in per)               # первый набор, где ось титровалась
         sides = per[sk]
         kind = next(iter(sides.values()))[0]["kind"]
-        side = "L" if "L" in sides else "S"
-        out[n] = values(sides[side], kind, sk).replace("*", "")
+        txt = {s: values(ax, kind, sk).replace("*", "") for s, ax in sides.items()}
+        out[n] = next(iter(txt.values())) if len(set(txt.values())) == 1 or len(txt) == 1 else "; ".join("%s: %s" % (SIDE_RU[s], v) for s, v in sorted(txt.items()))     # стороны различаются (ls_c2n) — по сторонам
     return out
 
 
@@ -174,6 +184,9 @@ def main():
     if "--search" in sys.argv:
         path = os.path.join(DIR, "search-values.json")
         res = search_values(names, load())
+        if os.path.exists(path):                                 # дополняет файл: прежние строки (в том числе наборов без карт в этой ветке) не меняются
+            old = json.load(open(path, encoding="utf-8"))
+            res = {**res, **old}
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(res, f, ensure_ascii=False, indent=1)
     print(os.path.relpath(path), len(res), "имён")

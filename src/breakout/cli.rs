@@ -360,6 +360,9 @@ pub(super) fn reject_tick_only(p: &Params, line: &str) -> Result<()> {
     if p.xb != 0 || p.sig.fg_m != 0 || p.exit.tpp || p.exit.trp {
         bail!("xb/fg/tpp/trp (TK-669) считает только `breakout tick`: {line}");
     }
+    if p.exit.tn_pct != 0 || p.exit.tno_m != 0 {
+        bail!("tn/tno (TK-697, тейк у следующего уровня) считает только `breakout tick`: {line}");
+    }
     if p.exit.e1t != 0 {
         bail!("e1t (TK-688, вход одной лимиткой у уровня) считает только `breakout tick`: {line}");
     }

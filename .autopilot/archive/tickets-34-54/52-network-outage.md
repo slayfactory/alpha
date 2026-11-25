@@ -1,12 +1,12 @@
 # 52 — Сеть: серия отказов, DNS, восстановление (A8.5)
 
 **Требования:** директива владельца 2026-09-17 («коллектор при любых обстоятельствах»), подтикет A8.5
-в `docs/plan/dev-plan-2026-09-17.md` §Дополнения; порядок — A8.4 ✔ → **A8.5** → A8.6 → A8.7.
+в `docs/archive/plan/dev-plan-2026-09-17.md` §Дополнения; порядок — A8.4 ✔ → **A8.5** → A8.6 → A8.7.
 **Blocked by:** — (бэкофф с потолком и `ConnectFailed` уже есть с K1; тикет закрывает **проверку**
 поведения «обрыв на часы» и возврат подписок)
 **Зона:** `src/bybit/conn/tests.rs` (тест с коннектором-очередью отказов),
 `src/commands/lob/session/tests.rs` (возврат доверия книги после восстановления), `docs/COMMANDS.md`,
-`docs/plan/dev-plan-2026-09-17.md`.
+`docs/archive/plan/dev-plan-2026-09-17.md`.
 **Волна:** 13
 **Status:** done (2026-09-18)
 
@@ -46,7 +46,7 @@
 - [x] `cargo test --release --target-dir target-ci` — **800 passed, 0 failed, 5 ignored**; clippy
       `-D warnings`, fmt чисто
 - [x] доки: `docs/COMMANDS.md` (грабли — отличие 403/429 от DNS, рост бэкоффа),
-      `docs/plan/dev-plan-2026-09-17.md` (A8.5 сделан + заметка)
+      `docs/archive/plan/dev-plan-2026-09-17.md` (A8.5 сделан + заметка)
 - [x] **GC**: одна сборка за раз, `--target-dir target-ci`
 
 ## Что осталось за тикетом

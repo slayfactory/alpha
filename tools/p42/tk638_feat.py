@@ -19,6 +19,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+from tk700_win import win_choices  # noqa: E402
 ROOT = "/data/p42-tk638"
 FEAT34 = "/data/p42-tk634/feat"
 BIN = os.environ.get("TK638_BIN", "/data/p42-tk638/bin/alpha-feat")
@@ -206,7 +207,7 @@ def main():
     sp = ap.add_subparsers(dest="cmd", required=True)
     b = sp.add_parser("build")
     b.add_argument("--uni", required=True, choices=UNIS)
-    b.add_argument("--window", required=True, choices=("wa", "wb", "wc"))
+    b.add_argument("--window", required=True, choices=win_choices())
     b.add_argument("--side", required=True, choices=SIDES)
     b.add_argument("--procs", type=int, default=4)
     g = sp.add_parser("gate")

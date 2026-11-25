@@ -26,47 +26,46 @@
 
 ## Раскладка
 
+По `src/` на 24.11.2026 (TK-705). Первоначальные имена слоёв из черновика 3 — `signal/`, `strategy/`,
+`exec/` — в дереве не существуют: логика уровней, ячейки и решение о сделке живут под `lob/`, сборка
+бота — `lob/backtest/` (боевой бот — в роботе ФК «Викинг», не в этом репозитории). Решения A1–A9 и
+done-conditions ниже писались под прежние имена: читайте `signal/` как `lob/` (`levels`, `cells`,
+`runs`), `strategy/` как `lob/strategy/`, `exec/` как `lob/backtest/`.
+
 ```
 src/
   bybit/          адаптер площадки — единственное место, знающее про Bybit
-    ws.rs           разбор сообщений: snapshot/delta, u/seq, сторона агрессора, BT
-    conn.rs         сокет за трейтом транспорта: подписки, ресинк, бэкофф, local_ts на recv
-    rest.rs         instruments-info, orderbook (для verify), serverTime — только
-                    вне событийного пути, отдельной задачей (A9)
-    trade_ws.rs     WS trade: order.create/amend/cancel, приватный стрим order/execution
-    sign.rs         HMAC-SHA256, ключи только из окружения
-    probe.rs        замер RTT полного цикла (шаги 6.2 и 6.4)
-    clock.rs        смещение против NTP и serverTime, clock.csv
-    verify.rs       сверка с REST по u, инварианты, трейды внутри книги
-  book/           реконструкция L2 — одна реализация на все режимы
-    mod.rs          применение дельт, size=0, u=1, кратность тику
-    fixed.rs        цена как i64 тиков, размер как i64 лотов
+    ws              разбор сообщений: snapshot/delta, u/seq, сторона агрессора, BT
+    conn            сокет за трейтом транспорта: подписки, ресинк, бэкофф, local_ts на recv; трейт Clock
+    rest            instruments-info, orderbook (для verify), serverTime — только вне событийного пути (A9)
+    trade_ws        WS trade: order.create/amend/cancel, приватный стрим order/execution
+    sign            HMAC-SHA256, ключи только из окружения
+    probe           замер RTT полного цикла
+    clock, latency  смещение против NTP и serverTime; задержки
+    verify, verify_sidecar   сверка с REST по u, инварианты, трейды внутри книги
+  book/           реконструкция L2 — одна реализация на все режимы; цена i64 тиков, размер i64 лотов
   binlog/         хранение: кадры с u32 длины, дельты в varint, суточный файл с заголовком
-                  (tickSize, qtyStep, максимум записей в кадре) и синтетическим снапшотом.
-                  Не под `bybit/`: формат не зависит от площадки, и держать его там значило бы
-                  переписывать хранилище при добавлении второй биржи
-  feed/           единый поток событий
-    mod.rs          trait Feed: Iterator<Item = Event>
-    live.rs         из bybit::ws
-    replay.rs       из binlog
-  signal/         чистая логика, ноль ввода-вывода
-    level.rs        жизнь уровня: рождение, смерть, пересоздание
-    history.rs      lifetime_ms, size_max, time_to_max, monotonic, repeat_count, repriced
-    outcome.rs      eaten / pulled / mixed по стороне агрессора, фильтр BT
-    cell.rs         C1 и C2 как предикаты, в одном месте
-  strategy/       решение о сделке — чистая функция
-    mod.rs          trait Strategy: on_event(&State) -> Action
-    density.rs      Decision 20: триггер ячейки, сторона по сигме, выход на горизонте
-  exec/           сборка бота, не своя абстракция
-    sim.rs          Backtest + RiskAdverseQueueModel
-    live.rs         LiveBot + коннектор Bybit
-  stats/          bootstrap-t на весах Уэбба, DSR, PBO, CPCV
-  commands/       CLI: record, watch, pick, verify, levels, markout, pilot, probe
+                  (tickSize, qtyStep, максимум записей в кадре) и синтетическим снапшотом;
+                  archive/ — колоночный формат. Не под `bybit/`: формат не зависит от площадки
+  feed/           единый поток событий: trait Feed (mod.rs), live (из bybit::ws), replay (из binlog)
+  lob/            измерительный конвейер плотностей стакана: логика без ввода-вывода
+    levels, runs, cells, r1*, c3     жизнь уровня, признаки истории, ячейки C1/C2/C3
+    strategy/       решение о сделке — `on_event` (единственная стратегия), handlers, exit, cancel, pyramid
+    backtest/       Backtest + RiskAdverseQueueModel (модель очереди крейта hftbacktest)
+    markout, excursion, moves, costs, final_metrics (DSR, PBO, CPCV), sigma, shortlist, …   метрики и отчёты
+  breakout/       П-42: пробой уровня на минутках Binance USD-M (агрегатный рантайм); data → levels → signals → portfolio / trade
+  statarb/        стат-арбитраж: ядро `kernel::run_pair` (пары, корзины, кросс-биржа, фандинг); G-021
+  collector/      Rust-коллекторы рынка по WebSocket (G-022; только Linux, живут на srv); формат — `docs/collector-ws-format.md`
+  stats/          wild cluster bootstrap-t на весах Уэбба
+  commands/       CLI: `lob/` (record, replay, verify, pick, backtest, levels, bounce-grid, …), `record/`
+  bin/            alpha-feat (признаки П-42)
+  alloc_count.rs  счётчик аллокаций на глобальном аллокаторе (гейт GC на горячем пути)
+  lib.rs, main.rs  корень крейта и CLI `alpha lob | collect | breakout`
 ```
 
-Правило принадлежности: **`signal/` и `strategy/` не импортируют ни `bybit/`, ни `tokio`.**
-Если импорт понадобился — граница проведена неверно. Это проверяется тестом, который
-грепает дерево модулей, а не дисциплиной.
+Правило принадлежности: **`lob/` (кроме `lob/backtest/`) и `book/` не импортируют ни `bybit/`, ни `tokio`.**
+Если импорт понадобился — граница проведена неверно. На 24.11 в `use` этих модулей `bybit::` нет
+(только в комментариях); теста-грепа по дереву нет — он остаётся обещанием done-condition 3 ниже.
 
 ## Решения
 

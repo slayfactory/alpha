@@ -16,13 +16,18 @@ import json
 import os
 import time
 
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from tk700_win import win_choices  # noqa: E402
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.csv as pacsv
 
 SOURCES = ["p30n1", "p30n2", "p30n3", "p60n1", "p60n2", "p60n3", "p240n1", "p240n2", "p240n3", "lxD", "lxW", "lxP"]
-PROD, FAM, RUST = "/data/p42-tk671/prod", "/data/p42-tk671/fam", "/data/p42-tk671/fam/rust"
+ROOT = os.environ.get("TK671_ROOT", "/data/p42-tk671")          # TK-700: отложенная выборка — свой корень (`/data/p42-tk700/p671`), строки — только база
+PROD, FAM, RUST = ROOT + "/prod", ROOT + "/fam", ROOT + "/fam/rust"
 PY_FAMS = ["time", "bd", "fund", "t668", "coin", "hist", "bk", "mkt"]
 F12_META_END = "tick_ok"                        # f12.csv: столбцы до `tick_ok` включительно — ключи/служебные, признаки — после
 META = ["row_id", "sym", "abs_ms", "win", "side", "src", "level", "level_px_e8", "mask", "ep_start", "base_pass", "n_ep", "end"]
@@ -68,7 +73,9 @@ def rust_blocks(win, side, key):
     al = al.drop(columns=["ep_id"])
     al.index = f12_rid
     out["flow_deriv"] = al
-    for n in ("tcount", "tsize", "tox"):
+    for n in ("tcount", "tsize", "tox", "fast"):
+        if n == "fast" and not os.path.exists(f"{d}/fast.csv"):
+            continue                                    # FAST TK-681 — по необходимости (TK-700: `tk700_feat.sh … fast`); таблицы TK-671 без него
         x = read_csv(f"{d}/{n}.csv")
         assert len(x) == len(ek) and (x["sym"].to_numpy() == ek["sym"].to_numpy()).all() and (x["sig_ms"].to_numpy() == ek["sig_ms"].to_numpy()).all(), f"{n}: ключи не совпали с eps-key"
         out[n] = x.drop(columns=["sym", "sig_ms"])
@@ -76,11 +83,34 @@ def rust_blocks(win, side, key):
     return out
 
 
+def merge_families(fams, order, index):
+    """Блоки признаков семейств (по `index` = row_id строк) → (float32-таблица признаков, `cov` с `families`, `dups`, `renamed`): первый блок оставляет имя, дубль с равными значениями снимается, с разными — переименовывается `<имя>__<семейство>` (TK-690: вынесено из `main` без изменений, тот же код у набора строк потоков)."""
+    cov = dict(families={}, dups=[], renamed=[])
+    cols, seen = {}, {}
+    for n in order:
+        f = fams[n].reindex(index)
+        miss = int(fams[n].index.difference(index).size)
+        cov["families"][n] = dict(columns=f.shape[1], missing_rows=int(len(index) - fams[n].index.isin(index).sum()), extra_rows=miss)
+        for c in f.columns:
+            v = f[c].to_numpy(dtype=np.float64)
+            if c in cols:
+                w = cols[c]
+                same = np.array_equal(np.isnan(v), np.isnan(w)) and np.allclose(v[~np.isnan(v)], w[~np.isnan(w)], rtol=1e-6, atol=1e-9)
+                if same:
+                    cov["dups"].append(dict(col=c, dropped_from=n, kept_from=seen[c]))
+                    continue
+                cov["renamed"].append(dict(col=c, family=n, kept_from=seen[c]))
+                c = f"{c}__{n}"
+            cols[c] = v
+            seen[c] = n
+    return pd.DataFrame({c: v.astype(np.float32) for c, v in cols.items()}, index=index), cov
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--win", required=True, choices=("wa", "wb", "wc"))
+    ap.add_argument("--win", required=True, choices=win_choices())
     ap.add_argument("--side", required=True, choices=("long", "short"))
-    ap.add_argument("--out", default="/data/p42-tk671/asm")
+    ap.add_argument("--out", default=ROOT + "/asm")
     ap.add_argument("--skip-missing", action="store_true", help="проверочный прогон: семейства без файла пропустить (в рабочем прогоне не использовать)")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -100,26 +130,10 @@ def main():
         if "row_id" in f.columns:
             f = f.set_index("row_id")
         fams[n] = f
-    order = [n for n in ["rules", "f12", "flow_deriv", "tcount", "tsize", "tox"] + PY_FAMS if n in fams]
-    cov = dict(win=a.win, side=a.side, rows=len(rows), families={}, dups=[], renamed=[])
-    cols, seen = {}, {}
-    for n in order:
-        f = fams[n].reindex(rows.index)
-        miss = int(fams[n].index.difference(rows.index).size)
-        cov["families"][n] = dict(columns=f.shape[1], missing_rows=int(len(rows) - fams[n].index.isin(rows.index).sum()), extra_rows=miss)
-        for c in f.columns:
-            v = f[c].to_numpy(dtype=np.float64)
-            if c in cols:
-                w = cols[c]
-                same = np.array_equal(np.isnan(v), np.isnan(w)) and np.allclose(v[~np.isnan(v)], w[~np.isnan(w)], rtol=1e-6, atol=1e-9)
-                if same:
-                    cov["dups"].append(dict(col=c, dropped_from=n, kept_from=seen[c]))
-                    continue
-                cov["renamed"].append(dict(col=c, family=n, kept_from=seen[c]))
-                c = f"{c}__{n}"
-            cols[c] = v
-            seen[c] = n
-    feat = pd.DataFrame({c: v.astype(np.float32) for c, v in cols.items()}, index=rows.index)
+    order = [n for n in ["rules", "f12", "flow_deriv", "tcount", "tsize", "tox", "fast"] + PY_FAMS if n in fams]
+    cov = dict(win=a.win, side=a.side, rows=len(rows))
+    feat, part = merge_families(fams, order, rows.index)
+    cov.update(part)
     const = [c for c in feat.columns if feat[c].nunique(dropna=True) <= 1]
     cov["constant_columns"] = const
     cov["nonnan"] = {c: round(float(feat[c].notna().mean()), 4) for c in feat.columns}

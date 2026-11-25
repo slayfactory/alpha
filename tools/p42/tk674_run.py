@@ -8,6 +8,11 @@
   python3 tk674_run.py cells     — движок: только клетки «считаем» (окна wa / wb / wc, `P42_SIDES` — одна сторона), юниты `tk674-*`
   python3 tk674_run.py tables --entry L-N — метрики клеток (В-169) → БД летописи (строки `metric` с каноническим ключом); охраны G7, G-off, G-key, G-tape, c-проверка Lmax
   python3 tk674_run.py map       — карта пар из БД: охраны (а)–(е), победитель пары, плато, таблица top 15 по стороне → res/map674-<сторона>.json
+Пары с активными осями единичек TK-680 (поправка §13.73.7, PS-960; `tk674_x680.py`): TK674_REBASE=1 TK674_X680=1 [TK674_ROOT=<свой каталог>] [TK674_X680_ROOTS=<корни единичек>]:
+  python3 tk674_run.py plan [--cap 20000] — без движка: пары «новая ось × ось карты» и «новая × новая» по порядку прироста Шарпа, целиком до потолка новых клеток на сторону;
+                                            отбор замораживается в res/plan674bx-<сторона>.json (повтор plan берёт его; TK674_X680_REPLAN=1 — заново); таблица «есть / считаем»
+  дальше те же стадии ftab → validate → plan (заново, без отвергнутых движком) → cells → tables → ccheck → map; файлы с суффиксом bx (plan674bx, ftab674x, map674bx, log/chainbx.log),
+  прежние файлы не затрагиваются. Нужны в каталоге: res/thr674.json и res/eqbins674.json (или бинарь bin/alpha-tk674), res/gbase674.json (для cells / tables).
 Механика склейки, статистика — `tk643_run` (§13.43) без изменений. Доллары — ставка 500 $; Sharpe — годовой по суточному ряду Σ $ за 136 суток; без бп, без медиан."""
 from __future__ import annotations
 
@@ -26,8 +31,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import tk643_run as t  # noqa: E402
 import tk674_axes as ax  # noqa: E402
+import tk674_pack as pk  # noqa: E402
 
 ROOT = os.environ.get("TK674_ROOT", "/data/p42-tk674")
+pk.ROOT = ROOT
 t.ROOT = ROOT                                   # run_variants / q / cell_dir пишут в каталог этой задачи
 BIN = os.environ.get("TK674_BIN", ROOT + "/bin/alpha-tk674")   # бинарь HEAD ветки (md5 a26ce03f…); клетки оси split — бинарь TK-677 (TK674_BIN, G-base — TK674_GBASE)
 GBASE = os.environ.get("TK674_GBASE", ROOT + "/res/gbase674.json")
@@ -37,7 +44,13 @@ CMP_FILES = ("trades.csv", "daily.csv", "coinday.csv", "entryrej.csv")
 say = t.say
 LEVEL = int(os.environ.get("TK674_LEVEL", "2"))  # уровень карты: 2 — пары; 3, 4 — тройки, четвёрки (клетки уровня — `tk674_level.py select`); 1 — единички TK-680 (`tk680_singles.py select`)
 AUTHOR = os.environ.get("TK674_AUTHOR", "TK-674")
-FSUF = str(LEVEL) if LEVEL != 2 else ""          # таблица составных фильтров уровня (ftab674<FSUF>)
+PARTIAL = bool(os.environ.get("TK674_PARTIAL"))  # tables: только партии, посчитанные на диске во всех трёх окнах (счёт остановлен до конца: В-175); индекс партий — из плана + маркеров done
+if ax.X680 and LEVEL == 1:
+    raise SystemExit("TK674_X680=1 — пары (TK674_LEVEL=2), тройки и четвёрки (3, 4; отбор `tk674_level.py select` по картам пар обоих шагов)")
+BATCH = os.environ.get("TK674_BATCH", "")        # партия остатка уровня (PS-990): суффикс файлов уровня / плана / партий / ftab — `rNN` (клетки за потолком `select`), `u` — объединение для карты
+if BATCH and LEVEL <= 2:
+    raise SystemExit("TK674_BATCH — только для уровней 3, 4")
+FSUF = (str(LEVEL) if LEVEL != 2 else ("x" if ax.X680 else "")) + BATCH          # таблица составных фильтров уровня (ftab674<FSUF>); режим X680 — своя таблица и суффикс bx
 SUF = ax.SUF2 + FSUF         # файлы плана / партий / карты при базе стопа ≤ 4 % (поправка §13.73.2) и уровня — рядом с прежними
 
 
@@ -56,13 +69,23 @@ def invalid_path(side):
 def load_invalid(side):
     """{cid: причина} клеток, которые движок отвергает при разборе строки (стадия `validate`); пусто, пока стадия не запускалась."""
     f = invalid_path(side)
-    return json.load(open(f, encoding="utf-8")) if os.path.exists(f) else {}
+    inv = json.load(open(f, encoding="utf-8")) if os.path.exists(f) else {}
+    for c in _cidlist("TK674_INVALID_DROP"):                         # пересчёт клеток на другой таблице (TK-690, PS-994): эти cid в этом запуске не считаются недействительными
+        inv.pop(c, None)
+    return inv
 
 
-def build_cells(side, thr=None):
+def _cidlist(env):
+    """cid из json-файла (список) по переменной окружения; нет переменной — пусто."""
+    f = os.environ.get(env)
+    return json.load(open(f, encoding="utf-8")) if f else []
+
+
+def build_cells(side, thr=None, only=None):
     """{канонический ключ: клетка} по всем парам: клетка = dict(ckey, cid, patch, filt, sig (ключ прохода), pairs (где встречается));
-    thr — {признак: {метка: порог}} для фильтровых клеток (None — фильтровые клетки пропускаются). Недопустимые позиции — в bad."""
-    grids, skipped = ax.pair_grids(side)
+    thr — {признак: {метка: порог}} для фильтровых клеток (None — фильтровые клетки пропускаются). Недопустимые позиции — в bad.
+    only — пары (A, B) отбора X680: сетки строятся только для них."""
+    grids, skipped = ax.pair_grids(side, only)
     cells, bad = {}, {}
     inv = load_invalid(side)
     for (a, b), g in grids.items():
@@ -75,8 +98,7 @@ def build_cells(side, thr=None):
             if ax.cell_id(patch, filt) in inv:
                 bad[(a, b, pos)] = "движок: " + inv[ax.cell_id(patch, filt)]
                 continue
-            ft = [(thr[n][lab][0], thr[n][lab][1], thr[n][lab][2]) for n, lab in filt] if filt else []
-            ck = ax.canon(ax.BASE_LINE(side) + (" " + ax.patch_str(patch) if patch else ""), ft)
+            ck = ax.cell_ckey(side, patch, filt, thr)
             c = cells.setdefault(ck, dict(ckey=ck, cid=ax.cell_id(patch, filt), patch=patch, filt=filt, sig=ax.sigkey(patch), pairs=[]))
             c["pairs"].append((a, b, pos))
     return cells, grids, skipped, bad
@@ -168,9 +190,12 @@ def cmd_gates(a):
 
 
 # ---- константы этапа 1 ------------------------------------------------------------------------------------------------------------
-UNI, WIN = os.environ.get("TK674_UNI", "h775"), "01.07–13.11"      # TK674_UNI=c539 — вселенная без TradFi (§13.73.17), клетки в БД под своим именем вселенной
+UNI, WIN = os.environ.get("TK674_UNI", "h775"), os.environ.get("TK674_WIN", "01.07–13.11")      # TK674_UNI=c539 — вселенная без TradFi (В-175, §13.73.17): клетки в БД под своим именем, свой TK674_ROOT
 SIDENAME = {"L": "long", "S": "short"}
-VMAX, SIGMAX = 400, 26                          # вариантов и разных проходов сигналов на вызов движка (память: 26 проходов ≈ 30 ГБ при двух сторонах)
+VMAX, SIGMAX = int(os.environ.get("TK674_VMAX", 400)), int(os.environ.get("TK674_SIGMAX", 26))                          # вариантов и разных проходов сигналов на вызов движка (память: 26 проходов ≈ 30 ГБ при двух сторонах)      # TK-683 (PS-990): один вызов окна-стороны перекодирует те же ≈ 1 900 суток — вызовы крупнее (TK674_VMAX / TK674_SIGMAX, с `--cap-gb` 24) вдвое быстрее, клетки те же (гейт «байт в байт»)
+VMAX_LIGHT, LIGHT_SIGS = int(os.environ.get("TK674_VMAX_LIGHT", VMAX)), 20     # TK-683 (бинарь k): лёгкие партии без фильтра (< 20 проходов сигналов) — до TK674_VMAX_LIGHT вариантов на вызов (постоянная часть вызова ≈ 4,5 с); по умолчанию = VMAX
+VMAX_STEP3 = 400                              # вызов крупнее прежних 400 вариантов шагов 2–3 несёт канареек (порог не зависит от TK674_VMAX)
+CANARY_N = int(os.environ.get("TK674_CANARY", "0"))     # PS-q FIX 2: клетки уже в БД — в первой лёгкой партии > VMAX вариантов каждой стороны; байт в байт или стоп
 MIN_N, MIN_MONTH = 150, (15, 15, 15, 15, 8)     # охрана (а) §13.73
 GUARD_A_C539 = {"long": (105, (11, 11, 11, 11, 6)), "short": (81, (9, 9, 9, 9, 5))}      # охрана (а) на c539: формула PS-975 разд. 3 от якорей L-334 (298 / 172 против 428 / 319), числа записаны L-335
 
@@ -178,6 +203,14 @@ GUARD_A_C539 = {"long": (105, (11, 11, 11, 11, 6)), "short": (81, (9, 9, 9, 9, 5
 def guard_a(side_name):
     """Порог охраны (а) стороны: (n, по месяцам). На c539 — масштабированный по якорям (L-335), иначе §13.73 без изменений."""
     return GUARD_A_C539[side_name] if UNI == "c539" else (MIN_N, MIN_MONTH)
+
+
+def m_trials(store, side_name):
+    """Основное m стороны: клетки состава UNI в БД; на c539 — плюс клетки h775 той же стороны (PS-975 разд. 6, FIX b критика: состав выбран по результату h775, одна цепочка отбора). Второе число — m только по UNI."""
+    cnt = store.cells_count()
+    own = sum(r["n"] for r in cnt if r["side"] == side_name and r["uni"] == UNI and r["win"] == WIN)
+    extra = sum(r["n"] for r in cnt if r["side"] == side_name and r["uni"] == "h775" and r["win"] == WIN) if UNI == "c539" else 0
+    return own + extra, own
 FEAT_COLS = ("tpm60", "cons60", "zv6h", "mv5", "n24", "m24")
 
 
@@ -202,11 +235,14 @@ def one_side_env(side):
 
 
 # ---- признаки и пороги (без P&L) --------------------------------------------------------------------------------------------------
+LEGACY_PASS = {("tpm60", "<="), ("cons60", "<="), ("zv6h", "<="), ("n24", ">="), ("sharp", "==")}      # признаки и знаки осей TK-674
+
+
 def _pass(feat, x, tab, op=None):
     """Клетка оставляет кандидата: признак ≤ порога (≥ для n24), «определён и не проходит» — исключён, пусто проходит (как tk654 `_bad`).
     Единички TK-680 (LEVEL = 1): любой столбец таблицы и оба знака — по знаку смысла фильтра (`op`), правило то же."""
     with np.errstate(invalid="ignore"):
-        if LEVEL == 1:
+        if LEVEL == 1 or (ax.X680 and (feat, op) not in LEGACY_PASS):          # X680: столбцы единичек — по знаку смысла; признаки карты TK-674 — как были
             v = np.where(tab["m24"].astype(bool), np.nan, tab["n24"]) if feat == "n24" else tab[feat]
             if op == "<=":
                 return ~(np.isfinite(v) & ~(v <= x))
@@ -242,14 +278,24 @@ def parse_sem(sem):
     return out
 
 
+def thr_frozen():
+    """c539: пороги заморожены в `res/thr674-c539.json` (FIX 2 критика к §13.73.21: никогда не переписывается; sha256 — в записи до счёта)."""
+    return os.path.join(ROOT, "res", "thr674-c539.json") if UNI == "c539" else None
+
+
 def thr_path():
-    return os.path.join(ROOT, "res", "thr674.json")
+    fz = thr_frozen()
+    return fz if fz and os.path.exists(fz) else os.path.join(ROOT, "res", "thr674.json")
 
 
 def load_thr(side):
     """{ось: {метка: (признак, знак, порог)}} стороны после `counts`."""
     raw = json.load(open(thr_path(), encoding="utf-8"))["thr"][side]
-    return {n: {lab: tuple(v) for lab, v in d.items()} for n, d in raw.items()}
+    out = {n: {lab: tuple(v) for lab, v in d.items()} for n, d in raw.items()}
+    if ax.X680:                                     # + пороги новых осей столбцов (thr680*.json: абсолютные)
+        import tk674_x680 as x6
+        out.update(x6.thresholds(side))
+    return out
 
 
 def feat_tabs(side, st, u, eps):
@@ -259,8 +305,10 @@ def feat_tabs(side, st, u, eps):
     import tk654_run as r54
     hist = tf.episode_history(eps, tf.SIDE_NAME[side])
     tabs = {w.name: r54.load_window(w, side, hist) for w in st.TRADE_WINDOWS}
-    if u.name == "c539":                            # §13.73.17: таблицы признаков построены по базе h775; строки крипто-кандидатов — её подмножество (проверяет G-key: no_key = 0)
+    keep = None
+    if u.name == "c539":                            # §13.73.17: таблицы признаков построены по базе h775; строки крипто-кандидатов — её подмножество
         import tk625_run as r5
+        keep = set(u.coins())
         u = r5.Uni("h775")
     for w in st.TRADE_WINDOWS:
         t38 = t8.load_window(u, w, side)
@@ -269,20 +317,37 @@ def feat_tabs(side, st, u, eps):
         tabs[w.name]["n24"], tabs[w.name]["m24"] = t38["n24"], t38["m24"]
     if any(tabs[w]["gkey_mv5_bad"] for w in tabs):
         raise SystemExit("G-key %s: mv5 эпизодов ≠ таблице TK-634" % side)
+    if keep is not None:                            # c539: только строки крипто-кандидатов (пороги и таблицы фильтров — по составу)
+        for tab in tabs.values():
+            msk = np.array([x in keep for x in tab["sym"]])
+            n_rows = len(msk)
+            for k_, v_ in list(tab.items()):
+                if isinstance(v_, np.ndarray) and len(v_) == n_rows:
+                    tab[k_] = v_[msk]
     if LEVEL == 1:                                  # единички TK-680: столбцы таблицы TK-671 к тем же строкам кандидатов
         import tk680_singles as s80
         s80.add_columns(side, st, tabs)
+    elif ax.X680:                                   # пары с осями единичек: столбцы активных осей по наборам (ok10_d3 / d5, cosig15 — как в счёте единичек набора)
+        import tk674_x680 as x6
+        import tk680_singles as s80
+        spec = x6.column_specs(side)
+        if spec["cl"]:
+            s80.add_columns(side, st, tabs, **spec)
+            absent = tabs[st.TRADE_WINDOWS[0].name]["absent680"]
+            if absent:
+                raise SystemExit("X680 %s: столбцов нет в таблице TK-671: %s" % (side, ", ".join(absent)))
     return tabs
 
 
-def write_ftab(side, st, tabs, cells):
-    """Таблица составных фильтров `--ftab` клеток (столбец на смысл фильтра) по окнам → ftab674<FSUF>/<окно>-<сторона>.csv; возвращает {смысл: столбец}."""
-    cols = ftab_cols(cells)
+def write_ftab(side, st, tabs, cells, cols=None, out=None):
+    """Таблица составных фильтров `--ftab` клеток (столбец на смысл фильтра) по окнам → ftab674<FSUF>/<окно>-<сторона>.csv; возвращает {смысл: столбец}.
+    `cols` (готовое {смысл: столбец}) и `out` (каталог) — для таблиц потоков TK-690: столбцы и имена прежней таблицы, запись не в каталог TK-674."""
+    cols = ftab_cols(cells) if cols is None else cols
     sem_list = {sem: parse_sem(sem) for sem in cols}
     for w in st.TRADE_WINDOWS:
         tab = tabs[w.name]
         pm = {sem: np.logical_and.reduce([_pass(f_, x, tab, op_) for f_, op_, x in parts]) for sem, parts in sem_list.items()}
-        path = t.q("ftab674" + FSUF, "%s-%s.csv" % (w.name, side))
+        path = os.path.join(out, "%s-%s.csv" % (w.name, side)) if out else t.q("ftab674" + FSUF, "%s-%s.csv" % (w.name, side))
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write("sym,sig_ms," + ",".join(cols[s_] for s_ in sem_list) + "\n")
             for i in range(len(tab["sym"])):
@@ -292,10 +357,10 @@ def write_ftab(side, st, tabs, cells):
 
 
 def cmd_ftab(a):
-    """Таблица составных фильтров клеток уровня (TK674_LEVEL > 2): пороги — готовые из res/thr674.json, без P&L."""
+    """Таблица составных фильтров клеток уровня (TK674_LEVEL > 2) и пар X680: пороги — готовые из res/thr674.json (+ thr680*.json новых столбцов), без P&L."""
     import tk654_run as r54
-    if LEVEL == 2:
-        raise SystemExit("ftab — только для уровней 1, 3, 4 (у пар таблицу пишет counts)")
+    if LEVEL == 2 and not ax.X680:
+        raise SystemExit("ftab — только для уровней 1, 3, 4 (у пар таблицу пишет counts) и режима X680")
     st, r5, _, _ = t._srv()
     u = r5.Uni(UNI)
     eps = r54.episodes_h775()
@@ -308,6 +373,10 @@ def cmd_ftab(a):
 
 
 def cmd_counts(a):
+    if thr_frozen() and os.path.exists(thr_frozen()):
+        raise SystemExit("counts: %s заморожен (пороги c539 не переписываются); пересчёт — только новой записью до счёта" % thr_frozen())
+    if ax.X680:
+        raise SystemExit("counts — не в режиме X680: пороги осей карты — готовый res/thr674.json, таблицу пишет ftab")
     import tk654_run as r54
     import tk634_run as r34
     st, r5, _, _ = t._srv()
@@ -327,6 +396,10 @@ def cmd_counts(a):
             for lab in labels:
                 if lab == "on":
                     d[lab] = (feat, op, qthr("mv5", 0.5))
+                elif lab.startswith("q") and name == "N24" and UNI == "c539":      # состав c539: квантиль n24 по кандидатам c539 тем же способом, что TK-638 (зачётные диапазоны, без m24)
+                    import tk638_run as t8
+                    v = np.concatenate([tabs[w.name]["n24"][~tabs[w.name]["m24"] & t8.in_scored_range(w, tabs[w.name]["ms"])] for w in st.TRADE_WINDOWS]).astype(float)
+                    d[lab] = (feat, op, float(t8.sig2(float(np.quantile(v, int(lab[1:]) / 100, method="linear")))))
                 elif lab.startswith("q") and name == "N24":
                     d[lab] = (feat, op, float(thr38[side]["N24"]["q"]["%.2f" % (int(lab[1:]) / 100)]))
                 elif lab.startswith("q"):
@@ -337,6 +410,13 @@ def cmd_counts(a):
         out[side] = axs
         cells, _, _, _ = build_cells(side, axs)
         cols = write_ftab(side, st, tabs, cells)
+        if UNI == "c539":                           # trcols674 — только справка по сделкам базы h775 (с TradFi), на c539 не пишется
+            json.dump(cols, open(t.q("res", "ftabcols674%s-%s.json" % (FSUF, side)), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+            report[side] = dict(cols=len(cols), cells_filter=sum(1 for c in cells.values() if c["filt"]), n_rows={w.name: int(len(tabs[w.name]["sym"])) for w in st.TRADE_WINDOWS})
+            say("== %s: c539 — строк таблиц %s, составных столбцов %d, клеток с фильтром %d" % (side, report[side]["n_rows"], len(cols), report[side]["cells_filter"]))
+            for name, d in axs.items():
+                say("   %-6s %s" % (name, ", ".join("%s → %g" % (lab, v[2]) for lab, v in d.items())))
+            continue
         W, S_, R = r34.trade_rows(u, side)
         idx = {w.name: {(x, int(r)): i for i, (x, r) in enumerate(zip(tabs[w.name]["sym"], tabs[w.name]["ms"]))} for w in st.TRADE_WINDOWS}
         tr = {c: np.full(len(W), np.nan) for c in FEAT_COLS}
@@ -353,7 +433,7 @@ def cmd_counts(a):
         say("== %s: сделок базы %d, составных столбцов %d, клеток с фильтром %d" % (side, len(W), len(cols), report[side]["cells_filter"]))
         for name, d in axs.items():
             say("   %-6s %s" % (name, ", ".join("%s → %g" % (lab, v[2]) for lab, v in d.items())))
-    json.dump(dict(thr=out, report=report), open(thr_path(), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    json.dump(dict(thr=out, report=report), open(os.path.join(ROOT, "res", "thr674.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     say("counts готово")
 
 
@@ -362,18 +442,49 @@ def level_path(side):
     return os.path.join(ROOT, "res", "level674%s-%s.json" % (SUF, side))
 
 
-def plan_side(side, store=None):
+def x680_path(side):
+    return os.path.join(ROOT, "res", "plan674%s-%s.json" % (SUF, side))
+
+
+def x680_frozen(side):
+    """Замороженный отбор пар X680 (раздел `x680` плана) или None."""
+    f = x680_path(side)
+    return json.load(open(f, encoding="utf-8")).get("x680") if os.path.exists(f) else None
+
+
+def plan_side(side, store=None, only=None):
     if LEVEL != 2:                                  # клетки уровня — из отбора `tk674_level.py select` (правило отсечения — поправка уровня)
         inv = load_invalid(side)
         raw = json.load(open(level_path(side), encoding="utf-8"))["cells"]
         cells = {k: dict(ckey=k, cid=c["cid"], patch=c["patch"], filt=[tuple(x) for x in c["filt"]], sig=tuple(tuple(x) for x in c["sig"]), pairs=[])
                  for k, c in raw.items() if c["cid"] not in inv}
+        cells = _only(cells)
         found = store.cells_lookup(SIDENAME[side], UNI, WIN, list(cells), bins=eq_bins()) if store else {}
         return cells, {}, [], {}, found
+    if os.environ.get("TK674_ONLY_PLAN"):             # пересчёт PS-994: клетки из файла плана (а не из `build_cells`, где запреты §13.73.26 / пула их отсекают) — только cid из TK674_ONLY
+        keep = set(_cidlist("TK674_ONLY"))
+        raw = json.load(open(os.environ["TK674_ONLY_PLAN"], encoding="utf-8"))["cells"]
+        cells = {k: dict(ckey=k, cid=c["cid"], patch=c["patch"], filt=[tuple(x) for x in c["filt"]], sig=tuple(tuple(x) for x in c["sig"]), pairs=[]) for k, c in raw.items() if c["cid"] in keep}
+        return cells, {}, [], {}, (store.cells_lookup(SIDENAME[side], UNI, WIN, list(cells), bins=eq_bins()) if store else {})
     thr = load_thr(side) if os.path.exists(thr_path()) else None
-    cells, grids, skipped, bad = build_cells(side, thr)
+    if ax.X680:
+        if thr is None:
+            raise SystemExit("X680: нет %s (пороги осей карты TK-674 — скопировать из /data/p42-tk674/res/)" % thr_path())
+        if only is None:                            # стадии после plan: пары — из замороженного отбора плана
+            sel = x680_frozen(side)
+            if sel is None:
+                raise SystemExit("X680 %s: нет отбора пар — сначала `plan` (%s)" % (side, x680_path(side)))
+            only = {tuple(p["pair"].split("|")) for p in sel["taken"]}
+    cells, grids, skipped, bad = build_cells(side, thr, only)
+    cells = _only(cells)
     found = store.cells_lookup(SIDENAME[side], UNI, WIN, list(cells), bins=eq_bins()) if store else {}
     return cells, grids, skipped, bad, found
+
+
+def _only(cells):
+    """TK674_ONLY=<json со списком cid>: считаются / записываются только эти клетки (пересчёт клеток TK-690 на таблице собственного счёта, PS-994)."""
+    keep = set(_cidlist("TK674_ONLY"))
+    return {k: c for k, c in cells.items() if c["cid"] in keep} if os.environ.get("TK674_ONLY") else cells
 
 
 def batches(todo):
@@ -383,7 +494,7 @@ def batches(todo):
         grp = sorted(grp, key=lambda c: (c["sig"], c["cid"]))
         cur, sg = [], set()
         for c in grp:
-            if cur and (len(cur) >= VMAX or (c["sig"] not in sg and len(sg) >= SIGMAX)):
+            if cur and (len(cur) >= (VMAX_LIGHT if kind == "p" and len(sg) < LIGHT_SIGS else VMAX) or (c["sig"] not in sg and len(sg) >= SIGMAX)):
                 out.append((kind, cur))
                 cur, sg = [], set()
             cur.append(c)
@@ -397,13 +508,51 @@ def batch_name(kind, cur):
     return kind + hashlib.md5("\n".join(c["ckey"] for c in cur).encode()).hexdigest()[:10]
 
 
+def x680_select(side, store, cap):
+    """Отбор пар X680 по правилу §13.73.7 (порядок по приросту Шарпа новой оси, пары целиком до потолка новых клеток). Отбор замораживается в плане: повтор `plan` (после validate)
+    берёт тот же отбор, чтобы число новых клеток, уже посчитанных в БД, не расширяло набор; TK674_X680_REPLAN=1 — отобрать заново."""
+    import tk674_x680 as x6
+    sel = x680_frozen(side)
+    if sel is not None and os.environ.get("TK674_X680_REPLAN") != "1":
+        if sel["axes_sig"] != x6.fingerprint(side):
+            raise SystemExit("X680 %s: отбор пар в плане сделан для других осей (подпись %s ≠ %s); TK674_X680_REPLAN=1 — отобрать заново" % (side, sel["axes_sig"], x6.fingerprint(side)))
+        say("   отбор пар %s заморожен планом (пар %d, потолок %d новых клеток); TK674_X680_REPLAN=1 — отобрать заново" % (side, len(sel["taken"]), sel["cap"]))
+        return sel
+    bins = eq_bins()
+    return x6.select(side, lambda keys: store.cells_lookup(SIDENAME[side], UNI, WIN, keys, bins=bins), cap, load_thr(side), load_invalid(side))
+
+
+def say_x680(side, sel, sm):
+    """Таблица «есть / считаем» режима X680: оси, пары, запреты, пропуски (клетки по классам и проходы сигналов — ниже, общей строкой плана)."""
+    say("== %s [X680]: активных новых осей %d (%s); осей карты расширено %d%s; осей карты TK-674 %d" % (
+        side, sm["n_new"], "; ".join("%s %d: %s" % (k, len(v), ", ".join(v)) for k, v in sm["by_set"].items()) or "—", len(sm["ext"]),
+        "".join(" [%s += %s]" % (n, ", ".join(e["add"])) for n, e in sm["ext"].items()), len(ax.axes(side)) - sm["n_new"]))
+    over = sel["left_out"]
+    say("   пар по правилу %d; взято %d (клеток в парах %d: в БД есть %d, новых %d); за потолком %d новых клеток на сторону осталось %d%s" % (
+        sel["n_rule"], len(sel["taken"]), sel["n_cells"], sel["n_have"], sel["n_new"], sel["cap"], len(over), (" (первые 5: %s)" % ", ".join(p["pair"] for p in over[:5])) if over else ""))
+    say("   запрещённых пар %d: %s" % (len(sel["banned"]), "; ".join("%s — %d" % (w, n) for w, n in sorted(sel["banned_by_reason"].items(), key=lambda x: -x[1])) or "—"))
+    for n, why in sm["dropped"]:
+        say("   не взято: %s — %s" % (n, why))
+
+
 def cmd_plan(a):
     pf = os.path.join(ROOT, "res", "probe674-1s.json")
     probe = json.load(open(pf, encoding="utf-8")) if os.path.exists(pf) else None
     store = chron_store(ro=True)
     tot_new, tot_h = 0, 0.0
     for side in SIDES:
-        cells, grids, skipped, bad, found = plan_side(side, store)
+        sel = None
+        if ax.X680:
+            import tk674_x680 as x6
+            sm = x6.summary(side)
+            if not sm["n_new"] and not sm["ext"]:
+                raise SystemExit("X680 %s: нет ни одной активной оси единичек (корни: %s)" % (side, "; ".join(x6.roots())))
+            sel = x680_select(side, store, getattr(a, "cap", 20000))
+            sel = dict(sel, by_set=sm["by_set"], ext=sm["ext"], dropped=sm["dropped"], notes=sm["notes"], n_new_axes=sm["n_new"])
+            say_x680(side, sel, sm)
+            cells, grids, skipped, bad, found = plan_side(side, store, only={tuple(p["pair"].split("|")) for p in sel["taken"]})
+        else:
+            cells, grids, skipped, bad, found = plan_side(side, store)
         todo = [c for k, c in cells.items() if k not in found]
         sigs = {c["sig"] for c in todo if c["sig"]}
         cls = {}
@@ -435,6 +584,8 @@ def cmd_plan(a):
         for k, c in cells.items():
             for (aa, bb, pos) in c["pairs"]:
                 res["grids"]["%s|%s" % (aa, bb)]["m"][pos[0]][pos[1]] = k
+        if sel is not None:
+            res["x680"] = sel
         json.dump(res, open(t.q("res", "plan674%s-%s.json" % (SUF, side)), "w", encoding="utf-8"), ensure_ascii=False)
         tot_new += len(todo)
     say("plan готово: считаем %d клеток, ≈ %.1f ч движка (оба направления, 3 окна)" % (tot_new, tot_h))
@@ -506,6 +657,54 @@ def engine_opts(r5):
     say("движок: TICK_STORE %s, потоков %d" % (" ".join(r5.TICK_STORE), __import__("tk604_run").THREADS))
 
 
+def canary_pick(side, cur, n):
+    """До n клеток без фильтра из готовых партий шагов 2–3 (`batches674bs[x]` + `plan674bs[x]`, каталоги cells/) с проходами сигналов партии `cur`,
+    по кругу по проходам: → [(партия, клетка)]. Клетки уже в БД: в новый счёт и в m не входят."""
+    sigs = {c["sig"] for c in cur}
+    by_sig, seen = {}, set()
+    for suf in ("bsx", "bs"):
+        bf, pf = (os.path.join(ROOT, "res", "%s674%s-%s.json" % (k, suf, side)) for k in ("batches", "plan"))
+        if not (os.path.exists(bf) and os.path.exists(pf)):
+            continue
+        index, pc = json.load(open(bf, encoding="utf-8")), json.load(open(pf, encoding="utf-8"))["cells"]
+        for nm, cks in sorted(index.items()):
+            for ck in cks:
+                c = pc.get(ck)
+                sg = tuple(tuple(x) for x in c["sig"]) if c else None
+                if c and not c["filt"] and sg in sigs and c["cid"] not in seen and pk.cell_exists(os.path.join(ROOT, "cells", "wa-%s" % side, nm, c["cid"])):
+                    seen.add(c["cid"])
+                    by_sig.setdefault(sg, []).append((nm, dict(c, ckey=ck)))
+    out = []
+    while len(out) < n and any(by_sig.values()):
+        for sg in sorted(by_sig):
+            if by_sig[sg] and len(out) < n:
+                out.append(by_sig[sg].pop(0))
+    return out
+
+
+def canary_first(side, bl):
+    """PS-990 FIX 2: канарейки несёт первая «p»-партия крупнее VMAX_STEP3 вариантов, у которой есть клетки-источники (≥ min(CANARY_N, 5)); партии без совпадающих проходов
+    (сигналы, которых нет в шагах 2–3: r10 — первые три партии по 800) идут после неё. Меняется только порядок партий — набор клеток и результат те же.
+    → (партии, сколько партий стояло перед несущей); источников нет ни у одной — партии как есть (стоп в cmd_cells)."""
+    for i, (kind, cur) in enumerate(bl):
+        if kind == "p" and len(cur) > VMAX_STEP3 and len(canary_pick(side, cur, CANARY_N)) >= min(CANARY_N, 5):
+            return [bl[i]] + bl[:i] + bl[i + 1:], i
+    return bl, 0
+
+
+def canary_check(side, w, out, canary):
+    """Файлы канареек из новой (большой) партии против готовых клеток прежних партий, байт в байт; каталоги канареек из партии убираются."""
+    import shutil
+    filecmp.clear_cache()                            # сравнение — по содержимому, без кэша по (путь, размер, время)
+    bad = []
+    for nm, c in canary:
+        new = os.path.join(out, "cn-" + c["cid"])
+        old = pk.ensure_cell(os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm, c["cid"]))
+        bad += ["%s %s" % (c["cid"], f) for f in CMP_FILES if not filecmp.cmp(os.path.join(old, "%s-%s" % (SIDENAME[side], f)), os.path.join(new, "%s-%s" % (SIDENAME[side], f)), shallow=False)]
+        shutil.rmtree(new, ignore_errors=True)
+    return bad
+
+
 def cmd_cells(a):
     st, r5, _, _ = t._srv()
     engine_opts(r5)
@@ -521,11 +720,27 @@ def cmd_cells(a):
         cells, grids, skipped, bad, found = plan_side(side, store)
         todo = [c for k, c in cells.items() if k not in found]
         bl = batches(todo)
+        bl.sort(key=lambda kc: len({c["sig"] for c in kc[1]}) >= 20)     # дешёвые партии (< 20 проходов сигнала) — первыми; набор клеток и результат не меняются
+        cf = os.path.join(ROOT, "res", "canary674%s-%s.json" % (SUF, side))
+        if CANARY_N and not os.path.exists(cf):
+            bl, k = canary_first(side, bl)
+            if k:
+                say("canary %s: у первых %d партий нет клеток-источников (их сигналов нет в шагах 2–3) — канарейки в партии %s, остальные после" % (side, k, batch_name(*bl[0])))
         index = {}
         cols = json.load(open(os.path.join(ROOT, "res", "ftabcols674%s-%s.json" % (FSUF, side)), encoding="utf-8")) if any(k == "f" for k, _ in bl) else {}
         for kind, cur in bl:
             nm = batch_name(kind, cur)
             index[nm] = [c["ckey"] for c in cur]
+            if os.environ.get("TK674_SKIP_FILTER") and kind == "f":      # PS-985: партии-фильтры на столбцах TK-681 — после допгейта бинаря (условие критика)
+                continue
+            if os.environ.get("TK674_ONLY_CHEAP") and len({c["sig"] for c in cur}) >= 20:      # дешёвые партии обеих сторон — первыми, дорогие — потом (на более быстром бинаре)
+                continue
+            canary = []
+            if CANARY_N and kind == "p" and len(cur) > VMAX_STEP3 and not os.path.exists(cf):      # PS-q FIX 2: первая лёгкая партия > VMAX вариантов стороны несёт канарейки
+                canary = canary_pick(side, cur, CANARY_N)
+                if len(canary) < min(CANARY_N, 5):
+                    raise SystemExit("canary %s: клеток в БД с проходами партии мало (%d)" % (side, len(canary)))
+                canary_res = {}
             for w in st.TRADE_WINDOWS:
                 out = os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm)
                 done = os.path.join(ROOT, "done", "%s-%s-%s" % (w.name, side, nm))
@@ -538,8 +753,16 @@ def cmd_cells(a):
                     if c["filt"]:
                         line += " fa=%s fo=lo fv=%g" % (cols[c["ckey"].split("F=", 1)[1]], ax.FV_PASS)
                     variants.append((c["cid"], line))
+                for _nm, c in canary:
+                    variants.append(("cn-" + c["cid"], t.variant_line(r5, u, side, c["patch"])))
                 os.makedirs(out, exist_ok=True)
                 r5.tick(u, w, variants, out, one_side_env(side), t.q("log", "cells-%s-%s-%s.log" % (w.name, side, nm)), ftab=ftab)
+                if canary:
+                    bad = canary_check(side, w, out, canary)
+                    canary_res[w.name] = dict(batch=nm, variants=len(variants), canaries=[c["cid"] for _nm, c in canary], diff=bad)
+                    if bad:
+                        raise SystemExit("canary %s-%s: РАЗЛИЧИЯ в партии из %d вариантов: %s" % (w.name, side, len(variants), "; ".join(bad[:5])))
+                    say("canary %s-%s: %d клеток байт в байт в партии из %d вариантов" % (w.name, side, len(canary), len(variants)))
                 os.makedirs(os.path.dirname(done), exist_ok=True)
                 open(done, "w").write("%d\n" % len(cur))
                 say("cells %s-%s %s [%d вариантов, проходов %d] готово" % (w.name, side, nm, len(cur), len({c["sig"] for c in cur})))
@@ -547,6 +770,8 @@ def cmd_cells(a):
                 if up and calls == int(os.environ.get("TK674_THREADS_AFTER", "3")):
                     __import__("tk604_run").THREADS = up
                     say("потоки движка: %d со следующего вызова" % up)
+            if canary and len(canary_res) == len(st.TRADE_WINDOWS):
+                json.dump(canary_res, open(cf, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         json.dump(index, open(t.q("res", "batches674%s-%s.json" % (SUF, side)), "w", encoding="utf-8"))
     say("cells готово")
 
@@ -563,12 +788,19 @@ def _winit():
     _W["u"] = r5.Uni(UNI)
 
 
+def _have(dirs):
+    """{окно: (каталог клетки, сторона)}: клетки запакованных партий (`tk674_pack`) — на место из архива."""
+    for d, _ in dirs.values():
+        pk.ensure_cell(d)
+    return dirs
+
+
 def _row_job(job):
     import tk674_stats as ms
     st, p8, u = _W["st"], _W["p8"], _W["u"]
     side, ckey, cid, bname, line, patch, filt, eff = job
     dirs = {w.name: (os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), bname, cid), side) for w in st.TRADE_WINDOWS}
-    tables, daily = p8.read_tables(dirs)
+    tables, daily = p8.read_tables(_have(dirs))
     for w in st.TRADE_WINDOWS:
         tb, dl = tables[w.name], daily[w.name]
         tot_d, tot_n = float(sum(dl.values())), float(tb.net.sum())
@@ -618,7 +850,7 @@ def _cc_job(job):
     side, cid, bname, s_pct = job
     st, p8 = _W["st"], _W["p8"]
     dirs = {w.name: (os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), bname, cid), side) for w in st.TRADE_WINDOWS}
-    tables, _ = p8.read_tables(dirs)
+    tables, _ = p8.read_tables(_have(dirs))
     kinds, pnl = p8.kinds_pnl(tables)
     kinds, pnl = np.array(kinds), np.asarray(pnl, dtype=float)
     base = 500.0 * s_pct / 100.0
@@ -632,6 +864,113 @@ def _cc_job(job):
                 c_all=float((loss - base).mean()) if len(loss) else None, worst=float(lf.max()) if full.any() else None, n_above=int((lf > lm + 1e-6).sum()), ex_max=float((lf - lm).max()) if full.any() else None)
 
 
+def engine_opts(r5):
+    """Параметры движка из среды (результат от них не зависит, TK-683): TK674_CAP_GB → `--cap-gb`, TK674_SIG_CACHE → `--sig-cache <каталог>` (проход сигналов из общего кэша),
+    TK674_THREADS → потоки движка."""
+    add = []
+    if os.environ.get("TK674_CAP_GB") and "--cap-gb" not in r5.TICK_STORE:
+        add += ["--cap-gb", os.environ["TK674_CAP_GB"]]
+    if os.environ.get("TK674_SIG_CACHE") and "--sig-cache" not in r5.TICK_STORE:
+        add += ["--sig-cache", os.environ["TK674_SIG_CACHE"]]
+    r5.TICK_STORE = list(r5.TICK_STORE) + add
+    if os.environ.get("TK674_THREADS"):
+        import tk604_run as r4
+        r4.THREADS = int(os.environ["TK674_THREADS"])
+    say("движок: TICK_STORE %s, потоков %d" % (" ".join(r5.TICK_STORE), __import__("tk604_run").THREADS))
+
+
+def cmd_cgate(a):
+    """Якоря состава c539 двумя способами (PS-975 разд. 2): сторона × окно — база стороны движком со списком монет c539 (`--symbols`) и тем же движком на h775 с
+    фильтром «монета ∈ c539» (`--ftab`, столбец tr539); trades / daily / coinday байт в байт — иначе стоп и разбор. Строки якорей c539 — в БД (`--entry L-N`)."""
+    if UNI != "c539" or not a.entry:
+        raise SystemExit("cgate: TK674_UNI=c539 и --entry L-N")
+    st, r5, _, _ = t._srv()
+    engine_opts(r5)
+    sha = _bin()
+    say("G-bin: %s sha256 %s" % (BIN, sha))
+    g = json.load(open(GBASE, encoding="utf-8"))
+    if g["bad"] or g["bin_sha256"] != sha:
+        raise SystemExit("G-base не пройден или бинарь подменён")
+    uc, uh = r5.Uni("c539"), r5.Uni("h775")
+    keep = set(uc.coins())
+    bad, jobs, same = [], [], {}
+    for side in SIDES:
+        patch = ax.cell_assign(side, {})[0]
+        ck = ax.cell_ckey(side, patch, [], None)
+        if ck != ax.base_ckey(side):
+            raise SystemExit("ключ якоря %s: %s ≠ base_ckey" % (side, ck))
+        cid = ax.cell_id(patch, [])
+        line = t.variant_line(r5, uc, side, patch)
+        nm = batch_name("p", [dict(ckey=ck)])
+        for w in st.TRADE_WINDOWS:
+            outc = os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm)
+            done = os.path.join(ROOT, "done", "%s-%s-%s" % (w.name, side, nm))
+            if not os.path.exists(done):
+                r5.tick(uc, w, [(cid, line)], outc, one_side_env(side), t.q("log", "cgate-c539-%s-%s.log" % (w.name, side)))
+                os.makedirs(os.path.dirname(done), exist_ok=True)
+                open(done, "w").write("1\n")
+            outh = os.path.join(ROOT, "cgate", "%s-%s" % (w.name, side))
+            if not os.path.exists(outh + "/DONE"):
+                sym, rel, _ = r5.cand_stream(uh, side, w.name)
+                os.makedirs(outh, exist_ok=True)
+                ftab = os.path.join(ROOT, "cgate", "ftab-%s-%s.csv" % (w.name, side))
+                with open(ftab, "w", encoding="utf-8", newline="\n") as f:
+                    f.write("sym,sig_ms,tr539\n")
+                    seen = set()
+                    for i in sorted(range(len(sym)), key=lambda i: (sym[i], int(rel[i]))):
+                        if (sym[i], int(rel[i])) not in seen:
+                            seen.add((sym[i], int(rel[i])))
+                            f.write("%s,%d,%s\n" % (sym[i], int(rel[i]), "1.0" if sym[i] in keep else "0.0"))
+                r5.tick(uh, w, [("tf", line + " fa=tr539 fo=lo fv=%g" % ax.FV_PASS)], outh, one_side_env(side), t.q("log", "cgate-h775f-%s-%s.log" % (w.name, side)), ftab=ftab)
+                open(outh + "/DONE", "w").close()
+            if pk.cell_exists(os.path.join(outc, cid)):                                                 # партия могла быть упакована (tk674_pack)
+                pk.ensure_cell(os.path.join(outc, cid))
+            for f in CMP_FILES:
+                p1, p2 = os.path.join(outc, cid, "%s-%s" % (ENGNAME[side], f)), os.path.join(outh, "tf", "%s-%s" % (ENGNAME[side], f))
+                eq = os.path.exists(p1) and os.path.exists(p2) and filecmp.cmp(p1, p2, shallow=False)
+                same["%s-%s/%s" % (w.name, side, f)] = bool(eq)
+                if not eq and f != "entryrej.csv":
+                    bad.append("%s-%s/%s" % (w.name, side, f))
+        jobs.append((side, ck, cid, nm, line, patch, [], eff_flags(side, patch)))
+    json.dump(dict(bin_sha256=sha, same=same, bad=bad), open(t.q("res", "cgate674.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    say("cgate: trades / daily / coinday c539-список = h775-фильтр: %s; entryrej: %s" % ("совпали" if not bad else "РАСХОЖДЕНИЕ " + ", ".join(bad),
+        "совпали" if all(v for k, v in same.items() if k.endswith("entryrej.csv")) else "различаются (справка)"))
+    if bad:
+        sys.exit(1)
+    store, binm, rows, errs = chron_store(), bin_md5(), [], []
+    _winit()
+    for job in jobs:
+        res = _row_job(job)
+        if "error" in res:
+            errs.append(res["error"])
+            continue
+        m = res["m"]
+        errs += ["%s %s: %s" % (job[0], m["cid"], e) for e in res["errs"]]
+        rows.append(dict(side=SIDENAME[job[0]], uni=UNI, win=WIN, ckey=res["ckey"], bin=binm, cell=m["cid"], trades=m["n"], usd=m["usd"], mean_usd=m["mean_usd"], sharpe=m["sharpe"],
+                         extra=m, src="tools/p42/tk674_run.py", src_ptr="srv:%s/cells/*-%s/%s" % (ROOT, job[0], m["cid"])))
+    for r_ in rows:
+        say("якорь c539 %s: сделок %d, Σ %+.2f $, %+.3f $/сд, Шарп %.2f" % (r_["side"], r_["trades"], r_["usd"], r_["mean_usd"], r_["sharpe"]))
+    if errs:
+        for e in errs[:20]:
+            say("СТОП: " + e)
+        sys.exit(1)
+    say("записано строк: %d" % store.cells_put(a.entry, rows, author=AUTHOR)["new"])
+    say("cgate готово")
+
+
+def batch_index(side, cells, found, st):
+    """{партия: [ключи клеток]} из res/batches674*.json; PARTIAL — только партии, готовые на диске во всех окнах (план + маркеры done)."""
+    if not PARTIAL:
+        return json.load(open(os.path.join(ROOT, "res", "batches674%s-%s.json" % (SUF, side)), encoding="utf-8"))
+    index = {}
+    for kind, cur in batches([c for k, c in cells.items() if k not in found]):
+        nm = batch_name(kind, cur)
+        if all(os.path.exists(os.path.join(ROOT, "done", "%s-%s-%s" % (w.name, side, nm))) for w in st.TRADE_WINDOWS):
+            index[nm] = [c["ckey"] for c in cur]
+    say("== %s: PARTIAL — партий на диске во всех окнах %d, клеток %d из %d плана" % (side, len(index), sum(map(len, index.values())), len(cells)))
+    return index
+
+
 def cmd_ccheck(a):
     """c-проверка Lmax на полных стопах (без записи в БД, без метрик P&L); выход: res/ccheck674.json."""
     st, r5, _, _ = t._srv()
@@ -639,7 +978,7 @@ def cmd_ccheck(a):
     out = {}
     for side in SIDES:
         cells, grids, skipped, bad_pos, found = plan_side(side, store)
-        index = json.load(open(os.path.join(ROOT, "res", "batches674%s-%s.json" % (SUF, side)), encoding="utf-8"))
+        index = batch_index(side, cells, found, st)
         where = {ck: nm for nm, cks in index.items() for ck in cks}
         jobs = [(side, c["cid"], where[k], float(c["patch"].get("s", 5))) for k, c in cells.items() if k in where]
         with mp.Pool(3, initializer=_winit) as pool:
@@ -656,7 +995,7 @@ def cmd_ccheck(a):
         say("   полных стопов %d, из них убыток > Lmax(s) %d (%.1f %%), стоп-выходов в зоне 60–90 %% от полного %d (%.2f %% от stop-выходов); максимум превышения над Lmax(s) %.2f $; худший убыток полного стопа: при s=5 %.2f $ (Lmax(5 %%) = 25.42 $), по всем клеткам %.2f $" % (
             n_full, n_above, 100.0 * n_above / max(n_full, 1), n_mid, 100.0 * n_mid / max(1, sum(r["n_stop"] for r in res)), max([r["ex_max"] for r in wf] or [float("nan")]),
             max(w5 or [float("nan")]), max([r["worst"] for r in wf] or [float("nan")])))
-    json.dump(out, open(t.q("res", "ccheck674.json"), "w", encoding="utf-8"))
+    json.dump(out, open(t.q("res", "ccheck674%s.json" % BATCH), "w", encoding="utf-8"))
     say("ccheck готово")
 
 
@@ -674,7 +1013,7 @@ def cmd_tables(a):
     bad, cmean = [], []
     for side in SIDES:
         cells, grids, skipped, bad_pos, found = plan_side(side, store)
-        index = json.load(open(os.path.join(ROOT, "res", "batches674%s-%s.json" % (SUF, side)), encoding="utf-8"))
+        index = batch_index(side, cells, found, st)
         where = {ck: nm for nm, cks in index.items() for ck in cks}
         todo = [c for k, c in cells.items() if k not in found and k in where]
         say("== %s: в БД есть %d, записываем %d" % (side, len(found), len(todo)))
@@ -801,6 +1140,8 @@ def split_report(side, row):
     ex = row["extra"]
     out = dict(split_losses(ex), n=0, n_b=0, stop_a=[0, 0.0], stop_ab=[0, 0.0])
     for d in (ex.get("dirs") or {}).values():
+        if pk.cell_exists(d):
+            pk.ensure_cell(d)
         f = os.path.join(d, "%s-lots.csv" % SIDENAME[side])
         if not os.path.exists(f):
             return dict(out, missing=True)
@@ -835,12 +1176,23 @@ def base_idx(side, name, vals):
     return vals.index(b) if b in vals else None
 
 
+def overlay_rows(store, side, plan, rows, bins, win, cids):
+    """Заменить в `rows` строки клеток плана с cid из `cids` строками метки окна `win` (пересчёт PS-994); ключ клетки остаётся тем же — клетка в карте одна, число m (по метке WIN) не растёт."""
+    keys = [k for k, c in plan["cells"].items() if c["cid"] in cids]
+    rows.update(store.cells_lookup(SIDENAME[side], UNI, win, keys, bins=bins))
+    return len(keys)
+
+
 def cmd_map(a):
     store = chron_store(ro=True)
     bins = eq_bins()
     for side in SIDES:
         plan = json.load(open(os.path.join(ROOT, "res", "plan674%s-%s.json" % (SUF, side)), encoding="utf-8"))
         rows = store.cells_lookup(SIDENAME[side], UNI, WIN, list(plan["cells"]), bins=bins)
+        for sfx in ("", "2"):                                    # пересчёт клеток TK-690 (PS-994; второй слой — PS-995, bd_* на xb): строки этих cid — из пересчёта (метка окна ow), остальные — прежние; клетка в карте одна
+            ow = os.environ.get("TK674_OVERLAY%s_WIN" % sfx)
+            if ow:
+                overlay_rows(store, side, plan, rows, bins, ow, set(_cidlist("TK674_OVERLAY%s_CIDS" % sfx)))
         base_ck = ax.base_ckey(side)
         brow = store.cells_lookup(SIDENAME[side], UNI, WIN, [base_ck], bins=bins).get(base_ck)
         if brow is None:
@@ -850,7 +1202,8 @@ def cmd_map(a):
                 r_["sharpe"] = float("nan")
         miss = [k for k in plan["cells"] if k not in rows]
         if miss:
-            raise SystemExit("%s: в БД нет %d клеток плана (первая: %s)" % (side, len(miss), plan["cells"][miss[0]]["cid"]))
+            raise SystemExit("%s: в БД нет %d клеток плана (первая: %s)%s" % (side, len(miss), plan["cells"][miss[0]]["cid"],
+                                                                           "; X680: после validate повторить plan — отвергнутые движком клетки уйдут из плана" if ax.X680 else ""))
         bsh = brow["sharpe"]
         gd = {k: guards(r, brow) for k, r in rows.items()}
         ok4 = lambda k: (rows[k]["sharpe"] == rows[k]["sharpe"] and not is_ref5(rows[k]) and all(gd[k][x] for x in "abcd"))
@@ -911,7 +1264,7 @@ def cmd_map(a):
                 q5 = r5rows.get(x["ref5_key"])
                 x["ref5"] = dict(sharpe=q5["sharpe"], usd=q5["usd"], n=q5["trades"], maxdd=q5["extra"]["maxdd"], **loss_fields(q5["extra"])) if q5 else None
         # счётчик испытаний (§13.73.1 разд. 3): все клетки стороны в БД (карта + прежние), шум σ·√(2 ln m) — верхняя оценка для независимых клеток
-        m_side = sum(r["n"] for r in store.cells_count() if r["side"] == SIDENAME[side] and r["uni"] == UNI and r["win"] == WIN)
+        m_side, m_own = m_trials(store, SIDENAME[side])
         shs = np.array([r["sharpe"] for r in rows.values() if r["sharpe"] == r["sharpe"]])
         sig_sh = float(shs.std()) if len(shs) > 1 else float("nan")
         noise = sig_sh * float(np.sqrt(2 * np.log(max(m_side, 2))))
@@ -920,14 +1273,19 @@ def cmd_map(a):
         for k, r in rows.items():
             by_sig.setdefault(r["extra"].get("trades_sig"), []).append(k)
         dup = [v for k_, v in by_sig.items() if k_ and len(v) > 1]
+        m_coll = m_side - sum(len(v) - 1 for v in dup)       # FIX 3 критика: m с повторами наборов сделок, свёрнутыми (рядом с m по ключам)
         out = dict(side=side, rebase=ax.REBASE, base=dict(ckey=base_ck, sharpe=bsh, usd=brow["usd"], n=brow["trades"], maxdd=bx["maxdd"], maxdd_pct=bx["maxdd_pct"], kpi=bx["kpi"], rr=bx["rr"]["rr"], **loss_fields(bx)), pairs=pair_rows, best1=best1, n_cells=len(rows),
-                   m=m_side, sharpe_sd=sig_sh, noise_max=noise, g_dup=dict(groups=len(dup), cells=sum(len(v) for v in dup), examples=dup[:5]))
+                   m=m_side, m_collapsed=m_coll, m_own=m_own, sharpe_sd=sig_sh, noise_max=noise, g_dup=dict(groups=len(dup), cells=sum(len(v) for v in dup), examples=dup[:5]))
+        if plan.get("x680"):                                 # пары с осями единичек: какие оси и сколько пар отобрано (для отчёта mapmd)
+            x6s = plan["x680"]
+            out["x680"] = dict(cap=x6s["cap"], n_new_axes=x6s["n_new_axes"], by_set=x6s["by_set"], ext={n: e["add"] for n, e in x6s["ext"].items()}, n_rule=x6s["n_rule"], taken=len(x6s["taken"]),
+                               left_out=len(x6s["left_out"]), banned=len(x6s["banned"]), n_new=x6s["n_new"], axes_sig=x6s["axes_sig"])
         json.dump(out, open(t.q("res", "map674%s-%s.json" % (SUF, side)), "w", encoding="utf-8"), ensure_ascii=False)
         top = sorted([p for p in pair_rows if p["winner"]], key=lambda p: -p["winner"]["gain"])[:15]
         say("== %s: база Шарп %.2f, Σ %+.0f $, просадка %.0f $ (%.0f %%), перехай %d сут.; пар %d, с победителем %d" % (
             side, bsh, brow["usd"], bx["maxdd"], bx["maxdd_pct"], bx["kpi"]["gap_longest"], len(pair_rows), sum(1 for p in pair_rows if p["winner"])))
-        say("   m (все клетки стороны в БД) %d, σ Шарпа клеток %.2f, ожидаемый максимум шума ≈ %.2f (верхняя оценка: клетки зависимы); G-dup: %d групп / %d клеток с одинаковыми сделками" % (
-            m_side, sig_sh, noise, len(dup), sum(len(v) for v in dup)))
+        say("   m (все клетки стороны в БД; по наборам сделок %d) %d, σ Шарпа клеток %.2f, ожидаемый максимум шума ≈ %.2f (верхняя оценка: клетки зависимы); G-dup: %d групп / %d клеток с одинаковыми сделками" % (
+            m_coll, m_side, sig_sh, noise, len(dup), sum(len(v) for v in dup)))
         def line(p, w):
             sy = w.get("syn")
             return "   %-18s %-34s Шарп %5.2f (%+.2f)  Σ %+6.0f $  просадка %4.0f $ (%2.0f %%)  перехай %3d  сделок %4d  плато %s  осей сдвинуто %d  синергия %s" % (
@@ -970,7 +1328,7 @@ def cmd_spot(a):
         out = os.path.join(ROOT, "spot677", kind)
         os.makedirs(out, exist_ok=True)
         r5.tick(u, w, [(c["cid"], line)], out, one_side_env(side), t.q("log", "spot677-%s.log" % kind), ftab=t.q("ftab674", "%s-%s.csv" % (w.name, side)) if c["filt"] else None)
-        old = os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm, c["cid"])
+        old = pk.ensure_cell(os.path.join(ROOT, "cells", "%s-%s" % (w.name, side), nm, c["cid"]))
         diff = [f for f in CMP_FILES if not filecmp.cmp(os.path.join(old, "%s-%s" % (SIDENAME[side], f)), os.path.join(out, c["cid"], "%s-%s" % (SIDENAME[side], f)), shallow=False)]
         say("spot %s %s: %s" % (kind, c["cid"], "байт в байт" if not diff else "РАЗЛИЧИЯ " + ", ".join(diff)))
         bad += diff
@@ -1004,14 +1362,20 @@ def cmd_stopaxis(a):
     say("stopaxis готово: res/stop-axis-table.md")
 
 
-COMMANDS = {"stopaxis": cmd_stopaxis, "spot": cmd_spot, "ftab": cmd_ftab, "probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "validate": cmd_validate, "cells": cmd_cells, "tables": cmd_tables, "ccheck": cmd_ccheck, "map": cmd_map}
+COMMANDS = {"stopaxis": cmd_stopaxis, "spot": cmd_spot, "ftab": cmd_ftab, "probe": cmd_probe, "gates": cmd_gates, "counts": cmd_counts, "plan": cmd_plan, "validate": cmd_validate, "cells": cmd_cells, "tables": cmd_tables, "cgate": cmd_cgate, "ccheck": cmd_ccheck, "map": cmd_map}
+
+
+X680_CMDS = ("plan", "ftab", "validate", "cells", "tables", "ccheck", "map")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("cmd", choices=list(COMMANDS))
     ap.add_argument("--entry", help="запись летописи L-N для строк клеток (стадия tables)")
+    ap.add_argument("--cap", type=int, default=20000, help="X680, стадия plan: потолок новых клеток (нет в БД) на сторону")
     a = ap.parse_args()
+    if ax.X680 and a.cmd not in X680_CMDS:
+        raise SystemExit("в режиме TK674_X680 доступны стадии: %s" % ", ".join(X680_CMDS))
     COMMANDS[a.cmd](a)
 
 

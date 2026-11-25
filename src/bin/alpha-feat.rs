@@ -47,6 +47,8 @@ enum Cmd {
     Tox(ToxOpts),
     /// короткие окна токсичного потока и ускорение ленты в секундах до σ (TK-681; вход и флаги — как у `tox`)
     Fast(ToxOpts),
+    /// диагностика пустоты `sac10/30/60`: записи и покупки окон 10 / 30 / 60 с до σ (TK-690; вход и флаги — как у `tox`)
+    Sacd(ToxOpts),
 }
 
 #[derive(Args)]
@@ -128,6 +130,9 @@ struct F12Opts {
     /// суток в сетке минуток (длина `.b42` = days·1440; по умолчанию SIGFEAT_DAYS или 80; у TK-594/`ep_u0` — 74)
     #[arg(long)]
     days: Option<i64>,
+    /// свеча уровня строк `sigsx` без поля `tf_min`, минут (дамп движка варианта p30 / p60 / p240)
+    #[arg(long, default_value_t = 60)]
+    tf_min: i64,
     /// склад суток TK-607 (формат v2, `.tk`): чтение без `unzip`; промах и сутки с отступлениями — разбор zip, запись в склад — только при `--store-cap-gb` > 0
     #[arg(long)]
     store: Option<PathBuf>,
@@ -210,6 +215,7 @@ fn run_f12(o: F12Opts) -> Result<()> {
             Some(d) => d,
             None => env_or("SIGFEAT_DAYS", "80").parse()?,
         },
+        tf_min: o.tf_min,
     };
     let Some(dir) = o.store else {
         let src = ZipPxSrc {
@@ -316,7 +322,14 @@ fn run_tsize(o: TcOpts) -> Result<()> {
     Ok(())
 }
 
-fn run_tox(o: ToxOpts, fast_cols: bool) -> Result<()> {
+/// Таблица, которую считает `run_tox`.
+enum Tab {
+    Tox,
+    Fast,
+    Sacd,
+}
+
+fn run_tox(o: ToxOpts, tab: Tab) -> Result<()> {
     let roots: Vec<PathBuf> = o
         .trades
         .unwrap_or_else(|| env_or("SIGFEAT_TRADES", "/data/aggtrades/binance"))
@@ -336,10 +349,10 @@ fn run_tox(o: ToxOpts, fast_cols: bool) -> Result<()> {
     };
     let rows = tox::read_input(&cfg)?;
     let go = |src: &dyn DaySrc| -> Result<String> {
-        Ok(if fast_cols {
-            fast::run(&cfg, &rows, src)?.json()
-        } else {
-            tox::run(&cfg, &rows, src)?.json()
+        Ok(match tab {
+            Tab::Tox => tox::run(&cfg, &rows, src)?.json(),
+            Tab::Fast => fast::run(&cfg, &rows, src)?.json(),
+            Tab::Sacd => fast::run_sacd(&cfg, &rows, src)?.json(),
         })
     };
     let Some(dir) = o.store else {
@@ -371,8 +384,9 @@ fn main() -> Result<()> {
         Cmd::F12(o) => return run_f12(o),
         Cmd::Tcount(o) => return run_tcount(o),
         Cmd::Tsize(o) => return run_tsize(o),
-        Cmd::Tox(o) => return run_tox(o, false),
-        Cmd::Fast(o) => return run_tox(o, true),
+        Cmd::Tox(o) => return run_tox(o, Tab::Tox),
+        Cmd::Fast(o) => return run_tox(o, Tab::Fast),
+        Cmd::Sacd(o) => return run_tox(o, Tab::Sacd),
     };
     let trades = o
         .trades

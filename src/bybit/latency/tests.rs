@@ -60,13 +60,6 @@ fn align_to_tick_moves_away_from_book() {
     assert_eq!(align_to_tick(123_000, 1_000, OrderSide::Sell), 123_000);
 }
 
-#[test]
-fn format_e9_matches_probe_copy() {
-    assert_eq!(format_e9(50_000_000_000), "50");
-    assert_eq!(format_e9(123_450_000), "0.12345");
-    assert_eq!(format_e9(0), "0");
-}
-
 // --- тела и разбор ----------------------------------------------------------
 
 #[test]

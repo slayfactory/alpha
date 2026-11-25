@@ -6,7 +6,7 @@ const fs = require('fs');
 const [url, out, widthArg] = process.argv.slice(2);
 const base = url.split('#')[0];
 const RE = /(?:^|[^\wа-яё])(?:бп|bps?|базисн\w*)(?![\wа-яё])|\w+_bp(?![a-z])/gi;
-const ROUTES = ['#targets', '#features'];
+const ROUTES = ['#features'];
 for (const s of ['short', 'long', 'both']) ROUTES.push('#equity/' + s);
 for (const s of ['short', 'long']) ROUTES.push('#equity/fan/' + s);      // веер (TK-684): пакеты грузятся по сети; подсказки — наведением мыши на холст
 

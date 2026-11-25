@@ -38,11 +38,7 @@ fn ticks(r: &mut Lcg, n: usize, base: i64, step: i64, gap_ms: u64) -> Vec<Tick> 
         .map(|_| {
             px = (px + (r.range(21) as i64 - 10) * step).max(step);
             off += r.range(gap_ms + 1);
-            Tick {
-                px,
-                off: off.min(DAY_MS as u64 - 1) as u32,
-                bm: r.range(2) == 1,
-            }
+            Tick::new(px, off.min(DAY_MS as u64 - 1) as u32, r.range(2) == 1)
         })
         .collect()
 }
@@ -51,27 +47,11 @@ fn ticks(r: &mut Lcg, n: usize, base: i64, step: i64, gap_ms: u64) -> Vec<Tick> 
 fn codec_round_trip() {
     let mut r = Lcg(1);
     let mut cases: Vec<Vec<Tick>> = vec![Vec::new()];
-    cases.push(vec![Tick {
-        px: 123_456_789,
-        off: 0,
-        bm: true,
-    }]);
+    cases.push(vec![Tick::new(123_456_789, 0, true)]);
     cases.push(vec![
-        Tick {
-            px: 5,
-            off: 7,
-            bm: false,
-        },
-        Tick {
-            px: 5,
-            off: 7,
-            bm: true,
-        },
-        Tick {
-            px: 5,
-            off: 7,
-            bm: false,
-        },
+        Tick::new(5, 7, false),
+        Tick::new(5, 7, true),
+        Tick::new(5, 7, false),
     ]);
     for (n, base, step, gap) in [
         (1000, 8_357_680_000_000i64, 10_000i64, 300u64),
@@ -152,22 +132,10 @@ fn varint_get_matches_reference() {
 
 #[test]
 fn codec_rejects_unsorted_and_out_of_day() {
-    let a = Tick {
-        px: 1,
-        off: 5,
-        bm: false,
-    };
-    let b = Tick {
-        px: 1,
-        off: 4,
-        bm: false,
-    };
+    let a = Tick::new(1, 5, false);
+    let b = Tick::new(1, 4, false);
     assert!(encode(&[a, b]).is_none());
-    let c = Tick {
-        px: 1,
-        off: DAY_MS as u32,
-        bm: false,
-    };
+    let c = Tick::new(1, DAY_MS as u32, false);
     assert!(encode(&[c]).is_none());
 }
 
@@ -517,7 +485,7 @@ fn zipsrc_store_hit_miss_stale_missing_and_unsorted() {
     let want = plain.day("TESTUSDT", day).expect("без склада");
     let want_stat = plain.stat.lock().expect("stat").clone();
     assert_eq!(
-        want.iter().map(|t| t.off).collect::<Vec<_>>(),
+        want.iter().map(|t| t.off()).collect::<Vec<_>>(),
         vec![100, 100, 500, 900]
     );
     assert_eq!(
@@ -1061,7 +1029,7 @@ fn qty_check(
         w.flags & (F_QTY_BAD | F_QTY_F64) != 0,
     );
     for (i, &(off, bm, p, q)) in want.iter().enumerate() {
-        if w.ticks[i].off != off || w.ticks[i].bm != bm {
+        if w.ticks[i].off() != off || w.ticks[i].bm() != bm {
             return Err(format!("строка {i}: off/bm"));
         }
         if !fq && w.qty_f64(i).to_bits() != q.to_bits() {
@@ -1180,4 +1148,102 @@ fn store_fill_writes_skips_rewrites_truncated_and_reports_bad_crc() {
     for want in ["записано=1", "пропущено_лежащих=1", "ошибок=1"] {
         assert!(r.contains(want), "{want}: {r}");
     }
+}
+
+#[test]
+fn gcd_file_is_reused_and_foreign_file_is_recomputed() {
+    // TK-683: ступени НОД суток берутся из файла без разбора сделок; файл не от этих суток — ошибка запуска и пересчёт
+    use super::tick::GcdSteps;
+    if Command::new("unzip").arg("-v").output().is_err() {
+        return;
+    }
+    let tmp = tempfile::tempdir().expect("tmp");
+    let day = START_DAY;
+    let date = super::data::day_string(day);
+    let dir = tmp.path().join("trades").join("TESTUSDT");
+    std::fs::create_dir_all(&dir).expect("dir");
+    let zip = dir.join(format!("TESTUSDT-aggTrades-{date}.zip"));
+    let text = csv(
+        day,
+        &[
+            (10.5, 100, "false"),
+            (10.6, 200, "true"),
+            (10.4, 900, "true"),
+        ],
+    );
+    write_zip(&zip, "TESTUSDT.csv", text.as_bytes());
+    let root = tmp.path().join("trades");
+    let gdir = tmp.path().join("gcd");
+    let src = || ZipSrc::new(root.clone(), 1 << 20).with_gcd_dir(gdir.clone());
+    let errors = |s: &ZipSrc| s.stat.lock().expect("stat").errors;
+    let files = |s: &ZipSrc| s.stat.lock().expect("stat").files;
+    let a = src();
+    let want = a.gcd_steps("TESTUSDT", day).expect("ступени");
+    let saved: Vec<_> = std::fs::read_dir(gdir.join("TESTUSDT"))
+        .expect("каталог")
+        .map(|e| e.expect("файл").path())
+        .collect();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(std::fs::read(&saved[0]).expect("чтение"), want.to_bytes());
+    // второй запуск: файл есть — сутки не разбираются
+    let b = src();
+    assert_eq!(b.gcd_steps("TESTUSDT", day).as_deref(), Some(&*want));
+    assert_eq!((files(&b), errors(&b)), (0, 0));
+    let foreign = GcdSteps::of(&[Tick::new(7, 1, false), Tick::new(9, 2, false)]);
+    // чужой файл, сутки уже в памяти: сверка при чтении файла
+    std::fs::write(&saved[0], foreign.to_bytes()).expect("запись");
+    let c = src();
+    c.day("TESTUSDT", day).expect("сутки");
+    assert_eq!(c.gcd_steps("TESTUSDT", day).as_deref(), Some(&*want));
+    assert_eq!(errors(&c), 1);
+    assert_eq!(std::fs::read(&saved[0]).expect("чтение"), want.to_bytes());
+    // чужой файл прочитан до загрузки суток: сверка при загрузке
+    std::fs::write(&saved[0], foreign.to_bytes()).expect("запись");
+    let d = src();
+    assert_eq!(d.gcd_steps("TESTUSDT", day).as_deref(), Some(&foreign));
+    d.day("TESTUSDT", day).expect("сутки");
+    assert_eq!(d.gcd_steps("TESTUSDT", day).as_deref(), Some(&*want));
+    assert_eq!(errors(&d), 1);
+    assert_eq!(std::fs::read(&saved[0]).expect("чтение"), want.to_bytes());
+}
+
+/// TK-683: сутки, которые держит вариант, не вытесняются (и не разбираются заново); свободные — вытесняются следующей загрузкой.
+#[test]
+fn zipsrc_keeps_held_day_and_evicts_free_one() {
+    if Command::new("unzip").arg("-v").output().is_err() {
+        return;
+    }
+    let tmp = tempfile::tempdir().expect("tmp");
+    let dir = tmp.path().join("trades").join("TESTUSDT");
+    std::fs::create_dir_all(&dir).expect("dir");
+    let (d0, d1, d2) = (START_DAY, START_DAY + 1, START_DAY + 2);
+    for day in [d0, d1, d2] {
+        let date = super::data::day_string(day);
+        let text = csv(day, &[(10.5, 100, "false"), (10.6, 500, "true")]);
+        write_zip(
+            &dir.join(format!("TESTUSDT-aggTrades-{date}.zip")),
+            "TESTUSDT.csv",
+            text.as_bytes(),
+        );
+    }
+    // память меньше одних суток: всё, что никто не держит, уходит при следующей загрузке
+    let src = ZipSrc::new(tmp.path().join("trades"), 1);
+    let files = || src.stat.lock().expect("stat").files;
+    let a = src.day("TESTUSDT", d0).expect("d0");
+    let b = src.day("TESTUSDT", d1).expect("d1");
+    assert!(src.evicted());
+    // d0 удержаны: загрузка d1 их не вытеснила
+    let a2 = src.day("TESTUSDT", d0).expect("d0 снова");
+    assert!(Arc::ptr_eq(&a, &a2));
+    assert_eq!(files(), 2);
+    // d1 свободны: загрузка d2 их вытесняет, d0 остаются
+    drop(b);
+    let c = src.day("TESTUSDT", d2).expect("d2");
+    assert_eq!(files(), 3);
+    let a3 = src.day("TESTUSDT", d0).expect("d0 в третий раз");
+    assert!(Arc::ptr_eq(&a, &a3));
+    assert_eq!(files(), 3);
+    let b2 = src.day("TESTUSDT", d1).expect("d1 снова");
+    assert_eq!((b2.len(), c.len()), (2, 2));
+    assert_eq!(files(), 4);
 }

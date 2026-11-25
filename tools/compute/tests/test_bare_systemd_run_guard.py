@@ -17,9 +17,9 @@ class Verdict(unittest.TestCase):
         self.assertTrue(G.verdict(SSH + "'systemd-run --unit x -p CPUQuota=400% bash /data/tk0/a.sh'"))
         self.assertTrue(G.verdict("ssh calc systemd-run -p CPUQuota=100% foo"))
 
-    def test_submit_and_benchrun_ok(self):
-        self.assertIsNone(G.verdict(SSH + "python3 /data/sched/alsched.py submit --cls prod -- systemd-run -p CPUQuota=1%"))
-        self.assertIsNone(G.verdict(SSH + "/data/benchrun.sh stand systemd-run -p CPUQuota=100% x"))
+    def test_alsched_and_benchrun_denied(self):          # calc выведен (В-102, TK-703): исключений нет
+        self.assertTrue(G.verdict(SSH + "python3 /data/sched/alsched.py submit --cls prod -- systemd-run -p CPUQuota=1%"))
+        self.assertTrue(G.verdict(SSH + "/data/benchrun.sh stand systemd-run -p CPUQuota=100% x"))
 
     def test_other_cases_pass(self):
         self.assertIsNone(G.verdict(SSH + "systemd-run --unit x bash y"))          # без CPUQuota

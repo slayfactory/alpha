@@ -19,6 +19,7 @@ import test_tk670 as U  # noqa: E402
 import tk616_forward as fw  # noqa: E402
 
 fw.REQUIRE_CANDIDATE4 = False                         # прежние тесты — без `tk691-frozen.json`; охрана «нет звена 5 — остановка» проверяется в `strict4()`
+fw.REQUIRE_CANDIDATE5 = False                         # TK-708: то же для `tk708-frozen.json` (`strict5()` в `test_tk708.py`)
 N_C539 = 250000
 
 

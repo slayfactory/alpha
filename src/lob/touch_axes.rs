@@ -1,7 +1,6 @@
 //! Оси касаний — корзины и границы, предрегистрированные **В-44** до чтения
 //! данных (`docs/plan/SETTLED.md`, 2026-09-13). Это единственное место этих
-//! границ: дашборд (таск 36) и профили касаний (таск 37) берут их отсюда —
-//! число на странице и число в CSV получены одной функцией.
+//! границ: число на странице и число в CSV получены одной функцией.
 //!
 //! Источник каждой границы — цитата практиков
 //! (`docs/findings/practitioners-2026-09-13.md`: **D** — «отскок dizzi»,
@@ -9,31 +8,15 @@
 //! константа кода; новых чисел здесь нет. Цитаты — дословно из В-44, в
 //! doc-комментарии каждой константы.
 //!
-//! Оси В-44 и где живут их корзины:
-//! - сторона (бид/аск) — `shortlist::SIDE_LABELS`;
-//! - размер на касании ×`H3` — `shortlist::SIZE_LABELS`, границы —
-//!   `commands::lob::profiles::size_bucket` (те же корзины, что у смертей);
-//! - возраст уровня на касании — здесь, [`age_bucket`];
-//! - фронтран в долях размера — здесь, [`frontrun_bucket`];
-//! - круглость цены — здесь, [`round_bucket`];
-//! - номер касания — здесь, [`touch_index_bucket`];
-//! - подход за 1 с, bps — здесь, [`approach_bucket`];
-//! - длительность касания — `shortlist::LIFETIME_LABELS`, границы —
-//!   `commands::lob::profiles::lifetime_bucket` (В-44: «длительность касания —
-//!   `LIFETIME_LABELS`»);
-//! - исход касания — здесь, [`touch_outcome`].
+//! Корзины осей: возраст уровня на касании — [`age_bucket`]; фронтран в долях
+//! размера — [`frontrun_bucket`]; круглость цены — [`round_bucket`]; номер
+//! касания — [`touch_index_bucket`]. Корзины стороны, размера и длительности
+//! живут в `shortlist` и `commands::lob::profiles`. Сетка профилей касаний
+//! (`lob touch-profiles`) и корзины подхода / исхода убраны в TK-702: команда
+//! срезана раньше, код не вызывался (тег `archive/tk-702-pre-dead`).
 //!
 //! Все функции чистые, без ввода-вывода и без аллокаций; метки — `&'static
-//! str`, чтобы таблица дашборда и CSV профилей печатали одно и то же слово.
-//!
-//! Сетка профилей касаний (таск 37, `lob touch-profiles`) — тоже здесь,
-//! [`touch_profile_grid`]: маргиналы девяти осей плюс один крест исход ×
-//! возраст, на каждый инструмент пула и на пул целиком; её длина — число
-//! испытаний, которое идёт в `runs.csv` (В-44: «сумма корзин маргиналов +
-//! крест»). Полного креста осей нет и не будет — тот же принцип, что у
-//! сетки смертей (В-18/D03).
-
-use crate::lob::shortlist::{DISTANCE_BOUNDS_BPS, LIFETIME_LABELS, SIDE_LABELS, SIZE_LABELS};
+//! str`, чтобы таблица и CSV печатали одно и то же слово.
 
 // ---------------------------------------------------------------------------
 // Возраст уровня на момент касания
@@ -148,136 +131,6 @@ pub fn touch_index_bucket(touch_index: u32) -> &'static str {
         1 | 2 => TOUCH_INDEX_LABELS[1],
         _ => TOUCH_INDEX_LABELS[2],
     }
-}
-
-// ---------------------------------------------------------------------------
-// Подход к уровню за 1 с
-// ---------------------------------------------------------------------------
-
-/// Корзины подхода за 1 с (`markout::approach_bps` с окном `APPROACH_MS[0]`,
-/// знак «к уровню»): отрицательный подход — цена за секунду до касания
-/// уходила от уровня — отдельная корзина `<0`; дальше — первые три корзины
-/// расстояния.
-pub const APPROACH_LABELS: [&str; 4] = ["<0", "[0,1)", "[1,2.5)", "[2.5,inf)"];
-
-/// Границы тех же корзин, bps: `(включительно, исключительно)`.
-///
-/// В-44: «подход за 1 с, bps, — корзины первых трёх границ
-/// `DISTANCE_BOUNDS_BPS`: `[0,1)`, `[1,2.5)`, `[2.5,∞)`, отрицательный подход
-/// (цена уходила) — отдельная корзина `<0` (S 05:19 „импульсный подход
-/// обязателен“)». Числа 1 и 2.5 — не новые: это `shortlist::DISTANCE_BOUNDS_BPS`
-/// (сетка Decision 26), последняя корзина открыта вверх.
-pub const APPROACH_BOUNDS_BPS: [(f64, f64); 4] = [
-    (f64::NEG_INFINITY, 0.0),
-    (DISTANCE_BOUNDS_BPS[0].0, DISTANCE_BOUNDS_BPS[0].1),
-    (DISTANCE_BOUNDS_BPS[1].0, DISTANCE_BOUNDS_BPS[1].1),
-    (DISTANCE_BOUNDS_BPS[2].0, f64::INFINITY),
-];
-
-/// Корзина подхода. `NaN` — `None`; любое конечное или бесконечное число
-/// попадает в одну из четырёх (последняя открыта вверх: `+∞` — в неё).
-pub fn approach_bucket(approach_bps: f64) -> Option<&'static str> {
-    if approach_bps.is_nan() {
-        return None;
-    }
-    APPROACH_BOUNDS_BPS
-        .iter()
-        .zip(APPROACH_LABELS.iter())
-        .find(|((lo, hi), _)| approach_bps >= *lo && (approach_bps < *hi || *hi == f64::INFINITY))
-        .map(|(_, label)| *label)
-}
-
-// ---------------------------------------------------------------------------
-// Исход касания
-// ---------------------------------------------------------------------------
-
-/// Исходы касания: `bounced` — уровень жив, цена ушла с него; `eaten` —
-/// касание кончилось смертью уровня (`TouchRecord::ended_by_death`).
-///
-/// В-44: «исход касания — `bounced` (уровень жив, цена ушла) / `eaten`
-/// (`ended_by_death`)». Порядок фиксирован: первый — отскок.
-pub const TOUCH_OUTCOME_LABELS: [&str; 2] = ["bounced", "eaten"];
-
-/// Метка исхода по флагу записи.
-pub fn touch_outcome(ended_by_death: bool) -> &'static str {
-    if ended_by_death {
-        TOUCH_OUTCOME_LABELS[1]
-    } else {
-        TOUCH_OUTCOME_LABELS[0]
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Сетка профилей касаний (таск 37)
-// ---------------------------------------------------------------------------
-
-/// Девять осей касания В-44 в фиксированном порядке — имя оси в id профиля
-/// и её корзины. Единственный перечень: из него строится сетка
-/// (`touch_profile_grid`), по нему же считается её длина
-/// (`touch_grid_size`) — число испытаний не назначается отдельным числом.
-/// Сторона, размер и длительность — те же метки, что у смертей
-/// (`shortlist::SIDE_LABELS`/`SIZE_LABELS`/`LIFETIME_LABELS`, В-44).
-pub const TOUCH_AXES: [(&str, &[&str]); 9] = [
-    ("side", &SIDE_LABELS),
-    ("size", &SIZE_LABELS),
-    ("age", &AGE_LABELS),
-    ("frontrun", &FRONTRUN_LABELS),
-    ("round", &ROUND_LABELS),
-    ("index", &TOUCH_INDEX_LABELS),
-    ("approach", &APPROACH_LABELS),
-    ("duration", &LIFETIME_LABELS),
-    ("outcome", &TOUCH_OUTCOME_LABELS),
-];
-
-/// Область «весь пул» в id профиля касания — рядом с областями-инструментами.
-pub const POOL_SCOPE: &str = "pool";
-
-/// Id маргинала: `<область>:marginal:<ось>=<корзина>`, область — символ
-/// инструмента или [`POOL_SCOPE`].
-pub fn touch_marginal_id(scope: &str, axis: &str, label: &str) -> String {
-    format!("{scope}:marginal:{axis}={label}")
-}
-
-/// Id клетки единственного креста исход × возраст:
-/// `<область>:cross:<исход>|<возраст>` (В-44: «главный тезис практиков —
-/// старая плотность отскакивает»).
-pub fn touch_cross_id(scope: &str, outcome: &str, age: &str) -> String {
-    format!("{scope}:cross:{outcome}|{age}")
-}
-
-/// Сетка профилей касаний: для пула целиком и для каждого инструмента —
-/// маргинал на каждую корзину каждой из девяти осей плюс крест исход ×
-/// возраст (`TOUCH_OUTCOME_LABELS` × `AGE_LABELS`). Порядок — по возрастанию
-/// строки, без повторов (детерминирован, как `shortlist::build_profile_grid`).
-/// Пустой пул даёт только область `pool`.
-pub fn touch_profile_grid(symbols: &[String]) -> Vec<String> {
-    let mut scopes: Vec<&str> = vec![POOL_SCOPE];
-    scopes.extend(symbols.iter().map(String::as_str));
-    let mut out = Vec::with_capacity(scopes.len() * touch_grid_size(0));
-    for scope in scopes {
-        for (axis, labels) in TOUCH_AXES {
-            for label in labels {
-                out.push(touch_marginal_id(scope, axis, label));
-            }
-        }
-        for outcome in TOUCH_OUTCOME_LABELS {
-            for age in AGE_LABELS {
-                out.push(touch_cross_id(scope, outcome, age));
-            }
-        }
-    }
-    out.sort();
-    out.dedup();
-    out
-}
-
-/// Длина сетки для `n_instruments` инструментов — из длин самих массивов
-/// корзин, не отдельным числом: `(Σ корзин осей + клеток креста) ×
-/// (n_instruments + 1)`; для пула из десяти — `(26 + 6) × 11 = 352`.
-pub fn touch_grid_size(n_instruments: usize) -> usize {
-    let marginals: usize = TOUCH_AXES.iter().map(|(_, labels)| labels.len()).sum();
-    let cross = TOUCH_OUTCOME_LABELS.len() * AGE_LABELS.len();
-    (marginals + cross) * (n_instruments + 1)
 }
 
 /// `i64` лотов → `f64` для доли: единственный каст модуля, вне горячего пути.

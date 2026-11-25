@@ -18,11 +18,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 fn tk(m: usize, ms: u32, price: f64, bm: bool) -> Tick {
-    Tick {
-        px: px(price),
-        off: (m % 1440) as u32 * 60_000 + ms,
-        bm,
-    }
+    Tick::new(px(price), (m % 1440) as u32 * 60_000 + ms, bm)
 }
 
 const E_E8: i64 = 300_000; // 0,3 %
@@ -50,9 +46,12 @@ fn csv_parse_header_fields_and_out_of_day() {
         st.unsorted_files, 1,
         "убывание времени замечено и сделки отсортированы"
     );
-    assert_eq!(v.iter().map(|t| t.off).collect::<Vec<_>>(), vec![3, 5, 20]);
-    assert_eq!(v[0].px, px(78549.5));
-    assert!(v[0].bm && !v[1].bm);
+    assert_eq!(
+        v.iter().map(|t| t.off()).collect::<Vec<_>>(),
+        vec![3, 5, 20]
+    );
+    assert_eq!({ v[0].px }, px(78549.5));
+    assert!(v[0].bm() && !v[1].bm());
 }
 
 #[test]
@@ -537,6 +536,7 @@ fn reentry_modes_consume_level_per_protocol() {
             lp: px(100.0),
             far: px(100.0),
             ws: false,
+            nxt: 0,
         });
         ticks.push(tk(t, 0, 99.6, false));
         ticks.push(tk(t, 10_000, 99.8, false)); // сигнал
@@ -1327,11 +1327,7 @@ fn fresh_keys_parse_and_validate_and_minute_engine_flag() {
 const EDAY: usize = 20;
 
 fn et(off: u32, price: f64, bm: bool) -> Tick {
-    Tick {
-        px: px(price),
-        off,
-        bm,
-    }
+    Tick::new(px(price), off, bm)
 }
 
 fn esig(k: usize, lp: f64) -> TSig {
@@ -1346,6 +1342,7 @@ fn esig(k: usize, lp: f64) -> TSig {
         lp: px(lp),
         far: px(lp),
         ws: false,
+        nxt: 0,
     }
 }
 
@@ -1546,11 +1543,7 @@ fn tape_entry_rejection_does_not_consume_level_and_is_listed() {
     }
     let s = Sym::from_cols("TEST", c, Vec::new());
     let base = (t1 as i64 % 1440) * MIN_MS;
-    let mk = |off: i64, price: f64, bm: bool| Tick {
-        px: px(price),
-        off: (base + off) as u32,
-        bm,
-    };
+    let mk = |off: i64, price: f64, bm: bool| Tick::new(px(price), (base + off) as u32, bm);
     let ticks = vec![
         mk(0, 99.6, false),
         mk(10_000, 100.20, false), // за уровнем 100,05
@@ -1571,6 +1564,7 @@ fn tape_entry_rejection_does_not_consume_level_and_is_listed() {
         lp: px(100.05),
         far: px(100.05),
         ws: false,
+        nxt: 0,
     };
     let syms = [s];
     let r = run_tick(&syms, &[sg], Side::Long, &ex, &p.port, &src);
@@ -1600,6 +1594,7 @@ fn run_lc(
         rng: None,
         vol: -1,
         volz: -1,
+        nxt: 0,
     };
     sim_fill_lc(
         &mut stream(ticks),
@@ -1852,11 +1847,7 @@ impl E2World {
     fn run(&self, ticks: &[(i64, f64, bool)]) -> super::tick::TickResult {
         let ticks: Vec<Tick> = ticks
             .iter()
-            .map(|&(off, price, bm)| Tick {
-                px: px(price),
-                off: (self.base + off) as u32,
-                bm,
-            })
+            .map(|&(off, price, bm)| Tick::new(px(price), (self.base + off) as u32, bm))
             .collect();
         let mut m = HashMap::new();
         m.insert(("TEST".to_string(), self.t1 / 1440), Arc::new(ticks));
@@ -1872,6 +1863,7 @@ impl E2World {
             lp: px(100.0),
             far: px(99.9),
             ws: false,
+            nxt: 0,
         };
         run_tick(&self.syms, &[sg], Side::Long, &self.ex, &self.port, &src)
     }
@@ -1995,6 +1987,7 @@ fn lot2_decision_does_not_enter_after_lot1_exit_time() {
         lp: px(100.0),
         far: px(99.9),
         ws: false,
+        nxt: 0,
     };
     let d0 = (w.t1 / 1440) as i64 * DAY_MS;
     // лот 1 вошёл в 10 004 и закрыт в 30 004: T2 = 30 004 — не раньше выхода → нет второго лота
@@ -2505,6 +2498,7 @@ fn fsig(ms: i64) -> TSig {
         lp: 0,
         far: 0,
         ws: false,
+        nxt: 0,
     }
 }
 
@@ -2580,11 +2574,7 @@ fn filtered_run(
 ) -> super::tick::TickResult {
     let ticks: Vec<Tick> = ticks
         .iter()
-        .map(|&(off, price, bm)| Tick {
-            px: px(price),
-            off: (w.base + off) as u32,
-            bm,
-        })
+        .map(|&(off, price, bm)| Tick::new(px(price), (w.base + off) as u32, bm))
         .collect();
     let mut m = HashMap::new();
     m.insert(("TEST".to_string(), w.t1 / 1440), Arc::new(ticks));
@@ -2600,6 +2590,7 @@ fn filtered_run(
         lp: px(100.0),
         far: px(99.9),
         ws: false,
+        nxt: 0,
     };
     let mut sigs = vec![sg];
     if let Some((hi, fv)) = keep {
@@ -2652,11 +2643,7 @@ fn multi_run(
 ) -> super::tick::TickResult {
     let ticks: Vec<Tick> = ticks
         .iter()
-        .map(|&(off, price, bm)| Tick {
-            px: px(price),
-            off: (w.base + off) as u32,
-            bm,
-        })
+        .map(|&(off, price, bm)| Tick::new(px(price), (w.base + off) as u32, bm))
         .collect();
     let mut m = HashMap::new();
     m.insert(("TEST".to_string(), w.t1 / 1440), Arc::new(ticks));
@@ -2675,6 +2662,7 @@ fn multi_run(
             lp: px(100.0),
             far: px(99.9),
             ws: false,
+            nxt: 0,
         })
         .collect();
     run_tick(&w.syms, &sigs, Side::Long, &w.ex, port, &src)
@@ -2884,11 +2872,13 @@ fn gcd_steps_prefix_equals_direct_gcd_of_every_prefix() {
     ] {
         // сетка дробится по ходу суток: первые сделки на крупном шаге, дальше — на всё более мелком
         let ticks: Vec<Tick> = (0..n)
-            .map(|i| Tick {
-                px: 98_0000_0000
-                    + (rnd() % 50) as i64 * grid * (1 << (6 - (i * 7 / n.max(1)).min(6))),
-                off: i as u32 * 10,
-                bm: false,
+            .map(|i| {
+                Tick::new(
+                    98_0000_0000
+                        + (rnd() % 50) as i64 * grid * (1 << (6 - (i * 7 / n.max(1)).min(6))),
+                    i as u32 * 10,
+                    false,
+                )
             })
             .collect();
         let st = GcdSteps::of(&ticks);
@@ -3181,17 +3171,19 @@ impl E2World {
         mk: u8,
     ) -> super::tick::TickResult {
         let mut v: Vec<Tick> = (0..100u32)
-            .map(|i| Tick {
-                px: px(if i % 2 == 0 { 99.40 } else { 99.41 }),
-                off: (self.base - 5000) as u32 + i,
-                bm: i % 3 == 0,
+            .map(|i| {
+                Tick::new(
+                    px(if i % 2 == 0 { 99.40 } else { 99.41 }),
+                    (self.base - 5000) as u32 + i,
+                    i % 3 == 0,
+                )
             })
             .collect();
-        v.extend(ticks.iter().map(|&(off, price, bm)| Tick {
-            px: px(price),
-            off: (self.base + off) as u32,
-            bm,
-        }));
+        v.extend(
+            ticks
+                .iter()
+                .map(|&(off, price, bm)| Tick::new(px(price), (self.base + off) as u32, bm)),
+        );
         let mut m = HashMap::new();
         m.insert(("TEST".to_string(), self.t1 / 1440), Arc::new(v));
         let src = MemSrc(m);
@@ -3206,6 +3198,7 @@ impl E2World {
             lp: px(100.0),
             far: px(99.9),
             ws: false,
+            nxt: 0,
         };
         run_tick_mk(&self.syms, &[sg], Side::Long, ex, &self.port, &src, mk)
     }
@@ -3737,6 +3730,7 @@ fn run_rng(
         rng,
         vol: -1,
         volz: -1,
+        nxt: 0,
     };
     sim_fill_lc(
         &mut stream(ticks),
@@ -4045,11 +4039,7 @@ impl E2World {
     ) -> super::tick::TickResult {
         let v: Vec<Tick> = ticks
             .iter()
-            .map(|&(off, price, bm)| Tick {
-                px: px(price),
-                off: (self.base + off) as u32,
-                bm,
-            })
+            .map(|&(off, price, bm)| Tick::new(px(price), (self.base + off) as u32, bm))
             .collect();
         let mut m = HashMap::new();
         m.insert(("TEST".to_string(), self.t1 / 1440), Arc::new(v));
@@ -4067,6 +4057,7 @@ impl E2World {
                 lp: px(100.0),
                 far: px(99.9),
                 ws: false,
+                nxt: 0,
             })
             .collect();
         super::tick::run_tick_ek(&self.syms, &sgs, Side::Long, ex, &self.port, &src, 0, ek)
@@ -4205,11 +4196,7 @@ fn ek_short_confirms_on_a_fall_of_k_bp_in_the_mirror_frame() {
         (30_000, 100.19, true), // ≤ 100,30·(1 − 10/10⁴) = 100,1997 → срабатывание
     ]
     .iter()
-    .map(|&(off, price, bm)| Tick {
-        px: px(price),
-        off: (w.base + off) as u32,
-        bm,
-    })
+    .map(|&(off, price, bm)| Tick::new(px(price), (w.base + off) as u32, bm))
     .collect();
     let mut m = HashMap::new();
     m.insert(("TEST".to_string(), day), Arc::new(ticks));
@@ -4225,6 +4212,7 @@ fn ek_short_confirms_on_a_fall_of_k_bp_in_the_mirror_frame() {
         lp: -px(100.0),
         far: -px(100.1),
         ws: false,
+        nxt: 0,
     };
     let (d, end) = super::tick::ek_decision(&src, &w.syms[0], Side::Short, &sg, &ex, 10);
     assert_eq!(
@@ -4317,11 +4305,7 @@ impl E2World {
     ) -> super::tick::TickResult {
         let v: Vec<Tick> = ticks
             .iter()
-            .map(|&(off, price, bm)| Tick {
-                px: px(price),
-                off: (self.base + off) as u32,
-                bm,
-            })
+            .map(|&(off, price, bm)| Tick::new(px(price), (self.base + off) as u32, bm))
             .collect();
         let mut m = HashMap::new();
         m.insert(("TEST".to_string(), self.t1 / 1440), Arc::new(v));
@@ -4339,6 +4323,7 @@ impl E2World {
                 lp: px(100.0),
                 far: px(99.9),
                 ws: false,
+                nxt: 0,
             })
             .collect();
         super::tick::run_tick_xb(&self.syms, &sgs, Side::Long, ex, &self.port, &src, 0, 0, xb)
@@ -4486,11 +4471,7 @@ fn xb_short_fires_on_a_fall_to_the_threshold_below_the_floor_in_the_mirror_frame
         (30_000, below - 0.005, true), // ≤ порога → срабатывание
     ]
     .iter()
-    .map(|&(off, price, bm)| Tick {
-        px: px(price),
-        off: (w.base + off) as u32,
-        bm,
-    })
+    .map(|&(off, price, bm)| Tick::new(px(price), (w.base + off) as u32, bm))
     .collect();
     let mut m = HashMap::new();
     m.insert(("TEST".to_string(), day), Arc::new(ticks));
@@ -4506,6 +4487,7 @@ fn xb_short_fires_on_a_fall_to_the_threshold_below_the_floor_in_the_mirror_frame
         lp: -px(100.0),
         far: -px(100.1),
         ws: false,
+        nxt: 0,
     };
     let natr = exit_natr(&w.syms[0], &ex, w.t1);
     let (d, end) = xb_decision(&src, &w.syms[0], Side::Short, &sg, &ex, natr, 400);
@@ -5723,11 +5705,7 @@ fn prio_run(
         ticks.push((60_000, 90.0, true));
         let ticks: Vec<Tick> = ticks
             .into_iter()
-            .map(|(o, price, bm)| Tick {
-                px: px(price),
-                off: (w.base + o) as u32,
-                bm,
-            })
+            .map(|(o, price, bm)| Tick::new(px(price), (w.base + o) as u32, bm))
             .collect();
         m.insert((w.syms[si as usize].name.clone(), day), Arc::new(ticks));
         v.push(TSig {
@@ -5741,6 +5719,7 @@ fn prio_run(
             lp: px(100.0),
             far: px(99.9),
             ws: false,
+            nxt: 0,
         });
     }
     super::tick::sort_tsigs(&mut v);
@@ -5898,4 +5877,102 @@ fn prio_reorders_same_ms_signals_without_a_window_and_without_delay() {
         );
         assert_eq!((r.rej[4], r.prio), (1, [0, 0, 0, 0, 0, moved]), "pr={pr}");
     }
+}
+
+// TK-697 (банк № 9): тесты ключей `tn` / `tno` — отдельным файлом
+mod tn_tests;
+
+// TK-706: память исходов хода — отдельным файлом
+mod memo_tests;
+
+// ───────────────────────────── TK-683: группа заданий с одним состоянием уровня ─────────────────────────────
+
+#[test]
+fn candidates_group_equals_separate_passes() {
+    use super::tick::{candidates_group, level_state_key};
+    let mut c = level_world();
+    // подходы к уровню 100 на разной глубине, оборот появляется с минуты BORN+61, затем ложный пробой с запретом
+    set(&mut c, BORN + 60, 99.85, 99.95, 99.84, 99.90);
+    set(&mut c, BORN + 61, 99.75, 99.80, 99.70, 99.75);
+    c.qv[BORN + 61] = 1_000_000_000_000;
+    set(&mut c, BORN + 62, 99.55, 99.60, 99.50, 99.55);
+    set(&mut c, BORN + 63, 99.85, 99.96, 99.84, 99.90);
+    set(&mut c, BORN + 70, 100.00, 100.20, 99.80, 99.85);
+    set(&mut c, BORN + 71, 99.85, 99.95, 99.84, 99.90);
+    let s = sym(c);
+    for fg_m in [0, 500] {
+        let mut base = lv_params().sig;
+        base.track_pm = 1000;
+        base.fg_m = fg_m;
+        let mut cfgs = vec![base.clone(); 9];
+        cfgs[1].e_pm = 100;
+        cfgs[2].e_pm = 500;
+        cfgs[3].t1h_u = 1;
+        cfgs[4].t24_u = 1;
+        cfgs[5].natr_min_pm = 1_000_000;
+        (cfgs[6].fr_h_min, cfgs[6].fr_k, cfgs[6].fr_share) = (30, 20, 50);
+        cfgs[7].nf = 1;
+        (cfgs[8].ev, cfgs[8].ea_m, cfgs[8].el_pm, cfgs[8].eh_pm) = (1, 1000, 50, 400);
+        let key = level_state_key(&base);
+        assert!(cfgs.iter().all(|x| level_state_key(x) == key));
+        let lv = build_levels(&s, &base.lv, Side::Long);
+        let refs: Vec<&super::params::SigCfg> = cfgs.iter().collect();
+        let mut outs = vec![Vec::new(); cfgs.len()];
+        let mut fgs = vec![[0u64; 4]; cfgs.len()];
+        candidates_group(&s, &lv, &refs, Side::Long, &mut outs, &mut fgs);
+        let row = |v: &[super::tick::Cand]| -> Vec<(u32, u32, i64, i64)> {
+            v.iter().map(|x| (x.t, x.level, x.lp, x.far)).collect()
+        };
+        for (k, cfg) in cfgs.iter().enumerate() {
+            let mut one = Vec::new();
+            let mut fg = [0u64; 4];
+            candidates_fg(&s, &lv, cfg, Side::Long, &mut one, &mut fg);
+            assert_eq!(row(&outs[k]), row(&one), "задание {k}, fg {fg_m}");
+            assert_eq!(fgs[k], fg, "счётчики fg, задание {k}, fg {fg_m}");
+        }
+        assert!(!outs[0].is_empty(), "база даёт кандидатов");
+        assert!(
+            outs.iter().any(|o| row(o) != row(&outs[0])),
+            "условия выдачи различают задания"
+        );
+    }
+}
+
+#[test]
+fn gcd_steps_file_roundtrip() {
+    use super::tick::GcdSteps;
+    let ticks: Vec<Tick> = [100.0, 100.4, 100.6, 100.5, 100.55]
+        .iter()
+        .enumerate()
+        .map(|(i, &p)| tk(3, i as u32, p, false))
+        .collect();
+    let s = GcdSteps::of(&ticks);
+    let b = s.to_bytes();
+    assert_eq!(GcdSteps::from_bytes(&b), Some(s.clone()));
+    assert_eq!(
+        GcdSteps::from_bytes(&b[..b.len() - 1]),
+        None,
+        "усечённый файл"
+    );
+    let mut bad = b.clone();
+    bad[0] ^= 1;
+    assert_eq!(GcdSteps::from_bytes(&bad), None, "чужая метка");
+    assert_ne!(s, GcdSteps::default());
+    let empty = GcdSteps::default();
+    assert_eq!(GcdSteps::from_bytes(&empty.to_bytes()), Some(empty));
+}
+
+/// TK-683: сделка — 12 байт; `off` и `bm` возвращаются как положены, на краях суток тоже.
+#[test]
+fn tick_is_12_bytes_and_keeps_off_and_bm() {
+    assert_eq!(std::mem::size_of::<Tick>(), 12);
+    for off in [0, 1, 59_999, DAY_MS as u32 - 1, DAY_MS as u32] {
+        for bm in [false, true] {
+            for p in [i64::MIN, -1, 0, 1, 98_0000_0000, i64::MAX] {
+                let t = Tick::new(p, off, bm);
+                assert_eq!(({ t.px }, t.off(), t.bm()), (p, off, bm));
+            }
+        }
+    }
+    assert_ne!(Tick::new(1, 5, false), Tick::new(1, 5, true));
 }
