@@ -49,6 +49,17 @@ def test_combine_is_sum_of_daily_series_with_double_margin():
     assert c["sum"] == mt.metrics(a["d"], a["v"], 4)["sum"] + mt.metrics(b["d"], b["v"], 4)["sum"]
 
 
+def test_fwd_metrics_use_describe_rows_gap():
+    # чтение вперёд (TK-710, describe_rows): первые сутки — максимум, даже отрицательные; gap_longest считает зазор с шага −1
+    assert mt.gap_under([-1.0, -1.0, 3.0]) == 1 and mt.gap_longest([-1.0, -1.0, 3.0]) == 3
+    assert mt.gap_under([1, -1, 1]) == 2 and mt.gap_under([1, 2, 3]) == 0 and mt.gap_under([-1, -1, -1]) == 2
+    m = mt.fwd_metrics([0, 0, 2], [3.0, -1.0, -4.0], ndays=4)
+    assert m["n"] == 3 and m["sum"] == -2.0 and m["gap"] == mt.gap_under([2.0, 0.0, -4.0, 0.0]) == 3 and m["dd"] == 4.0 and m["ddp"] == 4.0 / 250 * 100
+    a, b = {"d": [0], "v": [2.0]}, {"d": [0, 1], "v": [1.0, -4.0]}
+    c = mt.fwd_combine(a, b, ndays=3)
+    assert c["n"] == 3 and c["sum"] == -1.0 and c["ddp"] == c["dd"] / 500 * 100 and c["gap"] == mt.gap_under([3.0, -4.0, 0.0])
+
+
 def test_variants_list():
     v = json.load(open(os.path.join(HERE, "tk684_variants.json"), encoding="utf-8"))
     ids = [x["id"] for x in v["variants"]]

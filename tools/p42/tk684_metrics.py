@@ -78,3 +78,30 @@ def metrics(days, vals, ndays=NDAYS, margin=MARGIN):
 def combine(a, b, ndays=NDAYS):
     """Шорт + лонг: сделки обеих линий вместе, по 500 $ на сделку с каждой стороны; маржа — две."""
     return metrics(list(a["d"]) + list(b["d"]), list(a["v"]) + list(b["v"]), ndays, 2 * MARGIN)
+
+
+def gap_under(s):
+    """Перехай чтения вперёд (tk616_forward.describe_rows, В-120): самый длинный ряд суток подряд без нового максимума накопленного; первые сутки — максимум (у gap_longest ряд с первых суток ниже нуля — зазор с шага −1)."""
+    c = 0.0
+    peak, since, best = None, 0, 0
+    for x in s:
+        c += x
+        if peak is None or c > peak:
+            peak, since = c, 0
+        else:
+            since += 1
+        best = max(best, since)
+    return best
+
+
+def fwd_metrics(days, vals, ndays, margin=MARGIN):
+    """Метрики линии за дни вперёд (суточный ряд по дню входа, ndays суток чтения) — те же числа, что в describe_rows; перехай — gap_under."""
+    m = metrics(days, vals, ndays, margin)
+    m["gap"] = gap_under(daily(days, vals, ndays))
+    return m
+
+
+def fwd_combine(a, b, ndays):
+    """Шорт + лонг за дни вперёд: сделки обеих линий вместе, маржа — две."""
+    return fwd_metrics(list(a["d"]) + list(b["d"]), list(a["v"]) + list(b["v"]), ndays, 2 * MARGIN)
+
