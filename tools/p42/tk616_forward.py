@@ -21,6 +21,10 @@ TK-670 / §13.70: четвёртый файл цепочки `tk670-frozen.json`
   C2 — доля пар (монета, сутки зачёта) без klines предыдущих суток > 1 % на вселенной точки — `D_S` на ней не читается, остальные клетки считаются; `missing_days` движка печатается, в решение не входит;
   C3 — `replay-ds` (G-670c) сверяет `short-{trades,daily,coinday,entryrej}.csv` побайтно с выходами TK-668 (`--ref-dir /data/p42-tk668/e4/cells`, `<окно>/S_lx1/`; `short-sigsx.csv` — дамп TK-668, пакетный путь его не пишет: сверен в G-670a `tk670_replay.py`);
   совместное чтение `S_base` + `D_S` (вселенная all) — ОПИСАТЕЛЬНО (`joint_describe`): без вердикта и α; L1 по `D_S` — описательно, L2–L5 — `decide` как у всех.
+TK-708 (L-428): шестой файл цепочки `tk708-frozen.json` — четыре линии TK-674 (L1, L2 — лонг, S1, S2 — шорт) на c539; α нет (описательно, α = 0). S1 / S2 — ключи движка `357a66c1` из `tk674-frozen.json` без таблиц;
+  L1 / L2 — таблица `--ftab` (`tk708_feat.py`: дамп потока → alpha-feat f12 / flow / tox → `big1800`, `cons60`, `vpin1h` → составной столбец). Охрана NaN: доля пустых значений признака среди кандидатов суток выше максимальной
+  суточной доли исследования — линия на эти сутки «нет данных» (сделок нет), печатается. Файл обязателен всегда (нет — остановка), `--no-tk708` — единственный обход; бинарь линий и три alpha-feat сверяются ДО маркера чтения.
+  python3 tk616_forward.py replay-tk708 --tk674-bin … --f12-bin … --flow-bin … --tox-bin … --gate-cells docs/research/freeze/tk674-gate-cells.json --replay-root … --windows-root /data/p42-tk621 --symbols-file …/symbols-crypto.txt   # C3: sha256 выходов = шлюз TK-674
 TK-691 / §13.77: пятый файл цепочки `tk691-frozen.json` (перезаморозка на c539, В-175): `universe.read` = `decision` = `crypto` (TradFi не читается, `check_universe_crypto`), порог N лонга по правилу tk638 на c539 (`filter.N` поверх tk638),
   клетки `L_n24` / `L_mk2` / `D_S`, не прошедшие ворота c539 (`gates`), не читаются, их α возвращена (`L_n24` / `L_mk2` → `S_base`, `D_S` → `S_mk1`); файл обязателен всегда (нет — остановка); C1 — sha256 четырёх предыдущих звеньев.
 
@@ -63,6 +67,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import retitr_full as rf  # noqa: E402
 import retitr_full_run as rr  # noqa: E402
+import tk708_feat as f708  # noqa: E402
 
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 FREEZE = os.path.join(REPO, "docs", "research", "freeze", "tk626-frozen.json")
@@ -94,6 +99,10 @@ REQUIRE_CANDIDATE4 = True                              # нет `tk691-frozen.js
 CAND4_GATED = ("L_n24", "L_mk2", "D_S")                # кандидаты, повторно проходящие свои ворота на c539 (G-638a / G-626c / G-670a); не прошёл — клетка не читается
 CAND4_FALLBACK = {"L_n24": "S_base", "L_mk2": "S_base", "D_S": "S_mk1"}    # куда возвращается α не читаемой клетки (постановление критика)
 CAND4_DECISION = "crypto"
+CAND5_NAME, CAND5_VERSION = "tk708-frozen.json", "tk708-frozen-1"    # TK-708: шестое звено — четыре линии TK-674 (L-428): L1, L2 (лонг, таблица признаков вперёд), S1, S2 (шорт, только ключи движка); α нет — описательно
+REQUIRE_CANDIDATE5 = True                              # нет `tk708-frozen.json` рядом с `--freeze` — остановка (линии TK-674 без него не читаются); False — только тесты прежнего поведения
+T674_NAME, T674_VERSION = "tk674-frozen.json", "tk674-frozen-1"    # заморозка отбора TK-674: ключи линий, фильтры, бинарь движка — единственный источник (файл не меняется)
+CAND5_PREFIX = "T674_"                                 # имя клетки линии в таблицах и отчёте: `T674_L1` … (id линий L1 / L2 совпали бы с id точек)
 DS_ALPHA_FLOOR_S_BASE = 0.02                          # В-167: пол α(S_base); кандидат берёт α только из долей S_mk1 / L_base (≥ 0,005 остаётся у каждой)
 DS_ALPHA_DONORS = ("S_mk1", "L_base")
 DS_MISSING_MAX_SHARE = 0.01                            # C2 `D_S`: доля пар (монета, сутки зачёта) без klines предыдущих суток, выше которой `D_S` на точке не читается
@@ -352,6 +361,11 @@ def check_universe_crypto(fz, udir, base_dir, point, prev_lists=None):
     if prev_lists is not None and set(prev_lists.get("crypto", ())) - set(cur):
         raise GuardError("вселенная точки %s не содержит вселенной предыдущей точки (crypto): %s" % (point["id"], sorted(set(prev_lists["crypto"]) - set(cur))[:3]))
     return {"lists": {"crypto": cur}, "text": {"crypto": text}, "sha256": {"crypto": sha256_text(cp)}, "contracts_sha256": sha256_text(cpath)}
+
+
+def cap_gb_of(a):
+    """`--cap-gb` движка (память под сутки сделок): `--cap-gb`, иначе `P42_CAP_GB`; 0 — ключ не передаётся (у движка по умолчанию 24 ГБ → 26–33 ГБ на процесс, на srv — OOM). Результат от него не зависит (TK-683)."""
+    return int(getattr(a, "cap_gb", 0) or os.environ.get("P42_CAP_GB") or 0)
 
 
 @dataclasses.dataclass
@@ -680,7 +694,7 @@ def replay_mk2(a, runner=None, repo=REPO):
             raise GuardError("%s указывает не на %s" % (link, src))
     ntree = check_tree_days(a.replay_root, wins, d(LISTING_AFTER))
     text = rr.read_symbols(a.symbols_file)[0]
-    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache)
+    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache, cap_gb=cap_gb_of(a))
     rr.Engine(paths, runner or rr.SubprocessRunner(), text, a.bin, a.threads, None, windows=tuple(wins), prefix="m").launch([req])
     res = {"bin_md5": md5, "keys": cell["keys"], "vid": req.vid, "cell": CAND2_CELL, "candidate2_commit": c2info["candidate2_commit"], "candidate2_sha256": c2info["candidate2_sha256"],
            "freeze_commit": fcommit, "freeze_sha256": fsha, "tree_files": ntree, "ref_dir": a.ref_dir, "windows": {}}
@@ -884,6 +898,172 @@ def resolve_candidate4(a, fz, cand, c2, c3, repo):
                 "universe_read": c4["universe"]["read"], "universe_decision": c4["universe"]["decision"]}
 
 
+# ---- четыре линии TK-674 (TK-708, L-428): шестое звено цепочки tk626 → tk638 → tk641 → tk670 → tk691 → tk708 ---------------------------------------
+
+def candidate5_path(freeze_path):
+    return os.path.join(os.path.dirname(os.path.abspath(freeze_path)), CAND5_NAME)
+
+
+def tk674_path(freeze_path):
+    return os.path.join(os.path.dirname(os.path.abspath(freeze_path)), T674_NAME)
+
+
+CAND5_CELL_FIELDS = ("side", "ckey", "plain", "text", "col", "keys", "vid")
+
+
+def load_candidate5(path, fz, freeze_path, c4, c4_path, t674, t674_path):
+    """Файл `tk708-frozen.json` против заморозки, звена tk691 и файла отбора TK-674 до любых данных. Версия; sha256 `tk626-frozen.json`, `tk691-frozen.json`, `tk674-frozen.json` в файле = sha256 файлов;
+    `fz` — заморозка после звена tk691 (читается и решает `crypto`); бинарь движка = `binary.freeze` TK-674; `feature_binaries` (f12 / flow / tox) с md5 и sha256; клетки = пересчёту из `candidates` TK-674
+    (`f708.cells_of`: ключи, vid, фильтр); `nan_guard.max_daily_share` — число в [0, 1] на каждый признак фильтра каждой лонг-линии и ничего у шорт-линий; α нет (описательно, α = 0);
+    записи ворот `gate.feat` / `gate.replay` — `ok: true` и sha256 результата. → заморозка + `cells_run` (клетки для `f708.run_cells`)."""
+    if c4 is None:
+        raise GuardError("кандидат %s без %s: цепочка tk626 → tk638 → tk641 → tk670 → tk691 → tk708 разорвана" % (CAND5_NAME, CAND4_NAME))
+    if not os.path.exists(path):
+        raise GuardError("нет файла кандидата %s" % path)
+    c = json.load(open(path, encoding="utf-8"))
+    if c.get("version") != CAND5_VERSION:
+        raise GuardError("версия кандидата 5 %r ≠ %r" % (c.get("version"), CAND5_VERSION))
+    for key, ver, p, what in (("base_freeze", VERSION, freeze_path, "заморозки"), ("prev_candidate4", CAND4_VERSION, c4_path, CAND4_NAME), ("tk674", T674_VERSION, t674_path, T674_NAME)):
+        x = c.get(key, {})
+        if x.get("version") != ver or x.get("sha256") != sha256_text(p):
+            raise GuardError("кандидат 5 записан против другого файла (%s): sha256 %s… ≠ файла %s %s…" % (what, str(x.get("sha256"))[:12], p, sha256_text(p)[:12]))
+    if t674.get("version") != T674_VERSION:
+        raise GuardError("файл отбора %s: версия %r ≠ %r" % (T674_NAME, t674.get("version"), T674_VERSION))
+    un = fz["universe"]
+    if un["read"] != [CAND4_DECISION] or un["decision"] != CAND4_DECISION:
+        raise GuardError("кандидат 5: линии TK-674 считаются на c539 (звено tk691: читается и решает %s), а вселенные чтения %s / решающая %r" % (CAND4_DECISION, un["read"], un["decision"]))
+    b, tb = c.get("binary", {}), t674["binary"]["freeze"]
+    if b.get("md5") != tb["md5"] or b.get("sha256") != tb["sha256"]:
+        raise GuardError("кандидат 5: бинарь движка линий расходится с `binary.freeze` файла %s" % T674_NAME)
+    fbs = c.get("feature_binaries", {})
+    if set(fbs) != set(f708.FEAT_BIN_NAMES) or any(len(v.get("md5", "")) != 32 or len(v.get("sha256", "")) != 64 for v in fbs.values()):
+        raise GuardError("кандидат 5: `feature_binaries` — ровно %s, у каждого md5 (32) и sha256 (64)" % list(f708.FEAT_BIN_NAMES))
+    if not isinstance(c.get("f12_days"), int) or isinstance(c.get("f12_days"), bool) or c["f12_days"] <= 0 or c.get("flow_mode") not in ("flow", "all"):
+        raise GuardError("кандидат 5: `f12_days` (целое > 0) и `flow_mode` (flow | all)")
+    cells = f708.cells_of(t674, {i: v.get("col") for i, v in c.get("cells", {}).items()})
+    if set(c.get("cells", {})) != set(cells):
+        raise GuardError("кандидат 5: линии %s ≠ линиям %s файла %s" % (sorted(c.get("cells", {})), sorted(cells), T674_NAME))
+    for i, v in cells.items():
+        bad = [k for k in CAND5_CELL_FIELDS if c["cells"][i].get(k) != v[k]]
+        if bad:
+            raise GuardError("кандидат 5: линия %s: поля %s расходятся с пересчётом из %s" % (i, bad, T674_NAME))
+        if CAND5_PREFIX + i in fz["alpha"] or CAND5_PREFIX + i in fz["cells"]:
+            raise GuardError("кандидат 5: клетка %s уже есть в заморозке (α новых линий не задаются)" % (CAND5_PREFIX + i))
+    if c.get("alpha"):
+        raise GuardError("кандидат 5: `alpha` задан — линии TK-674 на точках описательны (α = 0), поправка α — только решением координатора до чтения точки")
+    g = c.get("nan_guard", {}).get("max_daily_share", {})
+    want = {i: {f for f, _, _ in v["filter"]} for i, v in cells.items() if v["side"] == "L"}
+    if set(g) != set(want) or any(set(g[i]) != want[i] or any(not isinstance(x, (int, float)) or isinstance(x, bool) or not 0 <= x <= 1 for x in g[i].values()) for i in g):
+        raise GuardError("кандидат 5: `nan_guard.max_daily_share` — число в [0, 1] на каждый признак фильтра лонг-линий %s и ничего у шорт-линий" % {i: sorted(v) for i, v in want.items()})
+    gate = c.get("gate", {})
+    for k in ("feat", "replay"):
+        x = gate.get(k, {})
+        if x.get("ok") is not True or len(x.get("result_sha256", "")) != 64:
+            raise GuardError("кандидат 5: ворота %s не пройдены или без sha256 результата" % k)
+    out = dict(c)
+    out["cells_run"] = cells
+    return out
+
+
+def apply_candidate5(fz, c5):
+    """Заморозка без изменений: линии TK-674 без α (α = 0 → «описательно», `cell_point_stats`); охрана — имена клеток линий не заняты."""
+    clash = [CAND5_PREFIX + i for i in c5["cells_run"] if CAND5_PREFIX + i in fz["alpha"] or CAND5_PREFIX + i in fz["cells"]]
+    if clash:
+        raise GuardError("кандидат 5: клетки %s уже есть в заморозке" % clash)
+    return fz
+
+
+def check_tk674_binary(path, c5):
+    if not path or not os.path.exists(path):
+        raise GuardError("--tk674-bin: нет файла %r (нужен бинарь движка линий TK-674)" % path)
+    sha, md5 = rr.file_hashes(path)
+    b = c5["binary"]
+    if md5 != b["md5"] or sha != b["sha256"]:
+        raise GuardError("бинарь линий TK-674 %s: md5 %s / sha256 %s… ≠ замороженным %s / %s…" % (path, md5, sha[:12], b["md5"], b["sha256"][:12]))
+    return md5, sha
+
+
+def feat_bins_of(a):
+    return {n: getattr(a, n + "_bin", "") for n in f708.FEAT_BIN_NAMES}
+
+
+def resolve_candidate5(a, fz, c4, repo):
+    """(кандидат 5, {поля маркера}). Нет файла — `GuardError` всегда (линии TK-674 без него не читаются; молчаливого пропуска нет), кроме тестов прежнего поведения (`REQUIRE_CANDIDATE5 = False`).
+    Файл найден — целиком под охраной (коммит файлов `tk708-frozen.json` и `tk674-frozen.json`); `--no-tk708` — единственный обход (линии не читаются, в маркере «не читаны»);
+    иначе ещё и бинарь движка линий и три `alpha-feat` (md5 / sha256) — до маркера чтения."""
+    explicit = getattr(a, "candidate5", "")
+    path = explicit or candidate5_path(a.freeze)
+    if not os.path.exists(path):
+        if explicit or REQUIRE_CANDIDATE5:
+            raise GuardError("нет файла кандидата %s: четыре линии TK-674 без него не читаются — читать нельзя (без чтения линий — `--no-tk708`, файл всё равно нужен)" % path)
+        return None, {}
+    c4_path = getattr(a, "candidate4", "") or candidate4_path(a.freeze)
+    tpath = getattr(a, "tk674", "") or tk674_path(a.freeze)
+    if not os.path.exists(tpath):
+        raise GuardError("нет файла отбора %s" % tpath)
+    t674 = json.load(open(tpath, encoding="utf-8"))
+    c5 = load_candidate5(path, fz, a.freeze, c4, c4_path, t674, tpath)
+    commit, sha = check_freeze_committed(path, repo, getattr(a, "candidate5_commit", ""), getattr(a, "candidate5_sha256", ""))
+    tcommit, tsha = check_freeze_committed(tpath, repo, getattr(a, "tk674_commit", ""), getattr(a, "tk674_sha256", ""))
+    info = {"candidate5": "tk708", "candidate5_commit": commit, "candidate5_sha256": sha, "tk674_commit": tcommit, "tk674_sha256": tsha, "candidate5_read": False}
+    if getattr(a, "no_tk708", False):
+        info["candidate5_note"] = "линии TK-674 не читаются (--no-tk708): α не затронуты (описательно)"
+        return c5, info
+    md5, esha = check_tk674_binary(getattr(a, "tk674_bin", ""), c5)
+    fb = f708.check_bins(feat_bins_of(a), c5["feature_binaries"])
+    info.update({"tk674_bin_md5": md5, "tk674_bin_sha256": esha, "feature_bins_md5": {n: v[0] for n, v in fb.items()}, "candidate5_read": True})
+    return c5, info
+
+
+def replay_tk708(a, runner=None, repo=REPO):
+    """C3: четыре линии (wa / wb / wc, c539) ТЕМ ЖЕ путём (`f708.run_cells`: ключи движка, таблицы признаков построителем вперёд, бинарь `357a66c1`); sha256 `{long,short}-{trades,daily,coinday,entryrej}.csv`
+    = записанным в `tk674-gate-cells.json` (`--gate-cells`). Охрана NaN в выборке НЕ применяется (порог берётся из этого же счёта). Суток ≥ 14.11 не читает. Итог — `--out` (`gate-708c.json`); различие — код 3."""
+    fz = load_freeze(a.freeze)
+    check_freeze_committed(a.freeze, repo, a.freeze_commit, a.freeze_sha256)
+    cand = load_candidate(getattr(a, "candidate", "") or candidate_path(a.freeze), fz, a.freeze)
+    c2, _ = resolve_candidate2(a, fz, cand, repo)
+    c3, _ = resolve_candidate3(a, fz, cand, c2, repo)
+    c4, _ = resolve_candidate4(a, fz, cand, c2, c3, repo)
+    if c4 is None:
+        raise GuardError("replay-tk708: нужен кандидат %s" % CAND4_NAME)
+    fz, _cand1 = apply_candidate4(fz, cand, c4)
+    c5, c5info = resolve_candidate5(a, fz, c4, repo)
+    if c5 is None or not c5info["candidate5_read"]:
+        raise GuardError("replay-tk708: нужен кандидат %s без --no-tk708" % CAND5_NAME)
+    if not a.gate_cells or not os.path.exists(a.gate_cells):
+        raise GuardError("--gate-cells: нет файла шлюза TK-674 (%r)" % a.gate_cells)
+    gate_cells = json.load(open(a.gate_cells, encoding="utf-8"))
+    wins = rf.WINDOWS
+    os.makedirs(a.replay_root, exist_ok=True)
+    for w in wins:
+        link, src = os.path.join(a.replay_root, w.name), os.path.join(a.windows_root, w.name)
+        if not os.path.lexists(link):
+            os.symlink(src, link)
+        elif os.path.realpath(link) != os.path.realpath(src):
+            raise GuardError("%s указывает не на %s" % (link, src))
+    ntree = check_tree_days(a.replay_root, wins, d(LISTING_AFTER))
+    text = rr.read_symbols(a.symbols_file)[0]
+    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache, cap_gb=cap_gb_of(a))
+    rkeys = None
+    if getattr(a, "research_parquet", ""):                  # ТОЛЬКО ворота: строки вне parquet TK-671 исследование читало с пустыми big1800 / vpin1h (см. `tk708_gate.py`); в боевом пути не передаётся
+        import tk708_gate as g708
+        rkeys = {w_: set(d_) for w_, d_ in g708.parquet_values(a.research_parquet).items()}
+    tabs, info = f708.run_cells(paths, runner or rr.SubprocessRunner(), text, a.tk674_bin, a.threads, wins, c5["cells_run"], feat_bins_of(a), a.tick_store, lambda w: (w.lod, w.hid),
+                                days=c5["f12_days"], nan_guard=None, flow_mode=c5["flow_mode"], research_keys=rkeys)
+    cmp_ = f708.compare_gate(paths, {i: v for i, v in c5["cells_run"].items() if i in tabs}, wins, gate_cells)
+    res = {"candidate5_commit": c5info["candidate5_commit"], "candidate5_sha256": c5info["candidate5_sha256"], "tk674_sha256": c5info["tk674_sha256"], "tk674_bin_md5": c5info["tk674_bin_md5"],
+           "feature_bins_md5": c5info["feature_bins_md5"], "tree_files": ntree, "gate_cells": a.gate_cells, "info": info, "cells": {}, "ok": False}
+    for i in c5["cells_run"]:
+        files = cmp_.get(i)
+        res["cells"][i] = {"status": info[i]["status"], "vid": c5["cells_run"][i]["vid"], "windows": {n: {"files": f, "equal": all(v["equal"] for v in f.values())} for n, f in (files or {}).items()},
+                           "equal": bool(files) and all(v["equal"] for f in files.values() for v in f.values())}
+    res["ok"] = all(v["equal"] for v in res["cells"].values())
+    out = a.out or os.path.join(a.replay_root, "gate-708c.json")
+    json.dump(res, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print("G-708c: %s (%s); %s" % ("ПРОЙДЕНЫ" if res["ok"] else "НЕ ПРОЙДЕНЫ", ", ".join("%s %s" % (i, "=" if v["equal"] else "≠ (" + info[i]["status"] + ")") for i, v in res["cells"].items()), out))
+    return 0 if res["ok"] else 3
+
+
 def ds_missing_pairs(pdir, wins, coins, lohi_of):
     """C2 `D_S`: пары (монета, сутки зачёта окна на точке) с файлом aggtrades суток, у которых нет файла klines ПРЕДЫДУЩИХ суток (уровень `D` рождается из вчерашних баров монеты;
     первые сутки листинга тоже считаются пропуском — консервативно) → (пропущено, всего). Только имена файлов."""
@@ -969,7 +1149,7 @@ def replay_ds(a, runner=None, repo=REPO):
             raise GuardError("%s указывает не на %s" % (link, src))
     ntree = check_tree_days(a.replay_root, wins, d(LISTING_AFTER))
     text = rr.read_symbols(a.symbols_file)[0]
-    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache)
+    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache, cap_gb=cap_gb_of(a))
     rr.Engine(paths, runner or rr.SubprocessRunner(), text, a.ds_bin, a.threads, None, windows=tuple(wins), prefix="d").launch([req])
     res = {"ds_bin_md5": md5, "keys": cell["keys"], "vid": req.vid, "cell": CAND3_CELL, "candidate3_commit": c3info["candidate3_commit"], "candidate3_sha256": c3info["candidate3_sha256"],
            "freeze_commit": fcommit, "freeze_sha256": fsha, "tree_files": ntree, "ref_dir": a.ref_dir, "windows": {}}
@@ -1157,21 +1337,7 @@ def n24_req(cand):
     return rf.Req("L", cand["cells"][CAND_CELL]["keys"], False)
 
 
-def read_sigsx_keys(path):
-    """(монеты, sig_ms) кандидатов потока из `long-sigsx.csv` дампа (по позициям: в заголовке бинаря нет `natr_e8`); порядок файла; дубль ключа — остановка."""
-    syms, ms = [], []
-    with open(path, encoding="utf-8", newline="") as f:
-        rd = csv.reader(f)
-        head = next(rd, None)
-        if not head or head[0] != "sym" or head[2] != "sig_ms":
-            raise GuardError("сигнальный дамп %s: заголовок %r" % (path, head))
-        for r in rd:
-            if r:
-                syms.append(r[0])
-                ms.append(int(r[2]))
-    if len(set(zip(syms, ms))) != len(syms):
-        raise GuardError("сигнальный дамп %s: ключ (sym, sig_ms) не уникален" % path)
-    return syms, np.array(ms, dtype=np.int64)
+read_sigsx_keys = f708.read_sigsx_keys                 # TK-708: чтение дампа и сам дамп потока (`dump_stream`) — общие с построителем признаков линий TK-674
 
 
 def read_counts(path):
@@ -1193,18 +1359,7 @@ def read_counts(path):
 def build_n24_table(paths, runner, eng, w, need, cand, feat_bin, threads, tick_store, lohi):
     """Таблица `L_n24` одного окна: сигнальный дамп движка по потоку `L_base` → `alpha-feat tcount` → CSV `sym,sig_ms,<фильтр>` (0,0 — исключён: n24 < N и не m24; 1,0 — пропущен; m24 = 1 проходит).
     `lohi` — зачётные даты окна на точке: по ним считается доля кандидатов с m24 = 1. → информация окна."""
-    vfile = os.path.join(paths.var, "sx-%s-%s.txt" % (w.name, need.vid))
-    os.makedirs(paths.var, exist_ok=True)
-    with open(vfile, "w", encoding="utf-8", newline="\n") as f:
-        f.write("%s %s\n" % (need.vid, need.keys))
-    cmd, env = eng.command(w, vfile, paths.sx(w.name), None, sigsx_only=True)
-    log = os.path.join(paths.log, "sx-%s-%s-%s.log" % (paths.uni, w.name, need.vid))
-    if runner.run(cmd, env, log) != 0:
-        raise GuardError("движок (сигнальный дамп %s), окно %s: код возврата ≠ 0\n%s" % (paths.uni, w.name, rr.tail(log)))
-    dump = os.path.join(paths.sx(w.name), need.vid, "long-sigsx.csv")
-    if not os.path.exists(dump):
-        raise GuardError("нет сигнального дампа %s" % dump)
-    syms, ms = read_sigsx_keys(dump)
+    syms, ms, _dump = f708.dump_stream(paths, runner, eng, w, need)
     d_ = paths.need_dir(w.name, need)
     os.makedirs(d_, exist_ok=True)
     eps, counts, tab = (os.path.join(d_, n) for n in ("eps.csv", "counts.csv", "ftab.csv"))
@@ -1298,7 +1453,7 @@ def replay_n24(a, runner=None, repo=REPO):
             raise GuardError("%s указывает не на %s" % (link, src))
     ntree = check_tree_days(a.replay_root, wins, d(LISTING_AFTER))
     text = rr.read_symbols(a.symbols_file)[0]
-    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache)
+    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache, cap_gb=cap_gb_of(a))
     tabs, info = run_n24(paths, runner or rr.SubprocessRunner(), text, a.bin, a.threads, wins, cand, a.feat_bin, a.tick_store, lambda w: (w.lod, w.hid))
     res = {"bin_md5": md5, "feat_bin_md5": cinfo["feat_bin_md5"], "keys": cand["cells"][CAND_CELL]["keys"], "cell": CAND_CELL, "candidate_commit": cinfo["candidate_commit"],
            "candidate_sha256": cinfo["candidate_sha256"], "freeze_commit": fcommit, "freeze_sha256": fsha, "tree_files": ntree, "n24": info, "windows": {}, "ok": False}
@@ -1373,9 +1528,13 @@ def run_point(a, runner=None, today=None, repo=REPO):
     c4, c4info = resolve_candidate4(a, fz, cand, c2, c3, repo)
     if c4 is not None:
         fz, cand = apply_candidate4(fz, cand, c4)                        # TK-691 C1: решающая вселенная crypto, N лонга на c539, α не читаемых клеток возвращены; `read` = [crypto]
+    c5, c5info = resolve_candidate5(a, fz, c4, repo)
+    if c5 is not None:
+        fz = apply_candidate5(fz, c5)                                    # TK-708: четыре линии TK-674 без α (описательно); бинарь линий и три `alpha-feat` сверены ДО маркера чтения
     nr = c4["not_read"] if c4 is not None else []
     run_cand = cand is not None and cinfo["candidate_read"] and CAND_CELL not in nr
     run_ds_cell = c3 is not None and c3info["candidate3_read"] and CAND3_CELL not in nr
+    run_t708 = c5 is not None and c5info["candidate5_read"]
     pt = get_point(fz, a.point)
     today = today or datetime.datetime.now(datetime.timezone.utc).date()
     check_point_date(pt, today)
@@ -1407,12 +1566,12 @@ def run_point(a, runner=None, today=None, repo=REPO):
             raise GuardError("данные между точками изменились (%d): %s" % (len(bad), bad[:3]))
     claim_read(a.root, pt["id"], {"point": pt["id"], "bin_md5": md5, "bin_sha256": sha, "freeze_commit": commit, "freeze_sha256": fsha, "tree_files": ntree,
                                  "universe_sha256": uni["sha256"], "universe_n": {n: len(v) for n, v in uni["lists"].items()}, "contracts_sha256": uni["contracts_sha256"],
-                                 **cinfo, **c2info, **c3info, **c4info, "utc": datetime.datetime.now(datetime.timezone.utc).isoformat()})
+                                 **cinfo, **c2info, **c3info, **c4info, **c5info, "utc": datetime.datetime.now(datetime.timezone.utc).isoformat()})
     reqs = reqs_of(fz)
-    tabs, byw, n24, ds_info = {}, {}, {}, {}
+    tabs, byw, n24, ds_info, t708_info = {}, {}, {}, {}, {}
     rn = runner or rr.SubprocessRunner()
     for u in fz["universe"]["read"]:
-        paths = UPaths(pdir, uni=u, tick_store=a.tick_store, sig_cache=a.sig_cache)
+        paths = UPaths(pdir, uni=u, tick_store=a.tick_store, sig_cache=a.sig_cache, cap_gb=cap_gb_of(a))
         eng = rr.Engine(paths, rn, uni["text"][u], a.bin, a.threads, None, windows=tuple(wins_used), prefix="f")
         eng.launch(list(reqs.values()))
         t, b = read_cell_tables(paths, reqs, wins_used)
@@ -1424,10 +1583,25 @@ def run_point(a, runner=None, today=None, repo=REPO):
                 tabs[key_of(CAND_CELL, u)] = t24
                 byw[key_of(CAND_CELL, u)] = {w.name: rows_of(t24[w.name], w) for w in wins_used}
         if run_ds_cell:                                                  # C2 `D_S`: доля пар без klines предыдущих суток > 1 % или любая охрана — клетка не читается, остальные считаются
-            tds, ds_info[u] = run_ds(paths, rn, uni["text"][u], a.ds_bin, a.threads, wins_used, c3, uni["lists"][u], lambda w: (max(w.lod, F0), min(w.hid, to)))
+            try:
+                tds, ds_info[u] = run_ds(paths, rn, uni["text"][u], a.ds_bin, a.threads, wins_used, c3, uni["lists"][u], lambda w: (max(w.lod, F0), min(w.hid, to)))
+            except Exception as e:  # noqa: BLE001 — непредвиденная ошибка `D_S` (не охрана): клетка не читается, причина в `ds_info`, точка и остальные клетки идут
+                tds, ds_info[u] = None, {"status": "skip", "reason": f708.unexpected_reason(e), "missing_share": None, "missing_pairs": None, "pairs": None, "windows": {}}
+                print("ВНИМАНИЕ: %s не читалась (вселенная %s): %s" % (CAND3_CELL, u, ds_info[u]["reason"]), file=sys.stderr)
             if tds is not None:
                 tabs[key_of(CAND3_CELL, u)] = tds
                 byw[key_of(CAND3_CELL, u)] = {w.name: rows_of(tds[w.name], w) for w in wins_used}
+        if run_t708:                                                     # TK-708: любая охрана линии — линия не читается, остальные считаются; охрана NaN признаков — сутки линии «нет данных»
+            try:
+                t7, t708_info[u] = f708.run_cells(paths, rn, uni["text"][u], a.tk674_bin, a.threads, wins_used, c5["cells_run"], feat_bins_of(a), a.tick_store, lambda w: (max(w.lod, F0), min(w.hid, to)),
+                                                  days=c5["f12_days"], nan_guard=c5["nan_guard"]["max_daily_share"], flow_mode=c5["flow_mode"])
+            except Exception as e:  # noqa: BLE001 — непредвиденная ошибка линий TK-674 (не охрана): все четыре линии вселенной «не читались», причина в `t708_info`, остальные клетки точки идут
+                t7, t708_info[u] = {}, {i: dict({"status": "skip", "reason": f708.unexpected_reason(e), "side": c["side"], "keys": c["keys"], "vid": c["vid"]}, **({"filter": c["text"], "windows": {}} if c["side"] == "L" else {}))
+                                        for i, c in c5["cells_run"].items()}
+                print("ВНИМАНИЕ: линии TK-674 не читались (вселенная %s): %s" % (u, f708.unexpected_reason(e)), file=sys.stderr)
+            for i, tb in t7.items():
+                tabs[key_of(CAND5_PREFIX + i, u)] = tb
+                byw[key_of(CAND5_PREFIX + i, u)] = {w.name: rows_of(tb[w.name], w) for w in wins_used}
     for k in byw:
         for w in wins_used:
             end_of_data_check(byw[k][w.name], w, D)
@@ -1455,13 +1629,15 @@ def run_point(a, runner=None, today=None, repo=REPO):
     if sk in rows and dk in rows:                                        # совместное чтение с S_base — ОПИСАТЕЛЬНО, без вердикта и без α (раздел «вместе с S_base» отчёта TK-668)
         joint = joint_describe(rows[sk], rows[dk], to)
     res = {"point": pt, "freeze_commit": commit, "freeze_sha256": fsha, "bin_md5": md5, "stats": stats, "seams": {k: len(x) for k, x in seam.items()},
-           "prefix": {"forced_prev": forced, "diffs": {c: len(x) for c, x in pref.items()}}, "n24": n24, "candidate": cinfo, "candidate2": c2info, "candidate3": c3info, "candidate4": c4info, "ds": ds_info, "joint": joint, "tree_files": ntree, "manifest_files": len(man),
+           "prefix": {"forced_prev": forced, "diffs": {c: len(x) for c, x in pref.items()}}, "n24": n24, "candidate": cinfo, "candidate2": c2info, "candidate3": c3info, "candidate4": c4info, "candidate5": c5info, "tk708": t708_info, "ds": ds_info, "joint": joint, "tree_files": ntree, "manifest_files": len(man),
            "universe": {"n": {n: len(v) for n, v in uni["lists"].items()}, "sha256": uni["sha256"]}}
     json.dump(res, open(os.path.join(a.root, "point-%s.json" % pt["id"]), "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=float)
     if run_cand:
         json.dump(n24, open(os.path.join(a.root, "READ-%s.n24.json" % pt["id"]), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     if run_ds_cell:
         json.dump(ds_info, open(os.path.join(a.root, "READ-%s.ds.json" % pt["id"]), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    if run_t708:
+        json.dump(t708_info, open(os.path.join(a.root, "READ-%s.tk708.json" % pt["id"]), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     open(os.path.join(a.root, "READ-%s.done" % pt["id"]), "w").close()
     print(render(res))
     return 0
@@ -1490,6 +1666,16 @@ def render(res):
         L.append("%s (кандидат TK-670): %s" % (CAND3_CELL, res["candidate3"]["candidate3_note"]))
     if (res.get("candidate4") or {}).get("candidate4_not_read"):
         L.append("TK-691: клетки не читаются (ворота c539 не пройдены, α возвращена): %s" % ", ".join(res["candidate4"]["candidate4_not_read"]))
+    if (res.get("candidate5") or {}).get("candidate5_read") is False:
+        L.append("линии TK-674 (кандидат TK-708): %s" % res["candidate5"]["candidate5_note"])
+    for u, t in (res.get("tk708") or {}).items():
+        for i, x in t.items():
+            L.append("%s%s (линия TK-674, TK-708), вселенная %s: %s%s" % (CAND5_PREFIX, i, u, "прочитана" if x["status"] == "read" else "НЕ ЧИТАЛАСЬ", "" if x["status"] == "read" else " — " + x["reason"]))
+            for wn, wx in sorted((x.get("windows") or {}).items()):
+                days_ = sorted({g["day"] for g in wx["guard_days"]})
+                L.append("%s%s, окно %s (печатается, в решение не входит): строк потока %d, исключено фильтром %d, пустых значений (всего / зачёт) %s; строк на сутки без файла aggTrades %d (предыдущие сутки %d); "
+                         "охрана NaN: суток «нет данных» %d%s" % (CAND5_PREFIX, i, wn, wx["rows"], wx["excluded"], ", ".join("%s %d / %d" % (f, v["all"], v["credited"]) for f, v in wx["nan"].items()) or "—",
+                                                                 wx["rows_on_missing_day"], wx["rows_on_missing_prev_day"], len(days_), " (%s; строк %d)" % (", ".join(days_), wx["guard_rows"]) if days_ else ""))
     for u, x in (res.get("ds") or {}).items():
         L.append("%s (кандидат TK-670), вселенная %s: %s; пар (монета, сутки) без klines предыдущих суток %s из %s%s%s" % (
             CAND3_CELL, u, "прочитана" if x["status"] == "read" else "НЕ ЧИТАЛАСЬ", x["missing_pairs"] if x["missing_pairs"] is not None else "—", x["pairs"] if x["pairs"] is not None else "—",
@@ -1535,6 +1721,14 @@ def cmd_plan(a):
                 c4 = load_candidate4(cp4, fz, a.freeze, cand, cp, c2, cp2, c3, cp3)
                 fz, cand = apply_candidate4(fz, cand, c4)
                 print("кандидат %s (%s): α %s; читается и решает %s; N лонга %s; не читаются %s" % (CAND4_NAME, c4["version"], fz["alpha"], c4["universe"]["decision"], cand["filter"]["N"], c4["not_read"] or "—"))
+                cp5, tp = getattr(a, "candidate5", "") or candidate5_path(a.freeze), getattr(a, "tk674", "") or tk674_path(a.freeze)
+                if os.path.exists(cp5) and os.path.exists(tp):
+                    c5 = load_candidate5(cp5, fz, a.freeze, c4, cp4, json.load(open(tp, encoding="utf-8")), tp)
+                    fz = apply_candidate5(fz, c5)
+                    print("кандидат %s (%s): линии TK-674 %s, α нет (описательно); бинарь движка %s; охрана NaN — макс. суточные доли %s; ворота feat / replay пройдены" % (
+                        CAND5_NAME, c5["version"], {i: v["vid"] for i, v in c5["cells_run"].items()}, c5["binary"]["md5"], c5["nan_guard"]["max_daily_share"]))
+                else:
+                    print("кандидата %s рядом с заморозкой нет — чтение точки остановится (линии TK-674 без него не читаются)" % CAND5_NAME)
             elif os.path.exists(cp3):
                 print("кандидата %s рядом с заморозкой нет — чтение точки остановится (решающая вселенная crypto, N лонга и ворота c539 без него не применяются)" % CAND4_NAME)
         else:
@@ -1552,7 +1746,7 @@ def cmd_plan(a):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["plan", "point", "replay-n24", "replay-mk2", "replay-ds"])
+    ap.add_argument("cmd", choices=["plan", "point", "replay-n24", "replay-mk2", "replay-ds", "replay-tk708"])
     ap.add_argument("point", nargs="?", default="")
     ap.add_argument("--freeze", default=FREEZE)
     ap.add_argument("--freeze-commit", default="")
@@ -1581,6 +1775,20 @@ def main(argv=None):
     ap.add_argument("--candidate4", default="", help="файл пятого звена (по умолчанию `%s` рядом с --freeze): решающая вселенная crypto, N лонга, ворота c539" % CAND4_NAME)
     ap.add_argument("--candidate4-commit", default="")
     ap.add_argument("--candidate4-sha256", default="")
+    ap.add_argument("--candidate5", default="", help="файл шестого звена (по умолчанию `%s` рядом с --freeze): четыре линии TK-674" % CAND5_NAME)
+    ap.add_argument("--no-tk708", action="store_true", help="линии TK-674 не читать (файл всё равно нужен); в маркере «не читаны»")
+    ap.add_argument("--candidate5-commit", default="")
+    ap.add_argument("--candidate5-sha256", default="")
+    ap.add_argument("--tk674", default="", help="файл отбора TK-674 (по умолчанию `%s` рядом с --freeze)" % T674_NAME)
+    ap.add_argument("--tk674-commit", default="")
+    ap.add_argument("--tk674-sha256", default="")
+    ap.add_argument("--tk674-bin", default="", help="бинарь движка линий TK-674 (md5 / sha256 — в `binary` файла кандидата 5)")
+    ap.add_argument("--f12-bin", default="", help="`alpha-feat` f12 (cons60) линий L1 / L2")
+    ap.add_argument("--flow-bin", default="", help="`alpha-feat` flow (big1800) линий L1 / L2")
+    ap.add_argument("--tox-bin", default="", help="`alpha-feat` tox (vpin1h) линий L1 / L2")
+    ap.add_argument("--cap-gb", type=int, default=0, help="`--cap-gb` движка во всех командах (память под сутки сделок; у движка по умолчанию 24 ГБ → 26–33 ГБ на процесс; по умолчанию — `P42_CAP_GB`); результат не меняет, TK-683")
+    ap.add_argument("--research-parquet", default="", help="replay-tk708: parquet TK-671 (`/data/p42-tk671/data/long.parquet`) — строки вне него читаются как в исследовании (только ворота)")
+    ap.add_argument("--gate-cells", default="", help="replay-tk708: `tk674-gate-cells.json` — эталонные sha256 выходов линий")
     ap.add_argument("--ds-bin", default="", help="бинарь `D_S` (md5 / sha256 — в `ds_binary` файла кандидата 3; ключ `lx` есть только в нём)")
     ap.add_argument("--ref-dir", default="/data/p42-tk626/gmk/out", help="replay-mk2: выходы G-626c `<окно>/<vid>/long-*`; replay-ds: выходы TK-668 `<окно>/S_lx1/short-*` (`/data/p42-tk668/e4/cells`)")
     ap.add_argument("--feat-bin", default="", help="`alpha-feat` кандидата (md5 / sha256 — в файле кандидата)")
@@ -1588,7 +1796,7 @@ def main(argv=None):
     ap.add_argument("--windows-root", default="/data/p42-tk621")
     ap.add_argument("--symbols-file", default="/data/p42-tk621/universe/symbols-all.txt")
     ap.add_argument("--ref", default="", help="G-638a (`gate-638a.json`): эталонные sha256 выходов")
-    ap.add_argument("--out", default="", help="replay-n24: итог (по умолчанию <replay-root>/gate-638c.json; replay-ds — gate-670c.json)")
+    ap.add_argument("--out", default="", help="replay-n24: итог (по умолчанию <replay-root>/gate-638c.json; replay-ds — gate-670c.json; replay-tk708 — gate-708c.json)")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "plan":
@@ -1599,6 +1807,8 @@ def main(argv=None):
             return replay_mk2(a)
         if a.cmd == "replay-ds":
             return replay_ds(a)
+        if a.cmd == "replay-tk708":
+            return replay_tk708(a)
         if not a.point:
             raise GuardError("point: укажите L1…L5")
         return run_point(a)

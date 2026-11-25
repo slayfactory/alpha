@@ -77,6 +77,7 @@ class Paths:
     sig_cache: str = ""                                 # TK-607: каталог кэша сигналов (`--sig-cache`)
     store_cap_gb: int = 3
     store_min_free_gb: int = 5
+    cap_gb: int = 0                                     # TK-708: `--cap-gb` движка (память под сутки сделок; у движка по умолчанию 24 ГБ), результат не меняет; 0 — ключ не передаётся
 
     def j(self, *a):
         return os.path.join(self.root, *a)
@@ -283,6 +284,8 @@ class Engine:
                     "--tick-store-min-free-gb", str(self.paths.store_min_free_gb)]
         if self.paths.sig_cache:
             cmd += ["--sig-cache", self.paths.sig_cache]
+        if self.paths.cap_gb:
+            cmd += ["--cap-gb", str(self.paths.cap_gb)]
         env = {"P42_T0": w.t0}
         if sigsx_only:
             env.update({"P42_SIGSX_ONLY": "1", "P42_SIGSX": SIGSX_DAYS})
