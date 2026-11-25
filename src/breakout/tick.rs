@@ -2107,113 +2107,191 @@ fn sim_tail_e(
     entry_slip_bps: i64,
     stop_px: Option<i64>,
 ) -> TickOut {
-    let s = side.s();
-    let e = p0 + frac(p0.abs(), entry_slip_bps, 10_000);
-    let mut pos = Pos::new(s, e, p0, entry_ms, natr_e8, ex, lc, notional, stop_px);
-    let mut cur_day = (entry_ms / DAY_MS) as usize;
-    let mut marks: Vec<(usize, i64)> = Vec::new();
-    let mut last = (entry_ms, p0);
-    let mut exit: Option<(i64, i64, ExitKind)> = None;
-    let mut pending: Option<(i64, ExitKind)> = None;
-    // v22 (`tl`): стоящий приказ трейла — (цена в рамe, момент, с которого он живёт, цена последней сделки до его прихода); `tl_info` — (мс срабатывания,
-    // настоящая цена) для вывода
-    let mut lim: Option<(i64, i64, i64)> = None;
-    let mut tl_info: Option<(i64, i64)> = None;
-    let mut maker_exit = false;
+    let mut w = Walk::new(
+        entry_ms,
+        p0,
+        side,
+        natr_e8,
+        ex,
+        lc,
+        notional,
+        entry_slip_bps,
+        stop_px,
+    );
     while let Some((ms, px, _)) = next() {
-        let d = (ms / DAY_MS) as usize;
-        while cur_day < d {
-            marks.push((cur_day, s * last.1));
-            cur_day += 1;
-        }
-        let p = s * px;
-        last = (ms, p);
-        if let Some((lpx, live, arrival)) = lim {
-            if ms < live {
-                // приказ в пути (задержка выхода): как окно задержки рыночного выхода — сделки только исполняют тейки
-                pos.fill_takes(ms, p);
-                lim = Some((lpx, live, p));
-                continue;
-            }
-            // `tl = 2`: к приходу приказа цена уже строго за ним — приказ маркетабелен и исполняется как рыночный выход v21 (тейкер по сделке, с проскальзыванием)
-            if ex.tl == 2 && arrival > lpx {
-                exit = Some((ms, p, ExitKind::Trail));
-                break;
-            }
-            lim = Some((lpx, live, i64::MIN));
-            pos.lim = true;
-            if let Some((due, kind)) = pending {
-                if ms >= due {
-                    exit = Some((ms, p, kind));
-                    break;
-                }
-            }
-            if p >= lpx {
-                exit = Some((ms, lpx, ExitKind::Trail));
-                maker_exit = true;
-                break;
-            }
-            if pending.is_none() {
-                if let Some(kind) = pos.on_trade(ms, p) {
-                    if ex.lat_exit_ms > 0 {
-                        pending = Some((ms + ex.lat_exit_ms, kind));
-                    } else {
-                        exit = Some((ms, p, kind));
-                        break;
-                    }
-                }
-            }
-            continue;
-        }
-        if let Some((due, kind)) = pending {
-            if ms >= due {
-                exit = Some((ms, p, kind));
-                break;
-            }
-            pos.fill_takes(ms, p);
-            continue;
-        }
-        if let Some(kind) = pos.on_trade(ms, p) {
-            if ex.tl > 0 && kind == ExitKind::Trail {
-                lim = Some((pos.trail, ms + ex.lat_exit_ms, p));
-                tl_info = Some((ms, s * pos.trail));
-                continue;
-            }
-            // TK-669: «всё взято» — лимитки уже исполнены, выхода (и его задержки) нет
-            if ex.lat_exit_ms > 0 && kind != ExitKind::Takes {
-                pending = Some((ms + ex.lat_exit_ms, kind));
-                continue;
-            }
-            exit = Some((ms, p, kind));
+        if w.step(ms, px) {
             break;
         }
     }
-    let (xm, xp, kind) = exit.unwrap_or((last.0, last.1, ExitKind::Forced));
-    // лимитный выход трейла — по цене приказа, мейкер, без проскальзывания; остальные выходы — тейкер с проскальзыванием
-    let px_frame = if maker_exit {
-        xp
-    } else {
-        xp - frac(xp.abs(), ex.slip_bps, 10_000)
-    };
-    let mut legs = pos.legs;
-    if kind != ExitKind::Takes {
-        legs.push(TLeg {
-            ms: xm,
-            px: s * px_frame,
-            u: pos.rem,
-            maker: maker_exit,
-        });
+    w.finish()
+}
+
+/// TK-706: состояние одного хода по ленте — бывшие локальные переменные `sim_tail_e`; сделки подаются по одной в `step`, хвост — `finish`.
+struct Walk<'a> {
+    ex: &'a ExitCfg,
+    s: i64,
+    e: i64,
+    entry_ms: i64,
+    pos: Pos,
+    cur_day: usize,
+    marks: Vec<(usize, i64)>,
+    last: (i64, i64),
+    exit: Option<(i64, i64, ExitKind)>,
+    pending: Option<(i64, ExitKind)>,
+    // v22 (`tl`): стоящий приказ трейла — (цена в рамe, момент, с которого он живёт, цена последней сделки до его прихода); `tl_info` — (мс срабатывания,
+    // настоящая цена) для вывода
+    lim: Option<(i64, i64, i64)>,
+    tl_info: Option<(i64, i64)>,
+    maker_exit: bool,
+}
+
+impl<'a> Walk<'a> {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        entry_ms: i64,
+        p0: i64,
+        side: Side,
+        natr_e8: i64,
+        ex: &'a ExitCfg,
+        lc: Option<LevelCtx>,
+        notional: i64,
+        entry_slip_bps: i64,
+        stop_px: Option<i64>,
+    ) -> Walk<'a> {
+        let s = side.s();
+        let e = p0 + frac(p0.abs(), entry_slip_bps, 10_000);
+        Walk {
+            ex,
+            s,
+            e,
+            entry_ms,
+            pos: Pos::new(s, e, p0, entry_ms, natr_e8, ex, lc, notional, stop_px),
+            cur_day: (entry_ms / DAY_MS) as usize,
+            marks: Vec::new(),
+            last: (entry_ms, p0),
+            exit: None,
+            pending: None,
+            lim: None,
+            tl_info: None,
+            maker_exit: false,
+        }
     }
-    TickOut {
-        entry_ms,
-        entry_px: s * e,
-        legs,
-        exit_ms: xm,
-        kind,
-        takes: pos.next_tp as u32,
-        marks,
-        tl: tl_info,
-        floor: pos.floor,
+
+    /// Одна сделка ленты (время `ms`, цена `px`); `true` — ход кончен, выход записан в `exit`.
+    #[inline(always)]
+    fn step(&mut self, ms: i64, px: i64) -> bool {
+        let s = self.s;
+        let d = (ms / DAY_MS) as usize;
+        while self.cur_day < d {
+            self.marks.push((self.cur_day, s * self.last.1));
+            self.cur_day += 1;
+        }
+        let p = s * px;
+        self.last = (ms, p);
+        if let Some((lpx, live, arrival)) = self.lim {
+            if ms < live {
+                // приказ в пути (задержка выхода): как окно задержки рыночного выхода — сделки только исполняют тейки
+                self.pos.fill_takes(ms, p);
+                self.lim = Some((lpx, live, p));
+                return false;
+            }
+            // `tl = 2`: к приходу приказа цена уже строго за ним — приказ маркетабелен и исполняется как рыночный выход v21 (тейкер по сделке, с проскальзыванием)
+            if self.ex.tl == 2 && arrival > lpx {
+                self.exit = Some((ms, p, ExitKind::Trail));
+                return true;
+            }
+            self.lim = Some((lpx, live, i64::MIN));
+            self.pos.lim = true;
+            if let Some((due, kind)) = self.pending {
+                if ms >= due {
+                    self.exit = Some((ms, p, kind));
+                    return true;
+                }
+            }
+            if p >= lpx {
+                self.exit = Some((ms, lpx, ExitKind::Trail));
+                self.maker_exit = true;
+                return true;
+            }
+            if self.pending.is_none() {
+                if let Some(kind) = self.pos.on_trade(ms, p) {
+                    if self.ex.lat_exit_ms > 0 {
+                        self.pending = Some((ms + self.ex.lat_exit_ms, kind));
+                    } else {
+                        self.exit = Some((ms, p, kind));
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        if let Some((due, kind)) = self.pending {
+            if ms >= due {
+                self.exit = Some((ms, p, kind));
+                return true;
+            }
+            self.pos.fill_takes(ms, p);
+            return false;
+        }
+        if let Some(kind) = self.pos.on_trade(ms, p) {
+            if self.ex.tl > 0 && kind == ExitKind::Trail {
+                self.lim = Some((self.pos.trail, ms + self.ex.lat_exit_ms, p));
+                self.tl_info = Some((ms, s * self.pos.trail));
+                return false;
+            }
+            // TK-669: «всё взято» — лимитки уже исполнены, выхода (и его задержки) нет
+            if self.ex.lat_exit_ms > 0 && kind != ExitKind::Takes {
+                self.pending = Some((ms + self.ex.lat_exit_ms, kind));
+                return false;
+            }
+            self.exit = Some((ms, p, kind));
+            return true;
+        }
+        false
+    }
+
+    /// Итог хода: без выхода по ленте — принудительный на последней сделке.
+    fn finish(self) -> TickOut {
+        let Walk {
+            ex,
+            s,
+            e,
+            entry_ms,
+            pos,
+            marks,
+            last,
+            exit,
+            tl_info,
+            maker_exit,
+            ..
+        } = self;
+        let (xm, xp, kind) = exit.unwrap_or((last.0, last.1, ExitKind::Forced));
+        // лимитный выход трейла — по цене приказа, мейкер, без проскальзывания; остальные выходы — тейкер с проскальзыванием
+        let px_frame = if maker_exit {
+            xp
+        } else {
+            xp - frac(xp.abs(), ex.slip_bps, 10_000)
+        };
+        let mut legs = pos.legs;
+        if kind != ExitKind::Takes {
+            legs.push(TLeg {
+                ms: xm,
+                px: s * px_frame,
+                u: pos.rem,
+                maker: maker_exit,
+            });
+        }
+        TickOut {
+            entry_ms,
+            entry_px: s * e,
+            legs,
+            exit_ms: xm,
+            kind,
+            takes: pos.next_tp as u32,
+            marks,
+            tl: tl_info,
+            floor: pos.floor,
+        }
     }
 }
 

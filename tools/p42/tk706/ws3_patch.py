@@ -4,8 +4,9 @@
 # спрос — ключи, которые реально запросил `sim_fill_mem` (лот 1 и лот 2 отдельно) с длиной хода в тиках; после фазы 2 `b3_report`: непринятые кандидаты групп
 # со спросом проходятся по ленте (стенка выборки `P42_B3_SAMPLE`, по умолчанию 1 = все), итог — JSON (`P42_B3_OUT`) и строка `B3JSON:` в stderr.
 # Запуск на srv: python3 ws3_patch.py  (после `cp -a src-memo src-ws3`).
+import os
 import sys
-D = '/root/perf706/src-ws3/src/breakout/'
+D = os.environ.get('WS_DIR', '/root/perf706/src-ws3') + '/src/breakout/'   # каталог дерева (по умолчанию src-ws3; src-ws4 — пучок, ws4_patch.py)
 
 
 def load(n):
