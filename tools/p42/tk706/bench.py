@@ -53,7 +53,7 @@ d=dict(tag=a.tag,rc=p.returncode,wall=round(wall,2),threads=a.threads,cap=a.cap_
  minflt=r1.ru_minflt-r0.ru_minflt,majflt=r1.ru_majflt-r0.ru_majflt,nvcsw=r1.ru_nvcsw-r0.ru_nvcsw,nivcsw=r1.ru_nivcsw-r0.ru_nivcsw,
  load=g(r'загружено символов \d+ за ([\d.]+)'),ph1_end=g(r'фаза 1 готова за ([\d.]+)'),warm=g(r'разогрев суток сделок: ([\d.]+)'),
  ph2=g(r'фаза 2: стена ([\d.]+)'),total=g(r'готово: \d+ вариантов, ([\d.]+)'),reads=g(r'файлов прочитано (\d+)'),
- sc=g(r'sig-cache: (hit \d+ miss \d+)'),ws=g(r'(WS: .*)'),tree=th,nfiles=tn,bin=os.path.basename(a.bin))
+ sc=g(r'sig-cache: (hit \d+ miss \d+)'),ws=g(r'(WS: .*)'),memo=g(r'(память исходов: .*)'),tree=th,nfiles=tn,bin=os.path.basename(a.bin))
 print(json.dumps(d,ensure_ascii=False),flush=True)
 open(f'{root}/err-{a.tag}.txt','w').write(err[-3000:])
 shutil.rmtree(out,ignore_errors=True)
