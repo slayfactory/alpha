@@ -19,9 +19,12 @@ impl TradeSrc for MemoSrc<'_> {
     }
 }
 
-/// Мир одного сигнала (как в `end_to_end_trade_entered_before_the_break…`): вход после сигнала, выход по стопу в следующей минутке.
+/// Мир одного сигнала (как в `end_to_end_trade_entered_before_the_break…`): вход после сигнала, выход по стопу в следующей минутке. Вход по ленте
+/// (`ew > 0`, как у всех боевых вариантов): только он идёт через `sim_fill_mem`; при `ew = 0` вход «следующая сделка» (`simulate_tick`) память не трогает.
 fn memo_world() -> (Vec<Sym>, Vec<TSig>, MemSrc, Params) {
-    let p = lv_params();
+    let mut p = lv_params();
+    p.exit.ent_w_ms = 1000;
+    p.exit.ent_x_bp = 100;
     let t1 = BORN + 100;
     let mut c = level_world();
     for m in t1 - 5..t1 {
