@@ -11,6 +11,7 @@ import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIND = os.path.join(HERE, "..", "..", "docs", "findings", "p42-joint-search-2026-11-22")
+NL = chr(10)                                                          # LF на любой ОС: sha файла не зависит от CRLF ПК
 IDS = {("S", 1): "S1", ("S", 2): "S2", ("L", 1): "L1", ("L", 2): "L2"}
 # снято на srv 25.11.2026 (sha256sum / md5sum файлов; содержимое январь–июнь не открывалось)
 SRV = {
@@ -43,8 +44,8 @@ def main():
     a = ap.parse_args()
     sel = json.load(open(a.sel, encoding="utf-8"))
     if a.select_copy:
-        json.dump(sel, open(a.select_copy, "w", encoding="utf-8", newline="
-"), ensure_ascii=False, indent=1)
+        with open(a.select_copy, "w", encoding="utf-8", newline=NL) as f:
+            json.dump(sel, f, ensure_ascii=False, indent=1)
     sel_path = a.select_copy or a.sel                                 # sha — копии в git (если есть)
     thr38 = os.path.join(HERE, "..", "..", SRV["thr38"]["path"])
     maps = {}
@@ -81,8 +82,8 @@ def main():
             clean_check="первая чистая проверка — точка вперёд 30.11 (перезаморозка на крипте, `tk691-frozen.json`); для этих клеток нужны построители признаков вперёд — отдельной задачей",
             trading="торговля — только словом владельца"),
         ref="kb/task/TK-674.md; PS-1010; L-425; L-426")
-    json.dump(out, open(a.out, "w", encoding="utf-8", newline="
-"), ensure_ascii=False, indent=1)
+    with open(a.out, "w", encoding="utf-8", newline=NL) as f:
+        json.dump(out, f, ensure_ascii=False, indent=1)
     print("записано:", a.out, "кандидатов", len(cands), "sha256", sha256(a.out))
 
 
