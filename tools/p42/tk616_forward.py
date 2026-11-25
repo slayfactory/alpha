@@ -363,6 +363,11 @@ def check_universe_crypto(fz, udir, base_dir, point, prev_lists=None):
     return {"lists": {"crypto": cur}, "text": {"crypto": text}, "sha256": {"crypto": sha256_text(cp)}, "contracts_sha256": sha256_text(cpath)}
 
 
+def cap_gb_of(a):
+    """`--cap-gb` движка (память под сутки сделок): `--cap-gb`, иначе `P42_CAP_GB`; 0 — ключ не передаётся (у движка по умолчанию 24 ГБ → 26–33 ГБ на процесс, на srv — OOM). Результат от него не зависит (TK-683)."""
+    return int(getattr(a, "cap_gb", 0) or os.environ.get("P42_CAP_GB") or 0)
+
+
 @dataclasses.dataclass
 class UPaths(rr.Paths):
     """Пути прогона одной вселенной: деревья и кэш окон общие, выходы — `out/<вселенная>/<окно>`."""
@@ -689,7 +694,7 @@ def replay_mk2(a, runner=None, repo=REPO):
             raise GuardError("%s указывает не на %s" % (link, src))
     ntree = check_tree_days(a.replay_root, wins, d(LISTING_AFTER))
     text = rr.read_symbols(a.symbols_file)[0]
-    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache)
+    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache, cap_gb=cap_gb_of(a))
     rr.Engine(paths, runner or rr.SubprocessRunner(), text, a.bin, a.threads, None, windows=tuple(wins), prefix="m").launch([req])
     res = {"bin_md5": md5, "keys": cell["keys"], "vid": req.vid, "cell": CAND2_CELL, "candidate2_commit": c2info["candidate2_commit"], "candidate2_sha256": c2info["candidate2_sha256"],
            "freeze_commit": fcommit, "freeze_sha256": fsha, "tree_files": ntree, "ref_dir": a.ref_dir, "windows": {}}
@@ -1038,7 +1043,7 @@ def replay_tk708(a, runner=None, repo=REPO):
             raise GuardError("%s указывает не на %s" % (link, src))
     ntree = check_tree_days(a.replay_root, wins, d(LISTING_AFTER))
     text = rr.read_symbols(a.symbols_file)[0]
-    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache, cap_gb=getattr(a, "cap_gb", 0))
+    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache, cap_gb=cap_gb_of(a))
     rkeys = None
     if getattr(a, "research_parquet", ""):                  # ТОЛЬКО ворота: строки вне parquet TK-671 исследование читало с пустыми big1800 / vpin1h (см. `tk708_gate.py`); в боевом пути не передаётся
         import tk708_gate as g708
@@ -1144,7 +1149,7 @@ def replay_ds(a, runner=None, repo=REPO):
             raise GuardError("%s указывает не на %s" % (link, src))
     ntree = check_tree_days(a.replay_root, wins, d(LISTING_AFTER))
     text = rr.read_symbols(a.symbols_file)[0]
-    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache)
+    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache, cap_gb=cap_gb_of(a))
     rr.Engine(paths, runner or rr.SubprocessRunner(), text, a.ds_bin, a.threads, None, windows=tuple(wins), prefix="d").launch([req])
     res = {"ds_bin_md5": md5, "keys": cell["keys"], "vid": req.vid, "cell": CAND3_CELL, "candidate3_commit": c3info["candidate3_commit"], "candidate3_sha256": c3info["candidate3_sha256"],
            "freeze_commit": fcommit, "freeze_sha256": fsha, "tree_files": ntree, "ref_dir": a.ref_dir, "windows": {}}
@@ -1448,7 +1453,7 @@ def replay_n24(a, runner=None, repo=REPO):
             raise GuardError("%s указывает не на %s" % (link, src))
     ntree = check_tree_days(a.replay_root, wins, d(LISTING_AFTER))
     text = rr.read_symbols(a.symbols_file)[0]
-    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache)
+    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache, cap_gb=cap_gb_of(a))
     tabs, info = run_n24(paths, runner or rr.SubprocessRunner(), text, a.bin, a.threads, wins, cand, a.feat_bin, a.tick_store, lambda w: (w.lod, w.hid))
     res = {"bin_md5": md5, "feat_bin_md5": cinfo["feat_bin_md5"], "keys": cand["cells"][CAND_CELL]["keys"], "cell": CAND_CELL, "candidate_commit": cinfo["candidate_commit"],
            "candidate_sha256": cinfo["candidate_sha256"], "freeze_commit": fcommit, "freeze_sha256": fsha, "tree_files": ntree, "n24": info, "windows": {}, "ok": False}
@@ -1566,7 +1571,7 @@ def run_point(a, runner=None, today=None, repo=REPO):
     tabs, byw, n24, ds_info, t708_info = {}, {}, {}, {}, {}
     rn = runner or rr.SubprocessRunner()
     for u in fz["universe"]["read"]:
-        paths = UPaths(pdir, uni=u, tick_store=a.tick_store, sig_cache=a.sig_cache)
+        paths = UPaths(pdir, uni=u, tick_store=a.tick_store, sig_cache=a.sig_cache, cap_gb=cap_gb_of(a))
         eng = rr.Engine(paths, rn, uni["text"][u], a.bin, a.threads, None, windows=tuple(wins_used), prefix="f")
         eng.launch(list(reqs.values()))
         t, b = read_cell_tables(paths, reqs, wins_used)
@@ -1772,7 +1777,7 @@ def main(argv=None):
     ap.add_argument("--f12-bin", default="", help="`alpha-feat` f12 (cons60) линий L1 / L2")
     ap.add_argument("--flow-bin", default="", help="`alpha-feat` flow (big1800) линий L1 / L2")
     ap.add_argument("--tox-bin", default="", help="`alpha-feat` tox (vpin1h) линий L1 / L2")
-    ap.add_argument("--cap-gb", type=int, default=0, help="replay-tk708: `--cap-gb` движка (память под сутки сделок; у движка по умолчанию 24 ГБ → 26–33 ГБ на процесс); результат не меняет, TK-683")
+    ap.add_argument("--cap-gb", type=int, default=0, help="`--cap-gb` движка во всех командах (память под сутки сделок; у движка по умолчанию 24 ГБ → 26–33 ГБ на процесс; по умолчанию — `P42_CAP_GB`); результат не меняет, TK-683")
     ap.add_argument("--research-parquet", default="", help="replay-tk708: parquet TK-671 (`/data/p42-tk671/data/long.parquet`) — строки вне него читаются как в исследовании (только ворота)")
     ap.add_argument("--gate-cells", default="", help="replay-tk708: `tk674-gate-cells.json` — эталонные sha256 выходов линий")
     ap.add_argument("--ds-bin", default="", help="бинарь `D_S` (md5 / sha256 — в `ds_binary` файла кандидата 3; ключ `lx` есть только в нём)")

@@ -163,6 +163,7 @@ class Runner5(V.Rec):
     def __init__(self, last_day, nan=None, vals=None, f12_json=None, drop_f12=False, swap_tox=False, drop_flow=False, fail=None, extra_cands=0):
         super().__init__(last_day)
         self.extra_cands = extra_cands
+        self.engine_cmds = []
         self.nan, self.vals, self.drop_f12, self.swap_tox, self.drop_flow, self.fail, self.tools = nan or {}, vals or {}, drop_f12, swap_tox, drop_flow, fail or {}, []
         self.f12_json = {"locate_fail": 0, "natr_mismatch": 0, "rows": 0} if f12_json is None else f12_json
 
@@ -170,6 +171,8 @@ class Runner5(V.Rec):
         if len(cmd) > 1 and cmd[1] in TOOLS:
             self.tools.append(cmd)
             return self.tool(cmd, log)
+        if "--variants" in cmd:
+            self.engine_cmds.append(list(cmd))
         rc = super().run(cmd, env, log)
         if rc == 0 and "--variants" in cmd and not (env and env.get("P42_SIGSX_ONLY") == "1"):
             self.extras(cmd)
@@ -612,6 +615,29 @@ def test_run_point_reads_four_lines_with_alpha_zero_and_writes_marker_and_info()
         p2 = T.read_json(e.fwd, "point-L2.json")
         assert all(p2["prefix"]["diffs"][k] == 0 for k in keys) and all(p2["stats"][k]["alpha_k"] == 0.0 and p2["stats"][k]["decision"] == "описательно" for k in keys)
         assert all(info_["status"] == "read" for info_ in p2["tk708"]["crypto"].values()) and set(p2["tk708"]["crypto"]["L1"]["windows"]) == {"w1", "w2"}
+
+
+def test_point_passes_cap_gb_to_every_engine_call_from_the_option_or_the_environment():
+    def point(env=None, **kw):
+        with strict_all5(), T.tmp() as t:
+            x = ctx5(t)
+            V.prep4(x.e, "L1", D("2026-11-30"))
+            r = Runner5(D("2026-11-30"))
+            old = os.environ.pop("P42_CAP_GB", None)
+            try:
+                if env:
+                    os.environ["P42_CAP_GB"] = env
+                rc, _ = run5(x, "L1", D("2026-12-01"), D("2026-11-30"), runner=r, **kw)
+            finally:
+                os.environ.pop("P42_CAP_GB", None)
+                if old is not None:
+                    os.environ["P42_CAP_GB"] = old
+            assert rc == 0 and len(r.engine_cmds) >= 2
+            return [c[c.index("--cap-gb") + 1] if "--cap-gb" in c else None for c in r.engine_cmds]
+    assert set(point()) == {None}                                                                              # ни ключа, ни среды — движок как раньше
+    assert set(point(cap_gb=6)) == {"6"}                                                                       # `--cap-gb` — на каждом вызове (база и четыре линии)
+    assert set(point(env="4")) == {"4"} and set(point(env="4", cap_gb=7)) == {"7"}                             # `P42_CAP_GB`; ключ сильнее среды
+    assert fw.cap_gb_of(argparse.Namespace(cap_gb=0)) == 0 and fw.cap_gb_of(argparse.Namespace()) == 0
 
 
 def test_run_point_skips_only_the_failed_line_and_prints_the_reason():
