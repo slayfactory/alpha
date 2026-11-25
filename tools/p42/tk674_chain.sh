@@ -1,6 +1,6 @@
 #!/bin/bash
 # П-42 TK-674: один пакет уровня карты на srv — [ftab] → validate → cells → tables → ccheck → map. Запуск юнитом:
-#   systemd-run --unit=tk674b-chain --collect -p Nice=19 -p MemoryMax=40G -p OOMScoreAdjust=1000 -p WorkingDirectory=/data/p42-tk674/code -E TK674_REBASE=1 [-E TK674_LEVEL=3] bash tk674_chain.sh L-<запись результата>
+#   systemd-run --unit=tk674b-chain --collect -p Nice=19 -p MemoryMax=40G -p LimitCORE=0 -p OOMScoreAdjust=1000 -p WorkingDirectory=/data/p42-tk674/code -E TK674_REBASE=1 [-E TK674_LEVEL=3] bash tk674_chain.sh L-<запись результата>
 # Каждая стадия — отдельный процесс; клетки, найденные в БД летописи, не пересчитываются. Журнал — log/chain<суффикс>.log.
 # Пары с активными осями единичек TK-680 (§13.73.7, PS-960): -E TK674_REBASE=1 -E TK674_X680=1 [-E TK674_ROOT=<свой каталог>] [-E TK674_X680_ROOTS=<корни>] — стадии plan → ftab → validate →
 # plan (заново, без отвергнутых движком; отбор пар заморожен) → cells → tables → ccheck → map; журнал log/chainbx.log; нужны res/thr674.json, res/eqbins674.json, res/gbase674.json в каталоге.

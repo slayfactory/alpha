@@ -455,11 +455,7 @@ impl TradeSrc for MemSrc {
 }
 
 fn tk(m: usize, ms: u32, price: f64) -> Tick {
-    Tick {
-        px: px(price),
-        off: (m % 1440) as u32 * 60_000 + ms,
-        bm: false,
-    }
+    Tick::new(px(price), (m % 1440) as u32 * 60_000 + ms, false)
 }
 
 /// Параметры сигналов мира: линия по двум точкам, без фильтров пула и без запрета ложного пробоя.
@@ -606,11 +602,7 @@ fn crossing_is_a_trade_at_or_above_the_minute_version_not_the_birth_price() {
     // ровно на версии — тоже пересечение (сделка ≥ уровня); на 1e-8 ниже — сигнал есть
     let on = vec![
         tk(t, 0, vf - 0.20),
-        Tick {
-            px: v,
-            off: (t % 1440) as u32 * 60_000 + 5_000,
-            bm: false,
-        },
+        Tick::new(v, (t % 1440) as u32 * 60_000 + 5_000, false),
         tk(t, 10_000, vf - 0.15),
     ];
     let sg = run_signals(c.clone(), &p, Side::Long, vec![(day, on)]);
@@ -620,11 +612,7 @@ fn crossing_is_a_trade_at_or_above_the_minute_version_not_the_birth_price() {
     );
     let below = vec![
         tk(t, 0, vf - 0.20),
-        Tick {
-            px: v - 1,
-            off: (t % 1440) as u32 * 60_000 + 5_000,
-            bm: false,
-        },
+        Tick::new(v - 1, (t % 1440) as u32 * 60_000 + 5_000, false),
         tk(t, 10_000, vf - 0.15),
     ];
     let sg = run_signals(c, &p, Side::Long, vec![(day, below)]);
