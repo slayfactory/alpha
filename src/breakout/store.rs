@@ -192,7 +192,7 @@ impl QtyRaw {
     /// Та же устойчивая сортировка по `off`, что у `Vec<Tick>` без количества.
     pub fn sort_with(&mut self, v: &mut Vec<Tick>) {
         let mut idx: Vec<u32> = (0..v.len() as u32).collect();
-        idx.sort_by_key(|&i| v[i as usize].off);
+        idx.sort_by_key(|&i| v[i as usize].off());
         *v = idx.iter().map(|&i| v[i as usize]).collect();
         self.mant = idx.iter().map(|&i| self.mant[i as usize]).collect();
         self.dec = idx.iter().map(|&i| self.dec[i as usize]).collect();
@@ -295,10 +295,10 @@ pub fn encode(t: &[Tick]) -> Option<Vec<u8>> {
     let mut prev = first;
     let mut poff = 0u32;
     for x in t {
-        if x.off < poff || i64::from(x.off) >= DAY_MS {
+        if x.off() < poff || i64::from(x.off()) >= DAY_MS {
             return None;
         }
-        poff = x.off;
+        poff = x.off();
         if g != 1 {
             g = gcd(g, x.px.checked_sub(prev)?.unsigned_abs());
         }
@@ -314,9 +314,12 @@ pub fn encode(t: &[Tick]) -> Option<Vec<u8>> {
     for x in t {
         let d = (x.px - ppx) / g as i64;
         put(&mut out, ((d << 1) ^ (d >> 63)) as u64);
-        put(&mut out, (u64::from(x.off - poff) << 1) | u64::from(x.bm));
+        put(
+            &mut out,
+            (u64::from(x.off() - poff) << 1) | u64::from(x.bm()),
+        );
         ppx = x.px;
-        poff = x.off;
+        poff = x.off();
     }
     Some(out)
 }
@@ -335,11 +338,7 @@ pub fn decode(b: &[u8], n: usize) -> Option<Vec<Tick>> {
         if off >= DAY_MS as u64 {
             return None;
         }
-        v.push(Tick {
-            px,
-            off: off as u32,
-            bm: w & 1 == 1,
-        });
+        v.push(Tick::new(px, off as u32, w & 1 == 1));
     }
     (i == b.len()).then_some(v)
 }

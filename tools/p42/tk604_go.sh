@@ -6,5 +6,5 @@ set -uo pipefail
 NAME="${1:?имя}"; shift
 ROOT=/data/p42-tk604
 mkdir -p "$ROOT/rc" "$ROOT/log"; rm -f "$ROOT/rc/$NAME"
-systemd-run --unit="tk604-$NAME" --collect -q -p WorkingDirectory="$ROOT/code" -p Nice=19 -p CPUQuota=400% -p IOSchedulingClass=idle \
+systemd-run --unit="tk604-$NAME" --collect -q -p WorkingDirectory="$ROOT/code" -p Nice=19 -p CPUQuota=400% -p IOSchedulingClass=idle -p LimitCORE=0 \
   bash -c 'python3 tk604_run.py "$@" > "'"$ROOT"'/log/'"$NAME"'.log" 2>&1; echo $? > "'"$ROOT"'/rc/'"$NAME"'"' _ "$@"

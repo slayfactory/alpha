@@ -547,6 +547,11 @@ fn read_cache(path: &Path) -> Result<(Cols, Vec<Fund>)> {
 
 /// Все `.b42` каталога → символы по алфавиту (индекс символа = порядок тай-брейка П-42).
 pub fn load_all(cache: &Path, threads: usize, only: Option<&[String]>) -> Result<Vec<Sym>> {
+    load_files(&cache_files(cache, only)?, threads)
+}
+
+/// Файлы минуток задания (монета, путь) по возрастанию имени — в этом порядке `load_files` отдаёт монеты.
+pub fn cache_files(cache: &Path, only: Option<&[String]>) -> Result<Vec<(String, PathBuf)>> {
     let mut files: Vec<(String, PathBuf)> = Vec::new();
     for e in fs::read_dir(cache)? {
         let p = e?.path();
@@ -559,7 +564,11 @@ pub fn load_all(cache: &Path, threads: usize, only: Option<&[String]>) -> Result
         }
     }
     files.sort();
-    let res = par_map(&files, threads, |(n, p)| -> Result<Sym> {
+    Ok(files)
+}
+
+pub fn load_files(files: &[(String, PathBuf)], threads: usize) -> Result<Vec<Sym>> {
+    let res = par_map(files, threads, |(n, p)| -> Result<Sym> {
         let (cols, fund) = read_cache(p)?;
         Ok(Sym::from_cols(n, cols, fund))
     });
