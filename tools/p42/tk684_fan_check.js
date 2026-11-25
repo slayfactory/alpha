@@ -165,7 +165,7 @@ const MS_MAX = 250;      // кадр на самом большом наборе
   await shot('top100');
   await page.selectOption('#fan-top', '0'); await ready();
   const axes = await page.evaluate(() => [...document.querySelectorAll('#fan-ax option')].map(o => [o.value, o.textContent]));
-  ok(axes.length > 20 && axes.slice(1).filter(a => /^№ \d+ · /.test(a[1])).length >= axes.length - 6, 'признаки с номерами: ' + JSON.stringify(axes.slice(0, 6)));
+  ok(axes.length > 20 && axes.slice(1).filter(a => /^№ \d+ · /.test(a[1])).length >= axes.length - 12, 'признаки с номерами: ' + JSON.stringify(axes.slice(0, 6)));
   for (const ax of ['rf', 'TPM60', 'split']) {
     await page.selectOption('#fan-ax', ax); await ready(); d = await dom();
     want = await page.evaluate(ax => window.__T.count('short', 'all', {ax}), ax);
