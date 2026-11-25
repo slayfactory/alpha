@@ -104,15 +104,23 @@ def cmd_gate(fz, a):
     for cid_, (c, row, side) in rs.items():
         ex, patch = row["extra"], row["extra"]["patch"]
         filt = [tuple(x) for x in ex["filt"]]
-        line = run.t.variant_line(r5, u, side, patch)
-        if line != ex["line"]:
-            raise SystemExit("%s: строка варианта %r ≠ строка в БД %r" % (c["id"], line, ex["line"]))
+        line = ex["line"]                                          # строка клетки в БД = строка счёта (порядок ключей важен при повторах, в `patch` БД он отсортирован): гоним её, а не пересобранную
+        rebuilt = run.t.variant_line(r5, u, side, patch)
+        if sorted(rebuilt.split()) != sorted(line.split()):
+            raise SystemExit("%s: строка варианта %r не из тех же ключей, что строка в БД %r" % (c["id"], rebuilt, line))
         ftab = cols = None
         if filt:
             tabdir, colf = ftab_for(side, batch_of(row))
             cols = json.load(open(colf, encoding="utf-8"))
             line += " fa=%s fo=lo fv=%g" % (cols[c["ckey"].split("F=", 1)[1]], ax.FV_PASS)
         rec = dict(ckey=c["ckey"], cid=c["cid"], line=line, ftab=tabdir if filt else None, windows={})
+        if a.dry:                                                   # без движка: строка варианта = строка БД, таблицы и столбцы фильтра на месте, оригиналы извлекаются
+            for w in st.TRADE_WINDOWS:
+                if filt and not os.path.exists(os.path.join(tabdir, "%s-%s.csv" % (w.name, side))):
+                    raise SystemExit("%s: нет таблицы %s" % (c["id"], os.path.join(tabdir, "%s-%s.csv" % (w.name, side))))
+                pk.ensure_cell(ex["dirs"][w.name])
+            print("dry %s %s: строка %s, таблицы %s, оригиналы на месте" % (c["id"], c["cid"], line, tabdir if filt else "—"))
+            continue
         for w in st.TRADE_WINDOWS:
             out = os.path.join(run.ROOT, "cells", "%s-%s" % (w.name, side), "gate674")
             os.makedirs(out, exist_ok=True)
@@ -134,6 +142,8 @@ def cmd_gate(fz, a):
         res["cells"][c["id"]] = rec
         print("%s %s: окна %s; tsig %s; n %s / %s; Σ %s / %s → %s" % (c["id"], c["cid"], ", ".join("%s %s" % (w, "байт в байт" if v["equal"] else "РАЗЛИЧИЯ") for w, v in rec["windows"].items()),
                                                                      "равен" if rec["tsig_equal"] else "РАЗЛИЧАЕТСЯ", m and m["n"], ex["n"], m and round(m["usd"], 2), round(ex["usd"], 2), "ok" if rec["ok"] else "НЕ ПРОЙДЕН"))
+    if a.dry:
+        return
     res["passed"] = all(v["ok"] for v in res["cells"].values())
     if a.out:
         json.dump(res, open(a.out, "w", encoding="utf-8", newline=chr(10)), ensure_ascii=False, indent=1)
@@ -147,6 +157,7 @@ def main():
     ap.add_argument("mode", choices=("gate", "overlap"))
     ap.add_argument("freeze")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--dry", action="store_true", help="gate без движка: проверки входов")
     a = ap.parse_args()
     fz = json.load(open(a.freeze, encoding="utf-8"))
     (cmd_gate if a.mode == "gate" else cmd_overlap)(fz, a)

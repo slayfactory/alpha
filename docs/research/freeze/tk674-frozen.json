@@ -509,9 +509,71 @@
  },
  "cost_model": "как `docs/research/freeze/tk691-frozen.json` `cost_model` (ставка 500 $, плечо 2, комиссия тейкер 3,5 бп минус 10 % возврата, проскальзывание 1 бп на ногу, задержка 4 мс `lat=4 latx=4`)",
  "gate": {
-  "status": "не запущен",
-  "evidence": "клетки отбора — строки БД c539, посчитанные бинарями реестра `eqbins674.json`; канарейки байт в байт (L-419, L-425); гейт TK-706 для memo `357a66c1` — 549 клеток байт в байт",
-  "pending": "повтор клеток-кандидатов замороженным бинарём: `tools/p42/tk674_gate_cells.py gate` (окно на srv, один движок за раз)"
+  "status": "пройден",
+  "tool": "tools/p42/tk674_gate_cells.py gate",
+  "result": "tk674-gate-cells.json",
+  "result_sha256": "ad1f3eaf55d4afac8279899527d413a0974ca4f5d72c305ef144e50fe893c84f",
+  "checked_freeze_sha256": "398e5fd00bb66a7603e9c6e42cfa0958564df00d2651144508db3335517bfd4b",
+  "checked_note": "шлюз читал версию файла заморозки без блока шлюза (sha256 выше); блок шлюза и пересечение добавлены после",
+  "binary": {
+   "path": "/data/p42-tk683/bin/alpha-tk706memo-plain.357a66c1",
+   "md5": "357a66c14605c3a228d18defbe35bb22",
+   "sha256": "377df19cfaebda788bcc7637a95996af06d14d4eb7e2a78b14bfdf46a2c3de74"
+  },
+  "code_sha256": {
+   "tk674_run.py": "2fcc7e372123ea1ba5e0dc42602db861c769a593f24aab935e610dfa0be7993c",
+   "tk674_axes.py": "ecc4d6ae11bc7b7a36d3d20d34705b6d6f56403eae39f9d926c3cdf26269be59",
+   "tk604_run.py": "bb5dcccaec9594862aec0eb6e5f757ed39363d75ce2f7474462e61b82b1e82e6",
+   "tk625_run.py": "1c3fd91cb497dac7e07c7237e1b7fc4aea965e1ab0fae39a8caae00d3d2e6f8c"
+  },
+  "thr674_sha256": "7205062cffcf08b14636c8e0909eab118299c15244de330ac9b2f8a05147dd82",
+  "cells": {
+   "L1": {
+    "ok": true,
+    "tsig_equal": true,
+    "windows": {
+     "wa": true,
+     "wb": true,
+     "wc": true
+    },
+    "trades": 174,
+    "usd": 348.069707
+   },
+   "L2": {
+    "ok": true,
+    "tsig_equal": true,
+    "windows": {
+     "wa": true,
+     "wb": true,
+     "wc": true
+    },
+    "trades": 227,
+    "usd": 382.520751
+   },
+   "S1": {
+    "ok": true,
+    "tsig_equal": true,
+    "windows": {
+     "wa": true,
+     "wb": true,
+     "wc": true
+    },
+    "trades": 2158,
+    "usd": 1358.971226
+   },
+   "S2": {
+    "ok": true,
+    "tsig_equal": true,
+    "windows": {
+     "wa": true,
+     "wb": true,
+     "wc": true
+    },
+    "trades": 1457,
+    "usd": 1254.203815
+   }
+  },
+  "what": "каждая клетка × три окна (wa / wb / wc) замороженным бинарём `357a66c1`, средой `env-s4.sh`, ключом клетки и таблицами фильтров партии: файлы сделок / суток / монет / отказов байт в байт с клеткой БД, `trades_sig` = `tsig`"
  },
  "overlap": {
   "L": {

@@ -73,7 +73,7 @@ def main():
                 pending="повтор клеток-кандидатов замороженным бинарём: `tools/p42/tk674_gate_cells.py gate` (окно на srv, один движок за раз)")
     if a.gate:
         g = json.load(open(a.gate, encoding="utf-8"))
-        gate = dict(status="пройден" if g["passed"] else "НЕ ПРОЙДЕН", tool="tools/p42/tk674_gate_cells.py gate", result=os.path.basename(a.gate), result_sha256=sha256(a.gate), binary=g["binary"], code_sha256=g["code"], thr674_sha256=g["thr674"],
+        gate = dict(status="пройден" if g["passed"] else "НЕ ПРОЙДЕН", tool="tools/p42/tk674_gate_cells.py gate", result=os.path.basename(a.gate), result_sha256=sha256(a.gate), checked_freeze_sha256=g["freeze_sha256"], checked_note="шлюз читал версию файла заморозки без блока шлюза (sha256 выше); блок шлюза и пересечение добавлены после", binary=g["binary"], code_sha256=g["code"], thr674_sha256=g["thr674"],
                     cells={k: dict(ok=v["ok"], tsig_equal=v["tsig_equal"], windows={w: x["equal"] for w, x in v["windows"].items()}, trades=v["metrics"]["trades"], usd=v["metrics"]["usd"]) for k, v in g["cells"].items()},
                     what="каждая клетка × три окна (wa / wb / wc) замороженным бинарём `357a66c1`, средой `env-s4.sh`, ключом клетки и таблицами фильтров партии: файлы сделок / суток / монет / отказов байт в байт с клеткой БД, `trades_sig` = `tsig`")
     overlap = dict(status="не посчитано")
