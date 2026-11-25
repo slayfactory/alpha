@@ -361,7 +361,7 @@ def cmd_rr(a):
             continue
         cid, cs = int(cid), "base-%s" % label
         got = {m for (m,) in rp.execute("SELECT month FROM rp_done WHERE side=? AND cellset=? AND cid=?", (a.side, cs, cid))}
-        if got != set(range(nm)):
+        if not set(range(nm)) <= got:   # база могла быть повторена и на более поздние месяцы (параллельная цепочка следующего месяца) — ряд берётся по суткам OOS
             raise SystemExit("повтор базы %s не покрывает месяцы 0…%d: %s" % (label, nm - 1, sorted(got)))
         rows = rp.execute("SELECT entry_day, exit_ms, val, fees FROM rp_trade WHERE side=? AND cellset=? AND cid=? ORDER BY entry_ms", (a.side, cs, cid)).fetchall()
         arr = np.array(rows, float).reshape(-1, 4)
