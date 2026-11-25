@@ -27,6 +27,7 @@ fw.REQUIRE_CANDIDATE = False                          # прежние тест�
 fw.REQUIRE_CANDIDATE3 = False                         # TK-670: то же для `tk670-frozen.json` (`strict3()` в `test_tk670.py`)
 fw.REQUIRE_CANDIDATE2 = False                         # TK-641: то же для `tk641-frozen.json` (`strict2()` в своих тестах)
 fw.REQUIRE_CANDIDATE4 = False                         # TK-691: то же для `tk691-frozen.json` (`strict4()` в `test_tk691.py`)
+fw.REQUIRE_CANDIDATE5 = False                         # TK-708: то же для `tk708-frozen.json` (`strict5()` в `test_tk708.py`)
 NB = 4000
 DAY = rf.DAY_MS
 CRYPTO, TRADFI = ["AAAUSDT", "BBBUSDT", "CCCUSDT", "DDDUSDT"], ["EEEUSDT", "FFFUSDT"]
