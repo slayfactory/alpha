@@ -235,8 +235,8 @@ fn b3_walk(src: &dyn TradeSrc, g: &B3Group, ex: &ExitCfg) -> u64 {
     n
 }
 
-/// Только обвязка хода: те же слои вызовов (`next` → `after` → цикл), без `Pos::on_trade` / `fill_takes` — верхняя оценка общей части.
-fn b3_iter(src: &dyn TradeSrc, g: &B3Group) -> u64 {
+/// Только обвязка хода на `limit` тиков (длина настоящего хода): те же слои вызовов (`next` → `after` → цикл), без `Pos::on_trade` / `fill_takes` — верхняя оценка общей части.
+fn b3_iter(src: &dyn TradeSrc, g: &B3Group, limit: u64) -> u64 {
     let (coin, entry_ms, _p0, side_s, _natr, _lc, _notional, _slip, _stop_px) = g;
     let day = ((*entry_ms).max(0) / DAY_MS) as usize;
     let base = day as i64 * DAY_MS;
@@ -263,6 +263,9 @@ fn b3_iter(src: &dyn TradeSrc, g: &B3Group) -> u64 {
         }
         last = (ms, side_s * px);
         n += 1;
+        if n >= limit {
+            break;
+        }
     }
     std::hint::black_box(last);
     n
@@ -326,11 +329,11 @@ pub fn b3_report(src: &dyn TradeSrc, threads: usize) {
                     let (g, ex) = (groups[gi].0, &st.exs[id as usize]);
                     let n = if k % 4 == 0 {
                         // замер доли общей части: разогрев суток, ход целиком, только обвязка (ЦП потока)
-                        let _ = b3_iter(src, g);
+                        let _ = b3_walk(src, g, ex);
                         let a = b3_cpu_ns();
                         let n = b3_walk(src, g, ex);
                         let b = b3_cpu_ns();
-                        let n2 = b3_iter(src, g);
+                        let n2 = b3_iter(src, g, n);
                         let c = b3_cpu_ns();
                         assert_eq!(n, n2, "b3: тики хода и обвязки не равны");
                         t_full.fetch_add(b - a, Ordering::Relaxed);
