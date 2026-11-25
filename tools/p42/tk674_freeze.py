@@ -43,7 +43,8 @@ def main():
     a = ap.parse_args()
     sel = json.load(open(a.sel, encoding="utf-8"))
     if a.select_copy:
-        json.dump(sel, open(a.select_copy, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        json.dump(sel, open(a.select_copy, "w", encoding="utf-8", newline="
+"), ensure_ascii=False, indent=1)
     sel_path = a.select_copy or a.sel                                 # sha — копии в git (если есть)
     thr38 = os.path.join(HERE, "..", "..", SRV["thr38"]["path"])
     maps = {}
@@ -80,7 +81,8 @@ def main():
             clean_check="первая чистая проверка — точка вперёд 30.11 (перезаморозка на крипте, `tk691-frozen.json`); для этих клеток нужны построители признаков вперёд — отдельной задачей",
             trading="торговля — только словом владельца"),
         ref="kb/task/TK-674.md; PS-1010; L-425; L-426")
-    json.dump(out, open(a.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    json.dump(out, open(a.out, "w", encoding="utf-8", newline="
+"), ensure_ascii=False, indent=1)
     print("записано:", a.out, "кандидатов", len(cands), "sha256", sha256(a.out))
 
 
