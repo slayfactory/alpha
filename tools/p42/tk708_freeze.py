@@ -141,9 +141,10 @@ def merge_replay(parts):
     """Один результат ворот replay из частей по окнам (`tk708_gate.py replay --windows <окно>` — движок счёта на одно окно умещается в память srv, на три сразу — нет). Части: одно окно, тот же `meta` (деревья, бинари), режим потока, линии, ключи и vid; окна не повторяются.
     → результат ворот в формате `replay` (все окна). Любое расхождение частей — STOP."""
     first = parts[0]
-    out = {"meta": first["meta"], "flow_mode": first["flow_mode"], "info": {}, "cells": {}, "ok": True}
+    rest = lambda pt: {k: v for k, v in pt["meta"].items() if k != "tree_files"}   # noqa: E731  — число файлов деревьев своё у каждого окна: в результате — сумма
+    out = {"meta": dict(first["meta"], tree_files=sum(int(pt["meta"]["tree_files"]) for pt in parts)), "flow_mode": first["flow_mode"], "info": {}, "cells": {}, "ok": True}
     for pt in parts:
-        if pt["meta"] != first["meta"] or pt["flow_mode"] != first["flow_mode"] or set(pt["cells"]) != set(first["cells"]):
+        if rest(pt) != rest(first) or pt["flow_mode"] != first["flow_mode"] or set(pt["cells"]) != set(first["cells"]):
             stop("части replay: meta / режим потока / линии разные")
         for i, x in pt["cells"].items():
             y = out["cells"].setdefault(i, {"status": "read", "vid": x["vid"], "keys": x["keys"], "windows": {}, "equal": True})

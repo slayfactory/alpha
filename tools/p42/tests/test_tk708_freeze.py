@@ -142,8 +142,9 @@ def test_every_gate_difference_stops_the_build():
 def test_merge_replay_joins_one_window_parts_and_stops_on_any_difference():
     _gf, gr = gates()
     parts = []
-    for w in WINS:
+    for k, w in enumerate(WINS):
         pt = json.loads(json.dumps(gr))
+        pt["meta"]["tree_files"] = gr["meta"]["tree_files"] // 3 + (1 if k == 0 else 0) * (gr["meta"]["tree_files"] % 3)
         pt["info"] = {i: {"status": "read", "reason": "", "vid": x["vid"], "keys": x["keys"], "side": "L", "windows": {w: {"rows": 5}}} for i, x in pt["cells"].items()}
         for x in pt["cells"].values():
             x["windows"] = {w: x["windows"][w]}
@@ -160,7 +161,7 @@ def test_merge_replay_joins_one_window_parts_and_stops_on_any_difference():
     bad = json.loads(json.dumps(parts))
     bad[1]["cells"]["L1"]["equal"] = False
     assert z.merge_replay(bad)["ok"] is False
-    for mut, needle in ((lambda b: b[1]["meta"].__setitem__("tree_files", 1), "meta"), (lambda b: b[1]["cells"]["L1"].__setitem__("vid", "x"), "vid"),
+    for mut, needle in ((lambda b: b[1]["meta"]["engine_bin"].__setitem__("md5", "x"), "meta"), (lambda b: b[1]["cells"]["L1"].__setitem__("vid", "x"), "vid"),
                         (lambda b: b[1]["cells"]["L1"]["windows"].update(wa=b[0]["cells"]["L1"]["windows"]["wa"]), "повторяется"), (lambda b: b[1]["cells"].pop("S2"), "линии")):
         b = json.loads(json.dumps(parts))
         mut(b)
