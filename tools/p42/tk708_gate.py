@@ -188,8 +188,8 @@ def cmd_replay(a):
     t674, gate, cells, paths, text, bins, meta = setup(a, wins)
     if a.cells:
         cells = {i: c for i, c in cells.items() if i in a.cells.split(",")}
-    pq = parquet_values(a.parquet)
-    tabs, info = f708.run_cells(paths, rr.SubprocessRunner(), text, a.bin, a.threads, wins, cells, bins, a.tick_store, lambda w: (w.lod, w.hid), days=a.days, nan_guard=None, flow_mode=a.flow_mode, reuse=a.reuse, research_keys={w_: set(d_) for w_, d_ in pq.items()})
+    pq = {} if a.real else parquet_values(a.parquet)
+    tabs, info = f708.run_cells(paths, rr.SubprocessRunner(), text, a.bin, a.threads, wins, cells, bins, a.tick_store, lambda w: (w.lod, w.hid), days=a.days, nan_guard=None, flow_mode=a.flow_mode, reuse=a.reuse, research_keys=None if a.real else {w_: set(d_) for w_, d_ in pq.items()})
     cmp_ = f708.compare_gate(paths, {i: c for i, c in cells.items() if i in tabs}, wins, gate)
     res = {"meta": meta, "flow_mode": a.flow_mode, "info": info, "cells": {}, "ok": False}
     for i in cells:
@@ -222,6 +222,7 @@ def main(argv=None):
     ap.add_argument("--parquet", default=PARQUET)
     ap.add_argument("--windows", default="")
     ap.add_argument("--cells", default="")
+    ap.add_argument("--real", action="store_true", help="replay: настоящие значения признаков на всех строках (без чтения пустыми строк вне parquet) — не ворота: sha256 шлюза не сходятся, результат — метрики линий (`tk708_real_metrics.py`)")
     ap.add_argument("--reuse", action="store_true", help="дамп потока и выходы alpha-feat с меткой `.ok` в `--root` не пересчитываются (только ворота: feat после replay на том же корне)")
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--cap-gb", type=int, default=0, help="`--cap-gb` движка (память под сутки сделок; по умолчанию у движка 24 ГБ → 26–33 ГБ на процесс); результат не меняет, TK-683")
