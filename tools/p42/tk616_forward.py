@@ -1038,9 +1038,13 @@ def replay_tk708(a, runner=None, repo=REPO):
             raise GuardError("%s указывает не на %s" % (link, src))
     ntree = check_tree_days(a.replay_root, wins, d(LISTING_AFTER))
     text = rr.read_symbols(a.symbols_file)[0]
-    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache)
+    paths = UPaths(a.replay_root, uni="replay", tick_store=a.tick_store, sig_cache=a.sig_cache, cap_gb=getattr(a, "cap_gb", 0))
+    rkeys = None
+    if getattr(a, "research_parquet", ""):                  # ТОЛЬКО ворота: строки вне parquet TK-671 исследование читало с пустыми big1800 / vpin1h (см. `tk708_gate.py`); в боевом пути не передаётся
+        import tk708_gate as g708
+        rkeys = {w_: set(d_) for w_, d_ in g708.parquet_values(a.research_parquet).items()}
     tabs, info = f708.run_cells(paths, runner or rr.SubprocessRunner(), text, a.tk674_bin, a.threads, wins, c5["cells_run"], feat_bins_of(a), a.tick_store, lambda w: (w.lod, w.hid),
-                                days=c5["f12_days"], nan_guard=None, flow_mode=c5["flow_mode"])
+                                days=c5["f12_days"], nan_guard=None, flow_mode=c5["flow_mode"], research_keys=rkeys)
     cmp_ = f708.compare_gate(paths, {i: v for i, v in c5["cells_run"].items() if i in tabs}, wins, gate_cells)
     res = {"candidate5_commit": c5info["candidate5_commit"], "candidate5_sha256": c5info["candidate5_sha256"], "tk674_sha256": c5info["tk674_sha256"], "tk674_bin_md5": c5info["tk674_bin_md5"],
            "feature_bins_md5": c5info["feature_bins_md5"], "tree_files": ntree, "gate_cells": a.gate_cells, "info": info, "cells": {}, "ok": False}
@@ -1768,6 +1772,8 @@ def main(argv=None):
     ap.add_argument("--f12-bin", default="", help="`alpha-feat` f12 (cons60) линий L1 / L2")
     ap.add_argument("--flow-bin", default="", help="`alpha-feat` flow (big1800) линий L1 / L2")
     ap.add_argument("--tox-bin", default="", help="`alpha-feat` tox (vpin1h) линий L1 / L2")
+    ap.add_argument("--cap-gb", type=int, default=0, help="replay-tk708: `--cap-gb` движка (память под сутки сделок; у движка по умолчанию 24 ГБ → 26–33 ГБ на процесс); результат не меняет, TK-683")
+    ap.add_argument("--research-parquet", default="", help="replay-tk708: parquet TK-671 (`/data/p42-tk671/data/long.parquet`) — строки вне него читаются как в исследовании (только ворота)")
     ap.add_argument("--gate-cells", default="", help="replay-tk708: `tk674-gate-cells.json` — эталонные sha256 выходов линий")
     ap.add_argument("--ds-bin", default="", help="бинарь `D_S` (md5 / sha256 — в `ds_binary` файла кандидата 3; ключ `lx` есть только в нём)")
     ap.add_argument("--ref-dir", default="/data/p42-tk626/gmk/out", help="replay-mk2: выходы G-626c `<окно>/<vid>/long-*`; replay-ds: выходы TK-668 `<окно>/S_lx1/short-*` (`/data/p42-tk668/e4/cells`)")
