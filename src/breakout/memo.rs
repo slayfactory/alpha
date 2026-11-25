@@ -98,6 +98,7 @@ impl MoveMemo {
 
     /// Исход хода по ключу: из памяти или `compute()` (считает ход по свежему потоку сделок монеты). Каждое `verify_every`-е попадание
     /// пересчитывается и сверяется — расхождение даёт `panic!`.
+    #[allow(clippy::panic)] // расхождение памяти с пересчётом = порча результатов, счёт обязан упасть
     pub fn get_or_compute(&self, key: MoveKey, compute: &mut dyn FnMut() -> TickOut) -> TickOut {
         let shard = &self.shards[(self.hasher.hash_one(&key) % SHARDS as u64) as usize];
         let found = lock(shard).get(&key).cloned();
