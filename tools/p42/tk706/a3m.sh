@@ -10,7 +10,8 @@ touch $H1 $H2
 trap 'rm -f $H1 $H2; echo "a3m-end $(date -u +%T)" >> $R' EXIT
 # занято = жив чей-либо `breakout tick` вне юнитов tk706-* (юниты партий остаются active и в паузе HOLD, поэтому по юнитам не судим)
 busy(){ for p in $(pgrep -f "breakout tick"); do grep -q "tk706-" /proc/$p/cgroup 2>/dev/null || return 0; done; return 1; }
-while busy; do sleep 5; done
+# ждёт: хост свободен И есть `a3m.go` (создаётся после гейта бинаря); HOLD подновляется каждые 5 с
+while busy || [ ! -e /root/perf706/a3m.go ]; do touch $H1 $H2; sleep 5; done
 echo "a3m-start $(date -u +%T) load $(cut -d' ' -f1 /proc/loadavg)" >> $R
 run(){ T=$1; BIN=$2; K=$3; python3 bench.py --bin $BIN --cap-gb 24 --wide 200 --threads 7 --tag a3m-$T-$K --variants $HV --every 1 --sig /root/perf706/sc12-$T >> $R 2>> bench/q12.err; }
 for pair in $(cat /root/perf706/a3m.bins); do
