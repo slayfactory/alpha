@@ -72,6 +72,8 @@ Write briefs and inter-thread messages in English; ask workers to report in Engl
 
 Size the brief to the unit. A one-command unit gets a paragraph that still names goal, scope, verify command and report shape.
 
+Big reading (sources > ~300 KB, e.g. transcripts, PDFs with images, logs): before spawning, measure the size and put in the brief — read in batches through in-session `reader` helpers (Agent tool), each batch → notes file → commit; the executor never holds more than one batch; a size cap on the output doc (owner 26.11, TK-715: 1 MB of transcripts read in one context → clear at 282k, 460 KB drafts).
+
 ## Writing the reply
 
 Owner reads Russian, business-first: result and number first, then meaning and next step. Every claim says whether it is measured, inferred or a guess. Never hand the owner a check you could run. Never fabricate a link or a number.
