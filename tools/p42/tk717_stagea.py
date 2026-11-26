@@ -36,6 +36,7 @@ NWEEK = 25                                                          # недел
 WLEN = 6                                                            # окно недели Пн–Сб; воскресенье — отступ E = 1 до следующей границы
 HALF_CUT = 120                                                      # 01.05.2026: H1 = февраль–апрель (сутки 31–119), H2 = май–июнь (120–180)
 FEB1 = 31
+T1_FIRST = min(k for k in range(NWEEK) if WEEK0 + 7 * k >= FEB1)       # первая неделя-цель T1: понедельник 02.02 (сутки 32), k = 4; январские цели — разгон (поправка PS-1035)
 HALVES = ("H1", "H2", "all")
 LAGS = tuple(range(1, 9))
 LS = (7, 14, 30, 60)                                                # длины скользящего окна T2, сут.
@@ -52,7 +53,7 @@ CREATE TABLE IF NOT EXISTS tk717_t1(rid TEXT, side TEXT, lag INTEGER, half TEXT,
 CREATE TABLE IF NOT EXISTS tk717_t2_pick(rid TEXT, side TEXT, series TEXT, b INTEGER, e INTEGER, fullwin INTEGER, cid INTEGER, w INTEGER, score REAL, sum_w REAL, n_w INTEGER, m INTEGER, PRIMARY KEY(rid, side, series, b));
 CREATE TABLE IF NOT EXISTS tk717_t2_sum(rid TEXT, side TEXT, L INTEGER, half TEXT, series TEXT, days INTEGER, n INTEGER, sum REAL, per_trade REAL, sharpe REAL, dd REAL, ddp REAL,
     gap_longest INTEGER, gap_mean REAL, gap_tail INTEGER, top_day_share REAL, extra TEXT, PRIMARY KEY(rid, side, L, half, series));
-CREATE TABLE IF NOT EXISTS tk717_t2_trial(rid TEXT, side TEXT, L INTEGER, p_h1 REAL, p_h2 REAL, p_trial REAL, d_h1 REAL, d_h2 REAL, lb TEXT, lo_d_h1 REAL, lo_d_h2 REAL, main_slide INTEGER, main_expand INTEGER, extra TEXT, PRIMARY KEY(rid, side, L));
+CREATE TABLE IF NOT EXISTS tk717_t2_trial(rid TEXT, side TEXT, L INTEGER, p_h1 REAL, p_h2 REAL, p_trial REAL, d_h1 REAL, d_h2 REAL, lb TEXT, lo_s_h1 REAL, lo_s_h2 REAL, lo_d_h1 REAL, lo_d_h2 REAL, main_slide INTEGER, main_expand INTEGER, extra TEXT, PRIMARY KEY(rid, side, L));
 CREATE TABLE IF NOT EXISTS tk717_t2_holm(rid TEXT, side TEXT, L INTEGER, p_trial REAL, rank INTEGER, alpha_j REAL, holm INTEGER, lb_h1 REAL, lb_h2 REAL, pass_b INTEGER, PRIMARY KEY(rid, side, L));
 CREATE TABLE IF NOT EXISTS tk717_t3(rid TEXT, side TEXT, line TEXT, nwin INTEGER, half TEXT, series TEXT, days INTEGER, traded_days INTEGER, n INTEGER, sum REAL, per_trade REAL, sharpe REAL, dd REAL, ddp REAL,
     gap_longest INTEGER, gap_mean REAL, gap_tail INTEGER, extra TEXT, PRIMARY KEY(rid, side, line, nwin, half, series));
@@ -138,7 +139,7 @@ def t1_stats(M, seed=SEED, nboot=NBOOT, nperm=NPERM):
     rows = []
     for lag in LAGS:
         for half in HALVES:
-            tg = np.array([t for t in range(lag, NWEEK) if half == "all" or half_of_week(t) == half], int)
+            tg = np.array([t for t in range(max(lag, T1_FIRST), NWEEK) if half == "all" or half_of_week(t) == half], int)
             v = M[tg - lag, tg]
             ok = ~np.isnan(v)
             tg, v = tg[ok], v[ok]
@@ -248,12 +249,15 @@ def stats_row(st):
 
 
 def gate_expanding(recs, tk692_path, side, nd):
-    """Ворота: накопленное окно этого модуля = ряд вне выборки L-436 (`tk692_oos`, A-m06, неделя, E = 1): те же cid и P&L по суткам. Возвращает (число суток, расхождений)."""
+    """Ворота: накопленное окно этого модуля = ряд вне выборки L-436 (`tk692_oos`, A-m06, неделя, E = 1): те же сутки (11…nd − 1, 170 при 181), cid и P&L по суткам; пустая ссылка или другое число суток — стоп (SystemExit). Возвращает (число суток, расхождений)."""
     con = sqlite3.connect("file:%s?mode=ro" % tk692_path, uri=True)
     try:
         ref = con.execute("SELECT day, cid, pnl FROM tk692_oos WHERE rid='A-m06' AND side=? AND step='week' AND emb=1 ORDER BY day", (side,)).fetchall()
     finally:
         con.close()
+    expect = [d for b, en, e in W.blocks("week", nd) for d in range(b, e)]
+    if not ref or [d for d, _, _ in ref] != expect:
+        raise SystemExit("ворота: в L-436 (tk692_oos, A-m06, %s, неделя, E = 1) %d суток, у накопленного ряда %d (сутки %d…%d) — стоп" % (side, len(ref), len(expect), expect[0], expect[-1]))
     pnl, _, cid, _ = day_series(recs, nd)
     bad = [(d, c, p, int(cid[d]), float(pnl[d])) for d, c, p in ref if c != int(cid[d]) or abs(p - pnl[d]) > 1e-9]
     return len(ref), bad
@@ -310,12 +314,16 @@ def t2_side(pool, side, tk692=None, extra=None, nboot=NBOOT):
         mk_all = inb & half_days(nd, "all")
         ms, mask_s = main_line_mask(pool, pnl, cid, mk_all)
         me, mask_e = main_line_mask(pool, exp_pnl, exp_cid, mk_all)
-        excl = mask_s | mask_e
-        recs_s2, recs_e2 = walk_ab(pre, pool, side, L, excl), walk_ab(pre, pool, side, None, excl)
-        ps2, _, _, _ = day_series(recs_s2, nd)
-        pe2, _, _, _ = day_series(recs_e2, nd)
-        lo = {h: float(((ps2 - pe2)[inb & half_days(nd, h)]).sum()) for h in ("H1", "H2")}
-        out["trials"].append(dict(L=L, half=trial["half"], lb=lb_all, lo=lo, main_slide=ms, main_expand=me, excluded_cells=int(excl.sum()),
+
+        def rerun(excl):
+            """Σ разницы по половинам: оба ряда заново проходят отбор на наборе без клеток excl."""
+            ps2, _, _, _ = day_series(walk_ab(pre, pool, side, L, excl), nd)
+            pe2, _, _, _ = day_series(walk_ab(pre, pool, side, None, excl), nd)
+            return {h: float(((ps2 - pe2)[inb & half_days(nd, h)]).sum()) for h in ("H1", "H2")}
+
+        excl_both = mask_s | mask_e
+        lo_s, lo = rerun(mask_s), rerun(excl_both)                  # обязательный вариант — без главной линии скользящего ряда; второй — без главных линий обоих рядов
+        out["trials"].append(dict(L=L, half=trial["half"], lb=lb_all, lo=lo, lo_s=lo_s, main_slide=ms, main_expand=me, excluded_cells=int(excl_both.sum()), excluded_cells_slide=int(mask_s.sum()),
                                   p_trial=max(trial["half"]["H1"]["p"], trial["half"]["H2"]["p"])))
     return out
 
@@ -450,11 +458,11 @@ def cmd_t2(a):
         out.execute("INSERT OR REPLACE INTO tk717_t2_sum VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (a.rid, a.side, L, half, ser) + tuple(st) + (json.dumps(ex, ensure_ascii=False),))
     for t in res["trials"]:
         if "lb" not in t:
-            out.execute("INSERT OR REPLACE INTO tk717_t2_trial VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (a.rid, a.side, t["L"], None, None, None, None, None, None, None, None, None, None, json.dumps(dict(note=t["note"]))))
+            out.execute("INSERT OR REPLACE INTO tk717_t2_trial VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (a.rid, a.side, t["L"], None, None, None, None, None, None, None, None, None, None, None, None, json.dumps(dict(note=t["note"]))))
             continue
         h = t["half"]
-        out.execute("INSERT OR REPLACE INTO tk717_t2_trial VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (a.rid, a.side, t["L"], h["H1"]["p"], h["H2"]["p"], t["p_trial"], h["H1"]["d"], h["H2"]["d"], json.dumps(t["lb"]),
-                                                                                                t["lo"]["H1"], t["lo"]["H2"], t["main_slide"], t["main_expand"], json.dumps(dict(excluded_cells=t["excluded_cells"], days=[h["H1"]["days"], h["H2"]["days"]]))))
+        out.execute("INSERT OR REPLACE INTO tk717_t2_trial VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (a.rid, a.side, t["L"], h["H1"]["p"], h["H2"]["p"], t["p_trial"], h["H1"]["d"], h["H2"]["d"], json.dumps(t["lb"]),
+                                                                                                t["lo_s"]["H1"], t["lo_s"]["H2"], t["lo"]["H1"], t["lo"]["H2"], t["main_slide"], t["main_expand"], json.dumps(dict(excluded_cells=t["excluded_cells"], excluded_cells_slide=t["excluded_cells_slide"], days=[h["H1"]["days"], h["H2"]["days"]]))))
     run_row(out, a.rid, a.side, "t2", dict(nboot=a.nboot, cells=len(pool.cids), gate=None if res["gate"] is None else dict(days=res["gate"][0], bad=len(res["gate"][1])), refs=res["refs"]))
     out.commit()
     print_t2(out, a.rid, a.side)
@@ -462,11 +470,11 @@ def cmd_t2(a):
 
 
 def print_t2(out, rid, side):
-    for L, h1, h2, p, d1, d2, l1, l2, ms, me in out.execute("SELECT L, p_h1, p_h2, p_trial, d_h1, d_h2, lo_d_h1, lo_d_h2, main_slide, main_expand FROM tk717_t2_trial WHERE rid=? AND side=? ORDER BY L", (rid, side)):
+    for L, h1, h2, p, d1, d2, s1, s2, l1, l2, ms, me in out.execute("SELECT L, p_h1, p_h2, p_trial, d_h1, d_h2, lo_s_h1, lo_s_h2, lo_d_h1, lo_d_h2, main_slide, main_expand FROM tk717_t2_trial WHERE rid=? AND side=? ORDER BY L", (rid, side)):
         if p is None:
             print("%-5s L=%d: нет суток в обеих половинах" % (side, L))
             continue
-        print("%-5s L=%2d  Σ разницы H1 %+9.2f $ (p %.4f)  H2 %+9.2f $ (p %.4f)  p_исп %.4f  без главных линий (скольз. %s / накопл. %s): H1 %+.2f H2 %+.2f" % (side, L, d1, h1, d2, h2, p, ms, me, l1, l2))
+        print("%-5s L=%2d  Σ разницы H1 %+9.2f $ (p %.4f)  H2 %+9.2f $ (p %.4f)  p_исп %.4f  без главной линии скольз. (%s): H1 %+.2f H2 %+.2f; без обеих (+ накопл. %s): H1 %+.2f H2 %+.2f" % (side, L, d1, h1, d2, h2, p, ms, s1, s2, me, l1, l2))
 
 
 def cmd_t3(a):
@@ -496,19 +504,20 @@ def cmd_verdict(a):
     pass_b = {}
     for side, L, p in tr:
         rank, aj, ok = hm[(side, L)]
-        lb, d1, d2, l1, l2 = out.execute("SELECT lb, d_h1, d_h2, lo_d_h1, lo_d_h2 FROM tk717_t2_trial WHERE rid=? AND side=? AND L=?", (a.rid, side, L)).fetchone()
+        lb, d1, d2, l1, l2, s1, s2 = out.execute("SELECT lb, d_h1, d_h2, lo_d_h1, lo_d_h2, lo_s_h1, lo_s_h2 FROM tk717_t2_trial WHERE rid=? AND side=? AND L=?", (a.rid, side, L)).fetchone()
         lb = json.loads(lb)
         k = str(int(round(0.05 / aj)))
         lb1, lb2 = lb["H1"][k], lb["H2"][k]
-        pb = int(ok and d1 > 0 and d2 > 0 and lb1 > 0 and lb2 > 0 and l1 > 0 and l2 > 0)
+        pb = int(ok and d1 > 0 and d2 > 0 and lb1 > 0 and lb2 > 0 and s1 > 0 and s2 > 0 and l1 > 0 and l2 > 0)
         pass_b[(side, L)] = pb
         out.execute("INSERT INTO tk717_t2_holm VALUES(?,?,?,?,?,?,?,?,?,?)", (a.rid, side, L, p, rank, aj, int(ok), lb1, lb2, pb))
-        print("%-5s L=%2d  p_исп %.4f  ранг %d  α_j %.4f  Holm %d  нижняя граница разницы (α_j): H1 %+.2f H2 %+.2f  без главных линий: H1 %+.2f H2 %+.2f  → (б) %d" % (side, L, p, rank, aj, int(ok), lb1, lb2, l1, l2, pb))
+        print("%-5s L=%2d  p_исп %.4f  ранг %d  α_j %.4f  Holm %d  нижняя граница разницы (α_j): H1 %+.2f H2 %+.2f  без главной линии скольз.: H1 %+.2f H2 %+.2f  без обеих: H1 %+.2f H2 %+.2f  → (б) %d" % (side, L, p, rank, aj, int(ok), lb1, lb2, s1, s2, l1, l2, pb))
     for side in SIDES:
-        t1 = [r for r in out.execute("SELECT lag, half, n_pairs, rho, lo FROM tk717_t1 WHERE rid=? AND side=?", (a.rid, side))]
+        t1 = [r for r in out.execute("SELECT lag, half, n_pairs, rho, lo, hi, null_mean, p_perm FROM tk717_t1 WHERE rid=? AND side=?", (a.rid, side))]
         ok_a, ra = rule_a(t1) if t1 else (False, {})
         ok_b = any(pass_b.get((side, L), 0) for L in RULE_L)
-        note_a = "; ".join("%s ρ=%+.3f нижняя=%+.3f" % (h, ra[h][0], ra[h][1]) for h in ("H1", "H2") if h in ra) if ra else "T1 не посчитан"
+        nul = {h: (nm, pp) for lag, h, n, rho, lo, hi, nm, pp in t1 if lag == 1}
+        note_a = "; ".join("%s ρ=%+.3f нижняя=%+.3f нуль перестановок=%+.3f p_перест=%.4f" % ((h, ra[h][0], ra[h][1]) + nul[h]) for h in ("H1", "H2") if h in ra) if ra else "T1 не посчитан"
         out.execute("INSERT INTO tk717_verdict VALUES(?,?,?,?,?)", (a.rid, side, "a", int(ok_a), note_a))
         out.execute("INSERT INTO tk717_verdict VALUES(?,?,?,?,?)", (a.rid, side, "b", int(ok_b), ",".join("L%d=%d" % (L, pass_b.get((side, L), 0)) for L in RULE_L)))
         out.execute("INSERT INTO tk717_verdict VALUES(?,?,?,?,?)", (a.rid, side, "stage_b", int(ok_a and ok_b), "по правилу критика (а)+(б); основная строка — шорт" if side == "short" else "справочно: правила для лонга критик не задал"))
@@ -533,9 +542,9 @@ def cmd_report(a):
     print("\n### T2: скользящее окно L против накопленного (шаг неделя, E = 1)\n| сторона | L | половина | ряд | суток | сд. | Σ $ | Шарп | просадка $ (% маржи) | перехай (долгий / средний / хвост) |\n|---|---|---|---|---|---|---|---|---|---|")
     for side, L, half, ser, *st in out.execute("SELECT side, L, half, series, days, n, sum, per_trade, sharpe, dd, ddp, gap_longest, gap_mean, gap_tail, top_day_share FROM tk717_t2_sum WHERE rid=? ORDER BY side DESC, L, half, series='slide' DESC, series", (a.rid,)):
         print("| %s | %d | %s | %s | %s |" % (side, L, half, ser, fmt_st(st)))
-    print("\n### T2: Holm по 8 испытаниям и условие «без главной линии»\n| сторона | L | p испытания | ранг | α_j | Holm | нижняя граница H1 / H2 | без главных линий H1 / H2 | (б) |\n|---|---|---|---|---|---|---|---|---|")
-    for side, L, p, rank, aj, ok, l1, l2, pb, k1, k2 in out.execute("SELECT h.side, h.L, h.p_trial, h.rank, h.alpha_j, h.holm, h.lb_h1, h.lb_h2, h.pass_b, t.lo_d_h1, t.lo_d_h2 FROM tk717_t2_holm h JOIN tk717_t2_trial t USING(rid, side, L) WHERE rid=? ORDER BY h.side DESC, h.L", (a.rid,)):
-        print("| %s | %d | %.4f | %d | %.4f | %d | %+.2f / %+.2f | %+.2f / %+.2f | %d |" % (side, L, p, rank, aj, ok, l1, l2, k1, k2, pb))
+    print("\n### T2: Holm по 8 испытаниям и условие «без главной линии»\n| сторона | L | p испытания | ранг | α_j | Holm | нижняя граница H1 / H2 | без главной линии скольз. H1 / H2 | без обеих линий H1 / H2 | (б) |\n|---|---|---|---|---|---|---|---|---|---|")
+    for side, L, p, rank, aj, ok, l1, l2, pb, k1, k2, s1, s2 in out.execute("SELECT h.side, h.L, h.p_trial, h.rank, h.alpha_j, h.holm, h.lb_h1, h.lb_h2, h.pass_b, t.lo_d_h1, t.lo_d_h2, t.lo_s_h1, t.lo_s_h2 FROM tk717_t2_holm h JOIN tk717_t2_trial t USING(rid, side, L) WHERE rid=? ORDER BY h.side DESC, h.L", (a.rid,)):
+        print("| %s | %d | %.4f | %d | %.4f | %d | %+.2f / %+.2f | %+.2f / %+.2f | %+.2f / %+.2f | %d |" % (side, L, p, rank, aj, ok, l1, l2, s1, s2, k1, k2, pb))
     print("\n### T3 (справочно): линия торгуется, только если её Σ за последние N сут. (до вчерашнего) > 0\n| линия | N | половина | ряд | торг. суток | суток | сд. | Σ $ | Шарп | просадка $ (% маржи) | перехай (долгий / средний / хвост) |\n|---|---|---|---|---|---|---|---|---|---|---|")
     for line, N, half, ser, tr, *st in out.execute("SELECT line, nwin, half, series, traded_days, days, n, sum, per_trade, sharpe, dd, ddp, gap_longest, gap_mean, gap_tail, 0 FROM tk717_t3 WHERE rid=? ORDER BY line, nwin, half, series DESC", (a.rid,)):
         print("| %s | %d | %s | %s | %d | %s |" % (line, N, half, ser, tr, fmt_st(st)))
@@ -567,7 +576,7 @@ def main(argv=None):
         else:
             q.add_argument("--extra", default="", help="replay.sqlite повтора движком (якорь вне набора)")
         if name == "t2":
-            q.add_argument("--tk692", default="", help="tk692.sqlite: ворота накопленного окна против L-436")
+            q.add_argument("--tk692", required=True, help="tk692.sqlite: ворота накопленного окна против L-436 (обязательны)")
         q.set_defaults(fn=fn)
     for name, fn in (("verdict", cmd_verdict), ("report", cmd_report)):
         q = sub.add_parser(name)

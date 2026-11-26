@@ -22,6 +22,46 @@ def synth_pool(C=60, nd=181, seed=1, trade_p=0.4):
     return w.Pool(np.arange(1, C + 1) * 10, X, N, P, ["k%d" % i for i in range(C)], {})
 
 
+def make_tk692(path, pool, side, drop_day=None, bump=0.0, rid="A-m06"):
+    """Ссылка L-436 (`tk692_oos`) из ряда `tk692_walk.walk` — независимый от tk717_stagea расчёт накопленного окна."""
+    picks, days, pnl, nn = w.walk(pool, side, "week", 1)
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE IF NOT EXISTS tk692_oos(rid TEXT, side TEXT, step TEXT, emb INTEGER, day INTEGER, cid INTEGER, pnl REAL, n INTEGER)")
+    k = 0
+    for r in picks:
+        if r["pick"] is not None and r["e"] > r["b"]:
+            for d in range(r["b"], r["e"]):
+                if d != drop_day:
+                    con.execute("INSERT INTO tk692_oos VALUES(?,?,?,?,?,?,?,?)", (rid, side, "week", 1, d, r["pick"]["cid"], float(pnl[k]) + bump, int(nn[k])))
+                k += 1
+    con.commit()
+    con.close()
+
+
+def test_gate_expanding_stops_on_empty_or_short_reference_and_passes_on_match(tmp_path):
+    pool = synth_pool(C=150, seed=21, trade_p=0.8)
+    pre = t.Pre(pool)
+    recs = t.walk_ab(pre, pool, "short", None)
+    ok = str(tmp_path / "ok.sqlite")
+    make_tk692(ok, pool, "short")
+    n_ref, bad = t.gate_expanding(recs, ok, "short", pool.nd)
+    assert n_ref == 170 and bad == []                                                      # сутки 11…180 — как в L-436
+    empty = str(tmp_path / "empty.sqlite")
+    make_tk692(empty, pool, "short", rid="другой-rid")                                     # не тот rid: ссылка пуста
+    with pytest.raises(SystemExit):
+        t.gate_expanding(recs, empty, "short", pool.nd)
+    with pytest.raises(SystemExit):
+        t.gate_expanding(recs, ok, "long", pool.nd)                                        # нет строк этой стороны
+    short = str(tmp_path / "short.sqlite")
+    make_tk692(short, pool, "short", drop_day=100)                                         # 169 суток вместо 170
+    with pytest.raises(SystemExit):
+        t.gate_expanding(recs, short, "short", pool.nd)
+    shift = str(tmp_path / "shift.sqlite")
+    make_tk692(shift, pool, "short", bump=0.5)                                             # P&L расходится → ворота видят расхождения
+    n_ref, bad = t.gate_expanding(recs, shift, "short", pool.nd)
+    assert n_ref == 170 and len(bad) == 170
+
+
 def test_week_geometry():
     import datetime
     d0 = datetime.date(2026, 1, 1)
@@ -62,14 +102,24 @@ def test_t1_persistent_vs_noise():
     M, NU = t.spearman_matrix(pool, "short")
     rows = {(r[0], r[1]): r for r in t.t1_stats(M, nboot=500, nperm=300)}
     r = rows[(1, "H1")]
-    assert r[3] > 0.8 and r[4] > 0.7 and r[2] == 16                                       # 16 пар лага 1 с целью в H1
-    assert rows[(1, "H2")][2] == 8 and rows[(8, "H1")][2] == 9
+    assert r[3] > 0.8 and r[4] > 0.7 and r[2] == 13                                       # 13 пар лага 1 с целью с 02.02 в H1 (январские цели — разгон)
+    assert rows[(1, "H2")][2] == 8 and rows[(8, "H1")][2] == 9 and rows[(1, "all")][2] == 21 and t.T1_FIRST == 4
     assert abs(r[6] - r[3]) < 0.05                                                         # стационарно: нуль перестановок недель ≈ наблюдение
     noise = synth_pool(C=400, seed=5, trade_p=0.9)
     noise.X[:] = np.random.default_rng(6).normal(0, 3, noise.X.shape)
     Mn, _ = t.spearman_matrix(noise, "short")
     rn = {(r[0], r[1]): r for r in t.t1_stats(Mn, nboot=500, nperm=300)}
     assert abs(rn[(1, "all")][3]) < 0.1 and rn[(1, "H1")][4] < 0.1
+
+
+def test_t1_january_targets_do_not_enter():
+    """Поправка PS-1035 п. 1: цели-недели января (k = 1…3) в T1 не считаются ни в H1, ни в «all»."""
+    M = np.full((t.NWEEK, t.NWEEK), -1.0)
+    M[:, 4:] = 1.0                                                                          # у января-цели ρ = −1, у февраля и позже +1
+    np.fill_diagonal(M, np.nan)
+    rows = {(r[0], r[1]): r for r in t.t1_stats(M, nboot=200, nperm=50)}
+    assert rows[(1, "H1")][2] == 13 and rows[(1, "H1")][3] == 1.0 and rows[(1, "all")][3] == 1.0
+    assert rows[(2, "H1")][2] == 13 and rows[(5, "H1")][2] == 12 and rows[(8, "H1")][2] == 9
 
 
 def test_t1_decay_has_excess_over_permutation_null():
@@ -165,7 +215,8 @@ def test_t2_side_end_to_end_and_main_line_exclusion(tmp_path):
     assert {tr["L"] for tr in res["trials"]} == set(t.LS)
     for tr in res["trials"]:
         assert 0 < tr["p_trial"] <= 1 and tr["p_trial"] == max(tr["half"]["H1"]["p"], tr["half"]["H2"]["p"])
-        assert tr["main_slide"] > 0 and tr["excluded_cells"] >= 1
+        assert tr["main_slide"] > 0 and tr["excluded_cells"] >= 1 and 1 <= tr["excluded_cells_slide"] <= tr["excluded_cells"]
+        assert set(tr["lo_s"]) == {"H1", "H2"} and set(tr["lo"]) == {"H1", "H2"}
         assert set(tr["lb"]) == {"H1", "H2"} and set(tr["lb"]["H1"]) == {str(k) for k in t.HOLM_K}
     sums = {(L, h, s): st for L, h, s, st, ex in res["sums"]}
     assert (7, "all", "slide") in sums and (60, "H2", "expand") in sums
@@ -188,13 +239,34 @@ def test_cli_roundtrip(tmp_path):
     p2 = t.load_packed(d)
     assert np.array_equal(p2.X, pool.X) and np.array_equal(p2.cids, pool.cids) and p2.ckeys == pool.ckeys
     out = str(tmp_path / "o.sqlite")
+    ref = str(tmp_path / "tk692.sqlite")
+    for side in ("short", "long"):
+        make_tk692(ref, pool, side)
+    with pytest.raises(SystemExit):                                                        # без --tk692 t2 не запускается
+        t.main(["t2", "--pool", d, "--side", "short", "--out", out])
     for side in ("short", "long"):
         assert t.main(["t1", "--pool", d, "--side", side, "--out", out, "--nboot", "200", "--nperm", "100"]) == 0
-        assert t.main(["t2", "--pool", d, "--side", side, "--out", out, "--nboot", "200"]) == 0
+        assert t.main(["t2", "--pool", d, "--side", side, "--out", out, "--nboot", "200", "--tk692", ref]) == 0
         assert t.main(["t3", "--pool", d, "--side", side, "--out", out]) == 0
     assert t.main(["verdict", "--out", out]) == 0
     assert t.main(["report", "--out", out]) == 0
     con = sqlite3.connect(out)
-    assert con.execute("SELECT count(*) FROM tk717_t1 WHERE side='short'").fetchone()[0] == 8 * 3
-    assert con.execute("SELECT count(*) FROM tk717_t2_holm").fetchone()[0] == 8
-    assert con.execute("SELECT count(*) FROM tk717_verdict WHERE part='stage_b'").fetchone()[0] == 2
+    assert con.execute("SELECT count(*) FROM tk717_t1 WHERE side='short'").fetchall()[0][0] == 8 * 3
+    assert con.execute("SELECT count(*) FROM tk717_t2_holm").fetchall()[0][0] == 8
+    assert con.execute("SELECT count(*) FROM tk717_verdict WHERE part='stage_b'").fetchall()[0][0] == 2
+    assert con.execute("SELECT count(*) FROM tk717_t1 WHERE side='short' AND lag=1 AND half='H1' AND n_pairs=13").fetchall()[0][0] == 1
+    # (б): оба варианта «без главной линии» обязательны — только скользящая линия (lo_s) и обе линии (lo_d)
+    con.execute("UPDATE tk717_t2_trial SET p_h1=1.0, p_h2=1.0, p_trial=1.0")
+    good = json.dumps({h: {str(k): 1.0 for k in t.HOLM_K} for h in ("H1", "H2")})
+    con.execute("UPDATE tk717_t2_trial SET p_h1=1e-6, p_h2=1e-6, p_trial=1e-6, d_h1=10, d_h2=10, lb=?, lo_s_h1=5, lo_s_h2=5, lo_d_h1=5, lo_d_h2=5 WHERE side='short' AND L=7", (good,))
+    con.commit()
+    assert t.main(["verdict", "--out", out]) == 0
+    assert con.execute("SELECT pass_b FROM tk717_t2_holm WHERE side='short' AND L=7").fetchall()[0][0] == 1
+    con.execute("UPDATE tk717_t2_trial SET lo_s_h2=-1 WHERE side='short' AND L=7")           # без главной линии скользящего ряда знак пропал
+    con.commit()
+    assert t.main(["verdict", "--out", out]) == 0
+    assert con.execute("SELECT pass_b FROM tk717_t2_holm WHERE side='short' AND L=7").fetchall()[0][0] == 0
+    con.execute("UPDATE tk717_t2_trial SET lo_s_h2=5, lo_d_h1=-1 WHERE side='short' AND L=7")  # без обеих линий знак пропал
+    con.commit()
+    assert t.main(["verdict", "--out", out]) == 0
+    assert con.execute("SELECT pass_b FROM tk717_t2_holm WHERE side='short' AND L=7").fetchall()[0][0] == 0
