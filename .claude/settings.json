@@ -26,7 +26,16 @@
     "fewer-permission-prompts": "off",
     "init": "off",
     "security-review": "off",
-    "claude-api": "off"
+    "claude-api": "off",
+    "typesafe:typesafe-ai": "off",
+    "reverse-engineer-anything": "off",
+    "tdd": "off",
+    "dataviz": "off",
+    "artifact-design": "off",
+    "artifact-diagramming": "off",
+    "artifact-capabilities": "off",
+    "workflow-authoring": "off",
+    "plugin-authoring": "off"
   },
   "enabledPlugins": {
     "role-play-vibing@role-play-vibing": false
@@ -59,6 +68,14 @@
           }
         ]
       }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Artifact",
+      "ArtifactComments",
+      "ArtifactData",
+      "Workflow"
     ]
   }
 }
