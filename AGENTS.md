@@ -2,7 +2,7 @@
 
 Rust + Python. Данные и исследование для крипто-бирж: коллекторы по вебсокету, бэктесты, поиск торговых закономерностей. Бот — в роботе ФК «Викинг» (документация — MCP `viking-docs`).
 
-Работа в bb по pstack: координатор — главный тред, исполнители и проверяющие — дочерние (`.claude/skills/poteto-mode/SKILL.md`). Постоянные приказы владельца — `.claude/preferences.md` (обязательны для всех тредов).
+Работа в T3 Code: координатор — главный тред, исполнители и проверяющие — дочерние треды `delegate_task` (`.claude/skills/poteto-mode/SKILL.md`). Клир контекста и длина ответа — глобальные хуки `~/.claude/hooks/ctx_guard.py`, `brevity.py`. Постоянные приказы владельца — `.claude/preferences.md` (обязательны для всех тредов).
 
 **Child threads (исп / пров / чит): English only, no chatter.** Progress lines, messages, final report in English; owner's words quoted verbatim in Russian. No narration; one progress line only on state change. MANDATORY (В-164, not advice): final report ≤ 8 lines; more only with a line «Reason: …» stating why: status · answer + key numbers · branch + SHA · card path (`kb/task/TK-NNN.md`) · deviations (one line); everything else goes into the kb card, not the message. Do not comment intermediate stages: a turn that only waits (critic, unit, watcher) ends with one line «waiting: <what>» or nothing; no restating the brief, critic verdicts or previous reports. Repo docs (`docs/**`) stay in Russian.
 
