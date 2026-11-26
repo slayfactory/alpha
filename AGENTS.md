@@ -6,11 +6,11 @@ Rust + Python. Данные и исследование для крипто-би
 
 **Child threads (исп / пров / чит): English only, no chatter.** Progress lines, messages, final report in English; owner's words quoted verbatim in Russian. No narration; one progress line only on state change. MANDATORY (В-164, not advice): final report ≤ 8 lines; more only with a line «Reason: …» stating why: status · answer + key numbers · branch + SHA · card path (`kb/task/TK-NNN.md`) · deviations (one line); everything else goes into the kb card, not the message. Do not comment intermediate stages: a turn that only waits (critic, unit, watcher) writes nothing; no restating the brief, critic verdicts or previous reports. Repo docs (`docs/**`) stay in Russian.
 
-## Сейчас (24.11.2026)
+## Сейчас
 
-- **П-42 (пробои уровня):** состав — c539 (539 крипто-контрактов; TradFi убран, В-175). Идёт общий перебор одной линии TK-674, ступень 1 (пары → тройки → четвёрки → ≤ 2 кандидата на сторону → заморозка, В-170); торгуется одна линия, фикс. стопа 5 % нет. Январь–май 2026 докачаны на srv (В-181, TK-695). Эксперимент TK-692 (В-182, В-183) — перебор на январе–июне 2026 сразу, считаются клетки с P&L > 1 $; отложенная проверка замороженных линий на июне снята. Размер свечи уровня f12 (p30 / p240) — TK-699, подмена parquet после конца перебора. Заморозки вперёд 20–21.11 (`docs/research/freeze/tk626-frozen.json` и далее) сделаны на 775 — до первой точки 30.11 перезаморозить на крипте. Страница http://5.231.25.224:8090/, состояние — `docs/plan/coord-handoff.md` (читать первым).
-- **G-022 — Rust-коллекторы — на холде (В-166), коллекторы работают** (В-149..В-155): на srv (`collect-*`, `soak-bybit`; здоровье http://5.231.25.224:8088/), код в `master` (TK-628). Читать первым: `docs/plan/G-022-handoff-2026-11-13.md`.
-- srv: один движок счёта за раз (юнитам `MemoryMax 40G`). Арбитраж выключен (19.11; 23.11 владелец: «мы ниче с арбитражом не делаем только пробой тестим» — arb-live не запускать), П-40 на паузе.
+- Состояние и что идёт — `docs/plan/coord-handoff.md` (читать первым); П-42 (пробои) — c539, 539 крипто-контрактов (В-175).
+- G-022 (Rust-коллекторы) на холде (В-166), коллекторы работают на srv (здоровье http://5.231.25.224:8088/); handoff — `docs/plan/G-022-handoff-2026-11-13.md`.
+- srv: один движок счёта за раз (юнитам `MemoryMax 40G`). Арбитраж выключен (arb-live не запускать), П-40 на паузе.
 
 ## Где что
 
