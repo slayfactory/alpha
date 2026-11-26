@@ -33,6 +33,7 @@ Codex is not used (owner 12.11). Short in-session helpers: Agent tool with `read
 - **Start:** `delegate_task` with `task` = the brief, `title` = `<роль> · TK-<NNN> · <тема> · v<N>` (preferences п.17), `target` = role row above, `isolation: "worktree"` for a writing worker, `"shared"` for read-only work. The child sees only `task`, no chat history.
 - **Wait:** completion wakes the coordinator. Do not poll (`task_status`, sleep, Monitor). Read the result with `task_status` or `t3_thread_read`, then check it against files, diff and gate output; a child's "done" is not evidence.
 - **Stop / replace:** `task_cancel`. A new version vN+1 → cancel vN.
+- **Fresh thread for new work** with consolidated scope (original brief, later directives, prior report and branch); resume an existing thread only when the work needs state that lives there (uncommitted changes, a running process).
 - **Follow-up to a child:** `t3_thread_send`; a fresh review or re-check is a new `delegate_task`.
 - **Children never start threads** (hook `no_child_spawn.py`). A worker reports «ready for verdict» with branch + SHA; the coordinator starts the verifier.
 - **Context:** the global hook `~/.claude/hooks/ctx_guard.py` at 260k tells the thread to write its handoff (the task card's «Дальше») and clear itself with `t3_thread_send(own thread, freshContext: true)`. Before that, everything next is already running (units on srv, children started).

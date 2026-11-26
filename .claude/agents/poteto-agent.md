@@ -1,6 +1,6 @@
 ---
 name: poteto-agent
-description: Delegate subagent for code-writing and helper tasks spawned during a `/poteto-mode` run. Use for delegates, not as the runner for `/poteto-mode` itself. Spawn a fresh `poteto-agent` for each new task, and resume one only in the strict cases that poteto-mode's Subagents section names. Reads the `poteto-mode` skill's `SKILL.md` in full before any work. Substituting `generalPurpose` skips that read and drifts.
+description: Delegate subagent for code-writing and helper tasks spawned during a `/poteto-mode` run. Use for delegates, not as the runner for `/poteto-mode` itself. Spawn a fresh `poteto-agent` for each new task, and resume one only in the strict cases that poteto-mode's «T3 runtime» section names. Reads the `poteto-mode` skill's `SKILL.md` in full before any work. Substituting `generalPurpose` skips that read and drifts.
 model: claude-sonnet-5-5
 effort: xhigh
 ---

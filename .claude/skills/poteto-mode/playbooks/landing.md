@@ -1,6 +1,6 @@
 ### Landing
 
-Invoked at the end of every other playbook. alpha has no pull requests: trunk is `master`, one branch per topic.
+Invoked at the end of every task. alpha has no pull requests: trunk is `master`, one branch per topic.
 
 1. **Branch and worktree.** Work on a topic branch in its own worktree (`delegate_task` with `isolation: "worktree"`, or `git worktree add`). One writer per branch.
 2. **Commits.** Small and ordered, each landable. Stage only your files (`git add <files>`, never `-A`). Subject in Russian, short, imperative. End every commit message with the attribution line from the session reminder.
