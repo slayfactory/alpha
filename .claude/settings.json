@@ -51,42 +51,11 @@
         ]
       },
       {
-        "matcher": "mcp__bb-bridge__bb_workflow_run|Workflow",
+        "matcher": "mcp__t3-code__delegate_task|mcp__t3-code__t3_thread_launch|mcp__t3-code__create_threads|Workflow",
         "hooks": [
           {
             "type": "command",
             "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/no_child_spawn.py\""
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/context_guard.py\""
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/context_guard.py\""
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/report_length.py\""
           }
         ]
       }
