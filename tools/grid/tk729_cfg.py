@@ -23,6 +23,8 @@ T_START_C0 = L.DAY0 * 1440  # C0 — с 01.01 (§1)
 T_START_MR = (L.DAY0 + L.BURN) * 1440  # MR — с 21.01 (разгон 20 суток)
 TIMEX_MIN = 360
 PAUSE_MIN = 60
+TAUS = (1.0, 2.0)  # порог тренда τ (§5.4)
+T_LAG = 240  # окно тренда, минут (§5.2)
 ABL = ("ABa", "ABb", "ABc", "ABd", "ABe", "ABf")
 ABL_TEXT = {"ABa": "центр = среднее AR(1) вместо Калмана", "ABb": "без наклона по запасу", "ABc": "объёмы растут к краю (25·(1+0,5(k−1)), норм. 250 $)",
             "ABd": "без условия п. 1 (все монеты)", "ABe": "без фильтров шока п. 6 и датчика срыва п. 3", "ABf": "центр и шаг заморожены при запасе (§4)"}
@@ -68,6 +70,36 @@ def ablation_variants(c: float, hlmax: int) -> list[dict]:
 
 
 _BTC = {}
+_BTCT = {}
+
+
+def regime_T(kal: np.ndarray, sig: np.ndarray, lag: int = T_LAG, hold: int = 15) -> np.ndarray:
+    """§5.2: тренд монеты T = ln(K_t / K_{t−240}) / σ_eq (K — центр Калмана §3, σ_eq — размах §3); пересчёт раз в 15 минут (значение на закрытии минуты (t // 15)·15). NaN — σ_eq или K неизвестны."""
+    n = len(kal)
+    ks = np.full(n, np.nan)
+    ks[lag:] = kal[:-lag]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        t_raw = np.log(kal / ks) / sig
+    return L.hold_every(t_raw, hold)
+
+
+def reg_from_T(T: np.ndarray, tau: float) -> np.ndarray:
+    """Режим: +1 вверх (T ≥ τ), −1 вниз (T ≤ −τ), 0 флэт (|T| < τ или T неизвестен)."""
+    with np.errstate(invalid="ignore"):
+        return np.where(T >= tau, 1, np.where(T <= -tau, -1, 0)).astype(np.int8)
+
+
+def combine_btc(reg: np.ndarray, reg_btc: np.ndarray) -> np.ndarray:
+    """§5.4: направление включается, только если режим BTC того же знака, иначе монета считается во флэте."""
+    return np.where(reg == reg_btc, reg, 0).astype(np.int8)
+
+
+def btc_T_cached() -> np.ndarray:
+    """Тренд BTC T (тот же расчёт, что у монеты, по собственным Калману и σ_eq BTC) — один раз на процесс."""
+    if "T" not in _BTCT:
+        Sb = L.load_coin("BTCUSDT")
+        _BTCT["T"] = coin_features(Sb)["T"]
+    return _BTCT["T"]
 
 
 def btc_block_cached() -> np.ndarray:
@@ -93,7 +125,7 @@ def coin_features(S: dict, mkt_block: np.ndarray | None = None) -> dict:
         y = np.where(S["pres"], np.log(S["c"]), 0.0)
     kal = np.exp(L.kalman_center(y, S["pres"], R, Q))
     mkt = np.zeros(n, bool) if mkt_block is None else mkt_block
-    return dict(rv60=rv60, tick=L.tick_days(S), kal=kal, mu=L.ffill(H["mu"]), hl=H["hl"], tstat=H["tstat"], sig=sig, sig_or_rv=np.where(np.isfinite(sig), sig, rv60),
+    return dict(T=regime_T(kal, sig), rv60=rv60, tick=L.tick_days(S), kal=kal, mu=L.ffill(H["mu"]), hl=H["hl"], tstat=H["tstat"], sig=sig, sig_or_rv=np.where(np.isfinite(sig), sig, rv60),
                 shock=L.turnover_block(S) | mkt, natr30=L.natr(S, 30))
 
 
@@ -114,6 +146,31 @@ def build_components(F: dict, v: dict):
     return cen, ok.astype(np.uint8), gfr
 
 
-def run_variant(S: dict, F: dict, v: dict) -> np.ndarray:
+def rd_variants() -> list[dict]:
+    """§5: 4 варианта RD(τ, BTC) на базе MR(1,5; 120) с замороженным центром (§4) + 4 прогона разметки 5.1 (те же MR и MR-заморозка, торговля без режима, режим только метка)."""
+    mr = [v for v in base_variants() if v["name"] == mr_name(1.5, 120)][0]
+    fz = [v for v in ablation_variants(1.5, 120) if v["kind"] == "ABf"][0]
+    out = []
+    for tau in TAUS:
+        for btc in (0, 1):
+            v = dict(fz, P=dict(fz["P"], regmode=1), kind="RD", name="RD_t%g_b%d" % (tau, btc), tau=tau, btc=btc, attrib=True)
+            out.append(v)
+    for tau in TAUS:
+        out.append(dict(mr, P=dict(mr["P"]), kind="T51", name="T51_MR_t%g" % tau, tau=tau, btc=0, attrib=True))
+        out.append(dict(fz, P=dict(fz["P"]), kind="T51", name="T51_FZ_t%g" % tau, tau=tau, btc=0, attrib=True))
+    return out
+
+
+def regime_for(F: dict, v: dict, Tb: np.ndarray | None) -> np.ndarray | None:
+    if v.get("tau") is None:
+        return None
+    reg = reg_from_T(F["T"], v["tau"])
+    if v.get("btc"):
+        reg = combine_btc(reg, reg_from_T(Tb, v["tau"]))
+    return reg
+
+
+def run_variant(S: dict, F: dict, v: dict, Tb: np.ndarray | None = None) -> np.ndarray:
     cen, allow, gfr = build_components(F, v)
-    return L.run_coin(S, F, L.make_params(**v["P"]), cen=cen, allow=allow, gfr=gfr)
+    reg = regime_for(F, v, Tb)
+    return L.run_coin(S, F, L.make_params(**v["P"]), cen=cen, allow=allow, gfr=gfr, reg=reg, tag=reg, attrib=bool(v.get("attrib", False)))
