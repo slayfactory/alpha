@@ -109,7 +109,11 @@ def paired(a_daily, b_daily):
 def noise_bar(n_days: int, trials: int = 6) -> float:
     """Ожидаемый максимум годового Шарпа из шума при выборе из `trials` вариантов (selection_bias.py): se годового Шарпа нулевой гипотезы ≈ √(365/n)."""
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".claude", "skills", "alpha-research", "scripts"))
-    from selection_bias import expected_max_sharpe
+    try:
+        from selection_bias import expected_max_sharpe
+    except ImportError:  # на srv копия лежит рядом с кодом
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from selection_bias import expected_max_sharpe
 
     return expected_max_sharpe(math.sqrt(365.0 / n_days), trials)
 
