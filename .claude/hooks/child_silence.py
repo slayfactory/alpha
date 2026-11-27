@@ -9,7 +9,7 @@ import json, os, sqlite3, sys
 
 DB = os.path.expanduser("~/.bb/bb.db")
 MSG = ("SILENCE (owner 27.11): you wrote text before this tool call. Child threads write NO text between tool calls — "
-       "no narration, no progress lines. Text only in the final report (≤ 5 lines) or for a blocker.")
+       "no narration, no progress lines. Text only in the final report (≤ 5 lines, in ENGLISH) or for a blocker.")
 
 
 def is_child():
