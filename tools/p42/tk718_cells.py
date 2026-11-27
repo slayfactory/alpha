@@ -64,7 +64,7 @@ ANCHOR = {   # якоря L-334 (PS-1007 §5)
 }
 GRID_L_DAYS, GRID_TF = (3, 7, 14), (30, 60, 240)
 VERDICT_LINES = {"short": ("S1", "S2"), "long": ("L1", "L2")}
-NOAXIS = {"lat", "latx", "pk", "pb", "busy", "nf", "bm"}            # PS-1038 п. 5: задержка, флаги, категории
+NOAXIS = {"lat", "latx", "pk", "pb", "busy", "nf", "bm", "natr_p"}  # PS-1038 п. 5: задержка, флаги, категории; PS-1039: natr_p — только 15 / 30 / 60 (движок), ±25 % недопустим
 INT_KEYS = {"ew", "fh", "fm", "fk", "n_bounce", "natr_p", "rs", "t24", "tt", "e2t", "tf", "l_days", "q", "n_tp", "c", "p", "m", "k"}
 NJOINT = 40
 
