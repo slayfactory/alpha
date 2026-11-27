@@ -26,16 +26,7 @@
     "fewer-permission-prompts": "off",
     "init": "off",
     "security-review": "off",
-    "claude-api": "off",
-    "typesafe:typesafe-ai": "off",
-    "reverse-engineer-anything": "off",
-    "tdd": "off",
-    "dataviz": "off",
-    "artifact-design": "off",
-    "artifact-diagramming": "off",
-    "artifact-capabilities": "off",
-    "workflow-authoring": "off",
-    "plugin-authoring": "off"
+    "claude-api": "off"
   },
   "enabledPlugins": {
     "role-play-vibing@role-play-vibing": false
@@ -60,7 +51,7 @@
         ]
       },
       {
-        "matcher": "mcp__t3-code__delegate_task|mcp__t3-code__t3_thread_launch|mcp__t3-code__create_threads|Workflow",
+        "matcher": "mcp__bb-bridge__bb_workflow_run|Workflow",
         "hooks": [
           {
             "type": "command",
@@ -68,14 +59,37 @@
           }
         ]
       }
-    ]
-  },
-  "permissions": {
-    "deny": [
-      "Artifact",
-      "ArtifactComments",
-      "ArtifactData",
-      "Workflow"
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/context_guard.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/context_guard.py\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/report_length.py\""
+          }
+        ]
+      }
     ]
   }
 }

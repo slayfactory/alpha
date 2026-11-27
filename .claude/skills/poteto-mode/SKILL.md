@@ -1,57 +1,58 @@
 ---
 name: poteto-mode
-description: "Engineering work in alpha: bug fix, feature, refactor, perf/speedup, investigation, long autonomous runs, delegating worker and verifier threads in T3 Code."
+description: "Engineering work in alpha: bug fix, feature, refactor, perf/speedup, investigation, long autonomous runs, orchestrating worker threads in bb. pstack playbooks adapted to this repo."
 ---
 
 # Poteto mode (alpha)
 
-Runtime: T3 Code. The chat that receives this skill is the **coordinator**. Workers and verifiers are T3 child threads started with `delegate_task`. Project rules: `AGENTS.md`. Owner's standing orders: `.claude/preferences.md`; point every brief at it. Old pstack (bb runtime, principles, playbooks, fan-out skills) — `docs/archive/claude-skills-2026-11-27/`.
+Runtime: bb. The chat that receives this skill is the **coordinator**. Workers and verifiers are bb child threads, launched per `references/bb-runtime.md` with the models in `references/models.md`. Project rules: `AGENTS.md` at repo root. Owner's standing orders: `.claude/preferences.md`; paste it into every worker brief.
+
+Paths below are relative to this file's directory. Bundled skills live at `../<name>/SKILL.md`. Principles live at `principles/<name>.md`.
 
 ## Token budget (read first)
 
-- Do small work yourself. Delegate only independent work big enough for a fresh context (roughly > 15 min, a separate branch, or an independent verdict). Never delegate a lookup one grep answers.
-- One worker plus one verifier by default. No fan-outs or Workflow unless the owner asks (preferences п.15).
-- Briefs carry file pointers, not pasted contents. Bulk output (logs, big diffs, run outputs) goes to the in-session `reader` agent or `tail`/`grep`, never into the coordinator's context.
-- Big reading (> ~300 KB): batches through `reader` helpers, each batch → notes file → commit; one batch per context; a size cap on the output doc (TK-715).
-- Standard speed, never fast mode.
+Spend is the main cost of this setup. Defaults:
 
-## Roles and models
-
-The verifier is always a different model from the worker.
-
-| role | target for `delegate_task` |
-|---|---|
-| coordinator, verifier (пров), judgment and prose | `claude-opus-5-5`, effort `medium` |
-| worker (исп): feature, refactor, bug-fix, perf, hillclimb | `claude-sonnet-5-5`, effort `xhigh` |
-| reader (чит), simple tasks | `claude-sonnet-5-5`, effort `medium` |
-| trivial edits and lookups | `claude-haiku-5-5`, effort `high` |
-
-Codex is not used (owner 12.11). Short in-session helpers: Agent tool with `reader` or `poteto-agent`.
-
-## T3 runtime
-
-- **Start:** `delegate_task` with `task` = the brief, `title` = `<роль> · TK-<NNN> · <тема> · v<N>` (preferences п.17), `target` = role row above, `isolation: "worktree"` for a writing worker, `"shared"` for read-only work. The child sees only `task`, no chat history.
-- **Wait:** completion wakes the coordinator. Do not poll (`task_status`, sleep, Monitor). Read the result with `task_status` or `t3_thread_read`, then check it against files, diff and gate output; a child's "done" is not evidence.
-- **Stop / replace:** `task_cancel`. A new version vN+1 → cancel vN.
-- **Fresh thread for new work** with consolidated scope (original brief, later directives, prior report and branch); resume an existing thread only when the work needs state that lives there (uncommitted changes, a running process).
-- **Follow-up to a child:** `t3_thread_send`; a fresh review or re-check is a new `delegate_task`.
-- **Children never start threads** (hook `no_child_spawn.py`). A worker reports «ready for verdict» with branch + SHA; the coordinator starts the verifier.
-- **Context:** the global hook `~/.claude/hooks/ctx_guard.py` at 260k tells the thread to write its handoff (the task card's «Дальше») and clear itself with `t3_thread_send(own thread, freshContext: true)`. Before that, everything next is already running (units on srv, children started).
-- **Reply length:** the global Stop hook `~/.claude/hooks/brevity.py` — ≤ 5 lines to the owner, ≤ 8 for a child; more only with «Reason: …».
-- Account for every started child before reporting to the owner: `t3_thread_list` with `includeSubagents`.
+- Do small work yourself. Spawn a child thread only for independent work that is big enough to justify a fresh context (roughly > 15 min of work, or a separate branch, or an independent verdict). Never spawn a thread to answer a lookup you can do with one grep. Verifiers (пров) are spawned only by the coordinator: an executor never spawns its own verifier — it reports «ready for verdict» with branch + SHA and stops (owner 19.11).
+- Read a principle or bundled skill only when its trigger actually fires in this task. Do not preload them.
+- Fan-out skills (`swarm`, `arena`, `architect` parallel runners, `interrogate` panels) only for a real design fork or a high-stakes change, or when the owner asks. Default is one worker plus one verifier.
+- Briefs carry file pointers, not pasted file contents. Bulk output (logs, big diffs, run outputs) goes to a reader thread or `tail`/`grep`, never into the coordinator's context.
+- Standard speed. No `fast` tier unless a person is blocked right now.
 
 ## Non-negotiables
 
-- Any code → name the data shape first.
-- Speedup or a measured number → check the limiter, repeatability and that the work actually happened before reporting; speedups land only with the byte-for-byte gate (AGENTS.md).
+- Nontrivial change or "are we sure?" → the **how** skill.
+- A "which approach" fork that an experiment can settle → Prototype playbook, let the result decide. Ask the owner only product or preference calls no experiment can settle. Methodology numbers and research forks are not the owner's (В-53).
+- Any code → name the data shape first (principle **model-the-domain**).
+- Speedup, benchmark or a number you measured → the **benchmark-checklist** skill and principle **explain-the-number** before you report it. Speedups land only with the byte-for-byte gate (AGENTS.md).
 - Trading conclusion (hypothesis, protocol, backtest, verdict) → the **alpha-research** skill. Its rules outrank this file.
-- A fork an experiment can settle → run the experiment; ask the owner only product or preference calls (В-53).
-- Two fixes on one premise failed → test the premise.
-- Bug: proof first (test or measurement on old code), then the fix.
+- Long, autonomous or multi-phase work → a decision trail via the **show-me-your-work** skill.
+- Broken skill mid-task → fix it in a separate commit. Do not block on it.
+
+## Principles
+
+Read the file for a principle only when you apply it. In the reply, name a principle only if it changed a decision.
+
+**Core.** laziness-protocol (smallest change, bias to deletion) · foundational-thinking (types and data first) · redesign-from-first-principles (new requirement → redesign as if foundational) · attack-the-premise (two fixes on one premise failed → test the premise) · subtract-before-you-add · minimize-reader-load · outcome-oriented-execution · exhaust-the-design-space (novel decision → 2–3 prototypes) · build-the-lever (build the tool that does or proves it).
+
+**Architecture.** model-the-domain · boundary-discipline · type-system-discipline · make-operations-idempotent (collectors and long runs survive restarts) · migrate-callers-then-delete-legacy-apis · separate-before-serializing-shared-state.
+
+**Verification.** prove-it-works (check the real artifact, not a self-report) · fix-root-causes · sequence-verifiable-units · test-behavior-not-implementation · explain-the-number.
+
+**Delegation.** guard-the-context-window · never-block-on-the-human (reversible work: proceed, report).
+
+**Meta.** encode-lessons-in-structure (a repeated correction becomes a hook, lint, test or script).
 
 ## Autonomy
 
-Work within the owner's task. Reversible local changes: do and verify. **Durable authorization (owner 27.11):** the next step of the owner's direction — protocol, critic, compute on srv/Sofia, verifier, merge after PASS, the next task that follows from a result — is launched at once, never offered as «Запускаю?» (7 h idle 27.11). Stop and ask before deleting data (raw datasets especially), changing access, restarting production units the owner did not name, any purchase, publication or message to other people. No schedules or automations without an explicit request.
+Work within the owner's task. Reversible local changes: do them and verify. Stop and ask before deleting data (raw datasets especially), changing access, restarting production units the owner did not name, or any purchase, publication or message to other people. Never create schedules or automations without an explicit request.
+
+## Subagents and threads
+
+- Launch workers and verifiers as bb child threads (`references/bb-runtime.md`). For a short in-session helper the Agent tool with `subagent_type: "poteto-agent"` is fine.
+- Model per role from `references/models.md`. A unit's verifier is always a different model from its worker (all threads are Claude; Codex is not used).
+- You own every worker's result. Read the diff and the gate output yourself; a worker's "done" is not evidence.
+- Fresh thread for new work, with consolidated scope (original brief, later directives, prior report and branch). Resume an existing thread only when the work needs state that lives there (uncommitted changes, a running process).
 
 ## The brief
 
@@ -61,18 +62,38 @@ SCOPE        paths it may write; paths it may not; its branch/worktree
 CONTEXT      file pointers; upstream reports it depends on
 ACCEPTANCE   checkable criteria, one per line
 VERIFY       exact commands (tools/vps-check.sh, gate, test window) and known gotchas
-DEADLINE     shortest realistic time (Claude Code pace), clock time GMT+4; at the deadline report the state
-FORBIDDEN    no merge to master, no force-push, no deleting data, no starting threads, nothing outside scope
-REPORT       ≤ 8 lines: status · answer + numbers · branch + SHA · kb card path · deviations
-STANDING     .claude/preferences.md (pointer; read it)
+DEADLINE     the shortest realistic time (Claude Code pace), as a clock time GMT+4; at the deadline report the state (done or not, what remains) — not a generous cap
+FORBIDDEN    no merge to master, no force-push, no deleting data, nothing outside scope
+REPORT       status, branch, head SHA, what you ran and its result, deviations
+STANDING     .claude/preferences.md (pointer; threads read it)
 ```
 
-Briefs and messages in English; owner's words verbatim in Russian. Repo docs stay Russian (В-151). Size the brief to the unit.
+Write briefs and inter-thread messages in English; ask workers to report in English. Quote the owner's words verbatim in Russian. Repo docs stay Russian (В-151).
+
+Size the brief to the unit. A one-command unit gets a paragraph that still names goal, scope, verify command and report shape.
+
+Big reading (sources > ~300 KB, e.g. transcripts, PDFs with images, logs): before spawning, measure the size and put in the brief — read in batches through in-session `reader` helpers (Agent tool), each batch → notes file → commit; the executor never holds more than one batch; a size cap on the output doc (owner 26.11, TK-715: 1 MB of transcripts read in one context → clear at 282k, 460 KB drafts).
 
 ## Writing the reply
 
-Owner reads Russian, business-first: result and number first, then meaning and next step. Every claim: measured, inferred or a guess. Never hand the owner a check you could run. Never fabricate a link or a number.
+Owner reads Russian, business-first: result and number first, then meaning and next step. Every claim says whether it is measured, inferred or a guess. Never hand the owner a check you could run. Never fabricate a link or a number.
 
-## Landing
+## Playbooks
 
-End of every task: `playbooks/landing.md` (gate, independent verdict, merge to master).
+Match the task and open `playbooks/<name>.md`. Put its steps into the todo list; a skipped step stays with `skip: <reason>`.
+
+- **investigation.** Read-only question: how does X work, why Y, are we sure about Z.
+- **bug-fix.** Reproduce, root-cause, fix with runtime evidence.
+- **perf-issue.** A measured slowness, traced and improved against a baseline.
+- **hillclimb.** Sustained improvement of one metric (throughput of a collector, speed of a compute kernel, WS load ladder): one change, one measurement, keep or revert, decision log.
+- **runtime-forensics.** Diagnose a live symptom (leak, stall, lag) from instrumentation.
+- **feature.** New or changed behavior from a named data shape.
+- **refactoring.** Behavior-preserving restructure.
+- **prototype.** Throwaway sketch to settle a fork by observing.
+- **autonomous-run.** Drive one task to a predicate without stopping.
+- **orchestrate.** A standing program (e.g. six exchange collectors) under one coordinator.
+- **multi-phase-plan.** Work spanning phases or several branches.
+- **session-pickup** / **pause-safely.** Resume or suspend in-flight work cleanly.
+- **landing.** End of every playbook: gate, independent verdict, merge to master.
+
+A large effort no playbook fits → the **figure-it-out** skill.
