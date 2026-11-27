@@ -67,8 +67,6 @@ Match the task and open `playbooks/<name>.md`. Put its steps into the todo list;
 
 - **perf-issue.** A measured slowness, traced and improved against a baseline.
 - **refactoring.** Behavior-preserving restructure.
-- **orchestrate.** A standing program (many units) under one coordinator.
-- **multi-phase-plan.** Work spanning phases or several branches.
-- **landing.** End of every task: gate, independent verdict, merge to master.
+- **landing.** End of every task: gate, independent verdict, merge to master. Its «Programs» section covers a standing program: many units, several branches or phases.
 
 Anything else (investigation, bug fix, feature): reproduce or measure first, smallest change, prove it on the real artifact, then landing.
