@@ -61,25 +61,32 @@ def csv_path(sym: str, di: int, kroot: str = KROOT, wins=WINS):
     return None
 
 
-def load_coin(sym: str, kroot: str = KROOT, wins=WINS, ndays: int = NDAYS):
-    """Минутки монеты на сетку G0: o, h, l, c, qv (float64, NaN — минуты нет), pres (bool)."""
+def load_coin(sym: str, kroot: str = KROOT, wins=WINS, ndays: int = NDAYS, with_vol: bool = False):
+    """Минутки монеты на сетку G0: o, h, l, c, qv (float64, NaN — минуты нет), pres (bool); with_vol — ещё `vol` (базовый объём; шаг 5, VWAP минуты)."""
     n = ndays * 1440
     o, h, l, c = (np.full(n, np.nan) for _ in range(4))
     qv = np.zeros(n)
+    vol = np.zeros(n) if with_vol else None
     pres = np.zeros(n, bool)
+    cols = (0, 1, 2, 3, 4, 5, 7) if with_vol else (0, 1, 2, 3, 4, 7)
     for di in range(ndays):
         p = csv_path(sym, di, kroot, wins)
         if p is None:
             continue
-        a = np.loadtxt(p, delimiter=",", skiprows=1, usecols=(0, 1, 2, 3, 4, 7), ndmin=2)
+        a = np.loadtxt(p, delimiter=",", skiprows=1, usecols=cols, ndmin=2)
         if a.size == 0:
             continue
         k = ((a[:, 0] - G0_MS) // MIN_MS).astype(np.int64)
         ok = (k >= 0) & (k < n)
         k = k[ok]
-        o[k], h[k], l[k], c[k], qv[k] = a[ok, 1], a[ok, 2], a[ok, 3], a[ok, 4], a[ok, 5]
+        o[k], h[k], l[k], c[k], qv[k] = a[ok, 1], a[ok, 2], a[ok, 3], a[ok, 4], a[ok, -1]
+        if with_vol:
+            vol[k] = a[ok, 5]
         pres[k] = True
-    return dict(o=o, h=h, l=l, c=c, qv=qv, pres=pres)
+    out = dict(o=o, h=h, l=l, c=c, qv=qv, pres=pres)
+    if with_vol:
+        out["vol"] = vol
+    return out
 
 
 # ───────────────────────────── оценщики ─────────────────────────────
