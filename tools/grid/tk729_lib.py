@@ -310,10 +310,10 @@ def turnover_block(S: dict, k: float = 3.0, hold: int = 30, days_back: int = 20)
 # ───────────────────────────── ядро ─────────────────────────────
 
 def make_params(*, g0=0.0, a=0.0, use_cen=0, b=0.0, timex=0, pause=0, t_start=DAY0 * 1440, maker=MAKER, taker=TAKER, slip=SLIP,
-                side_not=SIDE_NOTIONAL, skew_coef=0.5, skew_mode=0, day0=DAY0, gmin_ticks=2.0, gmode=0, vmode=0, dec=0.05, freeze=0, regmode=0) -> np.ndarray:
+                side_not=SIDE_NOTIONAL, skew_coef=0.5, skew_mode=0, day0=DAY0, gmin_ticks=2.0, gmode=0, vmode=0, dec=0.05, freeze=0, regmode=0, limit=0.0) -> np.ndarray:
     """Вектор параметров ядра. g0 — шаг доли цены запуска (a = 0); a — множитель σ60 (g = a·σ60·центр); use_cen — центр из массива `cen` и наклон; b — наращивание объёма;
-    timex — минут до закрытия лота по рынку (0 — нет); pause — пауза монеты после выхода за край, минут; skew_coef — наклон q·skew_coef·g (skew_mode 0) или q·skw[t] (1); gmode 1 — шаг из массива gfr[t] (доля центра) каждую минуту; vmode 1 — объём уровня k = (side_not/10)·(1 − dec·(k − 1)) (убывает с запасом); freeze 1 — центр и шаг заморожены при запасе (§4); regmode 1 — торговля по массиву режима reg (§5: +1 только лонг, −1 только шорт, запас против режима закрывается по рынку)."""
-    return np.array([g0, a, float(use_cen), b, float(timex), float(pause), float(t_start), maker, taker, slip, side_not, skew_coef, float(skew_mode), float(day0), gmin_ticks, float(gmode), float(vmode), dec, float(freeze), float(regmode)], np.float64)
+    timex — минут до закрытия лота по рынку (0 — нет); pause — пауза монеты после выхода за край, минут; skew_coef — наклон q·skew_coef·g (skew_mode 0) или q·skw[t] (1); gmode 1 — шаг из массива gfr[t] (доля центра) каждую минуту; vmode 1 — объём уровня k = (side_not/10)·(1 − dec·(k − 1)) (убывает с запасом); freeze 1 — центр и шаг заморожены при запасе (§4); regmode 1 — торговля по массиву режима reg (§5: +1 только лонг, −1 только шорт, запас против режима закрывается по рынку); limit > 0 — дневной лимит убытка монеты, $ (§7.2 PM4): убыток за сутки UTC (реализованное + оценка открытого − оценка открытого на начало суток) ≥ limit → всё закрывается по рынку на закрытии минуты, до конца суток новых уровней нет (строка 9 выхода считает срабатывания)"""
+    return np.array([g0, a, float(use_cen), b, float(timex), float(pause), float(t_start), maker, taker, slip, side_not, skew_coef, float(skew_mode), float(day0), gmin_ticks, float(gmode), float(vmode), dec, float(freeze), float(regmode), float(limit)], np.float64)
 
 
 @njit(cache=True)
@@ -324,6 +324,19 @@ def _rt(x, tick):
 @njit(cache=True)
 def _ri(x, tick):
     return math.floor(x / tick + 0.5)
+
+
+@njit(cache=True)
+def _led(led, lcnt, to, tc, pnl, side, kind):
+    """Журнал закрытых лотов (§6.4): минута входа, минута закрытия, чистый P&L лота (минус обе комиссии), сторона (+1 лонг / −1 шорт), вид (0 круг, 1 принудительный выход). Переполнение — только счётчик."""
+    i = lcnt[0]
+    if i < led.shape[0]:
+        led[i, 0] = to
+        led[i, 1] = tc
+        led[i, 2] = pnl
+        led[i, 3] = side
+        led[i, 4] = kind
+    lcnt[0] = i + 1
 
 
 @njit(cache=True)
@@ -343,7 +356,7 @@ def _att(out, ri, sd, do, pnl, kind):
 
 
 @njit(cache=True)
-def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, P, out):
+def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, szm, led, lcnt, P, out):
     """Счёт одной монеты. out — массив (NR, NOUT), обнуляется снаружи. Подробности исполнения — в docstring модуля и в протоколе §1/§2."""
     n = c.shape[0]
     g0 = P[0]
@@ -366,6 +379,8 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, P, o
     dec = P[17]
     freeze = P[18] > 0.5
     regmode = P[19] > 0.5
+    limit = P[20]
+    lim_day = -1
     na = out.shape[0] > A0
     sc = 0.0
     sg = 0.0
@@ -445,7 +460,7 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, P, o
                                 p = min(p, o[t] * (1.0 + slip))
                                 rate = taker
                                 out[8, do] += 1.0
-                            qty = nk[k] / p
+                            qty = nk[k] * szm[t] / p
                             if nl + ns == 0:
                                 ep = qreg
                                 if na:
@@ -473,6 +488,7 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, P, o
                             fc = lq[k] * p * rate
                             out[0, do] += gross - fc
                             out[1, do] += gross - fc - lfe[k]
+                            _led(led, lcnt, float(lop[k]), float(t), gross - fc - lfe[k], 1.0, 0.0)
                             out[3, do] += 1.0
                             if na:
                                 _att(out, lreg[k], 0, do, gross - fc - lfe[k], 0)
@@ -489,7 +505,7 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, P, o
                                 p = max(p, o[t] * (1.0 - slip))
                                 rate = taker
                                 out[8, do] += 1.0
-                            qty = nk[k] / p
+                            qty = nk[k] * szm[t] / p
                             if nl + ns == 0:
                                 ep = qreg
                                 if na:
@@ -517,6 +533,7 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, P, o
                             fc = sq[k] * p * rate
                             out[0, do] += gross - fc
                             out[1, do] += gross - fc - sfe[k]
+                            _led(led, lcnt, float(sop[k]), float(t), gross - fc - sfe[k], -1.0, 0.0)
                             out[3, do] += 1.0
                             if na:
                                 _att(out, sreg[k], 1, do, gross - fc - sfe[k], 0)
@@ -534,6 +551,7 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, P, o
                         fc = lq[k] * px_l * taker
                         out[0, do] += gross - fc
                         out[2, do] += gross - fc - lfe[k]
+                        _led(led, lcnt, float(lop[k]), float(t), gross - fc - lfe[k], 1.0, 1.0)
                         if na:
                             _att(out, lreg[k], 0, do, gross - fc - lfe[k], 1)
                         lst[k] = 0
@@ -543,6 +561,7 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, P, o
                         fc = sq[k] * px_s * taker
                         out[0, do] += gross - fc
                         out[2, do] += gross - fc - sfe[k]
+                        _led(led, lcnt, float(sop[k]), float(t), gross - fc - sfe[k], -1.0, 1.0)
                         if na:
                             _att(out, sreg[k], 1, do, gross - fc - sfe[k], 1)
                         sst[k] = 0
@@ -564,6 +583,7 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, P, o
                         fc = lq[k] * px_l * taker
                         out[0, do] += gross - fc
                         out[2, do] += gross - fc - lfe[k]
+                        _led(led, lcnt, float(lop[k]), float(t), gross - fc - lfe[k], 1.0, 1.0)
                         out[5, do] += 1.0
                         if na:
                             _att(out, lreg[k], 0, do, gross - fc - lfe[k], 2)
@@ -575,6 +595,7 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, P, o
                         fc = sq[k] * px_s * taker
                         out[0, do] += gross - fc
                         out[2, do] += gross - fc - sfe[k]
+                        _led(led, lcnt, float(sop[k]), float(t), gross - fc - sfe[k], -1.0, 1.0)
                         out[5, do] += 1.0
                         if na:
                             _att(out, sreg[k], 1, do, gross - fc - sfe[k], 2)
@@ -591,6 +612,7 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, P, o
                         fc = lq[k] * px_l * taker
                         out[0, do] += gross - fc
                         out[2, do] += gross - fc - lfe[k]
+                        _led(led, lcnt, float(lop[k]), float(t), gross - fc - lfe[k], 1.0, 1.0)
                         out[9, do] += 1.0
                         if na:
                             _att(out, lreg[k], 0, do, gross - fc - lfe[k], 2)
@@ -602,13 +624,51 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, P, o
                         fc = sq[k] * px_s * taker
                         out[0, do] += gross - fc
                         out[2, do] += gross - fc - sfe[k]
+                        _led(led, lcnt, float(sop[k]), float(t), gross - fc - sfe[k], -1.0, 1.0)
                         out[9, do] += 1.0
                         if na:
                             _att(out, sreg[k], 1, do, gross - fc - sfe[k], 2)
                         sst[k] = 0
                         sfr[k] = t
                         ns -= 1
-            on_raw = allow[t] != 0 and t >= pause_until
+            # §7.2 PM4: дневной лимит убытка монеты — реализованное за сутки + оценка открытого на закрытии − оценка открытого на начало суток
+            if limit > 0.0 and lim_day != d:
+                u_now = 0.0
+                if nl + ns > 0:
+                    for k in range(1, nlv + 1):
+                        if lst[k] == 1:
+                            u_now += lq[k] * (cl - lent[k])
+                        if sst[k] == 1:
+                            u_now += sq[k] * (sent[k] - cl)
+                if out[0, do] + u_now - unreal_prev <= -limit:
+                    px_l = cl * (1.0 - slip)
+                    px_s = cl * (1.0 + slip)
+                    for k in range(1, nlv + 1):
+                        if lst[k] == 1:
+                            gross = lq[k] * (px_l - lent[k])
+                            fc = lq[k] * px_l * taker
+                            out[0, do] += gross - fc
+                            out[2, do] += gross - fc - lfe[k]
+                            _led(led, lcnt, float(lop[k]), float(t), gross - fc - lfe[k], 1.0, 1.0)
+                            if na:
+                                _att(out, lreg[k], 0, do, gross - fc - lfe[k], 2)
+                            lst[k] = 0
+                            lfr[k] = t
+                        if sst[k] == 1:
+                            gross = sq[k] * (sent[k] - px_s)
+                            fc = sq[k] * px_s * taker
+                            out[0, do] += gross - fc
+                            out[2, do] += gross - fc - sfe[k]
+                            _led(led, lcnt, float(sop[k]), float(t), gross - fc - sfe[k], -1.0, 1.0)
+                            if na:
+                                _att(out, sreg[k], 1, do, gross - fc - sfe[k], 2)
+                            sst[k] = 0
+                            sfr[k] = t
+                    nl = 0
+                    ns = 0
+                    out[9, do] += 1.0
+                    lim_day = d
+            on_raw = allow[t] != 0 and t >= pause_until and lim_day != d
             center = np.nan
             if use_cen:
                 center = cen[t]
@@ -687,16 +747,20 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, reg, tag, P, o
     return out
 
 
-def run_coin(S: dict, F: dict, P: np.ndarray, cen=None, allow=None, skw=None, gfr=None, reg=None, tag=None, attrib: bool = False) -> np.ndarray:
-    """Обёртка: массивы признаков F (rv60, tick) → вывод ядра (NR или NRA строк при attrib, NOUT). reg — режим торговли (int8: +1 вверх, −1 вниз, 0 флэт; нужен regmode = 1), tag — режим для разметки (по умолчанию reg)."""
+def run_coin(S: dict, F: dict, P: np.ndarray, cen=None, allow=None, skw=None, gfr=None, reg=None, tag=None, attrib: bool = False, szm=None, ledger: int = 0):
+    """Обёртка: массивы признаков F (rv60, tick) → вывод ядра (NR или NRA строк при attrib, NOUT). reg — режим торговли (int8: +1 вверх, −1 вниз, 0 флэт; нужен regmode = 1), tag — режим для разметки (по умолчанию reg), szm — множитель размера ордеров по минутам (§7.2 PM1; по умолчанию 1); ledger > 0 — вернуть (out, журнал закрытых лотов (≤ ledger строк × 5: вход, закрытие, P&L, сторона, вид), число лотов всего) (§6.4)."""
     n = len(S["c"])
     out = np.zeros((NRA if attrib else NR, n // 1440 - int(P[13])))
+    led = np.zeros((max(int(ledger), 0), 5))
+    lcnt = np.zeros(1, np.int64)
     zeros = np.zeros(n)
     z8 = np.zeros(n, np.int8)
     reg = z8 if reg is None else np.ascontiguousarray(reg, dtype=np.int8)
     tag = reg if tag is None else np.ascontiguousarray(tag, dtype=np.int8)
     grid_run(S["o"], S["h"], S["l"], S["c"], S["pres"], F["tick"], F["rv60"],
-             zeros if cen is None else cen, np.ones(n, np.uint8) if allow is None else allow, zeros if skw is None else skw, zeros if gfr is None else gfr, reg, tag, P, out)
+             zeros if cen is None else cen, np.ones(n, np.uint8) if allow is None else allow, zeros if skw is None else skw, zeros if gfr is None else gfr, reg, tag, np.ones(n) if szm is None else np.ascontiguousarray(szm, dtype=np.float64), led, lcnt, P, out)
+    if ledger > 0:
+        return out, led[:min(int(lcnt[0]), ledger)], int(lcnt[0])
     return out
 
 

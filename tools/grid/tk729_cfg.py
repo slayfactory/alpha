@@ -173,4 +173,4 @@ def regime_for(F: dict, v: dict, Tb: np.ndarray | None) -> np.ndarray | None:
 def run_variant(S: dict, F: dict, v: dict, Tb: np.ndarray | None = None) -> np.ndarray:
     cen, allow, gfr = build_components(F, v)
     reg = regime_for(F, v, Tb)
-    return L.run_coin(S, F, L.make_params(**v["P"]), cen=cen, allow=allow, gfr=gfr, reg=reg, tag=reg, attrib=bool(v.get("attrib", False)))
+    return L.run_coin(S, F, L.make_params(**v["P"]), cen=cen, allow=allow, gfr=gfr, reg=reg, tag=reg, attrib=bool(v.get("attrib", False)), szm=v.get("szm"))
