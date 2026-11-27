@@ -3,10 +3,14 @@
 «а почему треды может создавать исполнитель? почему не заблокировано?»).
 
 В дочернем треде (у треда есть parentThreadId) — отказ на `bb thread spawn|create|fork`,
-`bb workflows run` и инструмент bb_workflow_run. Не удалось узнать родителя — тоже отказ."""
+`bb workflows run` и инструмент bb_workflow_run. Не удалось узнать родителя — тоже отказ.
+Итог дочернего (`bb thread tell`) — только по-английски (владелец 27.11), кроме цитат «…» и `кода`."""
 import json, os, re, shutil, subprocess, sys
 
 SPAWN = re.compile(r"\bthread\s+(?:spawn|create|fork)\b|\bworkflows?\s+run\b", re.I)
+TELL = re.compile(r"\bthread\s+tell\b", re.I)
+MSG_EN = ("Child threads report in ENGLISH only (AGENTS.md, owner 27.11): rewrite the message in English, ≤ 5 lines; "
+          "quote the owner verbatim in «…».")
 MSG = ("Треды создаёт только координатор (владелец 26.11). Дочерний тред не запускает треды и workflow: "
        "нужен ещё исполнитель/проверяющий — `bb thread tell <координатор>` с просьбой.")
 
@@ -36,6 +40,11 @@ def main():
         hit = "workflow_run" in name
     if hit and is_child():
         print(MSG, file=sys.stderr)
+        return 2
+    cmd = (d.get("tool_input") or {}).get("command") or "" if name in ("Bash", "PowerShell") else ""
+    tell = TELL.search(cmd)
+    if tell and re.search(r"[А-Яа-яЁё]{3,}", re.sub(r"«[^»]*»|`[^`]*`", "", cmd[tell.end():])) and is_child():
+        print(MSG_EN, file=sys.stderr)
         return 2
     return 0
 

@@ -2,6 +2,7 @@
 больше — только со строкой «Reason: …». Stop-хук: длинный ответ без обоснования возвращается на сокращение (один раз).
 Проверяется только дочерний тред (parent_thread_id в ~/.bb/bb.db, как child_silence.py)."""
 import json
+import re
 import os
 import sqlite3
 import sys
@@ -46,6 +47,11 @@ def main():
     if not path or not os.path.exists(path):
         return
     text = last_text(path)
+    bare = re.sub(r"«[^»]*»|`[^`]*`|\[[^\]]*\]\([^)]*\)", "", text)  # цитаты владельца, код, ссылки — можно по-русски
+    if re.search(r"[А-Яа-яЁё]{3,}", bare):
+        print(json.dumps({"decision": "block", "reason": "Child threads report in ENGLISH only (AGENTS.md, owner 27.11). "
+                          "Rewrite the final report in English, ≤ 5 lines; quote the owner verbatim in «…»."}))
+        return
     rows = [r for r in text.splitlines() if r.strip()]
     if len(rows) <= LIMIT or any(r.lstrip("-* ").startswith(("Reason:", "Обоснование:")) for r in rows):
         return
