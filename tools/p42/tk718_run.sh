@@ -31,7 +31,8 @@ $PY tk718_cells.py gate --run-id tk718g-A,tk718g-B | tee -a "$LOG/gate.log" || {
 say "ворота пройдены"
 for K in A B; do
   mass tk718c-h1 $K --cellset tk718core --wins m01,m02,m03,m04,m05,m06 --sides long,short --keep-trades "$KEEP" || exit 4
-  TK700_WINSET=n1 mass tk718c-n1 $K --cellset tk718core --wins n1 --sides short || exit 4
+  # N1 (шорт): в ядре нет шорт-клеток с фильтрами (класс B), таблицы `gkey/n1/tab-short.parquet` нет (сбой 27.11 00:03Z) — только класс A
+  [ "$K" = A ] && { TK700_WINSET=n1 mass tk718c-n1 $K --cellset tk718core --wins n1 --sides short || exit 4; }
   mass tk718f-h1 $K --cellset tk718nbF --wins m02,m03,m04,m05,m06 --sides long,short || exit 4
   mass tk718s-sel $K --cellset tk718nbS --dry --wins wa,wb,wc --sides long,short || exit 4
 done
