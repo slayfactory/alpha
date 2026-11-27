@@ -1,11 +1,12 @@
-"""В-164 (владелец 20.11: «и это ОБЯЗАТЕЛЬНО а не советы»): итоговое сообщение дочернего треда ≤ 8 непустых строк,
+"""В-164 (владелец 20.11: «и это ОБЯЗАТЕЛЬНО а не советы»): итоговое сообщение дочернего треда ≤ 5 непустых строк (владелец 27.11),
 больше — только со строкой «Reason: …». Stop-хук: длинный ответ без обоснования возвращается на сокращение (один раз).
-Координатор (основной checkout, не worktree) не проверяется."""
+Проверяется только дочерний тред (parent_thread_id в ~/.bb/bb.db, как child_silence.py)."""
 import json
 import os
+import sqlite3
 import sys
 
-LIMIT = 8
+LIMIT = 5
 
 
 def last_text(path):
@@ -26,12 +27,20 @@ def last_text(path):
     return ""
 
 
+def is_child():
+    tid, db = os.environ.get("BB_THREAD_ID"), os.path.expanduser("~/.bb/bb.db")
+    if not tid or not os.path.exists(db):
+        return False
+    c = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
+    row = c.execute("select parent_thread_id from threads where id=?", (tid,)).fetchone()
+    return bool(row and row[0])
+
+
 def main():
     data = json.load(sys.stdin)
     if data.get("stop_hook_active"):
         return
-    cwd = (data.get("cwd") or os.getcwd()).replace("\\", "/")
-    if "/worktrees/" not in cwd:
+    if not is_child():
         return
     path = data.get("transcript_path")
     if not path or not os.path.exists(path):
@@ -41,7 +50,7 @@ def main():
     if len(rows) <= LIMIT or any(r.lstrip("-* ").startswith(("Reason:", "Обоснование:")) for r in rows):
         return
     print(json.dumps({"decision": "block", "reason": f"В-164 MANDATORY: final message has {len(rows)} lines > {LIMIT}. "
-                      "Rewrite it in ≤ 8 lines (status · answer+numbers · SHA · kb card path · deviations); move details to the kb card. "
+                      "Rewrite it in ≤ 5 lines, ≤ 20 words each (status · answer+numbers · branch+SHA · kb card path · deviations); move details to the kb card. "
                       "Only if more is truly needed, add one line «Reason: …»."}))
 
 

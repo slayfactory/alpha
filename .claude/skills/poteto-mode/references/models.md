@@ -13,13 +13,5 @@ hillclimb: claude-code claude-sonnet-5-5 xhigh
 hardest tasks: claude-code claude-sonnet-5-5 xhigh
 judgment and prose: claude-code claude-opus-5-5 medium
 review and verdicts: claude-code claude-opus-5-5 medium
-how explorer: claude-code claude-sonnet-5-5 medium
-how explainer: claude-code claude-sonnet-5-5 medium
-swarm workers: claude-code claude-sonnet-5-5 xhigh
-swarm verifiers: claude-code claude-opus-5-5 medium
-arena runners: claude-code claude-sonnet-5-5 xhigh
-arena cross-judge pool: claude-code claude-opus-5-5 medium
-architect runners: claude-code claude-sonnet-5-5 xhigh
-interrogate reviewers: claude-code claude-opus-5-5 medium
 trivial edits and lookups: claude-code claude-haiku-5-5 high
 simple tasks: claude-code claude-sonnet-5-5 medium
