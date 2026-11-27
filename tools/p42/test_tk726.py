@@ -231,3 +231,64 @@ def test_tail_boot_interval_covers_point_for_tail_data():
     lo, hi, c2 = ex.tail_boot(days, 3, 2000, rng)
     assert lo <= pt["share"] <= hi or abs(pt["share"] - (lo + hi) / 2) < 0.3
     assert 0.0 <= c2 <= 1.0
+
+
+# ───────────────────────────── шаг 6: tk726_cond ─────────────────────────────
+
+def test_cond_additive_prediction_exact_when_model_true():
+    import tk726_cond as cd
+    rng = np.random.default_rng(7)
+    T = 40
+    dA = rng.normal(0, 1, T)
+    e = {a: rng.normal(0, 1, T) for a in "abcd"}
+    p = {(a, b): rng.normal(0, 0.5, T) for a, b in [("a", "b"), ("a", "c"), ("a", "d"), ("b", "c"), ("b", "d"), ("c", "d")]}
+    single = {a: dA + e[a] for a in e}
+    pair = {k: dA + e[k[0]] + e[k[1]] + v for k, v in p.items()}
+    for axes in (("a", "b", "c"), ("a", "b", "c", "d")):
+        k = len(axes)
+        cA, cS, cP = cd.coef_additive(k)
+        truth = dA + sum(e[a] for a in axes) + sum(p[(x, y)] for x in axes for y in axes if (x, y) in p)
+        pred = cA * dA + cS * sum(single[a] for a in axes) + cP * sum(pair[(x, y)] for x in axes for y in axes if (x, y) in pair)
+        assert np.allclose(pred, truth)
+    assert cd.coef_additive(3) == (1, -1, 1) and cd.coef_additive(4) == (3, -2, 1)
+
+
+def test_cond_r2_and_ratio_on_synthetic():
+    import tk726_cond as cd
+    rng = np.random.default_rng(11)
+    n, T = 400, 136
+    signal = rng.normal(0, 1, (n, 1)) * np.ones((1, T)) * 0.5          # у клетки свой постоянный дрейф
+    D = signal + rng.normal(0, 1, (n, T))
+    good = signal + 0 * D                                                 # модель знает дрейф
+    bad = rng.normal(0, 1, (n, 1)) * np.ones((1, T)) * 0.5
+    rg = cd.ratio_stats(D, good, 6, 300, rng, chunk=100)
+    rb = cd.ratio_stats(D, bad, 6, 300, rng, chunk=100)
+    assert rg["ceiling"] > 0.2 and rg["ratio"] > 0.8
+    assert rb["ratio"] < 0.2
+    assert rg["ratio_lo"] < rg["ratio_hi"]
+    y = D.sum(1)
+    assert abs(cd.r2(y, y) - 1.0) < 1e-12
+    Y = np.vstack([y, y]).T
+    assert np.allclose(cd.r2_cols(Y, Y * 0 + y.mean()), 0.0)
+
+
+def test_cond_spearman_and_axis_rho():
+    import tk726_cond as cd
+    a = np.array([1.0, 2, 3, 4, 5])
+    assert abs(cd.spearman_rows(a, a * 2 + 1) - 1) < 1e-12 and abs(cd.spearman_rows(a, -a) + 1) < 1e-12
+    rng = np.random.default_rng(3)
+    eff = {b: {v: float(v) + rng.normal(0, 0.1) for v in range(6)} for b in "xyzw"}   # одинаковый порядок значений на всех фонах
+    rho, npairs, null = cd.axis_rho(eff, 500, rng)
+    assert rho > 0.9 and npairs == 6 and abs(null.mean()) < 0.1
+    flip = {"x": {v: float(v) for v in range(6)}, "y": {v: -float(v) for v in range(6)}}
+    r2_, npr, _ = cd.axis_rho(flip, 100, rng)
+    assert r2_ < -0.99 and npr == 1
+
+
+def test_cond_circ_idx_covers_all_days():
+    import tk726_cond as cd
+    rng = np.random.default_rng(5)
+    idx = cd.circ_idx(136, 6, 50, rng)
+    assert idx.shape == (50, 136) and idx.min() >= 0 and idx.max() < 136
+    c = cd.counts(idx, 136)
+    assert (c.sum(axis=1) == 136).all()
