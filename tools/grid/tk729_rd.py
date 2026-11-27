@@ -81,6 +81,8 @@ def run_row(nm, h, m, fz_paired=None):
     if fz_paired:
         d7, d21, dsum = fz_paired
         s += " %s | [%s; %s] / [%s; %s] |" % (f(dsum), f(d7["lo"], 2), f(d7["hi"], 2), f(d21["lo"], 2), f(d21["hi"], 2))
+    else:
+        s += " — | — |"
     return s
 
 
@@ -129,9 +131,9 @@ def main():
     md.append(head + "\n" + "|---|" * 1 + "---|" * 12)
     for nm in [FZ] + RD:
         for h in A.HALF:
-            md.append(run_row(nm, h, M[(nm, h)], None if nm == FZ else paired_fz[(nm, h)]).rstrip("|") + ("" if nm != FZ else " — | — |"))
+            md.append(run_row(nm, h, M[(nm, h)], None if nm == FZ else paired_fz[(nm, h)]))
     cw = {h: M[(FZ, h)]["mean_coins_in_work"] for h in A.HALF}
-    md.append("\nПросадка в % — от маржи 250 $ × среднее число монет в работе: у замороженного MR %s (21.01–30.06) и %s (01.07–24.11) монет в работе (маржа %s $ и %s $); у вариантов RD — своё число монет в работе (строка «маржа» в `tk729rd_run`).\n" % (f(cw["H1"], 0), f(cw["H2"], 0), f(M[(FZ, "H1")]["margin"]), f(M[(FZ, "H2")]["margin"])))
+    md.append("\nПросадка в %% — от маржи 250 $ × среднее число монет в работе: у замороженного MR %s (21.01–30.06) и %s (01.07–24.11) монет в работе (маржа %s $ и %s $); у вариантов RD — своё число монет в работе (строка «маржа» в `tk729rd_run`).\n" % (f(cw["H1"], 0), f(cw["H2"], 0), f(M[(FZ, "H1")]["margin"]), f(M[(FZ, "H2")]["margin"])))
     # выбор
     for s_h, t_h in A.DIRS:
         d0, d1 = A.HALF[s_h]
