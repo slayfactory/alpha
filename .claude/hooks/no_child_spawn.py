@@ -1,27 +1,25 @@
 #!/usr/bin/env python3
-"""PreToolUse: треды создаёт только координатор (владелец 26.11:
+"""PreToolUse (Bash/PowerShell/bb workflow): треды создаёт только координатор (владелец 26.11:
 «а почему треды может создавать исполнитель? почему не заблокировано?»).
 
-В дочернем треде T3 (в базе T3 у треда есть lineage.parentThreadId) — отказ на delegate_task,
-t3_thread_launch, create_threads, Workflow и `t3 thread …` в оболочке. Вне T3 (нет T3CODE_THREAD_ID) —
-тред владельца, пропуск. Не удалось прочитать базу — тоже отказ."""
-import json, os, re, sqlite3, sys
+В дочернем треде (у треда есть parentThreadId) — отказ на `bb thread spawn|create|fork`,
+`bb workflows run` и инструмент bb_workflow_run. Не удалось узнать родителя — тоже отказ."""
+import json, os, re, shutil, subprocess, sys
 
-SPAWN = re.compile(r"\bt3(?:\.exe)?\b.*\bthread\s+start\b", re.I)
-TOOLS = ("delegate_task", "t3_thread_launch", "create_threads")
-DB = os.path.expanduser("~/.t3/userdata/statev2.sqlite")
+SPAWN = re.compile(r"\bthread\s+(?:spawn|create|fork)\b|\bworkflows?\s+run\b", re.I)
 MSG = ("Треды создаёт только координатор (владелец 26.11). Дочерний тред не запускает треды и workflow: "
-       "нужен ещё исполнитель/проверяющий — напиши это в итоговом отчёте координатору.")
+       "нужен ещё исполнитель/проверяющий — `bb thread tell <координатор>` с просьбой.")
 
 
 def is_child():
-    tid = os.environ.get("T3CODE_THREAD_ID")
+    tid = os.environ.get("BB_THREAD_ID")
     if not tid:
-        return False
+        return False  # не bb-тред (терминал владельца)
+    bb = shutil.which("bb") or shutil.which(os.environ.get("BB_CLI") or "") or "bb"
     try:
-        c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=2)
-        row = c.execute("select payload_json from orchestration_v2_projection_threads where thread_id=?", (tid,)).fetchone()
-        return bool((json.loads(row[0]).get("lineage") or {}).get("parentThreadId"))
+        out = subprocess.run([bb, "thread", "show", tid, "--json"], capture_output=True,
+                             text=True, encoding="utf-8", timeout=20).stdout
+        return json.loads(out)["thread"].get("parentThreadId") is not None
     except Exception:
         return True
 
@@ -35,7 +33,7 @@ def main():
     if name in ("Bash", "PowerShell"):
         hit = SPAWN.search((d.get("tool_input") or {}).get("command") or "")
     else:
-        hit = name == "Workflow" or name.endswith(TOOLS)
+        hit = "workflow_run" in name
     if hit and is_child():
         print(MSG, file=sys.stderr)
         return 2
