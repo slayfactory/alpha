@@ -51,7 +51,7 @@ Codex is not used (owner 12.11). Short in-session helpers: Agent tool with `read
 
 ## Autonomy
 
-Work within the owner's task. Reversible local changes: do and verify. Stop and ask before deleting data (raw datasets especially), changing access, restarting production units the owner did not name, any purchase, publication or message to other people. No schedules or automations without an explicit request.
+Work within the owner's task. Reversible local changes: do and verify. **Durable authorization (owner 27.11):** the next step of the owner's direction — protocol, critic, compute on srv/Sofia, verifier, merge after PASS, the next task that follows from a result — is launched at once, never offered as «Запускаю?» (7 h idle 27.11). Stop and ask before deleting data (raw datasets especially), changing access, restarting production units the owner did not name, any purchase, publication or message to other people. No schedules or automations without an explicit request.
 
 ## The brief
 
