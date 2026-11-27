@@ -23,9 +23,9 @@ T_START_C0 = L.DAY0 * 1440  # C0 — с 01.01 (§1)
 T_START_MR = (L.DAY0 + L.BURN) * 1440  # MR — с 21.01 (разгон 20 суток)
 TIMEX_MIN = 360
 PAUSE_MIN = 60
-ABL = ("ABa", "ABb", "ABc", "ABd", "ABe")
+ABL = ("ABa", "ABb", "ABc", "ABd", "ABe", "ABf")
 ABL_TEXT = {"ABa": "центр = среднее AR(1) вместо Калмана", "ABb": "без наклона по запасу", "ABc": "объёмы растут к краю (25·(1+0,5(k−1)), норм. 250 $)",
-            "ABd": "без условия п. 1 (все монеты)", "ABe": "без фильтров шока п. 6 и датчика срыва п. 3"}
+            "ABd": "без условия п. 1 (все монеты)", "ABe": "без фильтров шока п. 6 и датчика срыва п. 3", "ABf": "центр и шаг заморожены при запасе (§4)"}
 
 
 def mr_name(c: float, hlmax: int) -> str:
@@ -61,6 +61,8 @@ def ablation_variants(c: float, hlmax: int) -> list[dict]:
             v["step"] = "eq_or_rv"
         elif ab == "ABe":
             v["shocks"] = False
+        elif ab == "ABf":
+            v["P"]["freeze"] = 1
         out.append(v)
     return out
 

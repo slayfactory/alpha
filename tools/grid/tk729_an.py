@@ -25,7 +25,7 @@ DIRS = (("H1", "H2"), ("H2", "H1"))  # (выбор, проверка)
 MARGIN_PER_COIN = 250.0
 
 
-def load_res(out: str, phases=("base", "abl")):
+def load_res(out: str, phases=("base", "abl", "frz")):
     """→ runs {имя: (ncoin, NR, 328)}, syms, present (ncoin, 328), turn, natr."""
     runs, syms, pres, turn, natr = {}, None, None, None, None
     for ph in phases:

@@ -352,3 +352,26 @@ def test_conditions_allow_logic():
     abe = [v for v in C.ablation_variants(1.0, 60) if v["kind"] == "ABe"][0]
     _, al_e, _ = C.build_components(F, abe)
     assert al_e.tolist() == [1, 0, 0, 1, 1, 0]  # шок и срыв сняты, условие п. 1 осталось
+
+
+def test_freeze_center_during_inventory_and_recenter_at_flat():
+    nd = 2
+    n = nd * 1440
+    down = np.linspace(100, 98.5, 300)
+    up = np.linspace(98.5, 99.8, 300)
+    again = np.linspace(99.8, 98.4, 300)
+    c = fl(np.round(np.concatenate([down, up, again]), 3), n)
+    S = mk(c, nd)
+    cen = np.full(n, 100.0)
+    cen[320:] = 99.0  # Калман «ползёт» вниз на 1 шаг уже после первого входа (t ≈ 200)
+    F = feats(nd)
+    base = dict(a=0.0, use_cen=1, gmode=1, day0=0, t_start=0, skew_coef=0.5)
+    gfr = np.full(n, 0.01)
+    fr = L.run_coin(S, F, L.make_params(**base, freeze=1), cen=cen, gfr=gfr)
+    nf = L.run_coin(S, F, L.make_params(**base, freeze=0), cen=cen, gfr=gfr)
+    q = 25 / 99.0
+    exp = q * (99.5 - 99.0) - 25 * MK - q * 99.5 * MK  # выход на замороженном центре: Z = 100 − g/2 = 99,5
+    assert int(fr[L.R_NCYC].sum()) == 1 and abs(fr[L.R_CYC].sum() - exp) < 1e-9
+    assert nf[L.R_CYC].sum() < 0  # без заморозки центр ушёл на 99,0 → выход на 98,5 ниже входа 99
+    # при запасе 0 центр сдвинут на 1 шаг (|99,0 − 100| ≥ 1) → лестница вокруг 99,0: покупка на 98,0, второй провал до 98,4 входа не даёт
+    assert int(fr[L.R_NOPEN].sum()) == 1

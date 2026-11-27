@@ -31,7 +31,7 @@ def variants_for(phase: str, out: str) -> list[dict]:
         if key in seen:
             continue
         seen.add(key)
-        vs += C.ablation_variants(d["c"], d["hlmax"])
+        vs += [v for v in C.ablation_variants(d["c"], d["hlmax"]) if (v["kind"] == "ABf") == (phase == "frz")]
     return vs
 
 
@@ -60,7 +60,7 @@ def process(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="/data/tk729")
-    ap.add_argument("--phase", choices=("base", "abl"), required=True)
+    ap.add_argument("--phase", choices=("base", "abl", "frz"), required=True)
     ap.add_argument("--procs", type=int, default=3)
     ap.add_argument("--only", default="")
     ap.add_argument("--limit", type=int, default=0)

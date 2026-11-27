@@ -305,10 +305,10 @@ def turnover_block(S: dict, k: float = 3.0, hold: int = 30, days_back: int = 20)
 # ───────────────────────────── ядро ─────────────────────────────
 
 def make_params(*, g0=0.0, a=0.0, use_cen=0, b=0.0, timex=0, pause=0, t_start=DAY0 * 1440, maker=MAKER, taker=TAKER, slip=SLIP,
-                side_not=SIDE_NOTIONAL, skew_coef=0.5, skew_mode=0, day0=DAY0, gmin_ticks=2.0, gmode=0, vmode=0, dec=0.05) -> np.ndarray:
+                side_not=SIDE_NOTIONAL, skew_coef=0.5, skew_mode=0, day0=DAY0, gmin_ticks=2.0, gmode=0, vmode=0, dec=0.05, freeze=0) -> np.ndarray:
     """Вектор параметров ядра. g0 — шаг доли цены запуска (a = 0); a — множитель σ60 (g = a·σ60·центр); use_cen — центр из массива `cen` и наклон; b — наращивание объёма;
     timex — минут до закрытия лота по рынку (0 — нет); pause — пауза монеты после выхода за край, минут; skew_coef — наклон q·skew_coef·g (skew_mode 0) или q·skw[t] (1); gmode 1 — шаг из массива gfr[t] (доля центра) каждую минуту; vmode 1 — объём уровня k = (side_not/10)·(1 − dec·(k − 1)) (убывает с запасом)."""
-    return np.array([g0, a, float(use_cen), b, float(timex), float(pause), float(t_start), maker, taker, slip, side_not, skew_coef, float(skew_mode), float(day0), gmin_ticks, float(gmode), float(vmode), dec], np.float64)
+    return np.array([g0, a, float(use_cen), b, float(timex), float(pause), float(t_start), maker, taker, slip, side_not, skew_coef, float(skew_mode), float(day0), gmin_ticks, float(gmode), float(vmode), dec, float(freeze)], np.float64)
 
 
 @njit(cache=True)
@@ -343,6 +343,10 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, P, out):
     gmode = int(P[15])
     vmode = int(P[16])
     dec = P[17]
+    freeze = P[18] > 0.5
+    sc = 0.0
+    sg = 0.0
+    sc_ok = False
     nlv = 10
     nk = np.zeros(nlv + 1)
     ssum = 0.0
@@ -552,6 +556,14 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, P, out):
                     g_ok = True
                     g_t = t
             prev_on = on_raw
+            if freeze and use_cen and g_ok and np.isfinite(center):
+                # §4: центр и шаг фиксируются; меняются только при запасе 0, если |Калман − центр| ≥ 1 шаг
+                if (not sc_ok) or (nl + ns == 0 and abs(center - sc) >= sg):
+                    sc = center
+                    sg = gabs
+                    sc_ok = True
+                center = sc
+                gabs = sg
             if g_ok and np.isfinite(center):
                 q = nl - ns
                 z = center
