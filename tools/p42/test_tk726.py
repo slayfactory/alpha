@@ -1,5 +1,6 @@
 """TK-726: тесты шага 1 (tk726_seam, tk726_run) на синтетике; запуск: python -m pytest tools/p42/test_tk726.py"""
 import csv
+import math
 import os
 import sys
 
@@ -136,3 +137,97 @@ def test_twin_geometry_and_cells():
 def test_dense_series():
     p, k = rn.dense([(181, 1.5, 2), (183, -1.0, 1), (400, 9.0, 9)], 181, 136)
     assert p[0] == 1.5 and k[2] == 1 and len(p) == 136 and p.sum() == 0.5
+
+
+# ───────────────────────────── шаг 2: tk726_exits ─────────────────────────────
+
+def test_natr_at_matches_engine_loop():
+    import tk726_exits as ex
+    sys.path.insert(0, HERE)
+    os.environ["SIGFEAT_DAYS"] = "1"
+    import sigfeat_lib as L
+    rng = np.random.default_rng(3)
+    n = 1440
+    base = 1_000_000_000
+    c = (base + np.cumsum(rng.integers(-2_000_000, 2_000_000, n))).astype(np.int64)
+    o = np.roll(c, 1)
+    h = np.maximum(o, c) + rng.integers(0, 1_500_000, n)
+    l = np.minimum(o, c) - rng.integers(0, 1_500_000, n)
+    gap = np.zeros(n, bool)
+    gap[100:140] = True
+    gap[500:503] = True
+    gap[900:960] = True
+    o, h, l, c = (np.where(gap, 0, x).astype(np.int64) for x in (o, h, l, c))
+    L.N_MIN = n
+    ref = L.natr_series({"o": o, "h": h, "l": l, "c": c, "qv": np.zeros(n, np.int64)})
+    ts = np.arange(0, n)
+    got = ex.natr_at(o, h, l, c, ts)
+    assert (got == ref[ts]).all()
+    assert (got >= 0).sum() > 800
+
+
+def test_tail_stats_and_boot_known():
+    import tk726_exits as ex
+    # хвост: месячный результат целиком определяется stop → доля 1, σ без stop мала
+    S = np.array([-50.0, -10, -80, -20, -60, -5, -70, -30, -40, -15])
+    N = np.full(10, 100.0)
+    F = S + np.array([4.0, 5, 4.5, 5, 4, 5.5, 4.2, 5, 4.8, 5])
+    t = ex.tail_stats(S, F, N)
+    assert t["share"] > 0.95 and t["cond2"] and t["tail"]
+    # ядро: stop постоянен, ход идёт из прочих выходов
+    S2 = np.full(10, -30.0)
+    F2 = S2 + np.array([40.0, -20, 60, -50, 30, -10, 70, -40, 20, 0])
+    t2 = ex.tail_stats(S2, F2, N)
+    assert abs(t2["share"]) < 1e-9 and not t2["tail"]
+
+
+def test_stop_perm_test_clumped_vs_random():
+    import tk726_exits as ex
+    rng = np.random.default_rng(1)
+    nd, per_day = 30, 20
+    di = np.repeat(np.arange(nd), per_day)
+    clump = np.zeros(len(di), bool)
+    clump[np.isin(di, [3, 4, 5, 20, 21])] = True            # стопы пачками в 5 сутках
+    T, p, Tn = ex.stop_perm_test([(di, clump, nd)], 2000, rng)
+    assert p < 0.01 and T > Tn
+    rnd = rng.random(len(di)) < 0.2
+    T2, p2, _ = ex.stop_perm_test([(di, rnd, nd)], 2000, rng)
+    assert p2 > 0.05
+
+
+def test_chi2_and_psr():
+    import tk726_exits as ex
+    x2, p, df = ex.chi2_homog([20, 20, 20, 20], [100, 100, 100, 100])
+    assert x2 == 0.0 and p == 1.0 and df == 3
+    x2, p, df = ex.chi2_homog([5, 40, 5, 40], [100, 100, 100, 100])
+    assert p < 1e-6
+    rng = np.random.default_rng(5)
+    x = rng.normal(0.3, 1.0, 400)
+    r = ex.psr_stats(x)
+    assert abs(r["sr_d"] - x.mean() / x.std(ddof=1)) < 1e-12
+    assert abs(r["se"] - 1 / math.sqrt(399)) < 0.02          # нормаль: γ₃ ≈ 0, γ₄ ≈ 3 → SE ≈ √((1 + SR²/2)/(n−1))
+    assert 0.99 < r["psr"] <= 1.0
+
+
+def test_period_index_and_exit_rows():
+    import tk726_exits as ex
+    d = np.array([sm.day_of("2026-02-01"), sm.day_of("2026-02-28"), sm.day_of("2026-10-31"), sm.day_of("2026-11-01"), sm.day_of("2026-11-13"), sm.day_of("2026-11-14"), sm.day_of("2026-12-01")])
+    pi = ex.period_index(d)
+    assert [ex.PERIODS[i][0] if i >= 0 else None for i in pi] == ["Feb", "Feb", "Oct", "Nov1-13", "Nov1-13", "N1", None]
+
+
+def test_tail_boot_interval_covers_point_for_tail_data():
+    import tk726_exits as ex
+    rng = np.random.default_rng(2)
+    days = []
+    for m in range(10):
+        nd = 30
+        ds = np.where(rng.random(nd) < 0.15, -rng.uniform(20, 60, nd), 0.0)
+        dn = np.full(nd, 10.0)
+        dr = rng.normal(2.0, 1.0, nd)
+        days.append((ds, ds + dr, dn))
+    S = [d[0].sum() for d in days]; F = [d[1].sum() for d in days]; N = [d[2].sum() for d in days]
+    pt = ex.tail_stats(S, F, N)
+    lo, hi, c2 = ex.tail_boot(days, 3, 2000, rng)
+    assert lo <= pt["share"] <= hi or abs(pt["share"] - (lo + hi) / 2) < 0.3
+    assert 0.0 <= c2 <= 1.0
