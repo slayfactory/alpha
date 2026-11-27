@@ -436,6 +436,15 @@ def cmd_run(a):
                     db.execute("INSERT OR REPLACE INTO mass_batch VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (a.run_id, w.name, side, bk, len(cur), len({c["sig"] for c in cur}), len(cols), sum(kept.values()) if kept else 0,
                                                                                                          t1 - t0, cpu, time.time() - t2, rc, resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024.0, now()))
                     db.commit()
+                    if a.keep_trades and rc == 0:                           # TK-718: сделки клеток партии (T5 / T6) — файлы `<keep>/<run>/<окно>/<cid>-trades.csv`, t0_ms окна — в `<keep>/<run>/t0.json`
+                        kd = os.path.join(a.keep_trades, a.run_id, w.name)
+                        os.makedirs(kd, exist_ok=True)
+                        for c in cur:
+                            shutil.copyfile(os.path.join(out, "k%d" % c["cid"], p8.ENG[ho.SIDE_LETTER[side]] + "-trades.csv"), os.path.join(kd, "%d-trades.csv" % c["cid"]))
+                        t0p = os.path.join(a.keep_trades, a.run_id, "t0.json")
+                        t0d = json.load(open(t0p, encoding="utf-8")) if os.path.exists(t0p) else {}
+                        t0d[w.name] = int(w.t0_ms)
+                        json.dump(t0d, open(t0p, "w", encoding="utf-8"))
                     shutil.rmtree(out, ignore_errors=True)
                     for p in (ftab, out + ".log"):
                         if rc == 0 and os.path.exists(p):
@@ -570,6 +579,7 @@ def main(argv=None):
             s.add_argument("--max-batches", type=int, default=0)
             s.add_argument("--unguarded", default="", help="стороны (long,short), для которых охрана охвата < 0,7 выключена: клетка считается, в mass_cw.note — «низкое покрытие <признак доля>» (приказ координатора 24.11 для short-B)")
             s.add_argument("--part", default="0/1", help="K/N: считать партии с номером ≡ K (mod N) в списке партий окна × стороны; части одного run-id идут параллельными процессами, закрыть run-id — запуском без --part")
+            s.add_argument("--keep-trades", default="", help="каталог: сохранить файлы сделок клеток каждой партии (TK-718, T5 / T6; без ключа партия удаляется после разбора)")
             s.add_argument("--only-skipped", default="", help="run-id прежнего запуска: считать только пары клетка × окно из его mass_skip (после достройки столбцов)")
     a = ap.parse_args(argv)
     return {"plan": cmd_plan, "run": cmd_run, "check": cmd_check, "timing": cmd_timing, "need": cmd_need, "classes": cmd_classes}[a.cmd](a)
