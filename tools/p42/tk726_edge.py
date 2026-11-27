@@ -91,6 +91,28 @@ def cmd_run(a):
             fmt(block_delta(d2, p2, 0)[0], 3), fmt(float(np.mean([block_delta(d2, p2, k)[0] for k in range(1, 31)])), 3),
             fmt(min(block_delta(d2, p2, k)[0] for k in range(1, 31)), 3), fmt(max(block_delta(d2, p2, k)[0] for k in range(1, 31)), 3)))
         say("")
+    # 4. начало окна: движок и зачёт. Сигналы движка идут с суток 14 от T0; зачёт: m01…m06 и n1 — с суток 20 (на 6 суток позже), wa — с суток 14 (первые сутки движка), wb / wc — вырезка с суток 32 (середина прогона).
+    say("== начало окна против начала месяца (зачётные первые 2 суток периода против остальных; в скобках — сделок в первых 2 сутках)")
+    say("период | где первые сутки зачёта в прогоне движка | S1 Δ | S2 Δ | L401 Δ | B9 Δ")
+    import tk726_exits as ex_mod
+    asm = {n: ex_mod.assemble(cid) for n, cid in cells.items() if n in LINES or n in bs}
+    where = {"Feb": "сутки 6 от начала сигналов", "Mar": "сутки 6", "Apr": "сутки 6", "May": "сутки 6", "Jun": "сутки 6", "Jul": "сутки 0 (первые сутки движка, wa)",
+             "Aug": "середина wa", "Sep": "середина wb", "Oct": "середина wb", "Nov1-13": "середина wc"}
+    for pi, (pname, plo, phi) in enumerate(ex_mod.PERIODS):
+        if pname not in where:
+            continue
+        lo = sm.day_of(plo)
+        cols = []
+        for names in [[n] for n in LINES] + [bs]:
+            pn, nn, pr, nr = 0.0, 0, 0.0, 0
+            for n in names:
+                ar = asm[n]
+                m = ar["pidx"] == pi
+                first = m & (ar["eday"] < lo + 2)
+                rest = m & (ar["eday"] >= lo + 2)
+                pn += float(ar["pnl"][first].sum()); nn += int(first.sum()); pr += float(ar["pnl"][rest].sum()); nr += int(rest.sum())
+            cols.append("%s (%d)" % (fmt((pn / nn if nn else float("nan")) - (pr / nr if nr else float("nan"))), nn))
+        say("%s | %s | %s" % (pname, where[pname], " | ".join(cols)))
     text = "\n".join(lines)
     print(text)
     if a.report:
