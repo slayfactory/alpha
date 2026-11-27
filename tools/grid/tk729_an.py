@@ -116,7 +116,7 @@ def noise_bar(n_days: int, trials: int = 6) -> float:
 
 def select_step(out: str):
     runs, syms, pres, turn, natr = load_res(out, ("base",))
-    ag = [v["name"] for v in C.base_variants() if v["kind"] == "AG"]
+    ag = [v["name"] for v in C.base_variants() if v["kind"] == "MR"]
     sel = {}
     rep = {"ag": ag, "dirs": []}
     for s_h, t_h in DIRS:
@@ -124,9 +124,9 @@ def select_step(out: str):
         sh = {nm: L.sharpe_ann(runs[nm][:, L.R_PNL, d0:d1].sum(0)) for nm in ag}
         best = max(ag, key=lambda k: sh[k])
         v = [x for x in C.base_variants() if x["name"] == best][0]
-        sel[s_h] = dict(sel_half=s_h, test_half=t_h, name=best, a=v["a"], q=v["q"], sharpes=sh)
+        sel[s_h] = dict(sel_half=s_h, test_half=t_h, name=best, c=v["c"], hlmax=v["hlmax"], sharpes=sh)
         rep["dirs"].append(sel[s_h])
-    json.dump(dict(dirs=[dict(name=r["name"], a=r["a"], q=r["q"], sel_half=r["sel_half"], test_half=r["test_half"]) for r in rep["dirs"]]), open(os.path.join(out, "select.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    json.dump(dict(dirs=[dict(name=r["name"], c=r["c"], hlmax=r["hlmax"], sel_half=r["sel_half"], test_half=r["test_half"]) for r in rep["dirs"]]), open(os.path.join(out, "select.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     json.dump(rep, open(os.path.join(out, "select-report.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     for r in rep["dirs"]:
         print(r["sel_half"], "→", r["test_half"], r["name"], {k: round(v, 2) for k, v in r["sharpes"].items()})
@@ -172,7 +172,7 @@ def final_step(out: str):
                 abl[ab] = dict(name=an, usd=am["usd"], sharpe=am["sharpe"], dd=am["dd"], months_plus=am["months_plus"], delta_usd=dsum,
                                delta_boot={b: dict(mean=v["mean"], lo=v["lo"], hi=v["hi"]) for b, v in dl.items()})
         nbar = noise_bar(len(tm["daily"]))
-        results["dirs"].append(dict(sel_half=s_h, test_half=t_h, name=nm, a=d["a"], q=d["q"], sel_sharpe=M[(nm, s_h)]["sharpe"], noise_bar_sharpe=nbar, test_usd=tm["usd"], test_sharpe=tm["sharpe"],
+        results["dirs"].append(dict(sel_half=s_h, test_half=t_h, name=nm, c=d["c"], hlmax=d["hlmax"], sel_sharpe=M[(nm, s_h)]["sharpe"], noise_bar_sharpe=nbar, noise_bar_sharpe_17=noise_bar(len(tm["daily"]), 17), test_usd=tm["usd"], test_sharpe=tm["sharpe"],
                                     vs_c0={b: dict(mean=v["mean"], lo=v["lo"], hi=v["hi"]) for b, v in vs_c0.items()}, vs_c0_usd=vs_c0_sum, checks=chk, ablations=abl))
         ok_dirs.append(all(chk[k] for k in ("lo_gt0_7", "lo_gt0_21", "months_ge_2_3", "ex_best10_gt0", "vs_c0_lo_gt0_7", "vs_c0_lo_gt0_21")))
     disagree = any(r["checks"]["lo_gt0_7"] != r["checks"]["lo_gt0_21"] or r["checks"]["vs_c0_lo_gt0_7"] != r["checks"]["vs_c0_lo_gt0_21"] for r in results["dirs"])

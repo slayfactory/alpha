@@ -35,8 +35,8 @@ PERIODS = {
     "jan": (0, 31), "feb": (31, 59), "mar": (59, 90), "apr": (90, 120), "may": (120, 151), "jun": (151, 181),
     "jul": (181, 212), "aug": (212, 243), "sep": (243, 273), "oct": (273, 304), "nov": (304, 328),
 }
-BURN = 30  # разгон фильтров: сутки отчёта 0–29 (01.01–30.01)
-HALVES = {"H1": (BURN, 181), "H2": (181, NOUT)}  # 31.01–30.06 и 01.07–24.11 (сутки отчёта, [от, до))
+BURN = 20  # разгон §3: сутки отчёта 0–19 (01.01–20.01); счёт — с 21.01
+HALVES = {"H1": (BURN, 181), "H2": (181, NOUT)}  # 21.01–30.06 и 01.07–24.11 (сутки отчёта, [от, до))
 
 # тариф В-47 / приказ 12: мейкер 1,4 bps − 10 % возврата; тейкер 3,5 bps (протокол §1: возврат только у мейкера), проскальзывание 1 bp на рыночных
 MAKER = 0.00014 * 0.9
@@ -144,26 +144,6 @@ def natr(S: dict, p: int = 30, tr=None) -> np.ndarray:
     return np.where(pres & (k * 2 >= p), v, np.nan)
 
 
-def er_kaufman(S: dict, p: int = 60) -> np.ndarray:
-    """ER_p = |c_t − c_{t−p}| / Σ|Δc| (коэффициент эффективности Кауфмана); NaN без минут t, t−p, при < ½ окна приращений или нулевом знаменателе."""
-    c, pres = S["c"], S["pres"]
-    n = len(c)
-    rv = np.zeros(n, bool)
-    rv[1:] = pres[1:] & pres[:-1]
-    d = np.zeros(n)
-    with np.errstate(invalid="ignore"):
-        d[1:] = np.where(rv[1:], np.abs(c[1:] - c[:-1]), 0.0)
-    den = _wsum(d, p)
-    k = _wsum(rv.astype(np.float64), p)
-    num = np.full(n, np.nan)
-    num[p:] = np.abs(c[p:] - c[:-p])
-    ok = pres & (k * 2 >= p) & (den > 0)
-    ok[:p] = False
-    with np.errstate(invalid="ignore", divide="ignore"):
-        er = num / den
-    return np.where(ok & np.isfinite(er), er, np.nan)
-
-
 def tick_days(S: dict, ndays: int = NDAYS, win: int = 7) -> np.ndarray:
     """Шаг цены на сутки d: НОД цен (×1e8, целые) за предыдущие `win` суток; нет — НОД самих суток; 0 — свечей нет."""
     day_g = np.zeros(ndays, np.int64)
@@ -185,96 +165,150 @@ def tick_days(S: dict, ndays: int = NDAYS, win: int = 7) -> np.ndarray:
     return out / 1e8
 
 
-def er_thresholds(er: np.ndarray, qs, ndays: int = NDAYS, win_days: int = 30, min_n: int = 1440) -> np.ndarray:
-    """Порог θ[d, i] = квантиль qs[i] распределения ER за прошлые `win_days` суток [d − win, d); NaN, если значений < min_n."""
-    th = np.full((ndays, len(qs)), np.nan)
-    for d in range(win_days, ndays):
-        v = er[(d - win_days) * 1440: d * 1440]
-        v = v[np.isfinite(v)]
-        if len(v) >= min_n:
-            th[d] = np.quantile(v, qs)
-    return th
-
-
-def autocorr5_days(S: dict, ndays: int = NDAYS, win_days: int = 30, min_pairs: int = 2000) -> np.ndarray:
-    """ρ1[d] — автокорреляция (лаг 1) 5-минутных доходностей за прошлые `win_days` суток [d − win, d); NaN, если пар < min_pairs.
-    5-минутная свеча — закрытие минуты с индексом ≡ 4 (mod 5); пара — две подряд идущие 5-минутные доходности, обе присутствуют."""
-    c = np.where(S["pres"], S["c"], np.nan)[4::5]  # 288 баров в сутки
+def ou_rolling(S: dict, win: int = 1440) -> dict:
+    """Скользящая модель Орнштейна–Уленбека (§3 п. 1): регрессия AR(1) ln-цены x_t = a + b·x_{t−1} + e по последним `win` парам (минуты t−win+1 … t, обе присутствуют), по минутам.
+    b, tstat = (b − 1)/se(b) (порог Дики–Фуллера 5 % — −2,86) — при достаточном окне (≥ ½ пар); hl = −ln2/ln b (минут), sig_eq = sd(e)/√(1 − b²), mu = exp(a/(1 − b)), sig_eps = sd(e) — только при 0 < b < 1, иначе NaN."""
+    c, pres = S["c"], S["pres"]
+    n = len(c)
     with np.errstate(invalid="ignore", divide="ignore"):
-        r = c[1:] / c[:-1] - 1.0  # r[j] — доходность бара j+1
-    x, y = r[1:], r[:-1]  # x — текущая, y — предыдущая; бар текущей доходности j+2
-    ok = np.isfinite(x) & np.isfinite(y)
-    bar = np.arange(2, 2 + len(x))
-    day = bar // 288
-    keep = ok & (day < ndays)
-    day, x, y = day[keep], x[keep], y[keep]
-    cnt = np.bincount(day, minlength=ndays).astype(np.float64)
-    sx = np.bincount(day, x, minlength=ndays)
-    sy = np.bincount(day, y, minlength=ndays)
-    sxx = np.bincount(day, x * x, minlength=ndays)
-    syy = np.bincount(day, y * y, minlength=ndays)
-    sxy = np.bincount(day, x * y, minlength=ndays)
-    out = np.full(ndays, np.nan)
+        x = np.log(c)
+    x0 = x[np.isfinite(x)][0] if np.isfinite(x).any() else 0.0
+    xs = x - x0  # сдвиг: меньше потери точности в накопленных суммах
+    y = np.zeros(n)  # x_t
+    z = np.zeros(n)  # x_{t−1}
+    ok = np.zeros(n, bool)
+    ok[1:] = pres[1:] & pres[:-1]
+    y[1:] = np.where(ok[1:], xs[1:], 0.0)
+    z[1:] = np.where(ok[1:], xs[:-1], 0.0)
+    k = _wsum(ok.astype(np.float64), win)
+    sy, sz = _wsum(y, win), _wsum(z, win)
+    syy, szz, syz = _wsum(y * y, win), _wsum(z * z, win), _wsum(y * z, win)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        vz = szz / k - (sz / k) ** 2
+        cyz = syz / k - (sy / k) * (sz / k)
+        b = cyz / vz
+        a = sy / k - b * sz / k
+        vy = syy / k - (sy / k) ** 2
+        ve = (vy - 2 * b * cyz + b * b * vz) * k / (k - 2)  # дисперсия остатка (несмещённая)
+        fit = pres & (k * 2 >= win) & (vz > 0) & (ve > 0)
+        se_b = np.sqrt(ve / (k * vz))
+        tstat = (b - 1.0) / se_b
+        st = fit & (b > 0) & (b < 1)
+        mu = np.exp(a / (1 - b) + x0)
+        hl = -np.log(2.0) / np.log(b)
+        sig_eps = np.sqrt(ve)
+        sig_eq = sig_eps / np.sqrt(1 - b * b)
+    nf = lambda v, m: np.where(m, v, np.nan)
+    return dict(b=nf(b, fit), tstat=nf(tstat, fit), mu=nf(mu, st), hl=nf(hl, st), sig_eq=nf(sig_eq, st), sig_eps=nf(sig_eps, st))
 
-    def roll(a, d):
-        return a[d - win_days:d].sum()
-    for d in range(win_days, ndays):
-        n_ = roll(cnt, d)
-        if n_ < min_pairs:
-            continue
-        mx, my = roll(sx, d) / n_, roll(sy, d) / n_
-        vx = roll(sxx, d) / n_ - mx * mx
-        vy = roll(syy, d) / n_ - my * my
-        cv = roll(sxy, d) / n_ - mx * my
-        if vx > 0 and vy > 0:
-            out[d] = cv / math.sqrt(vx * vy)
-    return out
+
+def hold_every(a: np.ndarray, step: int = 15) -> np.ndarray:
+    """Значение пересчитывается раз в `step` минут: на минуте t берётся значение, посчитанное на закрытии минуты (t // step)·step."""
+    return a[(np.arange(len(a)) // step) * step]
+
+
+def ffill(a: np.ndarray) -> np.ndarray:
+    """Перенос последнего конечного значения вперёд (до первого — NaN)."""
+    idx = np.where(np.isfinite(a), np.arange(len(a)), -1)
+    idx = np.maximum.accumulate(idx)
+    return np.where(idx >= 0, a[np.maximum(idx, 0)], np.nan)
+
+
+def kalman_q(S: dict, win: int = 1440, step: int = 60) -> np.ndarray:
+    """Q Калмана (§3 п. 2): дисперсия минутного сдвига медленного среднего — d_s = (M60_s − M60_{s−60})/60, M60 — среднее ln-цены за 60 минут (≥ 30 свечей), по d за прошлые `win` минут (≥ ½)."""
+    c, pres = S["c"], S["pres"]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        x = np.where(pres, np.log(c), 0.0)
+    k = _wsum(pres.astype(np.float64), step)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        m = np.where(k >= step // 2, _wsum(x, step) / k, np.nan)
+    d = np.full(len(c), np.nan)
+    d[step:] = (m[step:] - m[:-step]) / step
+    fin = np.isfinite(d)
+    d0 = np.where(fin, d, 0.0)
+    cnt = _wsum(fin.astype(np.float64), win)
+    s1, s2 = _wsum(d0, win), _wsum(d0 * d0, win)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        q = s2 / cnt - (s1 / cnt) ** 2
+    return np.where((cnt * 2 >= win) & (q > 0), q, np.nan)
 
 
 @njit(cache=True)
-def ema_series(c, pres, lam):
-    """EMA закрытий по присутствующим минутам (λ = 2^(−1/полураспад)); значение на минуте t — после обновления закрытием t; до первой свечи NaN, в дырах переносится."""
-    n = c.shape[0]
-    out = np.full(n, np.nan)
-    e = np.nan
+def kalman_center(y, pres, R, Q):
+    """Фильтр Калмана, локальный уровень (§3 п. 2): m_t = m_{t−1} + w (дисперсия Q), y = m_t + v (дисперсия R); R, Q — по минутам (NaN — параметры ещё не известны: m следует за ценой). Возврат — m (в ln-цене)."""
+    n = y.shape[0]
+    m = np.full(n, np.nan)
+    cur = np.nan
+    P = 0.0
     for t in range(n):
+        q = Q[t]
+        r = R[t]
         if pres[t]:
-            e = c[t] if np.isnan(e) else lam * e + (1.0 - lam) * c[t]
-        out[t] = e
-    return out
+            if np.isnan(cur) or np.isnan(q) or np.isnan(r):
+                cur = y[t]
+                P = r if not np.isnan(r) else 0.0
+            else:
+                pp = P + q
+                kk = pp / (pp + r)
+                cur = cur + kk * (y[t] - cur)
+                P = (1.0 - kk) * pp
+        elif not np.isnan(cur) and not np.isnan(q):
+            P = P + q
+        m[t] = cur
+    return m
 
 
-# ───────────────────────────── подключаемые центр / фильтр / отбор ─────────────────────────────
-
-def center_ema(S: dict, halflife_min: float = 60.0) -> np.ndarray:
-    """Центр сетки: EMA цены (полураспад `halflife_min` минут)."""
-    return ema_series(S["c"], S["pres"], 0.5 ** (1.0 / halflife_min))
-
-
-def allow_mask(er60: np.ndarray, thr_day: np.ndarray | None, sel_day: np.ndarray | None, ndays: int = NDAYS) -> np.ndarray:
-    """Разрешение новых уровней по минутам (uint8): фильтр ER60 < θ[d] (если thr_day задан) И монета выбрана на сутки d (если sel_day задан). Нет значения → запрет."""
-    n = ndays * 1440
-    ok = np.ones(n, bool)
-    if thr_day is not None:
-        ok &= er60 < np.repeat(thr_day, 1440)
-    if sel_day is not None:
-        ok &= np.repeat(sel_day.astype(bool), 1440)
-    return ok.astype(np.uint8)
+def _recent_any(shock: np.ndarray, hold: int) -> np.ndarray:
+    """True на минуте t, если шок был на любой из минут (t − hold, t]."""
+    n = len(shock)
+    cs = np.concatenate([[0], np.cumsum(shock)])
+    lo = np.maximum(np.arange(n) + 1 - hold, 0)
+    return (cs[np.arange(n) + 1] - cs[lo]) > 0
 
 
-def sel_days(rho: np.ndarray) -> np.ndarray:
-    """Отбор монет на сутки: автокорреляция 5-минуток за прошлые 30 суток < 0."""
+def btc_block(Sb: dict, rv60_b: np.ndarray, k: float = 4.0, hold: int = 30) -> np.ndarray:
+    """Шок рынка (§3 п. 6): |доходность BTC за 5 мин| > k·(RV60 BTC на начало 5-минутки, пересчитанная на 5 минут: ×√(5/60)) → все сетки `hold` минут без новых уровней."""
+    c, pres = Sb["c"], Sb["pres"]
+    n = len(c)
+    ret5 = np.full(n, np.nan)
+    base = np.full(n, np.nan)
+    base[5:] = rv60_b[:-5]  # RV60 на начало 5-минутки (минута t−5): иначе сам скачок входит в базу и сработать не может (отношение ≤ 1/(k·√(5/60)) < 1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        ret5[5:] = np.where(pres[5:] & pres[:-5], np.abs(c[5:] / c[:-5] - 1.0), np.nan)
+        shock = ret5 > k * base * math.sqrt(5.0 / 60.0)
+    shock = np.where(np.isfinite(ret5) & np.isfinite(base), shock, False)
+    return _recent_any(shock, hold)
+
+
+def turnover_block(S: dict, k: float = 3.0, hold: int = 30, days_back: int = 20) -> np.ndarray:
+    """Шок оборота монеты (§3 п. 6): оборот за 5 мин (USDT) > k·(средний оборот за 5 мин того же часа суток за прошлые `days_back` суток) → пауза `hold` минут."""
+    qv, pres = S["qv"], S["pres"]
+    n = len(qv)
+    nd = n // 1440
+    q5 = np.full(n, np.nan)
+    q5[4:] = _wsum(qv, 5)[4:]
+    hourly = qv.reshape(nd, 24, 60).sum(axis=2)  # (сутки, час)
+    hp = pres.reshape(nd, 24, 60).any(axis=2)
+    base = np.full((nd, 24), np.nan)
+    for d in range(days_back, nd):
+        v, m = hourly[d - days_back: d], hp[d - days_back: d]
+        cnt = m.sum(axis=0)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            mean = np.where(cnt >= days_back // 2, (v * m).sum(axis=0) / cnt, np.nan)
+        base[d] = mean / 12.0  # за 5 минут
     with np.errstate(invalid="ignore"):
-        return (rho < 0).astype(np.uint8)
+        shock = q5 > k * np.repeat(base.reshape(-1), 60)
+    shock = np.where(np.isfinite(q5) & pres, shock, False)
+    return _recent_any(shock, hold)
 
 
 # ───────────────────────────── ядро ─────────────────────────────
 
 def make_params(*, g0=0.0, a=0.0, use_cen=0, b=0.0, timex=0, pause=0, t_start=DAY0 * 1440, maker=MAKER, taker=TAKER, slip=SLIP,
-                side_not=SIDE_NOTIONAL, skew_coef=0.5, skew_mode=0, day0=DAY0, gmin_ticks=2.0) -> np.ndarray:
+                side_not=SIDE_NOTIONAL, skew_coef=0.5, skew_mode=0, day0=DAY0, gmin_ticks=2.0, gmode=0, vmode=0, dec=0.05) -> np.ndarray:
     """Вектор параметров ядра. g0 — шаг доли цены запуска (a = 0); a — множитель σ60 (g = a·σ60·центр); use_cen — центр из массива `cen` и наклон; b — наращивание объёма;
-    timex — минут до закрытия лота по рынку (0 — нет); pause — пауза монеты после выхода за край, минут; skew_coef — наклон q·skew_coef·g (skew_mode 0) или q·skw[t] (1)."""
-    return np.array([g0, a, float(use_cen), b, float(timex), float(pause), float(t_start), maker, taker, slip, side_not, skew_coef, float(skew_mode), float(day0), gmin_ticks], np.float64)
+    timex — минут до закрытия лота по рынку (0 — нет); pause — пауза монеты после выхода за край, минут; skew_coef — наклон q·skew_coef·g (skew_mode 0) или q·skw[t] (1); gmode 1 — шаг из массива gfr[t] (доля центра) каждую минуту; vmode 1 — объём уровня k = (side_not/10)·(1 − dec·(k − 1)) (убывает с запасом)."""
+    return np.array([g0, a, float(use_cen), b, float(timex), float(pause), float(t_start), maker, taker, slip, side_not, skew_coef, float(skew_mode), float(day0), gmin_ticks, float(gmode), float(vmode), dec], np.float64)
 
 
 @njit(cache=True)
@@ -288,7 +322,7 @@ def _ri(x, tick):
 
 
 @njit(cache=True)
-def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, P, out):
+def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, gfr, P, out):
     """Счёт одной монеты. out — массив (NR, NOUT), обнуляется снаружи. Подробности исполнения — в docstring модуля и в протоколе §1/§2."""
     n = c.shape[0]
     g0 = P[0]
@@ -306,13 +340,19 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, P, out):
     skew_mode = int(P[12])
     day0 = int(P[13])
     gmin = P[14]
+    gmode = int(P[15])
+    vmode = int(P[16])
+    dec = P[17]
     nlv = 10
     nk = np.zeros(nlv + 1)
     ssum = 0.0
     for k in range(1, nlv + 1):
         ssum += 1.0 + b * (k - 1)
     for k in range(1, nlv + 1):
-        nk[k] = side_not * (1.0 + b * (k - 1)) / ssum
+        if vmode == 1:
+            nk[k] = side_not / 10.0 * (1.0 - dec * (k - 1))
+        else:
+            nk[k] = side_not * (1.0 + b * (k - 1)) / ssum
     # лоты: слот k = 1..10; long — вход-покупка на уровне k, выход-продажа на уровне k−1; short — зеркально
     lst = np.zeros(nlv + 1, np.int8)
     lent = np.zeros(nlv + 1)
@@ -496,7 +536,11 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, P, out):
                     launched = True
                     g_ok = False
                 center = p0
-            if on_raw and np.isfinite(center) and (not g_ok or t - g_t >= 60):
+            if gmode == 1:
+                if np.isfinite(gfr[t]) and np.isfinite(center):
+                    gabs = max(gfr[t] * center, gmin * tick)
+                    g_ok = True
+            elif on_raw and np.isfinite(center) and (not g_ok or t - g_t >= 60):
                 if a > 0.0:
                     s = rv60[t]
                     if np.isfinite(s) and s > 0.0:
@@ -547,13 +591,13 @@ def grid_run(o, h, l, c, pres, tickd, rv60, cen, allow, skw, P, out):
     return out
 
 
-def run_coin(S: dict, F: dict, P: np.ndarray, cen=None, allow=None, skw=None) -> np.ndarray:
+def run_coin(S: dict, F: dict, P: np.ndarray, cen=None, allow=None, skw=None, gfr=None) -> np.ndarray:
     """Обёртка: массивы признаков F (rv60, tick) → вывод ядра (NR, NOUT)."""
     n = len(S["c"])
     out = np.zeros((NR, n // 1440 - int(P[13])))
     zeros = np.zeros(n)
     grid_run(S["o"], S["h"], S["l"], S["c"], S["pres"], F["tick"], F["rv60"],
-             zeros if cen is None else cen, np.ones(n, np.uint8) if allow is None else allow, zeros if skw is None else skw, P, out)
+             zeros if cen is None else cen, np.ones(n, np.uint8) if allow is None else allow, zeros if skw is None else skw, zeros if gfr is None else gfr, P, out)
     return out
 
 

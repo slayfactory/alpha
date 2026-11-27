@@ -1,4 +1,4 @@
-"""TK-729: прогон по монетам c539 на srv. Фаза base — C0 + 6 AG; фаза abl — абляции при выбранных (a, q) из select.json (после анализа фазы base).
+"""TK-729: прогон по монетам c539 на srv. Фаза base — C0 + 6 MR; фаза abl — абляции при выбранных (a, q) из select.json (после анализа фазы base).
 
 Запуск (один юнит systemd-run, мультипроцесс по монетам):
     python tk729_run.py --out /data/tk729 --phase base --procs 3
@@ -24,14 +24,14 @@ import tk729_lib as L  # noqa: E402
 def variants_for(phase: str, out: str) -> list[dict]:
     if phase == "base":
         return C.base_variants()
-    sel = json.load(open(os.path.join(out, "select.json"), encoding="utf-8"))  # {"dirs": [{"name":..., "a":..., "q":...}, ...]}
+    sel = json.load(open(os.path.join(out, "select.json"), encoding="utf-8"))  # {"dirs": [{"name":..., "c":..., "hlmax":...}, ...]}
     seen, vs = set(), []
     for d in sel["dirs"]:
-        key = (d["a"], d["q"])
+        key = (d["c"], d["hlmax"])
         if key in seen:
             continue
         seen.add(key)
-        vs += C.ablation_variants(d["a"], d["q"])
+        vs += C.ablation_variants(d["c"], d["hlmax"])
     return vs
 
 
@@ -42,7 +42,7 @@ def process(args):
         return sym, 0.0, "skip"
     t0 = time.time()
     S = L.load_coin(sym)
-    F = C.coin_features(S)
+    F = C.coin_features(S, C.btc_block_cached())
     vs = variants_for(phase, out)
     res = np.stack([C.run_variant(S, F, v) for v in vs])
     pres_day = S["pres"].reshape(L.NDAYS, 1440).any(axis=1)[L.DAY0:]
