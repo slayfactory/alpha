@@ -3,6 +3,7 @@
 Запуск (один юнит systemd-run, мультипроцесс по монетам):
     python tk729_run.py --out /data/tk729 --phase base --procs 3
     python tk729_run.py --out /data/tk729 --phase abl --procs 3
+    python tk729_run.py --out /data/tk729 --phase rd --procs 4     # §5 (PS-1065): 4 RD + 4 прогона разметки 5.1
 Результат — res/<phase>/<SYM>.npz: runs (имена), out (runs, NR, 328), present (328, есть ли свечи за сутки), turn (средний суточный оборот, USDT), natr (средний NATR30).
 """
 from __future__ import annotations
@@ -24,6 +25,8 @@ import tk729_lib as L  # noqa: E402
 def variants_for(phase: str, out: str) -> list[dict]:
     if phase == "base":
         return C.base_variants()
+    if phase == "rd":
+        return C.rd_variants()
     sel = json.load(open(os.path.join(out, "select.json"), encoding="utf-8"))  # {"dirs": [{"name":..., "c":..., "hlmax":...}, ...]}
     seen, vs = set(), []
     for d in sel["dirs"]:
@@ -44,7 +47,8 @@ def process(args):
     S = L.load_coin(sym)
     F = C.coin_features(S, C.btc_block_cached())
     vs = variants_for(phase, out)
-    res = np.stack([C.run_variant(S, F, v) for v in vs])
+    Tb = C.btc_T_cached() if phase == "rd" else None
+    res = np.stack([C.run_variant(S, F, v, Tb) for v in vs])
     pres_day = S["pres"].reshape(L.NDAYS, 1440).any(axis=1)[L.DAY0:]
     qv_day = S["qv"].reshape(L.NDAYS, 1440).sum(axis=1)[L.DAY0:]
     turn = float(qv_day[pres_day].mean()) if pres_day.any() else 0.0
@@ -60,7 +64,7 @@ def process(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="/data/tk729")
-    ap.add_argument("--phase", choices=("base", "abl", "frz"), required=True)
+    ap.add_argument("--phase", choices=("base", "abl", "frz", "rd"), required=True)
     ap.add_argument("--procs", type=int, default=3)
     ap.add_argument("--only", default="")
     ap.add_argument("--limit", type=int, default=0)
