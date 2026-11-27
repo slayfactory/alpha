@@ -15,7 +15,7 @@ import tk723_kill as K  # noqa: E402
 
 def _kill365(level=99.5, dd=10.0, gap=30.0):
     return {"version": F.KILL_VERSION, "level": level, "q%g" % level: {"dd": [dd] * 365, "gap": [gap] * 365},
-            "expect": {"label": "FJ", "per_day": 0.5, "window": "w", "sharpe": 2.0}, "source": "src, x", "cone": {k: [0.0] * 365 for k in ("q05", "q50", "q95")}}
+            "expect": {"label": "FJ", "per_day": F.E_MU1, "window": "w", "sharpe": 2.0}, "source": "src, x", "cone": {k: [0.0] * 365 for k in ("q05", "q50", "q95")}}
 
 
 def test_kill_flags_reads_all_365_days():
@@ -78,4 +78,29 @@ def test_report_uses_kill365_after_day_60(tmp_path):
     assert F.report(conn, "r", fz, "s", _kill365(), out_path=str(tmp_path / "r.md")) == 0
     txt = (tmp_path / "r.md").read_text(encoding="utf-8")
     assert "нет таблицы" not in txt and "ожид. Σ (FJ)" in txt and "q99.5" in txt
-    assert "+35.00 |" in txt                                          # ожидание 70 × 0,5 (FJ), не × 0,889 (SEL)
+    assert "+39.28 |" in txt                                          # ожидание 70 × 0,5611 (FJ), не × 0,889 (SEL)
+    assert "E-процесс" in txt and "«работает» не достигнуто" in txt
+
+
+def test_e_process_matches_log_e_and_accept():
+    x = np.array([1.0, -2.0, 3.5, 0.4])
+    assert np.allclose(np.log(F.e_process(x)), C.log_e(x, F.E_MU1, F.E_SD))
+    assert F.E_ACCEPT == C.E_ACCEPT and abs(F.E_MU1 - 0.5611) < 1e-4 and abs(F.E_SD - 4.8150) < 1e-4
+    big = np.full(40, 30.0)                                           # ln E растёт ≈ 0,72 в сутки → E ≥ 20 к 5-м суткам
+    e = F.e_process(big)
+    assert e[3] < 20 <= e[4]
+
+
+def test_report_prints_works_when_e_crosses(tmp_path):
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(F.TABLES)
+    conn.execute("INSERT INTO tk720_run VALUES('r','2026-12-04','s','c0de','m','','',0,'ok')")
+    for i in range(10):
+        d = F.F0 + i
+        conn.execute("INSERT INTO tk720_day VALUES('r',?,?,?,?,0)", (d, F.day_date(d), 3, 30.0))
+    k = _kill365(dd=1000.0, gap=1000.0)
+    assert F.report(conn, "r", {"expect": {F.EXPECT_PER_DAY_KEY: 0.889}}, "s", k, out_path=str(tmp_path / "r.md")) == 0
+    txt = (tmp_path / "r.md").read_text(encoding="utf-8")
+    rows = [l for l in txt.splitlines() if l.startswith("| 2026-")]
+    assert "РАБОТАЕТ" not in rows[3] and rows[4].endswith(" РАБОТАЕТ |")
+    assert "— «работает» (E ≥ 20)" in txt

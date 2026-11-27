@@ -52,6 +52,7 @@ SEED, NBOOT, BLOCK, KILL_N, MIN_DAYS = 719, 10000, 21, 60, 10
 EPS = 1e-9
 FREEZE_VERSION = "tk720-frozen-1"
 KILL_VERSION = "tk723-kill365-fj-1"
+E_MU1, E_SD, E_ACCEPT = 0.5610832111111111, 4.81504576548636, 20.0  # e-процесс «работает» (PS-1046 п. 5): H1 среднее FJ, σ FJ (ddof 1), «работает» при E ≥ 20
 DAY_MS = 86_400_000
 TABLES = """
 CREATE TABLE IF NOT EXISTS tk720_run(rid TEXT PRIMARY KEY, through TEXT, freeze_sha TEXT, code_sha TEXT, engine_md5 TEXT, started TEXT, finished TEXT, rc INTEGER, note TEXT);
@@ -145,6 +146,11 @@ def kill_flags(fwd, kill):
     dq, gq = t["dd"][n - 1], t["gap"][n - 1]
     sd, sg = u["maxdd"] > dq + EPS, u["gap_longest"] > gq + EPS
     return dict(n=n, dd=u["maxdd"], gap=u["gap_longest"], dd_q=dq, gap_q=gq, stop_dd=bool(sd), stop_gap=bool(sg), stop=bool(sd or sg))
+
+
+def e_process(fwd, mu1=E_MU1, sd=E_SD):
+    """E_n по префиксам ряда форварда: ln E_n = Σ (μ₁ x_i − μ₁²/2) / σ² (как `tk722_checks.log_e`)."""
+    return np.exp(np.cumsum((mu1 * np.asarray(fwd, float) - mu1 ** 2 / 2) / sd ** 2))
 
 
 def trades_daily(trades, t0_ms, nd):
@@ -466,26 +472,29 @@ def report(conn, rid, fz, sha, kill, out_path=None):
     pnl = np.array([r[3] for r in fwd])
     cnt = np.array([r[2] for r in fwd])
     rows = forward_table(pnl, cnt, kill, per_day)
+    assert abs(per_day - E_MU1) < 1e-9, "ожидание таблицы остановки ≠ μ₁ e-процесса"
+    ev = e_process(pnl)
     L = ["# TK-720 — форвард базы B шорта, чтение %s (до %s включительно)" % (rid, run[0]), "",
          "Заморозка: sha256 `%s`; код `%s`; движок md5 `%s`; rc %s (%s). Ряд B = среднее 9 членов, 500 $ на сделку члена, простой P&L; сутки входа; ожидание — %s (%s): %.3f $/сут (Шарп %.2f); остановка — `%s` (%s), q%g (PS-1042 §4, поправка TK-723); SEL (01.07–13.11, в выборке): %.3f $/сут." % (
              run[1], run[2][:12], run[3], run[4], run[5], el, kill["expect"]["window"], per_day, kill["expect"]["sharpe"], kill["version"], kill["source"].split(",")[0], kill["level"], fz["expect"][EXPECT_PER_DAY_KEY]), ""]
     if n1:
         s1 = np.array([r[3] for r in n1])
         L += ["До заморозки (N1, 14–24.11, не форвард): %d сут., %d сделок, Σ %.2f $." % (len(n1), sum(r[2] for r in n1), s1.sum()), ""]
-    L += ["| сутки | сделок | P&L сутки, $ | Σ нарастающим, $ | ожид. Σ (%s), $ | просадка $ (%% маржи) | перехай (макс / средн / хвост) | Шарп | остановка (DD / перехай; q%g) |" % (el, kill["level"]), "|---|---|---|---|---|---|---|---|---|"]
-    for r, d in zip(rows, fwd):
+    L += ["| сутки | сделок | P&L сутки, $ | Σ нарастающим, $ | ожид. Σ (%s), $ | просадка $ (%% маржи) | перехай (макс / средн / хвост) | Шарп | остановка (DD / перехай; q%g) | E (≥ %g — «работает») |" % (el, kill["level"], E_ACCEPT), "|---|---|---|---|---|---|---|---|---|---|"]
+    for r, d, e in zip(rows, fwd, ev):
         k = r["kill"]
         ks = "нет таблицы" if k["stop"] is None else ("СТОП" if k["stop"] else "нет") + " (%.1f / %.1f; %d / %.0f)" % (k["dd"], k["dd_q"], k["gap"], k["gap_q"])
         sh = "%.2f" % r["sharpe"] if r["sharpe"] is not None and not math.isnan(r["sharpe"]) else "мало дней"
         gm = "—" if math.isnan(r["gap_mean"]) else "%.1f" % r["gap_mean"]
-        L.append("| %s%s | %d | %+.2f | %+.2f | %+.2f | %s | %d / %s / %d | %s | %s |" % (r["date"], " (обрезка конца: %d сд.)" % d[4] if d[4] else "", r["n"], r["pnl"], r["cum"], r["expect"], fmt_dd(r["dd"]), r["gap"], gm, r["tail"], sh, ks))
+        L.append("| %s%s | %d | %+.2f | %+.2f | %+.2f | %s | %d / %s / %d | %s | %s | %.3f%s |" % (r["date"], " (обрезка конца: %d сд.)" % d[4] if d[4] else "", r["n"], r["pnl"], r["cum"], r["expect"], fmt_dd(r["dd"]), r["gap"], gm, r["tail"], sh, ks, e, " РАБОТАЕТ" if e >= E_ACCEPT else ""))
     if rows:
         last = rows[-1]
         n = len(rows)
         cone = kill["cone"]
         cone_s = " (конус %s при n = %d: Σ q05 %.1f / q50 %.1f / q95 %.1f $)" % (el, n, cone["q05"][n - 1], cone["q50"][n - 1], cone["q95"][n - 1]) if n <= len(cone["q50"]) else ""
-        L += ["", "Итого с 25.11: %d сут., %d сделок, Σ %+.2f $ против ожидания %+.2f $%s; просадка %s; перехай %d / %.1f / %d сут.; Шарп %s. Выводы до 20 суток не делаются (суток: %d)." % (
-            n, last["trades"], last["cum"], last["expect"], cone_s, fmt_dd(last["dd"]), last["gap"], 0.0 if math.isnan(last["gap_mean"]) else last["gap_mean"], last["tail"], "%.2f" % last["sharpe"] if last["sharpe"] is not None else "мало дней", n)]
+        L += ["", "Итого с 25.11: %d сут., %d сделок, Σ %+.2f $ против ожидания %+.2f $%s; просадка %s; перехай %d / %.1f / %d сут.; Шарп %s. Выводы до 20 суток не делаются (суток: %d). E-процесс (PS-1046 п. 5, μ₁ %.4f, σ %.4f): E = %.3f — %s." % (
+            n, last["trades"], last["cum"], last["expect"], cone_s, fmt_dd(last["dd"]), last["gap"], 0.0 if math.isnan(last["gap_mean"]) else last["gap_mean"], last["tail"], "%.2f" % last["sharpe"] if last["sharpe"] is not None else "мало дней", n,
+            E_MU1, E_SD, ev[-1], "«работает» (E ≥ %g)" % E_ACCEPT if (ev >= E_ACCEPT).any() else "< %g, «работает» не достигнуто" % E_ACCEPT)]
     txt = "\n".join(L) + "\n"
     if out_path:
         with open(out_path, "w", encoding="utf-8", newline="\n") as f:
