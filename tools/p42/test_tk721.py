@@ -6,6 +6,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tk721_cells as cl  # noqa: E402
+import tk721_fwd as LF  # noqa: E402
 import tk721_stress as S  # noqa: E402
 
 
@@ -79,3 +80,55 @@ def test_cells_with_slip_and_rows():
     rows = cl.rows_from(src)
     assert len(rows) == 27 and all(len(r) == 13 for r in rows)
     assert {r[0] for r in rows} == {"tk721g", "tk721s"} and {r[1] for r in rows if r[0] == "tk721s"} == {7210100 + k for k in range(9)} | {7210200 + k for k in range(9)}
+
+
+def test_long_cells_rows():
+    src = [("tk718core", 7180006 + k, "long", "ck%d" % k, "line%d" % k, "[]", "[]", "", 0, 0.0, None, 0, "bin") for k in range(9)]
+    rows = cl.rows_long(src)
+    assert len(rows) == 9 and all(len(r) == 13 for r in rows)
+    assert [r[1] for r in rows] == [7210300 + k for k in range(9)] and {r[0] for r in rows} == {"tk721l"}
+    assert [r[4] for r in rows] == ["line%d" % k for k in range(9)] and all(r[2] == "long" for r in rows)
+
+
+def test_long_ids_consistent():
+    assert LF.LCIDS == tuple(range(7180006, 7180015)) and LF.MCIDS == tuple(range(7210300, 7210309))
+    assert len(LF.LCIDS) == len(LF.MCIDS) == 9
+
+
+def test_daily_member_window_and_counts():
+    day = np.array([181, 181, 183, 316, 180, 317])               # 180 и 317 — вне окна 181…316
+    val = np.array([1.0, 2.0, 4.0, 8.0, 99.0, 99.0])
+    p, n = LF.daily_member(day, val, 181, 317)
+    assert len(p) == len(n) == 136 and p[0] == 3.0 and p[2] == 4.0 and p[135] == 8.0 and p.sum() == 15.0
+    assert n[0] == 2 and n.sum() == 4
+
+
+def test_gate_series_tolerance():
+    a = np.array([1.0, 2.0, 3.0])
+    assert LF.gate_series(a, a + 1e-12, [1, 0, 2], [1, 0, 2])[0]
+    assert not LF.gate_series(a, a + 1e-6, [1, 0, 2], [1, 0, 2])[0]
+    assert not LF.gate_series(a, a, [1, 0, 2], [1, 1, 2])[0]
+
+
+def test_compare_by_k():
+    t = lambda sym, g: dict(sym=sym, entry_ms="10", exit_ms="20", gross=str(g), fees="0.1")   # noqa: E731
+    ok, on, orf = LF.compare_by_k([[t("A", 1.0)], [t("B", 2.0)]], [[t("A", 1.0)], [t("B", 2.0)]])
+    assert ok and not on and not orf
+    ok, on, orf = LF.compare_by_k([[t("A", 1.0)], [t("B", 2.0)]], [[t("A", 1.0)], [t("B", 2.5)]])
+    assert not ok and len(on) == 1 and len(orf) == 1 and on[0][0] == 1
+
+
+def test_window_stats_keys_and_values():
+    p = np.zeros(328)
+    p[181:317] = 1.0
+    n = np.full(328, 2, np.int64)
+    st = LF.window_stats(p, n, LF.WINDOWS)
+    assert st["SEL"]["days"] == 136 and abs(st["SEL"]["sum"] - 136.0) < 1e-9 and st["SEL"]["trades"] == 272 and abs(st["SEL"]["per_day"] - 1.0) < 1e-12
+    assert st["A"]["sum"] == 0.0 and st["FJ"]["days"] == 150
+    p[100] = np.nan
+    try:
+        LF.window_stats(p, n, LF.WINDOWS)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("NaN в окне должен падать")
