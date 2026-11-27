@@ -15,6 +15,7 @@ R=${R:-/data/p42-tk616/fwd}                                          # общи�
 W=${W:-/data/p42-tk720}
 PY=${PY:-/data/tk592/venv/bin/python}
 BASE=${BASE:-/data/p42-tk621/universe}
+FREEZE_SHA256=${FREEZE_SHA256:-46a261896e5b4ba47bdd8d2832485b31e189eb7f41f53d6deea3de05caeffa4b}   # sha256 файла заморозки (PS-1042, L-462); другой файл — отказ
 D=${2:-$(date -u -d yesterday +%F)}
 [ "$(date -u +%F)" \> "$D" ] || { echo "СТОП: сутки $D ещё не закончились (UTC $(date -u +%F))" >&2; exit 2; }
 P=$W/prep-$D
@@ -44,6 +45,6 @@ case $MODE in
   run)
     [ "$(cat "$P/READY" 2>/dev/null)" = 0 ] || { echo "СТОП: нет $P/READY = 0 — сначала data $D" >&2; exit 2; }
     cd "$CODE" || exit 1
-    PYTHONUTF8=1 TK674_REBASE=1 $PY tk720_fwd.py run --through "$D" --dl "$R/dl" --rest "$R/rest" ;;
+    PYTHONUTF8=1 TK674_REBASE=1 $PY tk720_fwd.py run --through "$D" --freeze-sha256 "$FREEZE_SHA256" --dl "$R/dl" --rest "$R/rest" ;;
   *) echo "режим: data | run" >&2; exit 2 ;;
 esac

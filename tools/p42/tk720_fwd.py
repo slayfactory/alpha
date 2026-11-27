@@ -456,19 +456,20 @@ def report(conn, rid, fz, sha, out_path=None):
     if n1:
         s1 = np.array([r[3] for r in n1])
         L += ["До заморозки (N1, 14–24.11, не форвард): %d сут., %d сделок, Σ %.2f $." % (len(n1), sum(r[2] for r in n1), s1.sum()), ""]
-    L += ["| сутки | сделок | P&L сутки, $ | Σ нарастающим, $ | ожид. Σ (SEL), $ | просадка $ (% маржи) | перехай (макс / средн / хвост) | Шарп | остановка (DD / перехай; q%d) |" % fz["kill"]["level"], "|---|---|---|---|---|---|---|---|---|"]
+    L += ["| сутки | сделок | P&L сутки, $ | Σ нарастающим, $ | ожид. Σ (SEL), $ | просадка $ (%% маржи) | перехай (макс / средн / хвост) | Шарп | остановка (DD / перехай; q%d) |" % fz["kill"]["level"], "|---|---|---|---|---|---|---|---|---|"]
     for r, d in zip(rows, fwd):
         k = r["kill"]
         ks = "нет таблицы" if k["stop"] is None else ("СТОП" if k["stop"] else "нет") + " (%.1f / %.1f; %d / %.0f)" % (k["dd"], k["dd_q"], k["gap"], k["gap_q"])
         sh = "%.2f" % r["sharpe"] if r["sharpe"] is not None and not math.isnan(r["sharpe"]) else "мало дней"
-        L.append("| %s%s | %d | %+.2f | %+.2f | %+.2f | %s | %d / %.1f / %d | %s | %s |" % (r["date"], " (обрезка конца: %d сд.)" % d[4] if d[4] else "", r["n"], r["pnl"], r["cum"], r["expect"], fmt_dd(r["dd"]), r["gap"], r["gap_mean"], r["tail"], sh, ks))
+        gm = "—" if math.isnan(r["gap_mean"]) else "%.1f" % r["gap_mean"]
+        L.append("| %s%s | %d | %+.2f | %+.2f | %+.2f | %s | %d / %s / %d | %s | %s |" % (r["date"], " (обрезка конца: %d сд.)" % d[4] if d[4] else "", r["n"], r["pnl"], r["cum"], r["expect"], fmt_dd(r["dd"]), r["gap"], gm, r["tail"], sh, ks))
     if rows:
         last = rows[-1]
         n = len(rows)
         cone = fz["kill"]["cone"]
         cone_s = " (конус SEL при n = %d: Σ q05 %.1f / q50 %.1f / q95 %.1f $)" % (n, cone["q05"][n - 1], cone["q50"][n - 1], cone["q95"][n - 1]) if n <= KILL_N else ""
         L += ["", "Итого с 25.11: %d сут., %d сделок, Σ %+.2f $ против ожидания %+.2f $%s; просадка %s; перехай %d / %.1f / %d сут.; Шарп %s. Выводы до 20 суток не делаются (суток: %d)." % (
-            n, last["trades"], last["cum"], last["expect"], cone_s, fmt_dd(last["dd"]), last["gap"], last["gap_mean"], last["tail"], "%.2f" % last["sharpe"] if last["sharpe"] is not None else "мало дней", n)]
+            n, last["trades"], last["cum"], last["expect"], cone_s, fmt_dd(last["dd"]), last["gap"], 0.0 if math.isnan(last["gap_mean"]) else last["gap_mean"], last["tail"], "%.2f" % last["sharpe"] if last["sharpe"] is not None else "мало дней", n)]
     txt = "\n".join(L) + "\n"
     if out_path:
         with open(out_path, "w", encoding="utf-8", newline="\n") as f:
