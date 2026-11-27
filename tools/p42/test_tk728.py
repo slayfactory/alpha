@@ -290,3 +290,26 @@ def test_labels_report_cells_and_kappa():
     mine = pd.DataFrame(dict(key, y=[1.0, 0.0, 1.0]))
     ref = pd.DataFrame(dict(key, y=[1.0, 1.0, np.nan]))
     assert R.compare(mine, ref, "y") == (2, 1, 1, 0)
+
+
+# ── 4е / статусы ────────────────────────────────────────────────────────────────────────────────
+
+def test_status_priority_and_time_set(tmp_path):
+    import json
+    import tk728_status as S
+    feats = lambda ns: [dict(n=i + 1, name=nm, what="что значит", src=["trades"], base="—", search="нет") for i, nm in enumerate(ns)]
+    d = dict(updated="24.11.2026", intro="x", foot="x", sources={"trades": "сделки"},
+             sets=[dict(id="a", title="A", short="A", task="TK-1", status="done", status_text="готово", about="x", numbers=[], reports=[], protocol="p", groups=[dict(title="", features=feats(["IMP", "x1", "x2", "bk20", "oi_c1"]))])])
+    cl = dict(features=[dict(n=2, name="x1", is_rep=1, rep_n=2, cluster=1, rep_name="x1"), dict(n=3, name="x2", is_rep=0, rep_n=2, cluster=1, rep_name="x1"),
+                        dict(n=1, name="IMP", is_rep=0, rep_n=2, cluster=1, rep_name="x1")])
+    (tmp_path / "cluster.json").write_text(json.dumps(cl), encoding="utf-8")
+    (tmp_path / "events.json").write_text(json.dumps(dict(rule_memory=False, main=dict(or_lo=0.9))), encoding="utf-8")
+    (tmp_path / "oi.json").write_text(json.dumps(dict(rule_triggered=[])), encoding="utf-8")
+    (tmp_path / "causal.json").write_text(json.dumps(dict(lookahead={"IMP": "ранг по окну"})), encoding="utf-8")
+    assert S.add_time_set(d) and not S.add_time_set(d)
+    nums = [f["n"] for s in d["sets"] for g in s["groups"] for f in g["features"]]
+    assert nums == list(range(1, 12)) and d["sets"][-1]["id"] == "time" and "signal" in d["sources"]
+    out, summ = S.decide(d, str(tmp_path))
+    assert out["IMP"][0] == "с заглядыванием"          # заглядывание сильнее «копии»
+    assert out["x1"][0] == "в работе" and out["x2"][0] == "копия № 2"
+    assert out["bk20"][0] == "убран" and out["oi_c1"][0] == "в работе"
