@@ -27,6 +27,7 @@ def write_klines(root, sym, ndays=60, seed=3, win="m01"):
     h = np.maximum(o, c) * (1 + np.abs(rng.normal(0, 0.0005, n)))
     l = np.minimum(o, c) * (1 - np.abs(rng.normal(0, 0.0005, n)))
     qv = rng.uniform(1000, 5000, n)
+    o, h, l, c, qv = np.round(o, 8), np.round(h, 8), np.round(l, 8), np.round(c, 8), np.round(qv, 4)   # как в файле (%.8f / %.4f)
     d = os.path.join(root, win, "klines", sym)
     os.makedirs(d, exist_ok=True)
     for k in range(ndays):

@@ -472,6 +472,8 @@ def series_trades(S, side, name):
             if tr is None:
                 return None
             parts.append(dict(tr, val=tr["val"] / 9.0))
+        if not parts:
+            return None
         return {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
     ck = S.ckey(side, name)
     return None if ck is None else T.cell_trades(S.plan[side, ck]["cid"])

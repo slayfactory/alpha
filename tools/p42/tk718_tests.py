@@ -416,9 +416,10 @@ def read_trades_csv(path):
                 exit_ms=np.array([int(r["exit_ms"]) for r in rd], np.int64), val=np.array([float(r["gross"]) - float(r["fees"]) for r in rd], float))
 
 
-def cell_trades(cid, root=TRADES):
+def cell_trades(cid, root=None):
     """Сделки клетки по месяцам m01…m06 из `--keep-trades`: dict массивов (sym, sig_ms, entry_ms, exit_ms [мс эпохи], day, val = gross − fees); сутки — по дате входа, как `mass_day`. Нет файлов — None."""
     parts = []
+    root = TRADES if root is None else root
     if not os.path.isdir(root):
         return None
     for run in sorted(os.listdir(root)):
