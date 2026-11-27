@@ -2,7 +2,7 @@
 # TK-721 (PS-1043 §7, В-185 «по вчера»): повторяемый форвард ненастроенной базы B лонга (9 членов TK-718) с 25.11 по вчера. Шорт-форвард TK-720 не трогается.
 # Шаги (каждый — одна команда, повтор безопасен; D — последние ЗАВЕРШЁННЫЕ сутки UTC, по умолчанию вчера):
 #   data [D]  — данные «по вчера»: те же, что у TK-720 (`tk720_fwd.sh data`, общий `dl`, `$W720/prep-$D/READY`); готовое не качается заново
-#   mass      — движок tk700_mass на 9 лонг-членах (набор tk721l): SEL (wa wb wc, --dry) и n1 + проверка rc по БД; сделки → /data/p42-tk721/trades (для ворот L1 / L2)
+#   mass      — движок tk700_mass на 9 лонг-членах (набор tk721l): SEL (wa wb wc, --dry; n1 нет — сборки n1-long в TK-700 нет, PS-1045) + проверка rc по БД; сделки → /data/p42-tk721/trades (для ворот L1 / L2)
 #   run  [D]  — дерево n2 (T0 25.10 … D) → convert → движок лонга (+ шорт для ворот L3) → ряды и сделки в БД (tk721l_*) → отчёт (python3 tk721_fwd.py)
 # Запуск на srv юнитом (один движок за раз, Nice ≥ 10):
 #   systemd-run --unit=tk721-mass --collect -p Nice=10 -p CPUQuota=540% -p MemoryMax=40G -p WorkingDirectory=/data/p42-tk718/code bash /data/p42-tk721/code/tools/p42/tk721_fwd.sh mass
@@ -33,12 +33,11 @@ case $MODE in
     }
     $PY "$CODE/tk721_cells.py" build-long | tee -a "$LOG/fwd.log" || exit 2
     massrun tk721l-sel-A --dry --wins wa,wb,wc || exit 4
-    TK700_WINSET=n1 massrun tk721l-n1-A --wins n1 || exit 4
     $PY - <<PYEOF || exit 5
 import sqlite3
 c = sqlite3.connect("$DB")
 bad = 0
-for r in ("tk721l-sel-A", "tk721l-n1-A"):
+for r in ("tk721l-sel-A",):
     st = c.execute("SELECT state FROM mass_run WHERE run_id=?", (r,)).fetchone()
     nb = c.execute("SELECT count(*) FROM mass_batch WHERE run_id=? AND rc<>0", (r,)).fetchone()[0]
     ok = c.execute("SELECT count(*) FROM mass_batch WHERE run_id=? AND rc=0", (r,)).fetchone()[0]
@@ -50,7 +49,7 @@ for r in ("tk721l-sel-A", "tk721l-n1-A"):
         bad += 1
 raise SystemExit(1 if bad else 0)
 PYEOF
-    say "готово: сделки лонга в $KEEP/tk721l-*-A"
+    say "готово: сделки лонга в $KEEP/tk721l-sel-A"
     touch "$W/MASS-DONE" ;;
   run)
     [ "$(date -u +%F)" \> "$D" ] || { echo "СТОП: сутки $D ещё не закончились (UTC $(date -u +%F))" >&2; exit 2; }

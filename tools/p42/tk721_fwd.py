@@ -3,7 +3,7 @@
 
   python3 tk721_fwd.py freeze --out docs/research/freeze/tk721-long-frozen.json   # srv: члены, движок, окно, ожидание SEL + окна A / M / FJ (L-456), критерий остановки из бутстрепа SEL (блок 21, 10 000, зерно 719)
   python3 tk721_fwd.py gate-l1                                                    # srv: сделки лонга wa / wb / wc (`tk721l-sel-A`, tk700_mass) → суточные ряды членов = `tk718_ser` SEL лонга (|Δ| ≤ 1e-9)
-  python3 tk721_fwd.py gate-l2 [--freeze …]                                       # srv: тот же вызов движка, что у раннера (`breakout tick`, P42_SIDES=long), на дереве n1 → сделки равны `tk721l-n1-A` (tk700_mass, TK700_WINSET=n1)
+  python3 tk721_fwd.py gate-l2 [--wins wa,wb,wc] [--freeze …]                     # srv: тот же вызов движка, что у раннера (`breakout tick`, P42_SIDES=long), на деревьях окон SEL → сделки равны `tk721l-sel-A` (tk700_mass; PS-1045: вместо n1 — сборки n1-long нет)
   python3 tk721_fwd.py run --through D --freeze-sha256 <hex> [--dl … --rest …]    # srv: дерево T0 25.10 … D → convert → движок лонга (+ шорт для ворот L3) → БД `tk721.sqlite` (`tk721l_*`) → отчёт
   python3 tk721_fwd.py report --rid <id>                                          # печать отчёта по сохранённому чтению (без движка)
 
@@ -168,16 +168,16 @@ def cmd_freeze(a):
 
 # ───────────────────────────── движок ─────────────────────────────
 
-def engine_run(root, out, threads, cap_gb, members, side="long"):
-    """Движок на 9 членах стороны: `breakout tick` на дереве `root` (cache, tree/aggtrades), T0 25.10, P42_SIDES = сторона; одна партия, rc проверяется."""
+def engine_run(root, out, threads, cap_gb, members, side="long", trades_dir=None, universe=None, t0=None):
+    """Движок на 9 членах стороны: `breakout tick` на дереве `root` (cache, tree/aggtrades — или `trades_dir`), вселенная `universe` (по умолчанию n1), T0 `t0` (по умолчанию 25.10), P42_SIDES = сторона; одна партия, rc проверяется."""
     os.makedirs(out, exist_ok=True)
     vf = out + ".variants.txt"
     with open(vf, "w", encoding="utf-8", newline="\n") as f:
         f.write("".join("k%d %s\n" % (m["cid"], m["line"]) for m in members))
-    coins = ",".join(open(F.UNIVERSE, encoding="utf-8").read().replace(",", " ").split())
-    cmd = [F.ENGINE, "breakout", "tick", "--cache", root + "/cache", "--trades", root + "/tree/aggtrades", "--variants", vf, "--symbols", coins, "--out", out, "--threads", str(threads), "--cap-gb", str(cap_gb)] + F.TICK_STORE
+    coins = ",".join(open(universe or F.UNIVERSE, encoding="utf-8").read().replace(",", " ").split())
+    cmd = [F.ENGINE, "breakout", "tick", "--cache", root + "/cache", "--trades", trades_dir or root + "/tree/aggtrades", "--variants", vf, "--symbols", coins, "--out", out, "--threads", str(threads), "--cap-gb", str(cap_gb)] + F.TICK_STORE
     env = dict(os.environ)
-    env.update({"P42_T0": F.T0, "P42_SIDES": side})
+    env.update({"P42_T0": t0 or F.T0, "P42_SIDES": side})
     with open(out + ".log", "w", encoding="utf-8") as lf:
         r = subprocess.run(cmd, env=env, stdout=lf, stderr=subprocess.STDOUT)
     if r.returncode != 0:
@@ -208,19 +208,28 @@ def cmd_gate_l1(a):
     return 1 if bad else 0
 
 
+def t0_date(ms):
+    return datetime.datetime.fromtimestamp(ms / 1000, tz=datetime.timezone.utc).date().isoformat()
+
+
 def cmd_gate_l2(a):
-    """L2: тот же вызов движка, что у раннера форварда, на готовом дереве n1 = прогон `tk700_mass` (`tk721l-n1-A`, TK700_WINSET=n1) на тех же 9 членах."""
+    """L2 (PS-1045 вместо n1): тот же вызов движка, что у раннера форварда (`engine_run`: `breakout tick`, P42_SIDES=long, строки членов из заморозки), на деревьях окон wa / wb / wc (`/data/p42-tk621/<окно>`, вселенная c539, T0 окна) =
+    прогон `tk700_mass` (`tk721l-sel-A`, `--dry`) на тех же 9 членах: сделки равны по (монета, вход, выход, gross, fees)."""
     fz, sha = load_freeze(a.freeze or FREEZE_DEFAULT)
-    out = os.path.join(ROOT, "gate-l2", "out")
-    shutil.rmtree(out, ignore_errors=True)
-    engine_run(F.N1_TREE, out, a.threads, a.cap_gb, fz["members"])
-    new = load_members(out, fz["members"])
-    ref = [F.read_trades(os.path.join(TRADES, "tk721l-n1-A", "n1", "%d-trades.csv" % cid)) for cid in MCIDS]
-    ok, on, orf = compare_by_k(new, ref)
-    t0_ms, last_ms, bad = F.check_tape(dict(enumerate(new)), "2026-11-24")
-    print("gate-l2: сделок %d / %d, равны: %s, только в новом %d, только в старом %d, G-tape %d" % (sum(len(v) for v in new), sum(len(v) for v in ref), ok, len(on), len(orf), len(bad)))
-    print("gate-l2:", "PASS" if ok and not bad else "FAIL")
-    return 0 if ok and not bad else 3
+    t0s = json.load(open(os.path.join(TRADES, "tk721l-sel-A", "t0.json"), encoding="utf-8"))
+    bad = 0
+    for win in a.wins.split(","):
+        tree = "/data/p42-tk621/" + win
+        out = os.path.join(ROOT, "gate-l2", win, "out")
+        shutil.rmtree(out, ignore_errors=True)
+        engine_run(tree, out, a.threads, a.cap_gb, fz["members"], trades_dir=tree + "/aggtrades", universe=F.C539, t0=t0_date(t0s[win]))
+        new = load_members(out, fz["members"])
+        ref = [F.read_trades(os.path.join(TRADES, "tk721l-sel-A", win, "%d-trades.csv" % cid)) for cid in MCIDS]
+        ok, on, orf = compare_by_k(new, ref)
+        print("L2 %s (T0 %s): сделок %d / %d, равны: %s, только в новом %d, только в старом %d" % (win, t0_date(t0s[win]), sum(len(v) for v in new), sum(len(v) for v in ref), ok, len(on), len(orf)))
+        bad += not ok
+    print("gate-l2:", "PASS" if not bad else "FAIL (окон с расхождением %d)" % bad)
+    return 3 if bad else 0
 
 
 # ───────────────────────────── прогон «по вчера» ─────────────────────────────
@@ -393,6 +402,7 @@ def main(argv=None):
     r.add_argument("--rid", default="")
     p = sp.add_parser("report")
     p.add_argument("--rid", required=True)
+    g2.add_argument("--wins", default="wa,wb,wc")
     for x in (g2, r, p):
         x.add_argument("--freeze", default="")
     for x in (g2, r):
