@@ -51,6 +51,8 @@ EXPECT_PER_DAY_KEY = "sel_mean_per_day"
 SEED, NBOOT, BLOCK, KILL_N, MIN_DAYS = 719, 10000, 21, 60, 10
 EPS = 1e-9
 FREEZE_VERSION = "tk720-frozen-1"
+KILL_VERSION = "tk723-kill365-fj-1"
+E_MU1, E_SD, E_ACCEPT = 0.5610832111111111, 4.81504576548636, 20.0  # e-процесс «работает» (PS-1046 п. 5): H1 среднее FJ, σ FJ (ddof 1), «работает» при E ≥ 20
 DAY_MS = 86_400_000
 TABLES = """
 CREATE TABLE IF NOT EXISTS tk720_run(rid TEXT PRIMARY KEY, through TEXT, freeze_sha TEXT, code_sha TEXT, engine_md5 TEXT, started TEXT, finished TEXT, rc INTEGER, note TEXT);
@@ -135,15 +137,20 @@ def kill_tables(sel, boot=NBOOT, length=BLOCK, seed=SEED, n_max=KILL_N):
 
 
 def kill_flags(fwd, kill):
-    """Остановка по ряду форварда (суточный P&L B с 25.11): n = len(fwd) ≤ 60; (а) DD > DD_q[n], (б) перехай > GAP_q[n]; q — уровень из заморозки. n > 60 — таблицы нет (None)."""
+    """Остановка по ряду форварда (суточный P&L B с 25.11): (а) DD > DD_q[n], (б) перехай > GAP_q[n]; q — `level` таблицы (95 / 99 / 99.5). n больше длины таблицы (60 — заморозка, 365 — `tk723-kill365-fj.json`) — таблицы нет (None)."""
     n = len(fwd)
-    if n == 0 or n > KILL_N:
+    t = kill["q%g" % kill["level"]]
+    if n == 0 or n > len(t["dd"]):
         return dict(n=n, dd=None, gap=None, dd_q=None, gap_q=None, stop_dd=None, stop_gap=None, stop=None)
     u = underwater(fwd)
-    t = kill["q%d" % kill["level"]]
     dq, gq = t["dd"][n - 1], t["gap"][n - 1]
     sd, sg = u["maxdd"] > dq + EPS, u["gap_longest"] > gq + EPS
     return dict(n=n, dd=u["maxdd"], gap=u["gap_longest"], dd_q=dq, gap_q=gq, stop_dd=bool(sd), stop_gap=bool(sg), stop=bool(sd or sg))
+
+
+def e_process(fwd, mu1=E_MU1, sd=E_SD):
+    """E_n по префиксам ряда форварда: ln E_n = Σ (μ₁ x_i − μ₁²/2) / σ² (как `tk722_checks.log_e`)."""
+    return np.exp(np.cumsum((mu1 * np.asarray(fwd, float) - mu1 ** 2 / 2) / sd ** 2))
 
 
 def trades_daily(trades, t0_ms, nd):
@@ -307,6 +314,20 @@ def freeze_path(a):
     return a.freeze or os.path.join(HERE, "..", "..", "docs", "research", "freeze", "tk720-frozen.json")
 
 
+def load_kill(path, freeze_sha):
+    """Таблица остановки до n = 365 из путей FJ (TK-723, поправка к PS-1042): привязана к sha256 заморозки; ожидание — FJ."""
+    k = json.load(open(path, encoding="utf-8"))
+    if k.get("version") != KILL_VERSION:
+        raise SystemExit("версия таблицы остановки %r" % k.get("version"))
+    if k.get("freeze_sha256") != freeze_sha:
+        raise SystemExit("СТОП: таблица остановки для заморозки %s, а не %s" % (k.get("freeze_sha256"), freeze_sha))
+    return k
+
+
+def kill_path(a):
+    return a.kill or os.path.join(HERE, "..", "..", "docs", "research", "freeze", "tk723-kill365-fj.json")
+
+
 def cmd_gate_n1(a):
     """Ворота раннера: 9 клеток тем же вызовом движка на готовом дереве n1 — сделки равны сделкам `tk719n-n1-A`."""
     fz, sha = load_freeze(freeze_path(a))
@@ -360,6 +381,7 @@ def next_rid(through, conn):
 
 def cmd_run(a):
     fz, sha = load_freeze(freeze_path(a), a.freeze_sha256)
+    kill = load_kill(kill_path(a), sha)
     through = a.through
     hi = datetime.date.fromisoformat(through)
     if hi >= datetime.datetime.now(datetime.timezone.utc).date():
@@ -436,40 +458,43 @@ def cmd_run(a):
         conn.execute("UPDATE tk720_run SET finished=?, rc=?, note=? WHERE rid=?", (time.strftime("%FT%TZ", time.gmtime()), 1, repr(e)[:300], rid))
         conn.commit()
         raise
-    return report(conn, rid, fz, sha, out_path=os.path.join(ROOT, "report-%s.md" % rid))
+    return report(conn, rid, fz, sha, kill, out_path=os.path.join(ROOT, "report-%s.md" % rid))
 
 
 # ───────────────────────────── отчёт ─────────────────────────────
 
-def report(conn, rid, fz, sha, out_path=None):
+def report(conn, rid, fz, sha, kill, out_path=None):
     run = conn.execute("SELECT through, freeze_sha, code_sha, engine_md5, rc, note FROM tk720_run WHERE rid=?", (rid,)).fetchone()
     days = conn.execute("SELECT day, date, n, pnl, forced FROM tk720_day WHERE rid=? ORDER BY day", (rid,)).fetchall()
     fwd = [r for r in days if r[0] >= F0]
     n1 = [r for r in days if r[0] < F0]
-    per_day = fz["expect"][EXPECT_PER_DAY_KEY]
+    per_day, el = kill["expect"]["per_day"], kill["expect"]["label"]
     pnl = np.array([r[3] for r in fwd])
     cnt = np.array([r[2] for r in fwd])
-    rows = forward_table(pnl, cnt, fz["kill"], per_day)
+    rows = forward_table(pnl, cnt, kill, per_day)
+    assert abs(per_day - E_MU1) < 1e-9, "ожидание таблицы остановки ≠ μ₁ e-процесса"
+    ev = e_process(pnl)
     L = ["# TK-720 — форвард базы B шорта, чтение %s (до %s включительно)" % (rid, run[0]), "",
-         "Заморозка: sha256 `%s`; код `%s`; движок md5 `%s`; rc %s (%s). Ряд B = среднее 9 членов, 500 $ на сделку члена, простой P&L; сутки входа; ожидание — SEL (01.07–13.11): %.3f $/сут (Σ %.1f $ за %d сут., Шарп %.2f, просадка %.1f $)." % (
-             run[1], run[2][:12], run[3], run[4], run[5], per_day, fz["expect"]["sel_sum"], fz["expect"]["sel_days"], fz["expect"]["sel_sharpe"], fz["expect"]["sel_dd"]), ""]
+         "Заморозка: sha256 `%s`; код `%s`; движок md5 `%s`; rc %s (%s). Ряд B = среднее 9 членов, 500 $ на сделку члена, простой P&L; сутки входа; ожидание — %s (%s): %.3f $/сут (Шарп %.2f); остановка — `%s` (%s), q%g (PS-1042 §4, поправка TK-723); SEL (01.07–13.11, в выборке): %.3f $/сут." % (
+             run[1], run[2][:12], run[3], run[4], run[5], el, kill["expect"]["window"], per_day, kill["expect"]["sharpe"], kill["version"], kill["source"].split(",")[0], kill["level"], fz["expect"][EXPECT_PER_DAY_KEY]), ""]
     if n1:
         s1 = np.array([r[3] for r in n1])
         L += ["До заморозки (N1, 14–24.11, не форвард): %d сут., %d сделок, Σ %.2f $." % (len(n1), sum(r[2] for r in n1), s1.sum()), ""]
-    L += ["| сутки | сделок | P&L сутки, $ | Σ нарастающим, $ | ожид. Σ (SEL), $ | просадка $ (%% маржи) | перехай (макс / средн / хвост) | Шарп | остановка (DD / перехай; q%d) |" % fz["kill"]["level"], "|---|---|---|---|---|---|---|---|---|"]
-    for r, d in zip(rows, fwd):
+    L += ["| сутки | сделок | P&L сутки, $ | Σ нарастающим, $ | ожид. Σ (%s), $ | просадка $ (%% маржи) | перехай (макс / средн / хвост) | Шарп | остановка (DD / перехай; q%g) | E (≥ %g — «работает») |" % (el, kill["level"], E_ACCEPT), "|---|---|---|---|---|---|---|---|---|---|"]
+    for r, d, e in zip(rows, fwd, ev):
         k = r["kill"]
         ks = "нет таблицы" if k["stop"] is None else ("СТОП" if k["stop"] else "нет") + " (%.1f / %.1f; %d / %.0f)" % (k["dd"], k["dd_q"], k["gap"], k["gap_q"])
         sh = "%.2f" % r["sharpe"] if r["sharpe"] is not None and not math.isnan(r["sharpe"]) else "мало дней"
         gm = "—" if math.isnan(r["gap_mean"]) else "%.1f" % r["gap_mean"]
-        L.append("| %s%s | %d | %+.2f | %+.2f | %+.2f | %s | %d / %s / %d | %s | %s |" % (r["date"], " (обрезка конца: %d сд.)" % d[4] if d[4] else "", r["n"], r["pnl"], r["cum"], r["expect"], fmt_dd(r["dd"]), r["gap"], gm, r["tail"], sh, ks))
+        L.append("| %s%s | %d | %+.2f | %+.2f | %+.2f | %s | %d / %s / %d | %s | %s | %.3f%s |" % (r["date"], " (обрезка конца: %d сд.)" % d[4] if d[4] else "", r["n"], r["pnl"], r["cum"], r["expect"], fmt_dd(r["dd"]), r["gap"], gm, r["tail"], sh, ks, e, " РАБОТАЕТ" if e >= E_ACCEPT else ""))
     if rows:
         last = rows[-1]
         n = len(rows)
-        cone = fz["kill"]["cone"]
-        cone_s = " (конус SEL при n = %d: Σ q05 %.1f / q50 %.1f / q95 %.1f $)" % (n, cone["q05"][n - 1], cone["q50"][n - 1], cone["q95"][n - 1]) if n <= KILL_N else ""
-        L += ["", "Итого с 25.11: %d сут., %d сделок, Σ %+.2f $ против ожидания %+.2f $%s; просадка %s; перехай %d / %.1f / %d сут.; Шарп %s. Выводы до 20 суток не делаются (суток: %d)." % (
-            n, last["trades"], last["cum"], last["expect"], cone_s, fmt_dd(last["dd"]), last["gap"], 0.0 if math.isnan(last["gap_mean"]) else last["gap_mean"], last["tail"], "%.2f" % last["sharpe"] if last["sharpe"] is not None else "мало дней", n)]
+        cone = kill["cone"]
+        cone_s = " (конус %s при n = %d: Σ q05 %.1f / q50 %.1f / q95 %.1f $)" % (el, n, cone["q05"][n - 1], cone["q50"][n - 1], cone["q95"][n - 1]) if n <= len(cone["q50"]) else ""
+        L += ["", "Итого с 25.11: %d сут., %d сделок, Σ %+.2f $ против ожидания %+.2f $%s; просадка %s; перехай %d / %.1f / %d сут.; Шарп %s. Выводы до 20 суток не делаются (суток: %d). E-процесс (PS-1046 п. 5, μ₁ %.4f, σ %.4f): E = %.3f — %s." % (
+            n, last["trades"], last["cum"], last["expect"], cone_s, fmt_dd(last["dd"]), last["gap"], 0.0 if math.isnan(last["gap_mean"]) else last["gap_mean"], last["tail"], "%.2f" % last["sharpe"] if last["sharpe"] is not None else "мало дней", n,
+            E_MU1, E_SD, ev[-1], "«работает» (E ≥ %g)" % E_ACCEPT if (ev >= E_ACCEPT).any() else "< %g, «работает» не достигнуто" % E_ACCEPT)]
     txt = "\n".join(L) + "\n"
     if out_path:
         with open(out_path, "w", encoding="utf-8", newline="\n") as f:
@@ -481,7 +506,7 @@ def report(conn, rid, fz, sha, out_path=None):
 def cmd_report(a):
     fz, sha = load_freeze(freeze_path(a))
     conn = sqlite3.connect(DB, timeout=120)
-    return report(conn, a.rid, fz, sha, out_path=os.path.join(ROOT, "report-%s.md" % a.rid))
+    return report(conn, a.rid, fz, sha, load_kill(kill_path(a), sha), out_path=os.path.join(ROOT, "report-%s.md" % a.rid))
 
 
 def main(argv=None):
@@ -500,6 +525,8 @@ def main(argv=None):
     p.add_argument("--rid", required=True)
     for x in (g, r, p):
         x.add_argument("--freeze", default="")
+    for x in (r, p):
+        x.add_argument("--kill", default="", help="таблица остановки (по умолчанию docs/research/freeze/tk723-kill365-fj.json)")
     for x in (g, r):
         x.add_argument("--threads", type=int, default=7)
         x.add_argument("--cap-gb", type=int, default=12)
