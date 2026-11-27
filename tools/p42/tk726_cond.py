@@ -7,7 +7,7 @@
   • Досчёт уровней 3–4 (6.1): не выполняется — прогон 2 `infl_run` (25.11 22:54, уровни 3–4, compute) позже самой новой клетки `metric` (25.11 09:42): новых клеток нет, пересчёт был бы тем же (В-213, только дельта).
   • Клетка уровня k — набор осей, отличных от якоря (`tk689_influence.assign_axes`, записи 334 — якорь); исключённые (`excluded`: стоп 5 %, ew = 0) и повторы ключа не входят.
   • Аддитивная модель: ŷ(S) = A + Σ_a e_a + Σ_{a<b} p_ab, e_a = y({a}) − A, p_ab = y({a,b}) − y({a}) − y({b}) + A; считается по суточным рядам (линейна: коэффициенты A: 1 − k + C(k,2), клетка {a}: 2 − k, пара: 1). Клетка уровня 3–4 предсказуема, только если в БД есть все её одиночные клетки и пары; выборка 20 000 клеток на уровень — случайная (зерно 20261127) из ВСЕХ клеток уровня; R² — на предсказуемых из выборки, доля предсказуемых печатается. Клетки уровней 3–4 в БД — отбор (над лучшими парами / тройками, TK-674), не случайные: R² относится к отобранной совокупности.
-  • R² = 1 − Σ(y − ŷ)² / Σ(y − ȳ)²; потолок шума — R² «Σ $ клетки на чётных сутках → Σ $ на нечётных» и наоборот (среднее двух), то же R² для модели считается на тех же половинах; отношение = R²_модели(половины) / потолок. Правило: отношение < 0,5 → «условна»; интервалы — циркулярные блоки суток (⌈136^{1/3}⌉ = 6 и 21), 20 000 повторов; точка и граница по обоим блокам по разные стороны 0,5 → «не ясно».
+  • R² = 1 − Σ(y − ŷ)² / Σ(y − ȳ)²; потолок шума — квадрат корреляции Пирсона между Σ $ клетки на чётных и на нечётных сутках (R² лучшей линейной подгонки со свободным сдвигом; запись L-482: буквальный R² «чётные → нечётные» отрицателен из-за сдвига уровня половин — печатается рядом как `ceiling_lit`), R² модели на тех же половинах — буквальный (без подгонки); отношение = R²_модели(половины) / потолок. Правило: отношение < 0,5 → «условна»; интервалы — циркулярные блоки суток (⌈136^{1/3}⌉ = 6 и 21), 20 000 повторов; точка и граница по обоим блокам по разные стороны 0,5 → «не ясно».
   • ρ_ось: оси с ≥ 4 значениями на фоне; фон = якорь (клетки уровня 1) или одна другая активная ось (клетки уровня 2 с ключом {другая ось = значение}); эффект значения v на фоне B = y(B ∪ {a = v}) − y(B); Спирмен между эффектами двух фонов по общим значениям (≥ 4); ρ_ось = среднее по парам фонов (не более 12 фонов на ось, случайно); средняя ρ — по осям поровну. Нуль — перестановка значений эффекта внутри фона (2 000 повторов); решает: средняя ρ ≥ 0,5 и p нуля < 0,05; иначе «условна».
   • Итог: «карта условна», если отношение R² < 0,5 ИЛИ средняя ρ_ось < 0,5 (или не отличается от нуля); решает шорт (база под перестройку), лонг — описательно.
   • Стоп как фон (описательно): эффект (a = u) на фоне s ∈ {1; 1,5; 2} против фона s = 4 (якорь; s = 5 исключён В-173): Спирмен по парам (a, u) и доля совпадения знака.
@@ -51,6 +51,13 @@ def r2(y, yh):
     return 1.0 - float(((y - yh) ** 2).sum()) / sst if sst > 0 else float("nan")
 
 
+def corr2_cols(X, Y):
+    """Квадрат корреляции Пирсона по столбцам (повторы): X, Y — n × B. R² лучшей линейной подгонки с свободным сдвигом."""
+    xc, yc = X - X.mean(axis=0), Y - Y.mean(axis=0)
+    den = (xc ** 2).sum(axis=0) * (yc ** 2).sum(axis=0)
+    return np.where(den > 0, (xc * yc).sum(axis=0) ** 2 / np.where(den > 0, den, 1), np.nan)
+
+
 def circ_idx(T, block, B, rng):
     """Индексы суток B повторов циркулярными блоками длины `block` (до T суток)."""
     L = max(1, min(block, T))
@@ -82,11 +89,12 @@ def ratio_stats(Dm, Pm, block, nboot, rng, chunk=1000):
         y, yh = Dm.sum(1), Pm.sum(1)
         m_o, m_e = r2(Dm[:, odd].sum(1), Pm[:, odd].sum(1)), r2(Dm[:, ev].sum(1), Pm[:, ev].sum(1))
         c1, c2 = r2(Dm[:, ev].sum(1), Dm[:, odd].sum(1)), r2(Dm[:, odd].sum(1), Dm[:, ev].sum(1))
-        return r2(y, yh), (m_o + m_e) / 2, (c1 + c2) / 2
+        cc = float(corr2_cols(Dm[:, ev].sum(1)[:, None], Dm[:, odd].sum(1)[:, None])[0])
+        return r2(y, yh), (m_o + m_e) / 2, cc, (c1 + c2) / 2
 
-    full, half, ceil_ = point()
-    out = dict(r2=full, r2_half=half, ceiling=ceil_, ratio=half / ceil_ if ceil_ and ceil_ > 0 else float("nan"))
-    R, Rh, Cc, Rt = [], [], [], []
+    full, half, ceil_, lit = point()
+    out = dict(r2=full, r2_half=half, ceiling=ceil_, ceiling_lit=lit, ratio=half / ceil_ if ceil_ and ceil_ > 0 else float("nan"))
+    R, Rh, Cc, Rt, Cl = [], [], [], [], []
     left = nboot
     while left > 0:
         B = min(chunk, left)
@@ -99,9 +107,10 @@ def ratio_stats(Dm, Pm, block, nboot, rng, chunk=1000):
         Yho, Yhe = Pm[:, odd] @ Co.T, Pm[:, ev] @ Ce.T
         r_full = r2_cols(Y, Yh)
         m = (r2_cols(Yo, Yho) + r2_cols(Ye, Yhe)) / 2
-        c = (r2_cols(Yo, Ye) + r2_cols(Ye, Yo)) / 2
-        R.append(r_full); Rh.append(m); Cc.append(c); Rt.append(np.where(c > 0, m / np.where(c > 0, c, 1), np.nan))
-    for name, arr in (("r2", R), ("r2_half", Rh), ("ceiling", Cc), ("ratio", Rt)):
+        c = corr2_cols(Yo, Ye)
+        cl = (r2_cols(Yo, Ye) + r2_cols(Ye, Yo)) / 2
+        R.append(r_full); Rh.append(m); Cc.append(c); Cl.append(cl); Rt.append(np.where(c > 0, m / np.where(c > 0, c, 1), np.nan))
+    for name, arr in (("r2", R), ("r2_half", Rh), ("ceiling", Cc), ("ceiling_lit", Cl), ("ratio", Rt)):
         a = np.concatenate(arr)
         a = a[~np.isnan(a)]
         out[name + "_lo"], out[name + "_hi"] = (float(np.percentile(a, 2.5)), float(np.percentile(a, 97.5))) if len(a) else (float("nan"), float("nan"))
@@ -269,9 +278,9 @@ def cmd_run(a):
             r7 = ratio_stats(Dm, Pm, L7, a.nboot, rng)
             r21 = ratio_stats(Dm, Pm, 21, a.nboot, rng)
             res_by[name] = (r7, r21)
-            say("R² вне выборки, %s (n = %d, суток %d): R² %s [%s; %s] (блок 21: [%s; %s]); R² на половинах %s; потолок шума %s [%s; %s]; отношение %s [%s; %s] (блок 21: [%s; %s])" % (
+            say("R² вне выборки, %s (n = %d, суток %d): R² %s [%s; %s] (блок 21: [%s; %s]); R² на половинах %s; потолок шума (r² половин) %s [%s; %s], буквальный R² %s; отношение %s [%s; %s] (блок 21: [%s; %s])" % (
                 name, Dm.shape[0], Dm.shape[1], fmt(r7["r2"]), fmt(r7["r2_lo"]), fmt(r7["r2_hi"]), fmt(r21["r2_lo"]), fmt(r21["r2_hi"]), fmt(r7["r2_half"]), fmt(r7["ceiling"]),
-                fmt(r7["ceiling_lo"]), fmt(r7["ceiling_hi"]), fmt(r7["ratio"]), fmt(r7["ratio_lo"]), fmt(r7["ratio_hi"]), fmt(r21["ratio_lo"]), fmt(r21["ratio_hi"])))
+                fmt(r7["ceiling_lo"]), fmt(r7["ceiling_hi"]), fmt(r7["ceiling_lit"]), fmt(r7["ratio"]), fmt(r7["ratio_lo"]), fmt(r7["ratio_hi"]), fmt(r21["ratio_lo"]), fmt(r21["ratio_hi"])))
             for kk, v in r7.items():
                 put("add", side, name, kk + "_b%d" % L7, v)
             for kk, v in r21.items():

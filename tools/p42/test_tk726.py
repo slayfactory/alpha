@@ -263,13 +263,26 @@ def test_cond_r2_and_ratio_on_synthetic():
     bad = rng.normal(0, 1, (n, 1)) * np.ones((1, T)) * 0.5
     rg = cd.ratio_stats(D, good, 6, 300, rng, chunk=100)
     rb = cd.ratio_stats(D, bad, 6, 300, rng, chunk=100)
-    assert rg["ceiling"] > 0.2 and rg["ratio"] > 0.8
+    assert rg["ceiling"] > 0.2 and rg["ratio"] > 0.8 and 0 <= rg["ceiling"] <= 1
     assert rb["ratio"] < 0.2
     assert rg["ratio_lo"] < rg["ratio_hi"]
     y = D.sum(1)
     assert abs(cd.r2(y, y) - 1.0) < 1e-12
     Y = np.vstack([y, y]).T
     assert np.allclose(cd.r2_cols(Y, Y * 0 + y.mean()), 0.0)
+
+
+def test_cond_ceiling_corr_ignores_half_offset():
+    import tk726_cond as cd
+    rng = np.random.default_rng(5)
+    n, T = 300, 136
+    signal = rng.normal(0, 1, (n, 1)) * np.ones((1, T))
+    D = signal + rng.normal(0, 1, (n, T))
+    D[:, 1::2] += 5.0                                                     # сдвиг уровня нечётных суток (как у якоря)
+    r = cd.ratio_stats(D, signal + 0 * D, 6, 100, rng, chunk=100)
+    assert r["ceiling_lit"] < 0 < r["ceiling"] < 1                        # буквальный R² отрицателен, r² — нет
+    c = cd.corr2_cols(np.arange(10.0)[:, None], (2 * np.arange(10.0) + 3)[:, None])
+    assert abs(c[0] - 1.0) < 1e-12
 
 
 def test_cond_spearman_and_axis_rho():
