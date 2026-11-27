@@ -128,9 +128,9 @@ def main():
     ev = load_events(coins)
     print("событий %d (%.0f с)" % (len(ev), time.time() - t0), flush=True)
     evs, prev_idx, cur_idx = build_pairs(ev)
+    check_pairs(evs, prev_idx, cur_idx)                 # проверка метода — до первого чтения результата
     main_res = summarize(evs, prev_idx, cur_idx, a.perm, L.SEED)
     print("основной тест: OR %.4f [%.4f; %.4f], p %.4f (%.0f с)" % (main_res["or_mh"], main_res["or_lo"], main_res["or_hi"], main_res["perm_p_one"], time.time() - t0), flush=True)
-    check_pairs(evs, prev_idx, cur_idx)
     by_side = {}
     for side in ("long", "short"):
         e2b, p2, c2 = build_pairs(evs[evs.side == side].drop(columns=["stratum", "month"]).reset_index(drop=True))

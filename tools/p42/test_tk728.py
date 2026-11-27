@@ -267,3 +267,26 @@ def test_causal_rank_ties_same_time_and_unsorted_input():
     nan_x[2] = np.nan
     r3 = L.causal_rank(t, nan_x, min_prior=2)
     assert r3[5] == pytest.approx((np.sum(np.array([9, 5, 8]) < 7)) / 3)
+
+
+# ── 4в: отчёт по меткам ─────────────────────────────────────────────────────────────────────────
+
+def test_labels_report_cells_and_kappa():
+    try:
+        import pandas as pd
+        import tk728_labels_report as R
+    except ValueError:                                   # сломанный бинарный pandas на ПК (numpy) — тест идёт на srv
+        pytest.skip("pandas не импортируется")
+    cell = np.array([3, 3, 0, 1, 2, 0, 3, 0], dtype=np.int8)       # y,y_n: 11, 11, 00, 01, 10, 00, 11, 00
+    day = np.array([0, 0, 1, 1, 2, 2, 3, 3])
+    cd = R.day_counts(day, cell, 4)
+    assert cd.sum(axis=0).tolist() == [3, 1, 1, 3]
+    n, y, yn, agree, kap = R.stats_from_cells(cd.sum(axis=0))
+    assert n == 8 and y == pytest.approx(4 / 8) and yn == pytest.approx(4 / 8) and agree == pytest.approx(6 / 8)
+    a = np.array([1, 1, 0, 0, 1, 0, 1, 0]); b = np.array([1, 1, 0, 1, 0, 0, 1, 0])
+    assert kap == pytest.approx(L.kappa(a, b))
+    # сравнение с эталоном: общие эпизоды, расхождение и «только у одного»
+    key = dict(side=["long"] * 3, sym=["A"] * 3, level=[1, 2, 3], sig_ms=[10, 20, 30])
+    mine = pd.DataFrame(dict(key, y=[1.0, 0.0, 1.0]))
+    ref = pd.DataFrame(dict(key, y=[1.0, 1.0, np.nan]))
+    assert R.compare(mine, ref, "y") == (2, 1, 1, 0)
