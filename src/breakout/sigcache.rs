@@ -87,6 +87,9 @@ pub fn cfg_key_text(cfg: &SigCfg) -> String {
         ea_m,
         el_pm,
         eh_pm,
+        vx_pm,
+        hr_min,
+        hw_min,
     } = cfg;
     let LevelCfg {
         tf_min,
@@ -119,6 +122,17 @@ pub fn cfg_key_text(cfg: &SigCfg) -> String {
     } else {
         String::new()
     };
+    // TK-738: `vx` (потолок RV60) и `hr/hw` (окно часа UTC) — только при ≠ 0 (`hw = 0` — окно выкл., `hr` не действует)
+    let vxs = if *vx_pm != 0 {
+        format!(",vx_pm={vx_pm}")
+    } else {
+        String::new()
+    };
+    let hrs = if *hw_min != 0 {
+        format!(",hr_min={hr_min},hw_min={hw_min}")
+    } else {
+        String::new()
+    };
     // TK-668: `lx`/`lw` — тоже только при ≠ 0 (ключи базовых конфигураций совпадают с `master`, кэш не промахивается)
     let lxw = if *lx != 0 || *lw != 0 {
         format!(",lx={lx},lw={lw}")
@@ -133,7 +147,7 @@ pub fn cfg_key_text(cfg: &SigCfg) -> String {
     };
     format!(
         "lv[tf_min={tf_min},k={k},d_pm={d_pm},n={n},tau_pm={tau_pm},l_days={l_days},pk={pk}{lxw}{line}],natr_p={natr_p},natr_min_pm={natr_min_pm},t1h_u={t1h_u},t24_u={t24_u},\
-         track_pm={track_pm},e_pm={e_pm},color={color},f_pm={f_pm},r_min={r_min},ban={ban},ap={ap},pb={pb},fr_h_min={fr_h_min},fr_k={fr_k},fr_share={fr_share},fr_b_pm={fr_b_pm}{fg}{nfs}{evs}"
+         track_pm={track_pm},e_pm={e_pm},color={color},f_pm={f_pm},r_min={r_min},ban={ban},ap={ap},pb={pb},fr_h_min={fr_h_min},fr_k={fr_k},fr_share={fr_share},fr_b_pm={fr_b_pm}{fg}{nfs}{evs}{vxs}{hrs}"
     )
 }
 

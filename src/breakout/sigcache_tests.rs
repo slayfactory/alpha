@@ -38,6 +38,10 @@ fn cfg_key_text_changes_with_every_field() {
         ("fr_share", Box::new(|c| c.fr_share += 1)),
         ("fr_b_pm", Box::new(|c| c.fr_b_pm += 1)),
         ("fg_m", Box::new(|c| c.fg_m += 1)),
+        ("nf", Box::new(|c| c.nf += 1)),
+        ("ev", Box::new(|c| c.ev += 1)),
+        ("vx_pm", Box::new(|c| c.vx_pm += 1)),
+        ("hw_min", Box::new(|c| c.hw_min += 1)),
     ];
     let t0 = cfg_key_text(&base);
     assert_eq!(t0, cfg_key_text(&base.clone()));
@@ -54,6 +58,43 @@ fn base_key_text_matches_master() {
     let want = "lv[tf_min=60,k=2,d_pm=500,n=2,tau_pm=200,l_days=7,pk=false],natr_p=30,natr_min_pm=400,t1h_u=50000000000,t24_u=0,\
                 track_pm=2000,e_pm=300,color=true,f_pm=100,r_min=15,ban=true,ap=0,pb=false,fr_h_min=0,fr_k=120,fr_share=0,fr_b_pm=500";
     assert_eq!(cfg_key_text(&Params::base().sig), want);
+}
+
+/// TK-738: `vx`, `hr`, `hw` входят в ключ кэша сигналов; при `vx = 0` и `hw = 0` текст ключа прежний (`hr` без окна не действует и в текст не идёт).
+#[test]
+fn vx_hr_hw_enter_the_key_only_when_on() {
+    let base = Params::base().sig;
+    let t0 = cfg_key_text(&base);
+    let with = |f: &dyn Fn(&mut SigCfg)| {
+        let mut c = base.clone();
+        f(&mut c);
+        cfg_key_text(&c)
+    };
+    assert_eq!(with(&|c| c.hr_min = 300), t0, "hr без hw — окна нет");
+    assert!(!t0.contains("vx_pm") && !t0.contains("hw_min") && !t0.contains("hr_min"));
+    let keys = [
+        t0,
+        with(&|c| c.vx_pm = 800),
+        with(&|c| c.vx_pm = 801),
+        with(&|c| c.hw_min = 240),
+        with(&|c| (c.hr_min, c.hw_min) = (60, 240)),
+        with(&|c| (c.hr_min, c.hw_min) = (61, 240)),
+        with(&|c| (c.vx_pm, c.hr_min, c.hw_min) = (800, 60, 240)),
+    ];
+    let distinct: std::collections::HashSet<&String> = keys.iter().collect();
+    assert_eq!(distinct.len(), keys.len(), "{keys:?}");
+    // кэшируется (в отличие от `ap` / `fg`)
+    let tmp = tempfile::tempdir().expect("tmp");
+    let (cache, trades) = (tmp.path().join("c"), tmp.path().join("t"));
+    std::fs::create_dir_all(&cache).expect("c");
+    std::fs::create_dir_all(trades.join("AAA")).expect("t");
+    let sc = open(&tmp.path().join("sc"), &cache, &trades, &["AAA"]);
+    let mut c = base.clone();
+    c.vx_pm = 800;
+    c.hr_min = 60;
+    c.hw_min = 240;
+    assert!(sc.key(&c, Side::Long).is_some());
+    assert_ne!(sc.key(&c, Side::Long), sc.key(&base, Side::Long));
 }
 
 #[test]

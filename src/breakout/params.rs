@@ -97,6 +97,13 @@ pub struct SigCfg {
     /// TK-681 (`el`, `eh`): зажим зоны входа, тысячные процента (по умолчанию 0,05 % и 1 %).
     pub el_pm: i64,
     pub eh_pm: i64,
+    /// TK-738 (`vx`): потолок `V` = RV60 (реализованная волатильность 60 минут, код `vs = 8`) закрытой минутки `t−1`, тысячные процента цены (как `natr_min`);
+    /// сигнал с `V > vx` кандидата не даёт, нет значения `V` — кандидата нет; 0 — выкл. Только `breakout tick`.
+    pub vx_pm: i64,
+    /// TK-738 (`hr`, `hw`): окно часа UTC сигнальной минуты `t`: начало `hr` и ширина `hw`, в минутах суток (ключи — часы, дробные можно); минута `m = t mod 1440`
+    /// проходит, если `(m − hr) mod 1440 < hw` (окно заворачивается через сутки); `hw = 0` — выкл., `hw ≥ 1440` — окно на все сутки (проходит всё). Только `breakout tick`.
+    pub hr_min: i64,
+    pub hw_min: i64,
 }
 
 /// Ручной `Debug`: строка `params` в meta.json при `fg = 0` — та же, что у производного `Debug` до TK-669 (поле печатается только при `fg ≠ 0`).
@@ -131,6 +138,13 @@ impl std::fmt::Debug for SigCfg {
                 .field("ea_m", &self.ea_m)
                 .field("el_pm", &self.el_pm)
                 .field("eh_pm", &self.eh_pm);
+        }
+        if self.vx_pm != 0 {
+            d.field("vx_pm", &self.vx_pm);
+        }
+        if self.hw_min != 0 {
+            d.field("hr_min", &self.hr_min)
+                .field("hw_min", &self.hw_min);
         }
         d.finish()
     }
@@ -581,6 +595,9 @@ impl Params {
                 ea_m: 0,
                 el_pm: 50,
                 eh_pm: 1000,
+                vx_pm: 0,
+                hr_min: 0,
+                hw_min: 0,
             },
             exit: ExitCfg {
                 natr_p: 30,
@@ -774,6 +791,9 @@ impl Params {
             "ea" => self.sig.ea_m = pm(f),
             "el" => self.sig.el_pm = pm(f),
             "eh" => self.sig.eh_pm = pm(f),
+            "vx" => self.sig.vx_pm = pm(f),
+            "hr" => self.sig.hr_min = (f * 60.0).round() as i64,
+            "hw" => self.sig.hw_min = (f * 60.0).round() as i64,
             "fv" => self.filt.v = Some(f),
             "c" => self.port.cool_min = u,
             "m" => self.port.m_stops = u,
@@ -1065,6 +1085,16 @@ impl Params {
         let s = &self.sig;
         if s.nf > 8 || s.ev > 8 {
             bail!("nf, ev ∈ 0…8 (0 — выкл.; NATR 5/15/30/60, реализованная 5/15/30/60)");
+        }
+        // TK-738: потолок RV60 и окно часа UTC; `hr` без `hw` — опечатка, а не «выкл.»
+        if s.vx_pm < 0 {
+            bail!("vx ≥ 0 (потолок RV60, проценты цены; 0 — выкл.)");
+        }
+        if !(0..=1440).contains(&s.hw_min) || !(0..1440).contains(&s.hr_min) {
+            bail!("hr ∈ [0; 24) ч, hw ∈ [0; 24] ч (0 — выкл.)");
+        }
+        if s.hw_min == 0 && s.hr_min != 0 {
+            bail!("hr требует hw > 0 (окно часа UTC)");
         }
         if s.ev == 0 {
             if s.ea_m != 0 || s.el_pm != 50 || s.eh_pm != 1000 {
