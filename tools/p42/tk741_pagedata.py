@@ -103,6 +103,9 @@ def build_trades(page):
         orows, srows = lg[(w, sym, int(rw["level"]), int(rw["sig_ms"]) - t0[w])]
         off = t0[w] - pk["t0"]
         pk["ord"], pk["lv"] = O.pack_orders(orows, off), O.pack_setup(srows, off)
+        dg = O.pack_diag(srows, off)
+        if dg:
+            pk["dg"] = dg      # TK-747: строки разбора (только при `lm`); приложение их пока не рисует
         nord += len(pk["ord"])
         nlv += len(pk["lv"])
         ocheck[str(rw["i"])] = O.count_orderlog(orows, srows)

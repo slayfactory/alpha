@@ -68,6 +68,17 @@ def pack_orders(rows, off):
     return out
 
 
+# TK-747 (`lm`): строки `setup.csv` для разбора сделок — пивоты с минутами экстремума и подтверждения, проколы основного и внутренних, возраст сетапа, тик и допуск, касание, проторговка
+DIAG_ROLES = ("main_pierce", "inner", "age", "tick", "first_touch", "consol")
+
+
+def pack_diag(rows, off):
+    """TK-747: строки разбора сделки — [роль, цена ×1e8, с, до, текст]; пивоты (`touch`) — только с минутами экстремума и подтверждения (включён `lm`). Времена в строках текста — мс от 01.09 UTC (как в CSV)."""
+    ms = lambda v: None if v == "" else int(v) + off
+    return [[r["role"], abs(int(r["px_e8"])), ms(r["from_ms"]), ms(r["to_ms"]), r["reason"]]
+            for r in rows if r["role"] in DIAG_ROLES or (r["role"] == "touch" and "confirm_ms=" in r["reason"])]
+
+
 def pack_setup(rows, off):
     ms = lambda v: None if v == "" else int(v) + off
     zone, out = {}, []
@@ -90,6 +101,8 @@ def pack_setup(rows, off):
             m = re.match(r"(live|pk|pb|ban|consumed)(?:@(\d+))?;level=(\d+);end=(\w+)", why)
             assert m, why
             out.append(["O", px, a, b, m.group(1), int(m.group(2)) + off if m.group(2) else None, int(m.group(3)), m.group(4)])
+        elif role in DIAG_ROLES:
+            continue      # TK-747: строки для разбора (текст, не линии графика) — в `dg` файла сделки (`pack_diag`)
         else:
             raise AssertionError("роль setup " + role)
     if zone:
@@ -115,5 +128,7 @@ def count_orderlog(orows, srows):
             c[3] += 1
     lv = {}
     for r in srows:
+        if r["role"] in DIAG_ROLES:
+            continue      # строки разбора (TK-747) в `lv` файла сделки не входят
         lv[r["role"]] = lv.get(r["role"], 0) + 1
     return {"g": g, "lv": lv}
