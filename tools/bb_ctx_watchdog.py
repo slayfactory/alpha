@@ -28,7 +28,9 @@ BB = shutil.which(BB) or BB
 RESTART = (
     "Context cleared by the watchdog at {n}k. git merge master first. "
     "Read ONLY the latest handoff section («Передача дел») of your kb/task card "
-    "and continue from its «Next». Write a new handoff section before 250k."
+    "and continue from its «Next». Write a new handoff section before 250k. "
+    "Send progress lines and the final report with `bb thread tell {coord}` — "
+    "a plain final answer does not reach the coordinator."
 )
 
 
@@ -83,7 +85,9 @@ def main():
         if bb("thread", "clear", t["id"])[0] != 0:
             print(f"clear failed {t['id']}")
             continue
-        bb("thread", "tell", t["id"], RESTART.format(n=n // 1000))
+        # idle after the restarted turn must wake the coordinator (28.11: TK-736 sat idle 1 h 20 min)
+        bb("thread", "update", t["id"], "--parent-notifications", "auto")
+        bb("thread", "tell", t["id"], RESTART.format(n=n // 1000, coord=COORD))
         done.append(f"{t['id']} ({t.get('title')}) {n // 1000}k")
     if done:
         msg = "watchdog: cleared + restarted " + "; ".join(done)
