@@ -5435,6 +5435,200 @@ fn nf_window_edges_and_no_lookahead() {
     assert!(rv5[t1] > 5_000_000);
 }
 
+/// TK-738: RV60 (`vol_for(8)`, доля цены ×1e8) на минуте `t`.
+fn rv60_at(c: &Cols, t: usize) -> i64 {
+    i64::from(sym(c.clone()).vol_for(8).expect("rv60")[t])
+}
+
+/// Ключ `vx` в процентах цены для потолка в тысячных процента.
+fn vx_line(pm: i64) -> String {
+    format!("natr_min=0 vx={}", pm as f64 / 1000.0)
+}
+
+#[test]
+fn vx_caps_rv60_of_the_closed_minute_and_keys_off_change_nothing() {
+    let t1 = BORN + 100;
+    let c = z_world(t1, t1 - 3, Z_NEAR);
+    let v = rv60_at(&c, t1 - 1);
+    assert!(v > 0, "RV60 закрытой минутки есть: {v}");
+    // значение самой минуты `t1` (скачок 90 → 99,9) фильтр не читает: потолок чуть выше `V[t1−1]` её пропускает, хотя `V[t1]` выше потолка
+    assert!(rv60_at(&c, t1) > v);
+    let ceil_pm = (v + 999) / 1000;
+    let floor_pm = v / 1000;
+    let off = cand_minutes(c.clone(), &z_params("natr_min=0"), Side::Long);
+    assert_eq!(off, vec![t1], "без vx кандидат есть");
+    assert_eq!(
+        cand_minutes(c.clone(), &z_params("natr_min=0 vx=0"), Side::Long),
+        off,
+        "vx=0 — выкл."
+    );
+    let at = |pm: i64| {
+        let p = z_params(&vx_line(pm));
+        assert_eq!(p.sig.vx_pm, pm);
+        cand_minutes(c.clone(), &p, Side::Long)
+    };
+    assert_eq!(at(ceil_pm), off, "потолок ≥ V — проходит");
+    assert_eq!(at(ceil_pm + 500), off);
+    assert!(at(floor_pm - 1).is_empty(), "потолок < V — кандидата нет");
+    assert!(at(1).is_empty());
+    // зеркало: шорт
+    let m = mirror(&c, 200.0);
+    let vm = rv60_at(&m, t1 - 1);
+    assert_eq!(
+        cand_minutes(
+            m.clone(),
+            &z_params(&vx_line((vm + 999) / 1000)),
+            Side::Short
+        )
+        .len(),
+        1
+    );
+    assert!(cand_minutes(m, &z_params(&vx_line(vm / 1000 - 1)), Side::Short).is_empty());
+}
+
+#[test]
+fn vx_without_rv60_value_gives_no_candidate() {
+    let t1 = BORN + 100;
+    let mut c = z_world(t1, t1 - 3, Z_NEAR);
+    // 30 пустых минут в окне 60: годных доходностей меньше p / 2 → RV60 нет, RV5 (фильтр живости `nf=5`) есть
+    for m in t1 - 40..t1 - 10 {
+        (c.o[m], c.h[m], c.l[m], c.c[m]) = (0, 0, 0, 0);
+    }
+    assert_eq!(rv60_at(&c, t1 - 1), -1);
+    let base = "natr_min=0 nf=5";
+    assert_eq!(
+        cand_minutes(c.clone(), &z_params(base), Side::Long),
+        vec![t1],
+        "без vx кандидат есть"
+    );
+    assert!(
+        cand_minutes(c, &z_params(&format!("{base} vx=100")), Side::Long).is_empty(),
+        "нет значения V — кандидата нет, как у `nf` / `ev`"
+    );
+}
+
+#[test]
+fn hour_window_passes_signal_minute_inclusive_start_exclusive_end_and_wraps() {
+    // t1 = BORN + 100 → минута суток 40 (00:40 UTC); минута `t1 − 1` — 00:39
+    let t1 = BORN + 100;
+    assert_eq!(t1 % 1440, 40);
+    let c = z_world(t1, t1 - 3, Z_NEAR);
+    let on = |line: &str| {
+        cand_minutes(
+            c.clone(),
+            &z_params(&format!("natr_min=0 {line}")),
+            Side::Long,
+        )
+    };
+    let pass = vec![t1];
+    let none: Vec<usize> = Vec::new();
+    assert_eq!(on(""), pass, "окна нет");
+    assert_eq!(on("hr=0 hw=1"), pass, "00:00–01:00");
+    assert_eq!(on("hr=0 hw=0.5"), none, "00:00–00:30");
+    assert_eq!(on("hr=0.5 hw=1"), pass, "00:30–01:30");
+    assert_eq!(on("hr=0.75 hw=1"), none, "00:45–01:45");
+    // границы: начало включено, конец исключён — по минуте сигнала `t`, не `t − 1`
+    assert_eq!(on("hr=0.6666667 hw=1"), pass, "окно с 00:40");
+    assert_eq!(on("hr=0.6833333 hw=1"), none, "окно с 00:41");
+    assert_eq!(on("hr=0 hw=0.6833333"), pass, "окно [00:00; 00:41)");
+    assert_eq!(on("hr=0 hw=0.6666667"), none, "окно [00:00; 00:40)");
+    // заворот через полночь
+    assert_eq!(on("hr=22 hw=4"), pass, "22:00–02:00");
+    assert_eq!(on("hr=22 hw=2"), none, "22:00–24:00");
+    assert_eq!(on("hr=23 hw=1.6666667"), none, "[23:00; 00:40)");
+    assert_eq!(on("hr=23 hw=1.6833333"), pass, "[23:00; 00:41)");
+    assert_eq!(on("hr=1 hw=23"), none, "01:00–24:00");
+    // ширина 24 ч — все сутки, начало не важно
+    assert_eq!(on("hr=5 hw=24"), pass);
+    assert_eq!(on("hr=0 hw=24"), pass);
+    // шорт — тот же час
+    let m = mirror(&c, 200.0);
+    let sh = |line: &str| {
+        cand_minutes(
+            m.clone(),
+            &z_params(&format!("natr_min=0 {line}")),
+            Side::Short,
+        )
+    };
+    assert_eq!((sh("hr=22 hw=4"), sh("hr=22 hw=2")), (pass, none));
+}
+
+#[test]
+fn vx_hr_hw_parse_validate_and_defaults() {
+    let d = z_params("").sig;
+    assert_eq!((d.vx_pm, d.hr_min, d.hw_min), (0, 0, 0));
+    let p = z_params("vx=0.8 hr=22.5 hw=4").sig;
+    assert_eq!((p.vx_pm, p.hr_min, p.hw_min), (800, 1350, 240));
+    for bad in [
+        "vx=-0.1",
+        "hr=5",
+        "hr=24 hw=3",
+        "hr=-1 hw=3",
+        "hw=24.5",
+        "hw=-1",
+    ] {
+        assert!(
+            super::params::parse_variant(&format!("x {bad}")).is_err(),
+            "{bad}"
+        );
+    }
+    for ok in ["hw=24", "hr=23.9 hw=24", "hr=0 hw=0", "vx=0.01"] {
+        assert!(
+            super::params::parse_variant(&format!("x {ok}")).is_ok(),
+            "{ok}"
+        );
+    }
+    // минутный движок (`signals::scan`) трёх ключей не считает — отказ; выключенные ключи проходят
+    for line in ["x vx=0.8", "x hw=4", "x hr=2 hw=4"] {
+        let (_, p) = super::params::parse_variant(line).expect("разбор");
+        assert!(super::cli::reject_tick_only(&p, line).is_err(), "{line}");
+    }
+    let (_, off) = super::params::parse_variant("x vx=0 hw=0").expect("разбор");
+    assert!(super::cli::reject_tick_only(&off, "x").is_ok());
+    // строка `params` (Debug) при выключенных ключах прежняя
+    assert!(!format!("{:?}", off.sig).contains("vx_pm"));
+    assert!(!format!("{:?}", off.sig).contains("hw_min"));
+    assert!(format!("{p:?}").contains("vx_pm: 800") && format!("{p:?}").contains("hw_min: 240"));
+}
+
+#[test]
+fn vx_hr_hw_share_level_state_and_group_equals_separate_passes() {
+    let t1 = BORN + 100;
+    let c = z_world(t1, t1 - 3, Z_NEAR);
+    let v = rv60_at(&c, t1 - 1);
+    let lines = [
+        "natr_min=0".to_string(),
+        vx_line((v + 999) / 1000),
+        vx_line(v / 1000 - 1),
+        "natr_min=0 hr=22 hw=4".to_string(),
+        "natr_min=0 hr=22 hw=2".to_string(),
+        "natr_min=0 vx=1000 hr=0 hw=1".to_string(),
+    ];
+    let ps: Vec<Params> = lines.iter().map(|l| z_params(l)).collect();
+    // состояние уровня от трёх ключей не зависит: все задания — одна группа
+    let k0 = super::tick::level_state_key(&ps[0].sig);
+    assert!(ps
+        .iter()
+        .all(|p| super::tick::level_state_key(&p.sig) == k0));
+    let s = sym(c);
+    let lv = build_levels(&s, &ps[0].sig.lv, Side::Long);
+    let cfgs: Vec<&super::params::SigCfg> = ps.iter().map(|p| &p.sig).collect();
+    let mut outs: Vec<Vec<super::tick::Cand>> = ps.iter().map(|_| Vec::new()).collect();
+    let mut fg = vec![[0u64; 4]; ps.len()];
+    super::tick::candidates_group(&s, &lv, &cfgs, Side::Long, &mut outs, &mut fg);
+    for (p, o) in ps.iter().zip(&outs) {
+        let mut one = Vec::new();
+        candidates(&s, &lv, &p.sig, Side::Long, &mut one);
+        let a: Vec<u32> = o.iter().map(|x| x.t).collect();
+        let b: Vec<u32> = one.iter().map(|x| x.t).collect();
+        assert_eq!(a, b);
+    }
+    assert_eq!(
+        outs.iter().map(Vec::len).collect::<Vec<_>>(),
+        vec![1, 1, 0, 1, 0, 1]
+    );
+}
+
 #[test]
 fn zone_from_volatility_formula_clamp_and_track() {
     let p = z_params("ev=5 ea=0.5").sig;

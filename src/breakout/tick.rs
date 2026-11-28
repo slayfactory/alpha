@@ -855,6 +855,9 @@ pub fn level_state_key(cfg: &SigCfg) -> SigCfg {
         ea_m: 0,
         el_pm: 0,
         eh_pm: 0,
+        vx_pm: 0,
+        hr_min: 0,
+        hw_min: 0,
         ..cfg.clone()
     }
 }
@@ -869,6 +872,10 @@ struct Emit<'a> {
     /// TK-681 (`ev`): ряд зоны входа.
     evol: Option<&'a [i32]>,
     natr_min: i64,
+    /// TK-738 (`vx`): ряд RV60 (`vol_for(8)`) и потолок ×1e8; `None` — потолка нет.
+    vx: Option<(&'a [i32], i64)>,
+    /// TK-738 (`hr`, `hw`): начало и ширина окна часа UTC, минуты суток; `None` — окна нет (`hw = 0` или на все сутки).
+    hour: Option<(usize, usize)>,
     /// Зона входа ×1e8: постоянная, при `ev ≠ 0` — её верхняя граница (зажим `eh`, `track`); `None` — границы нет.
     dmax0: Option<i64>,
     /// Нижняя граница зоны входа при `dmax0` для текущей версии цены уровня.
@@ -907,12 +914,22 @@ pub fn candidates_group(
                 let ub = (c.eh_pm >= 0 && track >= 0).then(|| (c.eh_pm * 1000).min(track));
                 (Some(sym.vol_for(c.ev)?), ub)
             };
+            // TK-738: потолок RV60 — ряд источника 8, нет ряда — задания нет (как у `nf`, `ev`)
+            let vx = if c.vx_pm != 0 {
+                Some((sym.vol_for(8)?, c.vx_pm * 1000))
+            } else {
+                None
+            };
+            let hour =
+                (c.hw_min > 0 && c.hw_min < 1440).then_some((c.hr_min as usize, c.hw_min as usize));
             Some(Emit {
                 cfg: c,
                 k,
                 live,
                 evol,
                 natr_min: c.natr_min_pm * 1000,
+                vx,
+                hour,
                 dmax0,
                 zone_lo0: i64::MIN,
             })
@@ -980,6 +997,12 @@ pub fn candidates_group(
                     if hi >= zone_lo
                         && nv >= 0
                         && nv >= e.natr_min
+                        && e.vx.is_none_or(|(v, cap)| {
+                            let x = i64::from(v[t - 1]);
+                            x >= 0 && x <= cap
+                        })
+                        && e.hour
+                            .is_none_or(|(hr, hw)| (t % 1440 + 1440 - hr) % 1440 < hw)
                         && sym.pq[t] - sym.pq[t - 60] >= e.cfg.t1h_u
                         && (e.cfg.t24_u == 0 || sym.pq[t] - sym.pq[t - 1440] >= e.cfg.t24_u)
                     {

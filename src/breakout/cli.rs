@@ -369,6 +369,9 @@ pub(super) fn reject_tick_only(p: &Params, line: &str) -> Result<()> {
     if p.sig.nf != 0 || p.sig.ev != 0 {
         bail!("nf/ev/ea/el/eh (TK-681) считает только `breakout tick`: {line}");
     }
+    if p.sig.vx_pm != 0 || p.sig.hw_min != 0 {
+        bail!("vx/hr/hw (TK-738) считает только `breakout tick`: {line}");
+    }
     Ok(())
 }
 
