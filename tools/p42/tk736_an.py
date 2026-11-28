@@ -164,11 +164,13 @@ def cmd_gsrc(a):
         uni_all[half] = uniq
     anchor = disk_v0(dict(b9_cids())["BS-l7-tf60"], "m02")
     rep["anchor_cid"] = dict(b9_cids())["BS-l7-tf60"]
-    n465 = sum(int(len(x["pnl"])) for x in (short_trades(FJ + SEL + ("m01",))["BS-l7-tf60"],) if x is not None)
-    rep["anchor_trades_FJ_SEL_jan"] = n465
+    an = short_trades(FJ + SEL)["BS-l7-tf60"]
+    rep["anchor_trades_10_periods"] = int(len(an["pnl"]))
+    rep["anchor_stops_10_periods"] = int((an["kind"] == "stop").sum())
+    rep["anchor_ok_step2"] = bool(rep["anchor_trades_10_periods"] == 465 and rep["anchor_stops_10_periods"] == 17)
     jwrite(RES + "/gsrc.json", rep)
     print(json.dumps({k: v for k, v in rep.items() if k != "cells"}, ensure_ascii=False))
-    return 0 if miss == 0 and anchor is not None else 1
+    return 0 if miss == 0 and anchor is not None and rep["anchor_ok_step2"] else 1
 
 
 def cmd_gv(a):

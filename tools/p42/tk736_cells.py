@@ -5,8 +5,8 @@
   python3 tk736_cells.py list                                                               # этапы, окна, число клеток
 
 Клетки — 9 членов B9 (строки из набора `tk726s`, те же cid-файлы на диске, поэтому V0 перепрогона сравнивается с диском побайтно) + лонг-якорь s3 (`tk718_cells.ANCHOR["long"]`).
-Рабочий стоп — ключи `vf=1 vs=8 va=<round(1000·k)>` в конце строки (`vm` по умолчанию, `s` — потолок якоря). Этапы:
-  v0long  — V0 лонга (без ключей стопа), 10 окон;      gv — k = 1 (va=1000), 9 + лонг, 10 окон;   ctl — V0 шорта B9 как есть, m02 и wa (G-ctl);
+Рабочий стоп — ключи `vf=1 vs=8 va=<k>` в конце строки (значение — k, не 1000·k: движок умножает на 1000) (`vm` по умолчанию, `s` — потолок якоря). Этапы:
+  v0long  — V0 лонга (без ключей стопа), 10 окон;      gv — k = 1 (va=1), 9 + лонг, 10 окон;   ctl — V0 шорта B9 как есть, m02 и wa (G-ctl);
   kinf    — va=1000000 (d = s), 9 + лонг, m02 (G-k∞);  v2fj — k_FJ, wa wb wc;  v2sel — k_SEL, m02…m06;  v2pool — k_pool, 10 окон.
 """
 from __future__ import annotations
@@ -41,12 +41,12 @@ STAGES = {
 
 
 def va_of(key, side, freeze):
-    """Значение `va` (тысячные k) для этапа и стороны."""
+    """Значение ключа `va` = k (дробное; движок сам делает va_m = round(1000·k), `params.rs: pm`). Протокол v3 писал `va=round(1000·k)` — ошибка записи ключа (amend)."""
     if key == "gv":
-        return 1000
+        return "1"
     if key == "inf":
-        return 1000000
-    return int(round(1000 * float(freeze[side][key])))
+        return "1000000"
+    return "%g" % round(float(freeze[side][key]), 2)
 
 
 def b9_rows():
@@ -81,9 +81,9 @@ def build_rows(stage, freeze=None):
         cid = base + j
         side = r[1]
         va = va_of(key, side, freeze) if key else None
-        tail = (" vf=1 vs=8 va=%d" % va) if va else ""
+        tail = (" vf=1 vs=8 va=%s" % va) if va else ""
         rows.append((cellset, cid, side, r[2] + tail, r[3] + tail, r[4], r[5], r[6], 0, 0.0, None, 0, r[11]))
-        names.append((cid, name, side, va or 0, r[0]))
+        names.append((cid, name, side, float(va or 0), r[0]))
     return cellset, wins, sides, rows, names
 
 
@@ -100,7 +100,7 @@ def cmd_build(a):
     db.executescript("CREATE TABLE IF NOT EXISTS cellset(name TEXT PRIMARY KEY, created TEXT, params TEXT);"
                      "CREATE TABLE IF NOT EXISTS cell(cellset TEXT, cid INTEGER, side TEXT, ckey TEXT, line TEXT, sig TEXT, filt TEXT, feats TEXT, ref_n INTEGER, ref_usd REAL, ref_daily TEXT,"
                      " db_id INTEGER, bin TEXT, PRIMARY KEY(cellset, cid));"
-                     "CREATE TABLE IF NOT EXISTS t736_cell(cellset TEXT, cid INTEGER, name TEXT, side TEXT, va INTEGER, src_cid INTEGER, PRIMARY KEY(cellset, cid));")
+                     "CREATE TABLE IF NOT EXISTS t736_cell(cellset TEXT, cid INTEGER, name TEXT, side TEXT, va REAL, src_cid INTEGER, PRIMARY KEY(cellset, cid));")
     db.execute("DELETE FROM cell WHERE cellset=?", (cellset,))
     db.execute("DELETE FROM cellset WHERE name=?", (cellset,))
     db.execute("DELETE FROM t736_cell WHERE cellset=?", (cellset,))
