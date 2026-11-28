@@ -1,0 +1,5 @@
+# TK-731 (P-TK729 par.8): шаги прохода. C0 из TK-729 (/data/tk729/res/base, tk729.sqlite) не пересчитывается — читается; C0 с журналом циклов считается новым ядром (ES(10)) вместе с 8 вариантами, сумма сверяется с TK-729 до доллара.
+tk731_tests	/data/tk731/DONE-tests	/data/tk731/code	python3 /data/tk731/code/test_tk731.py
+tk731_smoke2	/data/tk731/smoke/DONE-run	/data/tk731/code:/data/tk729/res/base	python3 /data/tk731/code/tk731_run.py --out /data/tk731/smoke --procs 2 --only BTCUSDT,ETHUSDT
+tk731_run	/data/tk731/DONE-run	/data/tk731/code:/data/tk729/res/base:/data/p42-tk621/universe	python3 /data/tk731/code/tk731_run.py --out /data/tk731 --procs 4
+tk731_an	/data/tk731/tk731.sqlite	/data/tk731/code:/data/tk731/res	python3 /data/tk731/code/tk731_an.py final --out /data/tk731
