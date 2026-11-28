@@ -313,3 +313,7 @@ def test_status_priority_and_time_set(tmp_path):
     assert out["IMP"][0] == "с заглядыванием"          # заглядывание сильнее «копии»
     assert out["x1"][0] == "в работе" and out["x2"][0] == "копия № 2"
     assert out["bk20"][0] == "в работе" and "L-521" in out["bk20"][1] and out["oi_c1"][0] == "в работе"     # поправка L-521: семейство истории не убирается
+    S.apply_status(d, out)
+    S.apply_status(d, out)                                   # повтор не дублирует пометки
+    mk = {f["name"]: f.get("mark", "") for s_ in d["sets"] for g in s_["groups"] for f in g["features"]}
+    assert S.HIST_MARK in mk["bk20"] and S.BK_MARK in mk["bk20"] and mk["bk20"].count(S.HIST_MARK) == 1 and mk["x1"] == ""

@@ -18,6 +18,9 @@ import tk728_lib as L  # noqa: E402
 
 THR674 = ("tpm60", "cons60", "zv6h", "n24", "SHARP")      # 4а: пороги квантильных фильтров `thr674.json` (TPM60, CN60, ZV6, N24, SHARP) посчитаны по всему SEL
 THR_MARK = "порог найден на этих данных"
+HIST_MARK = "заменяется долей с усадкой p̂ (4г, L-521) — по одному не брать"      # 17 признаков истории: в шаге 9в только через p̂
+BK_Y = ("bk20", "bk30", "bk40", "bk60")
+BK_MARK = "на метке y, пересчёт на y_n — позже"
 # 4г, поправка L-521 (после чтения результата L-520, замечание критика): точка отсчёта — нуль перестановок, не 1; семейство из 17 не убирается, а заменяется долей с усадкой p̂
 HIST_WHY = "4г (L-520, поправка L-521): ОР %.3f, нижняя граница %.3f, нуль перестановок %.3f — память слабая / не ясно; семейство заменяется долей с усадкой p̂, не убирается"
 TIME_SET = dict(id="time", title="Время сигнала", short="Время", task="TK-671, TK-728", status="done", status_text="готово",
@@ -65,6 +68,17 @@ def decide(d, res):
     return out, dict(kind)
 
 
+def apply_status(d, out):
+    """Статус в поле `st4` и пометки `mark` (повторный запуск не дублирует)."""
+    for s in d["sets"]:
+        for g in s["groups"]:
+            for f in g["features"]:
+                f["st4"] = out[f["name"]][0]
+                for nm_set, text in ((THR674, THR_MARK), (L.HISTORY17, HIST_MARK), (BK_Y, BK_MARK)):
+                    if f["name"] in nm_set and text not in f.get("mark", ""):
+                        f["mark"] = (f["mark"] + " · " if f.get("mark") else "") + text
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--res", required=True)
@@ -75,12 +89,7 @@ def main():
     d = json.load(open(a.features, encoding="utf-8"))
     added = add_time_set(d)
     out, summary = decide(d, a.res)
-    for s in d["sets"]:
-        for g in s["groups"]:
-            for f in g["features"]:
-                f["st4"] = out[f["name"]][0]
-                if f["name"] in THR674 and THR_MARK not in f.get("mark", ""):
-                    f["mark"] = (f["mark"] + " · " if f.get("mark") else "") + THR_MARK
+    apply_status(d, out)
     summary["time_set_added"] = added
     summary["features"] = len(out)
     print(json.dumps(summary, ensure_ascii=False))
