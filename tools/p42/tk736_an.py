@@ -381,10 +381,43 @@ def cmd_judge(a):
     return 0
 
 
+def cmd_gadv(a):
+    """G-adv: тот же код хода против позиции при V = NATR30 (свеча выхода входит, как в шаге 2) воспроизводит числа якоря s4 из отчёта шага 2 в пределах округления; затем RV60 (правило §13.80.1)."""
+    import tk726_exits as ex
+    an = short_trades(FJ + SEL)["BS-l7-tf60"]
+    n = len(an["pnl"])
+    mae_n, mae_r = np.full(n, np.nan), np.full(n, np.nan)
+    for i in range(n):
+        w, sym = an["win"][i], an["sym"][i]
+        cd = candles(w, sym)
+        o, h, l, c, rv = cd
+        t_ = int(an["sig_min"][i]) - 1
+        v_n = int(ex.natr_at(o, h, l, c, [t_])[0])
+        em, xm = int(an["entry_min"][i]), int(an["exit_min"][i])
+        adv = L.adverse_move("short", h, l, o, em, xm, True, int(an["entry_px_e8"][i]))          # свеча выхода входит (шаг 2)
+        if v_n > 0:
+            mae_n[i] = adv / (v_n / 1e8)
+        if np.isfinite(rv[t_]) and rv[t_] > 0:
+            mae_r[i] = adv / rv[t_]
+    win = an["pnl"] > 0
+    qs = (0.75, 0.9, 0.95, 0.99)
+    ref = dict(n=465, n_win=184, q=[2.01, 3.87, 5.77, 8.53], max=9.67, mean_win=1.82, mean_all=2.05, frac={0.5: 0.870, 1: 0.647, 1.5: 0.418, 2: 0.255, 3: 0.136, 5: 0.065})
+    m = ~np.isnan(mae_n)
+    mw = m & win
+    got = dict(n=int(m.sum()), n_win=int(mw.sum()), q=[round(float(np.quantile(mae_n[mw], q)), 2) for q in qs], max=round(float(mae_n[mw].max()), 2), mean_win=round(float(mae_n[mw].mean()), 2),
+               mean_all=round(float(mae_n[m].mean()), 2), frac={x: round(float((mae_n[mw] >= x).mean()), 3) for x in ref["frac"]})
+    ok = got["n"] == ref["n"] and got["n_win"] == ref["n_win"] and all(abs(x - y) <= 0.0101 for x, y in zip(got["q"], ref["q"])) and abs(got["max"] - ref["max"]) <= 0.0101         and abs(got["mean_win"] - ref["mean_win"]) <= 0.0101 and abs(got["mean_all"] - ref["mean_all"]) <= 0.0101 and all(abs(got["frac"][x] - ref["frac"][x]) <= 0.0011 for x in ref["frac"])
+    mr = ~np.isnan(mae_r) & win
+    rv = dict(n_win=int(mr.sum()), q=[round(float(np.quantile(mae_r[mr], q)), 2) for q in qs + (0.5,)])
+    jwrite(RES + "/gadv.json", dict(natr30=got, ref=ref, ok=bool(ok), rv60_winners=rv))
+    print(json.dumps(dict(natr30=got, ref={k: v for k, v in ref.items() if k != "frac"}, ok=bool(ok), rv60_winners=rv), ensure_ascii=False), "G-adv", "ПРОЙДЕН" if ok else "ПРОВАЛЕН")
+    return 0 if ok else 1
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
-    for n, f in (("gsrc", cmd_gsrc), ("gv", cmd_gv), ("kest", cmd_kest), ("gpow", cmd_gpow), ("judge", cmd_judge)):
+    for n, f in (("gsrc", cmd_gsrc), ("gv", cmd_gv), ("kest", cmd_kest), ("gpow", cmd_gpow), ("judge", cmd_judge), ("gadv", cmd_gadv)):
         sp.add_parser(n).set_defaults(fn=f)
     a = ap.parse_args(argv)
     return a.fn(a)
