@@ -263,6 +263,35 @@ pub fn pierce_tol(tick: i64, px: i64) -> i64 {
 /// Допуск прокола `pp`: 0,05 % цены в тысячных процента.
 pub const PP_TOL_MAX_PM: i64 = 50;
 
+/// (бар, цена ×1e8) → (минута экстремума, минута подтверждения).
+pub type PivotMinutes = HashMap<(u32, i64), (u32, u32)>;
+
+/// TK-747 (разбор, `setup.csv`): время каждого пивота монеты — (бар, цена ×1e8 настоящая) → (минута экстремума внутри бара, минута подтверждения = закрытие бара `active`).
+/// Пивоты те же, что у `build_levels` (`find_pivots`); источники уровней `lx ≠ 0` пивотов не имеют.
+pub fn pivot_minutes(sym: &Sym, cfg: &LevelCfg, side: Side) -> PivotMinutes {
+    let Some(bars) = (cfg.lx == 0).then(|| sym.bars_for(cfg.tf_min)).flatten() else {
+        return HashMap::new();
+    };
+    let f = Frame {
+        b: bars,
+        s: side.s(),
+    };
+    let tfm = cfg.tf_min;
+    find_pivots(&f, cfg)
+        .iter()
+        .map(|pv| {
+            let from = pv.bar as usize * tfm;
+            let ext = (from..from + tfm)
+                .find(|&m| sym.o[m] != 0 && (if f.s > 0 { sym.h[m] } else { -sym.l[m] }) == pv.p)
+                .unwrap_or(from);
+            (
+                (pv.bar, pv.p.abs()),
+                (ext as u32, ((pv.active as usize + 1) * tfm) as u32),
+            )
+        })
+        .collect()
+}
+
 pub fn build_levels(sym: &Sym, cfg: &LevelCfg, side: Side) -> Vec<Level> {
     build_levels_tracked(sym, cfg, side, false)
 }

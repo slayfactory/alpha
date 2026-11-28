@@ -394,3 +394,28 @@ fn lm_main_level_pierced_after_the_setup_ends_it_at_the_hour_close() {
     let lv = levels_of(c, &with_keys(&[("lm", "1"), ("li", "1")]), Side::Long);
     assert_eq!((lv[0].end as usize, lv[0].why), (BORN + 120, 2));
 }
+
+#[test]
+fn pivot_minutes_give_extremum_and_confirmation_minutes_for_the_setup_print() {
+    use crate::breakout::levels::pivot_minutes;
+    let p = with_keys(&[]);
+    let s = sym(level_world());
+    let hb = HB as u32;
+    let m = pivot_minutes(&s, &p.sig.lv, Side::Long);
+    // пивоты баров 1 и 5: экстремум — первая минута бара; подтверждение — закрытие бара `max(h + k, бар глубины)` (оба — бар h + 1)
+    assert_eq!(m.len(), 2);
+    assert_eq!(
+        m[&(hb + 1, px(100.0))],
+        ((hb + 1) * 60, (hb + 3) * 60),
+        "пивот бара 1"
+    );
+    assert_eq!(
+        m[&(hb + 5, px(100.05))],
+        ((hb + 5) * 60, (hb + 7) * 60),
+        "подтверждение второго пивота = рождение уровня"
+    );
+    // шорт: зеркало — те же минуты
+    let sm = sym(mirror(&level_world(), 200.0));
+    let ms = pivot_minutes(&sm, &p.sig.lv, Side::Short);
+    assert_eq!(ms[&(hb + 1, px(100.0))].1, (hb + 3) * 60);
+}

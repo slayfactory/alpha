@@ -7,7 +7,7 @@
 //! Файл `<side>-orders.csv`: одна строка — одно событие заявки; заявка = `(sym, level, sig_ms, lot, oid)`.
 
 use super::data::{Sym, MIN_MS, SCALE};
-use super::levels::{build_levels_tracked, Level};
+use super::levels::{build_levels_tracked, pierce_tol, pivot_minutes, Level, PivotMinutes};
 use super::params::{Params, SigCfg};
 use super::tick::{candidates_group_tr, mul_div, zone_at, TSig, TickTrade};
 use super::trade::NOTIONAL_U;
@@ -210,6 +210,8 @@ pub struct SetupCtx<'a> {
     p: &'a Params,
     levels: HashMap<u16, Vec<Level>>,
     kills: HashMap<u16, Vec<(u32, u32, &'static str)>>,
+    /// TK-747 (`lm`): минуты экстремума и подтверждения пивотов монеты (`levels::pivot_minutes`).
+    piv: HashMap<u16, PivotMinutes>,
     sigs: HashMap<(u16, u32, i64), &'a TSig>,
 }
 
@@ -221,6 +223,7 @@ impl<'a> SetupCtx<'a> {
             p,
             levels: HashMap::new(),
             kills: HashMap::new(),
+            piv: HashMap::new(),
             sigs: sigs.iter().map(|s| ((s.sym, s.level, s.ms), s)).collect(),
         }
     }
@@ -320,15 +323,31 @@ impl<'a> SetupCtx<'a> {
         // члены активной версии — касания, давшие уровень; выпавшие члены прежних версий
         let tf_ms = p.sig.lv.tf_min as i64 * MIN_MS;
         let cur: &[(u32, i64)] = lv.mem.get(si).map_or(&[], Vec::as_slice);
+        // TK-747 (`lm`): минуты экстремума и подтверждения каждого пивота (только при `lm ≠ 0` — файл прежнего ключа не меняется)
+        let pt = if p.sig.lv.lm != 0 {
+            Some(
+                &*self
+                    .piv
+                    .entry(x.sym)
+                    .or_insert_with(|| pivot_minutes(sym, &p.sig.lv, side)),
+            )
+        } else {
+            None
+        };
         for (bar, px) in cur {
             let a = i64::from(*bar) * tf_ms;
+            let times = pt
+                .and_then(|m| m.get(&(*bar, *px)))
+                .map_or(String::new(), |(ext, conf)| {
+                    format!(";extremum_ms={};confirm_ms={}", min_ms(*ext), min_ms(*conf))
+                });
             let _ = out.write_str(&key(
                 "touch",
                 *px,
                 a.to_string(),
                 (a + tf_ms).to_string(),
                 format!(
-                    "pivot bar {bar} of tf {}m; member of the active version",
+                    "pivot bar {bar} of tf {}m; member of the active version{times}",
                     p.sig.lv.tf_min
                 ),
             ));
@@ -356,6 +375,111 @@ impl<'a> SetupCtx<'a> {
                     a.to_string(),
                     (a + tf_ms).to_string(),
                     format!("inner level of the cascade; pierce_minutes={n};max_wick_e8={wick}"),
+                ));
+            }
+            // возраст сетапа, ширина каскада, разрыв между соседними пивотами; тик и допуск; касание и проторговка (критик 4, 7, 8, 11–13, 18)
+            let px_real = lv.segs[si].1;
+            let set = lv.fresh_at(si);
+            let tick = sym.tick();
+            let tol = pierce_tol(tick, sg.lp);
+            let pct = |d: i64| format!("{:.5}", d as f64 * 100.0 / sg.lp.abs().max(1) as f64);
+            let tm: Vec<(u32, u32)> = cur
+                .iter()
+                .filter_map(|e| pt.and_then(|m| m.get(e)).copied())
+                .collect();
+            let first_conf = tm.iter().map(|v| v.1).min().unwrap_or(0) as usize;
+            let oldest_ext = tm.iter().map(|v| v.0).min().unwrap_or(0) as usize;
+            let mut confs: Vec<u32> = tm.iter().map(|v| v.1).collect();
+            confs.sort_unstable();
+            let max_gap = confs.windows(2).map(|w| w[1] - w[0]).max().unwrap_or(0);
+            let (lo_px, hi_px) = (
+                cur.iter().map(|e| e.1).min().unwrap_or(0),
+                cur.iter().map(|e| e.1).max().unwrap_or(0),
+            );
+            let _ = out.write_str(&key(
+                "age",
+                px_real,
+                min_ms(set as u32),
+                min_ms(sg.t),
+                format!(
+                    "min_from_set={};first_confirm_ms={};setup_age_min={};oldest_extremum_ms={};oldest_age_min={};max_gap_min={max_gap};members={};cascade_width_pct={}",
+                    t.saturating_sub(set),
+                    min_ms(first_conf as u32),
+                    t.saturating_sub(first_conf),
+                    min_ms(oldest_ext as u32),
+                    t.saturating_sub(oldest_ext),
+                    cur.len(),
+                    pct(hi_px - lo_px),
+                ),
+            ));
+            let _ = out.write_str(&key(
+                "tick",
+                px_real,
+                String::new(),
+                String::new(),
+                format!(
+                    "tick_e8={tick};tol_e8={tol};tick_pct={};tol_pct={}",
+                    pct(tick),
+                    pct(tol)
+                ),
+            ));
+            if p.sig.fw_min > 0 {
+                let hi_of = |m: usize| if s > 0 { sym.h[m] } else { -sym.l[m] };
+                let band = sg.lp - tol;
+                let touched = |m: &usize| sym.o[*m] != 0 && hi_of(*m) >= band;
+                let first = (set..t).find(touched);
+                let last = (set..t).rev().find(touched);
+                let n_touch = (set..t).filter(touched).count();
+                let reason = match (first, last) {
+                    (Some(a), Some(b)) => format!(
+                        "first_ms={};first_dist_e8={};first_dist_ticks={};first_dist_pct={};last_ms={};last_age_min={};touch_minutes={n_touch}",
+                        min_ms(a as u32),
+                        sg.lp - hi_of(a),
+                        if tick > 0 { (sg.lp - hi_of(a)) / tick } else { 0 },
+                        pct(sg.lp - hi_of(a)),
+                        min_ms(b as u32),
+                        t - b
+                    ),
+                    _ => "none".into(),
+                };
+                let _ = out.write_str(&key(
+                    "first_touch",
+                    px_real,
+                    first.map_or(String::new(), |a| min_ms(a as u32)),
+                    min_ms(sg.t),
+                    reason,
+                ));
+                // проторговка в окне `[t − fk, t)`: доля закрытий в полосе `fb` под уровнем (от минут с данными) и ближайшее закрытие к уровню
+                let lim = mul_div(sg.lp.abs(), p.sig.fr_b_pm, 100_000) as i64;
+                let (mut n_data, mut n_in) = (0usize, 0usize);
+                let mut near: Option<(i64, usize)> = None;
+                for m in t.saturating_sub(p.sig.fr_k)..t {
+                    if sym.o[m] == 0 {
+                        continue;
+                    }
+                    n_data += 1;
+                    let gap = sg.lp - s * sym.c[m];
+                    if gap > 0 && gap <= lim {
+                        n_in += 1;
+                    }
+                    if near.is_none_or(|(g, _)| gap < g) {
+                        near = Some((gap, m));
+                    }
+                }
+                let (gap, gm) = near.unwrap_or((0, 0));
+                let _ = out.write_str(&key(
+                    "consol",
+                    px_real,
+                    min_ms(t.saturating_sub(p.sig.fr_k) as u32),
+                    min_ms(sg.t),
+                    format!(
+                        "window_min={};data_min={n_data};in_band={n_in};share_pct={:.1};band_pm={};nearest_close_gap_e8={gap};nearest_close_gap_pct={};nearest_close_ms={}",
+                        p.sig.fr_k,
+                        if n_data > 0 { n_in as f64 * 100.0 / n_data as f64 } else { 0.0 },
+                        p.sig.fr_b_pm,
+                        pct(gap),
+                        min_ms(gm as u32)
+                    ),
                 ));
             }
         }
