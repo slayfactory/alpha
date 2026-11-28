@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TK-741 (В-192): данные страницы :8090 — вкладка «Сделки» и вариант «база без выхода по времени» в «Эквити». Только srv; движок не запускает.
 
-  python3 tk741_pagedata.py trades <каталог страницы /data/pages/ml>   # data/trades/index.json (сделки, кластеры, описание), data/trades/c/<i>.json (минутки сделки ±2 ч), data/trades/check.json (числа из БД для клик-теста)
+  python3 tk741_pagedata.py trades <каталог страницы /data/pages/ml>   # data/trades/index.json (сделки, кластеры, описание), data/trades/<i>.json (минутки сделки: 3 суток до входа … 1 сутки после выхода, целые столбцы; TK-742), data/trades/check.json (числа из БД для клик-теста)
   python3 tk741_pagedata.py equity                                      # /data/p42-tk741/page/{wa,wb,wc}/short-{trades,daily}.csv для варианта s4nt (tk684_variants.json)
 
 Входы — res/trades.json, res/cluster.json (`tk741_cluster.py run`) и БД /data/p42-tk741/tk741.sqlite.
@@ -22,7 +22,7 @@ sys.path.insert(0, HERE)
 import tk741_lib as T  # noqa: E402
 import tk741_cluster as C  # noqa: E402
 
-PAD_MIN = 120           # минутки до входа и после выхода, мин
+PRE_MIN, POST_MIN = 3 * 1440, 1440   # TK-742: минутки от 3 суток до входа до 1 суток после выхода
 RES = T.RES
 DB = T.ROOT + "/tk741.sqlite"
 KIND_RU = {"stop": "стоп", "trail": "трейл", "rt": "возврат за уровень", "tx": "по времени"}
@@ -33,33 +33,58 @@ def r(x, d):
     return None if x is None else round(float(x), d)
 
 
+def pack_bars(b, m0, m1):
+    """Минутки [m0, m1] окна одной монеты → компактный словарь целых столбцов (TK-742): цены — в шагах цены (НОД всех значений), открытие — к закрытию прошлой минуты,
+    максимум — к max(откр., закр.), минимум — к min(откр., закр.), закрытие — к открытию; оборот q — в центах ($ = q/100); g — номера минут без сделок (там всё 0, цена = прошлое закрытие)."""
+    sl = slice(m0, m1 + 1)
+    pres = b[6][sl].astype(bool)
+    o, h, l, c = (np.where(pres, b[k][sl], 0).astype(np.int64) for k in range(4))
+    qv = np.where(pres, b[4][sl], 0).astype(np.int64)
+    vals = np.concatenate([o[pres], h[pres], l[pres], c[pres]])
+    tick = int(np.gcd.reduce(vals)) if len(vals) else 1
+    tick = max(tick, 1)
+    o, h, l, c = o // tick, h // tick, l // tick, c // tick
+    prev = np.empty_like(c)          # закрытие прошлой минуты с протяжкой через дыры
+    cc = np.where(pres, c, 0)
+    idx = np.where(pres, np.arange(len(c)), 0)
+    np.maximum.accumulate(idx, out=idx)
+    ff = np.where(np.cumsum(pres) > 0, cc[idx], 0)
+    prev[0], prev[1:] = 0, ff[:-1]
+    do = np.where(pres, o - prev, 0)
+    dh = np.where(pres, h - np.maximum(o, c), 0)
+    dl = np.where(pres, np.minimum(o, c) - l, 0)
+    dc = np.where(pres, c - o, 0)
+    q = np.where(pres, np.rint(qv / 1e6), 0).astype(np.int64)
+    assert (dh >= 0).all() and (dl >= 0).all(), "минутка с max/min внутри тела"
+    return dict(v=1, n=int(len(c)), tick=tick, o=do.tolist(), h=dh.tolist(), l=dl.tolist(), c=dc.tolist(), q=q.tolist(), g=np.nonzero(~pres)[0].tolist()), int(sl.start)
+
+
 def build_trades(page):
     rows = json.load(open(RES + "/trades.json", encoding="utf-8"))
     cl = json.load(open(RES + "/cluster.json", encoding="utf-8"))
     out = os.path.join(page, "data", "trades")
     shutil.rmtree(out, ignore_errors=True)
-    os.makedirs(out + "/c")
+    os.makedirs(out)
     a = T.load("nt", T.ALLW, with_sigsx=True)
     t0 = {w: int(a["t0"][np.nonzero(a["win"] == w)[0][0]]) for w in T.ALLW}
-    trades = []
+    trades, sizes = [], []
     for rw in rows:
         w, sym = rw["win"], rw["sym"]
         b = C.bars(w, sym)
         n = len(b[0])
-        m0, m1 = max(0, rw["entry_min"] - PAD_MIN), min(n - 1, rw["exit_min"] + PAD_MIN)
-        sl = slice(m0, m1 + 1)
-        pres = b[6][sl]
-        cdl = dict(t0=t0[w] + m0 * 60000, o=[], h=[], l=[], c=[])
-        for k, arr in (("o", b[0]), ("h", b[1]), ("l", b[2]), ("c", b[3])):
-            cdl[k] = [int(x) if p else None for x, p in zip(arr[sl], pres)]
-        json.dump(cdl, open("%s/c/%d.json" % (out, rw["i"]), "w"), separators=(",", ":"))
+        m0, m1 = max(0, rw["entry_min"] - PRE_MIN), min(n - 1, rw["exit_min"] + POST_MIN)
+        pk, _ = pack_bars(b, m0, m1)
+        pk["t0"] = t0[w] + m0 * 60000
+        fn = "%s/%d.json" % (out, rw["i"])
+        json.dump(pk, open(fn, "w"), separators=(",", ":"))
+        sizes.append(os.path.getsize(fn))
         f = rw["f"]
         trades.append([rw["i"], rw["per"], rw["sym"], rw["entry_ms"], rw["exit_ms"], r(rw["entry_px"], 8), r(rw["exit_px"], 8), r(rw["lvl"], 8), rw["kind"], r(rw["pnl"], 6), rw["cluster"],
-                       [r(f[k], 4) for k in C.FEATS], t0[w] + m0 * 60000, m1 - m0 + 1, rw["entry_min"] - m0, rw["exit_min"] - m0])
+                       [r(f[k], 4) for k in C.FEATS], t0[w] + m0 * 60000, m1 - m0 + 1])
     ver = int(os.path.getmtime(RES + "/trades.json"))
     index = dict(v=ver, feats=C.FEATS, kinds=KIND_RU, periods=PERIOD_RU, k=cl["k"], silhouette=cl["silhouette"], margin=250,
                  clusters=[dict(id=c["id"], name=c["name"], med={k: r(v, 3) for k, v in c["med"].items()}) for c in cl["clusters"]],
-                 cols=["i", "per", "sym", "entry_ms", "exit_ms", "entry_px", "exit_px", "lvl", "kind", "pnl", "cluster", "f", "c_t0", "c_n", "c_ie", "c_ix"], trades=trades)
+                 cols=["i", "per", "sym", "entry_ms", "exit_ms", "entry_px", "exit_px", "lvl", "kind", "pnl", "cluster", "f", "c_t0", "c_n"], trades=trades)
     json.dump(index, open(out + "/index.json", "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     # числа из БД — для клик-теста (страница считает свои из сделок, тест сверяет)
     db = sqlite3.connect("file:%s?mode=ro" % DB, uri=True)
@@ -75,8 +100,7 @@ def build_trades(page):
             chk["clusters"]["%s/%d" % (key, cid)] = dict(n=len(pn), sum=float(pn.sum()), mean=float(pn.mean()) if len(pn) else None, rr=float(w_.mean() / abs(l_.mean())) if len(w_) and len(l_) else None,
                                                          stops=int(st.sum()), loss_per_stop=float(pn[st].mean()) if st.any() else None)
     json.dump(chk, open(out + "/check.json", "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
-    tot = sum(os.path.getsize("%s/c/%d.json" % (out, rw["i"])) for rw in rows)
-    print("data/trades: сделок %d, кластеров %d, минутки %.1f МБ, index.json %d КБ, v=%d" % (len(trades), cl["k"], tot / 1e6, os.path.getsize(out + "/index.json") // 1024, ver))
+    print("data/trades: сделок %d, кластеров %d, минутки %.1f МБ всего (на сделку: среднее %d КБ, макс %d КБ), index.json %d КБ, v=%d" % (len(trades), cl["k"], sum(sizes) / 1e6, sum(sizes) / len(sizes) / 1024, max(sizes) / 1024, os.path.getsize(out + "/index.json") // 1024, ver))
     return 0
 
 

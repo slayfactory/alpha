@@ -1,4 +1,4 @@
-"""П-42 TK-593: сборка страницы П-42 :8090 (один HTML, данные внутри). Вкладки: «Эквити» (виды «Варианты» и «Веер»), «Сделки» (TK-741), «Признаки».
+"""П-42 TK-593: сборка страницы П-42 :8090 (один HTML, данные внутри). Вкладки: «Эквити» (виды «Варианты» и «Веер»), «Сделки» (TK-741; TK-742 — приложение trades-app: <каталог>/trades-app/trades.js и trades.css), «Признаки».
 
 Использование: <venv>/bin/python tk593_page.py <template.html> <выход: каталог страницы> [features.json] [variants.json]
 Пишет <каталог>/index.html (страница статическая: после правки JSON — запустить сборку ещё раз).
@@ -63,7 +63,10 @@ def main():
     fan_idx = f"{out_dir}/data/fan/index.json"      # версия данных веера — адреса пакетов с ?v=<время каталога> (кэш браузера)
     fan_v = str(int(os.path.getmtime(fan_idx))) if os.path.exists(fan_idx) else ""
     fan_js = open(os.path.join(HERE, "tk684_fan.js"), encoding="utf-8").read().replace("/*__FANV__*/''", repr(fan_v))
-    trades_js = open(os.path.join(HERE, "tk741_trades.js"), encoding="utf-8").read()
+    app_js = f"{out_dir}/trades-app/trades.js"      # TK-742: версия приложения «Сделки» — адрес файлов с ?v=<время файла> (кэш браузера)
+    app_v = str(int(os.path.getmtime(app_js))) if os.path.exists(app_js) else ""
+    trades_js = open(os.path.join(HERE, "tk741_trades.js"), encoding="utf-8").read().replace("/*__TRADESV__*/''", repr(app_v))
+    assert os.path.exists(app_js), "нет trades-app/trades.js: сначала tools/p42/trades-app/build.sh и ml_page_update.sh (кладёт dist на srv)"
     parts = {"/*__FANJS__*/": fan_js, "/*__TRADESJS__*/": trades_js, "/*__FEATURES__*/": blob(features), "/*__VARIANTS__*/": blob(variants)}
     assert all(tpl.count(k) == 1 for k in parts), "шаблон: метки данных"
     html = tpl

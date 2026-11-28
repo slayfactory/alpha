@@ -114,7 +114,7 @@ const PER = [['main', 'фев–13.11'], ['JAN', 'январь'], ['N1', '14–2
   let shotted = false;
   for (const i of [...new Set(pickI)]) {
     await page.click(`table[data-trt] tbody tr[data-i="${i}"]`); rep.clicks++;
-    await page.waitForSelector('#tr-detail svg[data-chart="trade"]', {timeout: 15000});
+    await page.waitForSelector('#tr-detail [data-chart="trade"][data-ready="1"]', {timeout: 15000});
     d = await dom();
     const x = T[i];
     eq(d.hash, `#trades/main/0/${i}`, 'хеш сделки ' + i);
@@ -125,38 +125,20 @@ const PER = [['main', 'фев–13.11'], ['JAN', 'январь'], ['N1', '14–2
     const ix = k => idx.feats.indexOf(k);
     const setup = d.detail.setup, fm = {r15: v => num(v, 1, true), r60: v => num(v, 1, true), r240: v => num(v, 1, true), rv60: v => num(v, 1), near: v => num(v * 100, 0), touch: v => String(v), age: v => num(v, 0), turn: v => num(v, 1), stab: v => String(v), hi24: v => num(v, 1), lo24: v => num(v, 1), btc60: v => num(v, 2, true)};
     eq(setup, Object.fromEntries(idx.feats.map(k => [k, x.f[ix(k)] == null ? '—' : fm[k](x.f[ix(k)])])), 'числа сетапа ' + i);
-    const g = await page.evaluate(() => {
-      const s = document.querySelector('#tr-detail svg[data-chart="trade"]'), vb = s.viewBox.baseVal;
-      const lv = s.querySelector('[data-chart="trade.level"]'), en = s.querySelector('[data-chart="trade.entry"]'), ex = s.querySelector('[data-chart="trade.exit"]');
-      const nums = d => d.match(/-?\d+(\.\d+)?/g).map(Number);
-      return {w: vb.width, h: vb.height, rects: s.querySelectorAll('rect').length, lvY: lv ? +lv.getAttribute('y1') : null, en: en ? nums(en.getAttribute('d')) : null, ex: ex ? nums(ex.getAttribute('d')) : null, box: s.getBoundingClientRect().width};
-    });
-    const cd = await json(`data/trades/c/${i}.json`);
-    const present = cd.o.filter(v => v != null).length;
-    eq(g.rects - 1, present, 'свечей на графике ' + i);                // +1 — невидимая зона наведения
-    ok(g.lvY != null && g.en && g.ex, 'уровень / вход / выход на графике ' + i);
-    if (g.lvY != null && g.en && g.ex) {
-      const m = {l: 62, r: 14, t: 16, b: 28}, n = cd.o.length, P = a => a / 1e8;
-      let lo = Infinity, hi = -Infinity;
-      for (let k = 0; k < n; k++) if (cd.o[k] != null) { lo = Math.min(lo, P(cd.l[k])); hi = Math.max(hi, P(cd.h[k])); }
-      [x.lvl, x.entry_px, x.exit_px].forEach(v => { lo = Math.min(lo, v); hi = Math.max(hi, v); });
-      const pad = (hi - lo) * 0.06 || hi * 0.001; lo -= pad; hi += pad;
-      const Y = v => (g.h - m.b) + (v - lo) / (hi - lo) * (m.t - (g.h - m.b));
-      const XT = ms => m.l + ((ms - cd.t0) / 60000) / n * (g.w - m.l - m.r);
-      const near = (a, b, tol, msg) => ok(Math.abs(a - b) < tol, `${msg} ${i}: ${a.toFixed(2)} ≠ ${b.toFixed(2)}`);
-      near(g.lvY, Y(x.lvl), 0.6, 'высота уровня');
-      near(g.en[0] + 7, XT(x.entry_ms), 0.6, 'время входа'); near(g.en[g.en.length - 1], Y(x.entry_px), 0.6, 'цена входа');
-      near(g.ex[0], XT(x.exit_ms), 0.6, 'время выхода'); near(g.ex[1] + 7, Y(x.exit_px), 0.6, 'цена выхода');
-      ok(x.exit_ms >= x.entry_ms, 'выход не раньше входа ' + i);
-      ok(g.en[0] + 7 >= m.l && g.ex[0] <= g.w - m.r + 0.5, 'отметки в области графика ' + i);
-      const minutes = (cd.t0 + (n - 1) * 60000 - (cd.t0)) / 60000;
-      ok(x.entry_ms - cd.t0 >= 100 * 60000 || x.entry_ms - cd.t0 >= 0, 'вход в окне минуток ' + i);
-    }
+    // TK-742: график — lightweight-charts (подробные проверки — tk742_check.js); здесь: свечи, уровень, вход, выход есть и совпадают с данными сделки
+    const g = await page.evaluate(() => ({dbg: window.P42Trades.debug(), box: document.querySelector('#tr-detail [data-chart="trade"]').getBoundingClientRect().width, n: +document.querySelector('#tr-detail [data-chart="trade"]').dataset.n}));
+    ok(g.dbg && g.dbg.tf === '1m', 'график: таймфрейм 1м по умолчанию ' + i);
+    ok(g.n > 0 && g.dbg.bars.filter(b => b).length === g.n, 'свечей на графике ' + i);
+    eq(g.dbg.lines.map(l => [l.k, +l.price.toFixed(8)]), [['level', x.lvl], ['entry', x.entry_px], ['exit', x.exit_px]], 'уровень / вход / выход на графике ' + i);
+    ok(g.dbg.markers.length === 2 && g.dbg.markers.some(m => m.shape === 'arrowDown') && g.dbg.markers.some(m => m.shape === 'arrowUp'), 'отметки входа и выхода ' + i);
+    ok(x.exit_ms >= x.entry_ms, 'выход не раньше входа ' + i);
     ok(g.box <= W + 1, 'график шире окна ' + i);
     if (!shotted) { await shot('detail-' + i); shotted = true; }
     // наведение: подсказка со временем GMT+4
-    await page.hover('#tr-detail svg [data-chart="trade.hover"]');
-    const tip = await page.evaluate(() => document.getElementById('tip').style.display === 'block' ? document.getElementById('tip').textContent : '');
+    await page.waitForTimeout(900);      // страница прокручивается к карточке плавно (scroll-behavior: smooth)
+    const cb = await page.locator('#tr-detail [data-chart="trade"]').boundingBox();
+    await page.mouse.move(cb.x + cb.width / 2, cb.y + cb.height / 2); await page.mouse.move(cb.x + cb.width / 2 + 5, cb.y + cb.height / 2 + 3);
+    const tip = await page.evaluate(() => { const t = document.querySelector('#tr-detail [data-chart="trade.tip"]'); return t && t.style.display === 'block' ? t.textContent : ''; });
     ok(/GMT\+4/.test(tip), 'подсказка графика ' + i + ': ' + tip.slice(0, 60));
     await page.mouse.move(2, 2);
   }
@@ -167,7 +149,7 @@ const PER = [['main', 'фев–13.11'], ['JAN', 'январь'], ['N1', '14–2
   // ссылка с хешем воспроизводит вид
   const anyJan = Object.values(T).find(r => r.per === 'JAN' && r.cluster);
   await go(`#trades/JAN/${anyJan.cluster}/${anyJan.i}`);
-  await page.waitForSelector('#tr-detail svg[data-chart="trade"]', {timeout: 15000});
+  await page.waitForSelector('#tr-detail [data-chart="trade"][data-ready="1"]', {timeout: 15000});
   d = await dom();
   eq(d.hash, `#trades/JAN/${anyJan.cluster}/${anyJan.i}`, 'ссылка воспроизводит хеш');
   eq([d.per.filter(p => p.sel).map(p => p.k), d.sum.filter(r => r.sel).map(r => r.cl), d.detail && d.detail.i], [['JAN'], [anyJan.cluster], anyJan.i], 'ссылка воспроизводит вид');
@@ -189,7 +171,7 @@ const PER = [['main', 'фев–13.11'], ['JAN', 'январь'], ['N1', '14–2
     const hv = await page.evaluate(() => getComputedStyle(document.querySelector('table[data-trt] thead')).display);
     ok(hv !== 'none', 'заголовки сортировки на узком экране скрыты');
     await page.click('table[data-trt] tbody tr:nth-child(3)'); rep.clicks++;
-    await page.waitForSelector('#tr-detail svg[data-chart="trade"]', {timeout: 15000});
+    await page.waitForSelector('#tr-detail [data-chart="trade"][data-ready="1"]', {timeout: 15000});
     d = await dom(); ok(d.over <= 1, 'перелив с карточкой ' + d.over);
     await shot('mobile-detail');
   }
