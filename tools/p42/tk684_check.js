@@ -32,8 +32,12 @@ const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'Н
     side: (document.querySelector('#eq-tabs button[aria-selected="true"]') || {dataset: {}}).dataset.side, views: document.querySelectorAll('#eq-views button, #eq-cmp, #eq-desc, #where-box').length,
     pick: Object.fromEntries([...document.querySelectorAll('.vr-pick')].map(r => [r.dataset.pick, [...r.querySelectorAll('button[aria-selected="true"]')].map(b => b.dataset.var)])),
     head: [...document.querySelectorAll('table[data-vtable] thead th')].map(t => t.textContent),
-    rows: [...document.querySelectorAll('table[data-vtable] tbody tr')].map(r => ({line: r.dataset.line, ids: r.dataset.ids, name: r.querySelector('[data-f=name]').textContent, status: r.querySelector('[data-f=status]').textContent, title: r.querySelector('[data-f=name]').title,
+    rows: [...document.querySelectorAll('table[data-vtable] tbody tr:not(.fwd)')].map(r => ({line: r.dataset.line, ids: r.dataset.ids, name: r.querySelector('[data-f=name]').textContent, status: r.querySelector('[data-f=status]').textContent, title: r.querySelector('[data-f=name]').title,
       v: Object.fromEntries([...r.querySelectorAll('td.num')].map(c => [c.dataset.f, c.dataset.v])), t: Object.fromEntries([...r.querySelectorAll('td.num')].map(c => [c.dataset.f, c.textContent]))})),
+    fwdRows: [...document.querySelectorAll('table[data-vtable] tbody tr.fwd')].map(r => ({line: r.dataset.line, ids: r.dataset.ids, name: r.querySelector('[data-f=name]').textContent, status: r.querySelector('[data-f=status]').textContent,
+      v: Object.fromEntries([...r.querySelectorAll('td.num')].map(c => [c.dataset.f, c.dataset.v])), t: Object.fromEntries([...r.querySelectorAll('td.num')].map(c => [c.dataset.f, c.textContent]))})),
+    fwdPaths: [...document.querySelectorAll('#eq-view path[data-chart^="fwd."]')].map(p => ({k: p.dataset.chart.slice(4), fin: +p.dataset.final, w: +p.getAttribute('stroke-width'), len: p.getAttribute('d').length})),
+    fwdMark: [...document.querySelectorAll('#eq-view [data-chart="fwd.label"]')].map(t => t.textContent),
     paths: [...document.querySelectorAll('#eq-view path[data-chart^="var."]')].map(p => ({k: p.dataset.chart.slice(4), fin: +p.dataset.final, w: +p.getAttribute('stroke-width'), len: p.getAttribute('d').length})),
     legend: [...document.querySelectorAll('#eq-view .legend span')].map(s => s.textContent),
     prose: document.querySelectorAll('#eq-view p, #eq-view ul, #eq-view ol, #eq-view li, #eq-view .eq-note, #eq-view .badge, #eq-view a').length,
@@ -47,6 +51,16 @@ const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'Н
   const BY = Object.fromEntries(J.variants.map(v => [v.id, v]));
   const longs = J.variants.filter(v => v.side === 'long'), shorts = J.variants.filter(v => v.side === 'short');
   const close = (a, b) => Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b));
+  // TK-696 (25.11): четыре замороженные линии — группа «заморожено 25.11», числа == принятым в летописи (S1 / S2 — L-428; L1 / L2 — настоящие значения признаков, L-434)
+  const FROZEN = {fs1: [2158, 1358.97, 11.275, 40.28, 13], fs2: [1457, 1254.2, 11.373, 40.37, 16], fl1: [174, 348.07, 7.169, 17.1, 11], fl2: [227, 382.62, 7.073, 19.13, 11]};
+  for (const [id, [n, sum, sh, dd, gap]] of Object.entries(FROZEN)) { const k = K.single[id]; ok(BY[id] && BY[id].group === 'frozen' && BY[id].status === 'заморожено 25.11' && k && k.n === n && Math.abs(k.sum - sum) < 0.006 && Math.abs(k.sharpe - sh) < 0.006 && Math.abs(k.dd - dd) < 0.006 && k.gap === gap, 'замороженная линия ' + id + ': ' + JSON.stringify([BY[id] && BY[id].status, k])); }
+  eq(J.groups.map(g => g.label), ['', 'заморожено 25.11'], 'группы вариантов');
+  // дни вперёд (чтение «по вчера» 17–24.11): числа линий == принятым в летописи (L-438)
+  const FWD = {fs1: [116, -11.39, -1.96, 43.2, 5], fs2: [79, -36.47, -8.1, 51.6, 5], fl1: [9, 25.65, 12.38, 0, 2], fl2: [12, 25.49, 11.44, 0.8, 2]};
+  for (const [id, [n, sum, sh, dd, gap]] of Object.entries(FWD)) { const k = K.fwd.single[id]; ok(BY[id].fwd && k && k.n === n && Math.abs(k.sum - sum) < 0.006 && Math.abs(k.sharpe - sh) < 0.006 && Math.abs(k.dd - dd) < 0.06 && k.gap === gap && BY[id].fwd.t.length === n, 'вперёд ' + id + ': ' + JSON.stringify(k)); }
+  eq(J.variants.filter(v => v.fwd).map(v => v.id).sort(), Object.keys(FWD).sort(), 'дни вперёд — только у замороженных линий');
+  eq([J.forward.label, J.forward.days], ['17–24.11', 8], 'описание дней вперёд');
+  const fwdIds = ids => ids.split('|').every(i => BY[i] && BY[i].fwd);
   // таблица == данные: строки по выбранным линиям, числа (data-v) и текст ячеек
   const checkTable = (d, l, s, m) => {
     const want = [];
@@ -59,6 +73,12 @@ const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'Н
     want.forEach((w, i) => { const r = d.rows[i]; if (!r) return; COLS.forEach(c => {
       ok(w[3][c] != null && close(+r.v[c], w[3][c]), `${m} ${w[0]} ${c}: ${r.v[c]} ≠ ${w[3][c]}`);
       eq(r.t[c], FMT[c](w[3][c]), `${m} ${w[0]} ${c} текст`);
+    }); });
+    const wf = want.filter(w => fwdIds(w[1]));      // строки «вперёд» — у линий, где дни вперёд есть у всех частей
+    eq(d.fwdRows.map(r => [r.line, r.ids, r.name, r.status]), wf.map(w => [w[0] + '-fwd', w[1], w[2], 'вперёд ' + J.forward.label]), m + ' строки «вперёд»');
+    wf.forEach((w, i) => { const r = d.fwdRows[i]; if (!r) return; const fk = w[0] === 'both' ? K.fwd.both[w[1]] : K.fwd.single[w[1]]; COLS.forEach(c => {
+      ok(fk[c] != null && close(+r.v[c], fk[c]), `${m} вперёд ${w[0]} ${c}: ${r.v[c]} ≠ ${fk[c]}`);
+      eq(r.t[c], FMT[c](fk[c]), `${m} вперёд ${w[0]} ${c} текст`);
     }); });
     ok(d.prose === 0 && d.views === 2 && d.tableOver <= 0 && d.cards === 1 && d.tables === 1 && d.svgs === 1, m + ' на виде только выбор, график и одна таблица: ' + JSON.stringify([d.prose, d.views, d.tableOver, d.cards, d.tables, d.svgs]));
     ok(!/медиан/i.test(d.text) && !/TK-\d|L-\d{3}/.test(d.text), m + ' медиана или номер задачи в тексте');
@@ -73,6 +93,10 @@ const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'Н
     eq(d.paths.map(p => p.k).sort(), want.map(w => w[0]).sort(), m + ' линии графика');
     want.forEach(w => { const p = d.paths.find(x => x.k === w[0]); if (p) ok(close(p.fin, w[1]) && p.w === w[2] && p.len > 50, `${m} линия ${w[0]}: итог ${p.fin} ≠ ${w[1]} или толщина ${p.w} ≠ ${w[2]}`); });
     eq(d.legend.length, want.length, m + ' легенда');
+    const wf = want.filter(w => w[0] === 'both' ? fwdIds(l + '|' + s) : fwdIds(w[0] === 'long' ? l : s));      // дни вперёд: свой путь у линий, где они есть; итог = итог окна + сделки чтения
+    eq(d.fwdPaths.map(p => p.k).sort(), wf.map(w => w[0]).sort(), m + ' пути «вперёд»');
+    wf.forEach(w => { const p = d.fwdPaths.find(x => x.k === w[0]); const fk = w[0] === 'both' ? K.fwd.both[l + '|' + s] : K.fwd.single[w[0] === 'long' ? l : s]; if (p) ok(close(p.fin, w[1] + fk.sum) && p.w === (d.paths.find(x => x.k === w[0]) || {}).w, `${m} путь вперёд ${w[0]}: итог ${p.fin} ≠ ${w[1]} + ${fk.sum}`); });
+    eq(d.fwdMark, wf.length ? ['вперёд ' + J.forward.label] : [], m + ' метка «вперёд»');
   };
   const state = async (side, l, s, m) => {
     const d = await dom();

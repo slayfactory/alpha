@@ -3,9 +3,11 @@
  "universe": "c539", "win": "01.07–13.11",
  "stage": "/data/p42-tk696/cells", "arch": "/data/p42-tk674c/cells-arch",
  "groups": [
-  {"id": "base", "label": ""}
+  {"id": "base", "label": ""},
+  {"id": "frozen", "label": "заморожено 25.11"}
  ],
  "default": {"long": "la", "short": "sa"},
+ "forward": {"read": "thru-2026-11-24-r2", "t0": "2026-10-16", "from": "2026-11-17", "to": "2026-11-24", "point": "/data/p42-tk616/fwd/point-thru-2026-11-24-r2.json"},
  "variants": [
   {"id": "la", "side": "long", "group": "base", "label": "база, стоп 3 %", "key": "s3", "chron": "s3", "ref": {"entry": "L-334", "n": 298, "sharpe": 5.22, "gap": 16}},
   {"id": "l3", "side": "long", "group": "base", "label": "тройка · лучший Шарп", "status": "подобрано на этих данных", "key": "s3+big1800.le_q80+ok10_d5.le@h_le0+vpin1h.ge_q40", "chron": "s3+big1800.le_q80+ok10_d5.le@h_le0+vpin1h.ge_q40", "ref": {"entry": "L-360", "n": 132, "sharpe": 8.01, "gap": 10}},
@@ -15,6 +17,10 @@
   {"id": "sa", "side": "short", "group": "base", "label": "база, стоп 4 %", "key": "s4", "chron": "s4", "ref": {"entry": "L-334", "n": 172, "sharpe": 3.63, "gap": 41}},
   {"id": "san", "side": "short", "group": "base", "label": "база, без выхода по времени", "key": "s4+tt0", "dir": "/data/p42-tk741/page/{w}", "ref": {"entry": "TK-741", "n": 172, "sum": 133.9315, "sharpe": 3.6346, "dd": 25.8109, "gap": 41}},
   {"id": "ssp1", "side": "short", "group": "base", "label": "вход двумя частями · NATR 0,6 %", "status": "подобрано на этих данных", "key": "e20+e2t2+n_bounce1+natr_min0.6+nf1+s4", "chron": "e20+e2t2+n_bounce1+natr_min0.6+nf1+s4", "ref": {"entry": "L-384", "n": 1456, "sharpe": 10.12, "gap": 16}},
-  {"id": "ssp2", "side": "short", "group": "base", "label": "вход двумя частями · NATR 60 мин", "status": "подобрано на этих данных", "key": "e20+e2t2+n_bounce1+natr_p60+s4", "chron": "e20+e2t2+n_bounce1+natr_p60+s4", "ref": {"entry": "L-384", "n": 2151, "sharpe": 9.94, "gap": 10}}
+  {"id": "ssp2", "side": "short", "group": "base", "label": "вход двумя частями · NATR 60 мин", "status": "подобрано на этих данных", "key": "e20+e2t2+n_bounce1+natr_p60+s4", "chron": "e20+e2t2+n_bounce1+natr_p60+s4", "ref": {"entry": "L-384", "n": 2151, "sharpe": 9.94, "gap": 10}},
+  {"id": "fs1", "side": "short", "group": "frozen", "label": "S1 · NATR 60 мин + rr1", "status": "заморожено 25.11", "key": "e20+e2t2+n_bounce1+natr_p60+rr1+s4", "chron": "e20+e2t2+n_bounce1+natr_p60+rr1+s4", "ref": {"entry": "L-428", "n": 2158, "sum": 1358.97, "sharpe": 11.275, "dd": 40.28, "gap": 13}, "fwd": {"dir": "/data/p42-tk616/fwd/thru-2026-11-24-r2/out/crypto/w1/c4a945232c618", "cell": "T674_S1|crypto"}},
+  {"id": "fs2", "side": "short", "group": "frozen", "label": "S2 · NATR 0,6 % + q100", "status": "заморожено 25.11", "key": "e20+e2t2+n_bounce1+natr_min0.6+nf1+q100+s4", "chron": "e20+e2t2+n_bounce1+natr_min0.6+nf1+q100+s4", "ref": {"entry": "L-428", "n": 1457, "sum": 1254.2, "sharpe": 11.373, "dd": 40.37, "gap": 16}, "fwd": {"dir": "/data/p42-tk616/fwd/thru-2026-11-24-r2/out/crypto/w1/c8c920b414333", "cell": "T674_S2|crypto"}},
+  {"id": "fl1", "side": "long", "group": "frozen", "label": "L1 · CN60, big1800, vpin1h", "status": "заморожено 25.11", "key": "s3+CN60_q50+big1800.le_q80+vpin1h.ge_q20", "dir": "/data/p42-tk708/real/out/{w}/c9a0fa0d674b7", "ref": {"entry": "L-434", "n": 174, "sum": 348.07, "sharpe": 7.169, "dd": 17.1, "gap": 11}, "fwd": {"dir": "/data/p42-tk616/fwd/thru-2026-11-24-r2/out/crypto/w1/c9a0fa0d674b7", "cell": "T674_L1|crypto"}},
+  {"id": "fl2", "side": "long", "group": "frozen", "label": "L2 · busy0, tpk3, big1800, vpin1h", "status": "заморожено 25.11", "key": "busy0+s3+tpk3+big1800.le_q80+vpin1h.ge_q20", "dir": "/data/p42-tk708/real/out/{w}/c2947454074a5", "ref": {"entry": "L-434", "n": 227, "sum": 382.62, "sharpe": 7.073, "dd": 19.13, "gap": 11}, "fwd": {"dir": "/data/p42-tk616/fwd/thru-2026-11-24-r2/out/crypto/w1/c2947454074a5", "cell": "T674_L2|crypto"}}
  ]
 }
