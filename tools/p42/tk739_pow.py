@@ -295,7 +295,7 @@ def cmd_run(a):
             if (i + 1) % 10 == 0:
                 print("%d / %d миров, %.0f с" % (i + 1, len(jobs), time.time() - t0), flush=True)
                 json.dump(out, open(RES + "/gpow8-S%d.partial.json" % a.S, "w"))
-    json.dump(out, open(RES + "/gpow8-S%d.json" % a.S, "w"))
+    json.dump(out, open(RES + "/gpow8-S%d%s.json" % (a.S, ("-" + a.tag) if a.tag else ""), "w"))
     summ = {}
     for r in out:
         key = (r["kind"], round(r["Amp"] / mB, 2), r["wmult"])
@@ -309,10 +309,55 @@ def cmd_run(a):
     return 0
 
 
+def cmd_summary(a):
+    """Итог G-pow8 по записи L-557: решающая доля — A ∧ B ∧ C′ (без «у границы»); строгий O1 и граница — справочно. Читает res/gpow8-S<S>[-<tag>].json (все файлы S склеиваются)."""
+    import glob
+    mB = json.load(open(RES + "/gsrc.json", encoding="utf-8"))["m_bstar_usd_per_day"]
+    sig = json.load(open(RES + "/gsrc.json", encoding="utf-8"))["sigma_day_usd"]
+    fz = json.load(open(ROOT + "/tk739-frozen.json", encoding="utf-8"))
+    rows = []
+    for f in sorted(glob.glob(RES + "/gpow8-S%d*.json" % a.S)):
+        if "partial" in f or "timing" in f or "summary" in f:
+            continue
+        rows += json.load(open(f))
+    summ = {}
+    for r in rows:
+        key = (r["kind"], round(r["Amp"] / mB, 2), r["wmult"])
+        v = summ.setdefault(key, dict(n=0, abc=0, o1=0, A=0, B=0, C=0, border=0, nonref=0, refused=0, pbo=0.0))
+        v["n"] += 1
+        v["abc"] += int(r["A"] and r["B"] and r["C"])
+        v["o1"] += int(r["O1"])
+        v["A"] += int(r["A"])
+        v["B"] += int(r["B"])
+        v["C"] += int(r["C"])
+        v["refused"] += int(r["refused"])
+        v["nonref"] += int(not r["refused"])
+        v["border"] += int(r["border"])
+        v["pbo"] += r["pbo"]
+    out = []
+    for k, v in sorted(summ.items()):
+        n = v["n"]
+        out.append(dict(kind=k[0], amp_x_mB=k[1], wmult=k[2], n=n, share_abc=v["abc"] / n, share_strict_o1=v["o1"] / n, share_A=v["A"] / n, share_B=v["B"] / n, share_Cprime=v["C"] / n,
+                        share_refused=v["refused"] / n, border_among_selected=(v["border"] / v["nonref"] if v["nonref"] else None), pbo_mean=v["pbo"] / n))
+        print("%-3s A=%.2f·m_B* w=%gδ n=%3d: A∧B∧C′ %.3f | строгий O1 %.3f | A %.2f B %.2f C′ %.2f | отказ %.2f | у границы %s | PBO %.3f" % (
+            k[0], k[1], k[2], n, v["abc"] / n, v["o1"] / n, v["A"] / n, v["B"] / n, v["C"] / n, v["refused"] / n, ("%.2f" % (v["border"] / v["nonref"])) if v["nonref"] else "—", v["pbo"] / n))
+    fp = [x for x in out if x["kind"] in ("n0", "nB")]
+    pw = [x for x in out if x["kind"] == "A" and x["wmult"] == 2.0 and abs(x["amp_x_mB"] - 1.0) < 1e-9]
+    ok_fp = all(x["share_abc"] <= 0.10 for x in fp) and len(fp) == 2
+    ok_pw = bool(pw) and pw[0]["share_abc"] >= 0.8
+    rep = dict(S=a.S, rows=out, false_o1_ok=bool(ok_fp), power_ok=bool(ok_pw), route=("идти к решающим прогонам" if (ok_fp and ok_pw) else "O6"),
+               se_daily_mean_diff=sig / (286 ** 0.5), m_bstar=mB, sigma_day=sig, a_min_for_dsr_flag=fz["dsr"]["bar_annual"] * sig / (365 ** 0.5),
+               note="A_min для флага DSR = планка(годовая) · σ_сут / √365 (модель: σ ряда разности ≈ σ базы); SE = σ/√286")
+    json.dump(rep, open(RES + "/gpow8-summary-S%d.json" % a.S, "w"), ensure_ascii=False, indent=1)
+    print("ложные срабатывания (н0, нB ≤ 0,10): %s; мощность A_max (w = 2δ) ≥ 0,8: %s → маршрут: %s; SE = %.3f $/сутки; A_min(DSR) = %.3f $/сутки (%.2f·m_B*)" % (
+        ok_fp, ok_pw, rep["route"], rep["se_daily_mean_diff"], rep["a_min_for_dsr_flag"], rep["a_min_for_dsr_flag"] / mB))
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
-    for name, fn in (("design", cmd_design), ("timing", cmd_timing), ("run", cmd_run)):
+    for name, fn in (("design", cmd_design), ("timing", cmd_timing), ("run", cmd_run), ("summary", cmd_summary)):
         s = sp.add_parser(name)
         s.add_argument("--S", type=int, required=True)
         s.add_argument("--procs", type=int, default=6)
@@ -320,6 +365,7 @@ def main(argv=None):
         s.add_argument("--kinds", default="n0,nB,A")
         s.add_argument("--wmult", default="2")
         s.add_argument("--amps", default="1")
+        s.add_argument("--tag", default="")
         s.set_defaults(fn=fn)
     a = ap.parse_args(argv)
     return a.fn(a)
