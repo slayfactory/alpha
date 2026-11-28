@@ -21,6 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import tk741_lib as T  # noqa: E402
 import tk741_cluster as C  # noqa: E402
+import tk727_lib as L727  # noqa: E402      # natr(): формула NATR30 движка (data.rs natr_of), сверена с natr_bp на 100 из 100 (TK-727)
 
 PRE_MIN, POST_MIN = 3 * 1440, 1440   # TK-742: минутки от 3 суток до входа до 1 суток после выхода
 RES = T.RES
@@ -75,16 +76,25 @@ def build_trades(page):
         m0, m1 = max(0, rw["entry_min"] - PRE_MIN), min(n - 1, rw["exit_min"] + POST_MIN)
         pk, _ = pack_bars(b, m0, m1)
         pk["t0"] = t0[w] + m0 * 60000
+        # TK-742: NATR30 как в движке, на целых окнах (разгон — минуты до m0), значение «известное на минуте k» = NATR30 закрытой минуты k − 1 (движок берёт natr[sig_ms // 60000 − 1]);
+        # nat — в единицах 1e-5 доли цены (0,001 %), −1 — значения нет (минуты нет, окно короче 15 присутствующих); sg — номер минуты сигнала в файле
+        nv = L727.natr(dict(h=b[1], l=b[2], c=b[3], pres=b[6].astype(bool)), 30)
+        known = np.concatenate([[np.nan], nv[:-1]])
+        pk["nat"] = np.where(np.isfinite(known[m0:m1 + 1]), np.rint(known[m0:m1 + 1] * 1e5), -1).astype(np.int64).tolist()
+        pk["sg"] = int(rw["sig_min"] - m0)
+        nsg = known[rw["sig_min"]]
+        assert np.isfinite(nsg) and abs(nsg - rw["natr"]) <= 3e-8, ("NATR30 сигнала не совпал с движком", rw["i"], nsg, rw["natr"])
         fn = "%s/%d.json" % (out, rw["i"])
         json.dump(pk, open(fn, "w"), separators=(",", ":"))
         sizes.append(os.path.getsize(fn))
         f = rw["f"]
         trades.append([rw["i"], rw["per"], rw["sym"], rw["entry_ms"], rw["exit_ms"], r(rw["entry_px"], 8), r(rw["exit_px"], 8), r(rw["lvl"], 8), rw["kind"], r(rw["pnl"], 6), rw["cluster"],
-                       [r(f[k], 4) for k in C.FEATS], t0[w] + m0 * 60000, m1 - m0 + 1])
+                       [r(f[k], 4) for k in C.FEATS], t0[w] + m0 * 60000, m1 - m0 + 1,
+                       r(rw["entry_px"] * (1.0 - rw["fees"] / C.STAKE), 8)])      # be_px: безубыток — цена выхода шорта, при которой P&L после комиссий = 0 (gross = STAKE·(1 − выход/вход) = fees)
     ver = int(os.path.getmtime(RES + "/trades.json"))
     index = dict(v=ver, feats=C.FEATS, kinds=KIND_RU, periods=PERIOD_RU, k=cl["k"], silhouette=cl["silhouette"], margin=250,
                  clusters=[dict(id=c["id"], name=c["name"], med={k: r(v, 3) for k, v in c["med"].items()}) for c in cl["clusters"]],
-                 cols=["i", "per", "sym", "entry_ms", "exit_ms", "entry_px", "exit_px", "lvl", "kind", "pnl", "cluster", "f", "c_t0", "c_n"], trades=trades)
+                 cols=["i", "per", "sym", "entry_ms", "exit_ms", "entry_px", "exit_px", "lvl", "kind", "pnl", "cluster", "f", "c_t0", "c_n", "be_px"], trades=trades)
     json.dump(index, open(out + "/index.json", "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     # числа из БД — для клик-теста (страница считает свои из сделок, тест сверяет)
     db = sqlite3.connect("file:%s?mode=ro" % DB, uri=True)

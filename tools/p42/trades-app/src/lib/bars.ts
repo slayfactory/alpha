@@ -2,9 +2,10 @@
 // Время на графике — секунды UTC + 4 ч, чтобы оси lightweight-charts (они показывают UTC) показывали GMT+4.
 export const GMT4 = 4 * 3600;
 
-export type Raw = {v: number; n: number; tick: number; o: number[]; h: number[]; l: number[]; c: number[]; q: number[]; g: number[]; t0: number};
+export type Raw = {v: number; n: number; tick: number; o: number[]; h: number[]; l: number[]; c: number[]; q: number[]; g: number[]; t0: number; nat: number[]; sg: number};
 export type Bar = {time: number; open: number; high: number; low: number; close: number; q: number};          // q — оборот, $
-export type Minutes = {t0: number; step: number; bars: (Bar | null)[]};
+// nat[k] — NATR30, %, известный на минуте k (NATR30 закрытой минуты k − 1, как у движка), null — нет значения; sig — время минуты сигнала (сек, GMT+4-ось)
+export type Minutes = {t0: number; step: number; bars: (Bar | null)[]; nat: (number | null)[]; sig: number};
 
 export const TFS: [string, string, number][] = [['1m', '1м', 60], ['5m', '5м', 300], ['15m', '15м', 900], ['1h', '1ч', 3600], ['4h', '4ч', 14400]];
 
@@ -18,7 +19,7 @@ export function decode(j: Raw): Minutes {
     prev = c;
     bars[k] = {time: j.t0 / 1000 + k * 60 + GMT4, open: o * step, high: hi * step, low: lo * step, close: c * step, q: j.q[k] / 100};
   }
-  return {t0: j.t0, step, bars};
+  return {t0: j.t0, step, bars, nat: j.nat.map(v => v < 0 ? null : v / 1000), sig: j.t0 / 1000 + j.sg * 60 + GMT4};
 }
 
 /** Сбор минут в свечи таймфрейма tf (сек): бакеты по часам GMT+4 (сдвиг кратен 4 ч, поэтому границы 5м…4ч те же, что по UTC). Пустые бакеты — null. */
@@ -32,6 +33,17 @@ export function aggregate(m: Minutes, tf: number): (Bar | null)[] {
     const k = (Math.floor(b.time / tf) * tf - b0) / tf, a = out[k];
     if (!a) out[k] = {time: b0 + k * tf, open: b.open, high: b.high, low: b.low, close: b.close, q: b.q};
     else { a.high = Math.max(a.high, b.high); a.low = Math.min(a.low, b.low); a.close = b.close; a.q += b.q; }
+  }
+  return out;
+}
+
+/** NATR по свечам таймфрейма tf — значение последней минуты свечи, у которой оно есть (выровнено с aggregate: те же b0 и длина). */
+export function aggregateNat(m: Minutes, tf: number, b0: number, len: number): (number | null)[] {
+  const out: (number | null)[] = new Array(len).fill(null);
+  for (let k = 0; k < m.nat.length; k++) {
+    const v = m.nat[k]; if (v == null) continue;
+    const i = (Math.floor((m.t0 / 1000 + GMT4 + k * 60) / tf) * tf - b0) / tf;
+    if (i >= 0 && i < len) out[i] = v;
   }
   return out;
 }

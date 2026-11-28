@@ -26,7 +26,7 @@ ssh "${KEY[@]}" "$HOST" "mkdir -p $SRCD $CODE && { [ '$ROOT' = /data/pages/ml ] 
 tar -c -C trades-app/dist . | ssh "${KEY[@]}" "$HOST" "mkdir -p $ROOT/trades-app && rm -f $ROOT/trades-app/* && tar -x -C $ROOT/trades-app"
 tar -c ml_features.schema.json tk593_page.py tk593_template.html tk684_fan.js tk741_trades.js ml_page_server.py | ssh "${KEY[@]}" "$HOST" "tar -x -C $SRCD"
 tar -c tk684_equity.py tk684_metrics.py tk684_variants.json tk684_fan.py tk684_fan_ext.py | ssh "${KEY[@]}" "$HOST" "tar -x -C $CODE"
-tar -c tk741_pagedata.py tk741_cluster.py tk741_lib.py tk741_trades.js tk736_an.py tk736_lib.py tk726_seam.py | ssh "${KEY[@]}" "$HOST" 'mkdir -p /data/p42-tk741/code && tar -x -C /data/p42-tk741/code'
+tar -c tk741_pagedata.py tk741_cluster.py tk741_lib.py tk741_trades.js tk736_an.py tk736_lib.py tk726_seam.py tk727_lib.py | ssh "${KEY[@]}" "$HOST" 'mkdir -p /data/p42-tk741/code && tar -x -C /data/p42-tk741/code'
 # TK-684 / TK-680: не затирать опись признаков, выложенную из другой ветки и более новую (22.11: выкладка из ветки без TK-681 откатила вкладку «Признаки»;
 # охрана по наибольшему № не ловила ветку с пропуском № 252–307) — заливаем, только если все имена живого файла есть в локальном
 FT_NAMES='import json,sys; print(" ".join(x["name"] for s in json.load(open(sys.argv[1], encoding="utf-8"))["sets"] for g in s["groups"] for x in g["features"]))'

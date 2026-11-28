@@ -4,7 +4,7 @@ import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from '@/components/ui/table';
 import {Tabs, TabsList, TabsTrigger} from '@/components/ui/tabs';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
-import {TradeChart} from '@/components/TradeChart';
+import {BE_TIP, TradeChart, lineColors, type Order} from '@/components/TradeChart';
 import {TFS, decode, type Minutes} from '@/lib/bars';
 import {ints, money, num, trDT, trPx} from '@/lib/fmt';
 import {cn} from '@/lib/utils';
@@ -110,7 +110,26 @@ async function loadMinutes(i: number, v: number): Promise<Minutes> {
   return m;
 }
 
+// заявки движка по сделке (TK-743): пока источника нет — null; когда появятся data/trades/<№>.orders.json, подгружать здесь (по образцу loadMinutes) и отдавать графику
+const useOrders = (_i: number): Order[] | null => null;
+
+function Legend({x, dark}: {x: Row; dark: boolean}) {
+  const c = lineColors(dark), sw = (color: string, dash?: boolean) => <i className="mr-1.5 inline-block w-6 align-middle" style={dash ? {borderTop: `2px dashed ${color}`} : {height: 2, background: color}} />;
+  return (
+    <div data-f="legend" className="mb-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      <span data-lg="entry">{sw(c.entry)}вход <b className="text-foreground">{trPx(x.entry_px)}</b></span>
+      <span data-lg="exit">{sw(c.exit)}выход (ср.) <b className="text-foreground">{trPx(x.exit_px)}</b></span>
+      <Tooltip>
+        <TooltipTrigger asChild><span data-lg="be" title={BE_TIP} tabIndex={0} className="cursor-help">{sw(c.be)}безубыток <b className="text-foreground">{trPx(x.be_px)}</b></span></TooltipTrigger>
+        <TooltipContent className="max-w-[300px]">{BE_TIP}</TooltipContent>
+      </Tooltip>
+      <span data-lg="level">{sw('var(--mfg)', true)}уровень <b className="text-foreground">{trPx(x.lvl)}</b></span>
+    </div>
+  );
+}
+
 function Detail({idx, x, dark}: {idx: any; x: Row; dark: boolean}) {
+  const orders = useOrders(x.i);
   const [tf, setTf] = useState(TF), [reset, setReset] = useState(0), [mins, setMins] = useState<Minutes | null>(null), [err, setErr] = useState('');
   const cl = idx.clusters.find((c: any) => c.id === x.cluster), ix = (k: string) => idx.feats.indexOf(k), kind = idx.kinds[x.kind] || x.kind;
   useEffect(() => {
@@ -141,9 +160,10 @@ function Detail({idx, x, dark}: {idx: any; x: Row; dark: boolean}) {
             <TooltipContent>вернуть масштаб и центр на сделку</TooltipContent>
           </Tooltip>
         </div>
-        {mins ? <TradeChart key={x.i} x={x as any} minutes={mins} tf={tf} dark={dark} resetKey={reset} kindLabel={kind} />
+        <Legend x={x} dark={dark} />
+        {mins ? <TradeChart key={x.i} x={x as any} minutes={mins} tf={tf} dark={dark} resetKey={reset} kindLabel={kind} orders={orders} />
           : <div className="my-4 text-[13px] text-muted-foreground" data-f="chart">{err ? 'минутки не загрузились: ' + err : 'загрузка минуток…'}</div>}
-        <div className="mt-1.5 text-xs text-muted-foreground">Выход — средняя цена всех частей выхода (тейки и остаток) по итоговому результату; отметка стоит на минуте последнего выхода. Свечи собираются из минут; график — TradingView Lightweight Charts™.</div>
+        <div className="mt-1.5 text-xs text-muted-foreground">Выход — средняя цена всех частей выхода (тейки и остаток) по итоговому результату; отметка стоит на минуте последнего выхода. Свечи собираются из минут; график — TradingView Lightweight Charts™. {BE_TIP} Внизу — NATR30, %: на минуте стоит значение закрытой предыдущей минуты (как у движка), на старших таймфреймах — последней минуты свечи; точка и линия «сигнал» — значение на минуте сигнала.</div>
         <div className="mt-3 text-xs text-muted-foreground">Картина до сигнала (только прошлое, минуты до входа)</div>
         <div className="tr-feats mt-1.5 grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-x-4 gap-y-2 mob:grid-cols-2" data-f="setup">
           {TR_F.map(([k, t, f]) => <div key={k} data-f={k} className="flex flex-col"><span className="text-xs text-muted-foreground">{t}</span><b>{x.f[ix(k)] == null ? '—' : f(x.f[ix(k)])}</b></div>)}

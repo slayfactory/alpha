@@ -129,7 +129,7 @@ const PER = [['main', 'фев–13.11'], ['JAN', 'январь'], ['N1', '14–2
     const g = await page.evaluate(() => ({dbg: window.P42Trades.debug(), box: document.querySelector('#tr-detail [data-chart="trade"]').getBoundingClientRect().width, n: +document.querySelector('#tr-detail [data-chart="trade"]').dataset.n}));
     ok(g.dbg && g.dbg.tf === '1m', 'график: таймфрейм 1м по умолчанию ' + i);
     ok(g.n > 0 && g.dbg.bars.filter(b => b).length === g.n, 'свечей на графике ' + i);
-    eq(g.dbg.lines.map(l => [l.k, +l.price.toFixed(8)]), [['level', x.lvl], ['entry', x.entry_px], ['exit', x.exit_px]], 'уровень / вход / выход на графике ' + i);
+    eq(g.dbg.lines.map(l => [l.k, +l.price.toFixed(8)]), [['level', x.lvl], ['entry', x.entry_px], ['exit', x.exit_px], ['breakeven', x.be_px]], 'уровень / вход / выход / безубыток на графике ' + i);
     ok(g.dbg.markers.length === 2 && g.dbg.markers.some(m => m.shape === 'arrowDown') && g.dbg.markers.some(m => m.shape === 'arrowUp'), 'отметки входа и выхода ' + i);
     ok(x.exit_ms >= x.entry_ms, 'выход не раньше входа ' + i);
     ok(g.box <= W + 1, 'график шире окна ' + i);

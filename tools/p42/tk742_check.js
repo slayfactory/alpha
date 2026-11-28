@@ -4,7 +4,7 @@
 //  тема: по умолчанию тёмная; переключатель → светлая, запомнена в localStorage, переживает перезагрузку; цвета страницы и карточек из переменных темы; «Эквити» читает цвета SVG из переменных;
 //  три сделки (разные виды выхода): открыть по клику, минутки подгружаются файлом data/trades/<№>.json (размер в отчёте), числа свечей == независимый разбор файла в тесте для КАЖДОГО из 5 таймфреймов (1м 5м 15м 1ч 4ч);
 //  на каждом таймфрейме: кнопка нажата, отметки входа и выхода на своём времени (бакет или ближайшая прошлая свеча), три линии (уровень, вход, выход) на своих ценах, сделка в видимом окне,
-//  на холсте нарисованы: линия уровня (цвет акцента), стрелка входа, стрелка выхода, столбики оборота, фон — цвет темы;
+//  на холсте нарисованы: линия уровня (нейтральная), линии входа / выхода / безубытка своими цветами, стрелки входа и выхода, столбики оборота, фон — цвет темы;
 //  перекрестие: подсказка со временем GMT+4, O/H/L/C, оборотом и ценой под курсором == свеча таймфрейма (наведение на свечу входа);
 //  масштаб колесом, сдвиг перетаскиванием, «К сделке»; на узком экране — щипок двумя пальцами и сдвиг пальцем (CDP-касания); без перелива вправо; без ошибок консоли; снимки.
 const {chromium} = require(process.env.PW || 'playwright-core');
@@ -129,9 +129,18 @@ const close = (a, b, eps) => Math.abs(a - b) <= eps;
       const {mins} = decodeRaw(raw);
       const tag = `${theme} #${x.i}`;
       const css = await page.evaluate(() => { const c = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return {accent: c('--accent'), fg: c('--fg'), card: c('--card')}; });
-      const acc = hex(css.accent), fgc = hex(css.fg), cardc = hex(css.card);
+      const cardc = hex(css.card), mfgc = hex(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--mfg')));
       const cb0 = await page.locator('#tr-detail [data-chart="trade"]').boundingBox();
       ok(cb0.width <= W + 1, tag + ': график шире окна');
+      ok(cb0.height >= (W <= 640 ? 511 : 575) && cb0.height <= (W <= 640 ? 513 : 577), `${tag}: высота графика ×1,6 (${cb0.height})`);
+      {   // легенда: вход / выход / безубыток / уровень — подписи, цены, цвета; пояснение безубытка
+        const lg = await page.evaluate(() => ({t: Object.fromEntries([...document.querySelectorAll('#tr-detail [data-f="legend"] [data-lg]')].map(e => [e.dataset.lg, e.textContent])), sw: Object.fromEntries([...document.querySelectorAll('#tr-detail [data-f="legend"] [data-lg]')].map(e => { const i = e.querySelector('i'); const cs = getComputedStyle(i); return [e.dataset.lg, cs.backgroundColor !== 'rgba(0, 0, 0, 0)' ? cs.backgroundColor : cs.borderTopColor]; })), tip: document.querySelector('#tr-detail [data-lg="be"]').title, note: document.querySelector('#tr-detail').textContent}));
+        eq(Object.keys(lg.t), ['entry', 'exit', 'be', 'level'], tag + ': легенда — четыре линии');
+        ok(/вход/.test(lg.t.entry) && /выход/.test(lg.t.exit) && /безубыток/.test(lg.t.be) && /уровень/.test(lg.t.level), tag + ': подписи легенды ' + JSON.stringify(lg.t));
+        ok(new Set([lg.sw.entry, lg.sw.exit, lg.sw.be]).size === 3, tag + ': цвета входа, выхода, безубытка различны ' + JSON.stringify(lg.sw));
+        ok(/после комиссий/.test(lg.tip) && /bm=1/.test(lg.tip) && lg.note.includes('Безубыток — цена'), tag + ': пояснение безубытка');
+        ok(x.be_px > 0 && x.be_px < x.entry_px && (x.entry_px - x.be_px) / x.entry_px < 0.005, `${tag}: безубыток ${x.be_px} чуть ниже входа ${x.entry_px} (шорт, комиссии < 0,5 %)`);
+      }
       ok((await page.evaluate(() => window.P42Trades.pix(4, 4, 6, 6, null, 0))) >= 0, tag + ': снимок графика');
       const bgn = await page.evaluate(([c]) => window.P42Trades.pix(4, 4, 6, 6, c, 3), [cardc]);
       ok(bgn >= 30, tag + ': фон графика — цвет карточки темы ' + bgn);
@@ -162,7 +171,25 @@ const close = (a, b, eps) => Math.abs(a - b) <= eps;
         const mk = Object.fromEntries(d.markers.map(m => [m.shape, m]));
         eq([mk.arrowDown && mk.arrowDown.time, mk.arrowUp && mk.arrowUp.time], [nearT(x.entry_ms), nearT(x.exit_ms)], tg + ': время отметок входа и выхода');
         ok(mk.arrowDown && /вход/.test(mk.arrowDown.text) && mk.arrowUp && /выход \(ср\.\)/.test(mk.arrowUp.text), tg + ': подписи отметок');
-        eq(d.lines.map(l => [l.k, +l.price.toFixed(8)]), [['level', x.lvl], ['entry', x.entry_px], ['exit', x.exit_px]], tg + ': линии уровня, входа и выхода');
+        eq(d.lines.map(l => [l.k, +l.price.toFixed(8)]), [['level', x.lvl], ['entry', x.entry_px], ['exit', x.exit_px], ['breakeven', x.be_px]], tg + ': линии уровня, входа, выхода и безубытка');
+        {   // NATR30: значения свечей — независимая сборка из файла (последняя минута свечи, у которой есть значение); сигнал; размер панели; рисунок
+          const n0 = raw.t0 / 1000 + GMT4, expN = new Map();
+          raw.nat.forEach((v, k) => { if (v >= 0) expN.set(Math.floor((n0 + k * 60) / tfs) * tfs, v / 1000); });
+          const b0 = got[0].time - (d.bars.findIndex(b => b) * tfs), nv = d.nat.values;
+          let nbad = 0, ncnt = 0; nv.forEach((v, k) => { const e = expN.get(b0 + k * tfs); if ((v == null) !== (e === undefined) || (v != null && Math.abs(v - e) > 1e-9)) nbad++; if (v != null) ncnt++; });
+          ok(nbad === 0 && ncnt > 0, `${tg}: NATR свечей == сборка из файла (расхождений ${nbad}, значений ${ncnt})`);
+          const sgv = raw.nat[raw.sg] >= 0 ? raw.nat[raw.sg] / 1000 : null, sgT = Math.floor((n0 + raw.sg * 60) / tfs) * tfs;
+          ok(sgv != null && d.nat.sig && close(d.nat.sig.value, sgv, 1e-9) && d.nat.sig.time === Math.min(b0 + (nv.length - 1) * tfs, Math.max(b0, sgT)), `${tg}: значение NATR на минуте сигнала ${JSON.stringify(d.nat.sig)} ≠ ${sgv}`);
+          ok(d.nat.box.h === (W <= 640 ? 78 : 90) && Math.abs(d.nat.box.w - (cb0.width - 2)) <= 1, `${tg}: панель NATR ${JSON.stringify(d.nat.box)} (высота ≈ панель оборота, ширина как у свечей)`);
+          ok((await page.evaluate(() => window.P42Trades.natPix(4, 4, 6, 6, null, 0))) >= 0 && (await page.evaluate(([w, h]) => window.P42Trades.natPix(0, 0, w - 85, h, null, 12), [d.nat.box.w, d.nat.box.h])) >= 25, tg + ': линия NATR на холсте');
+          ok(d.nat.visible && Math.abs(d.nat.visible.from - d.visible.from) <= tfs + 1 && Math.abs(d.nat.visible.to - d.visible.to) <= tfs + 1, `${tg}: окно NATR == окно свечей ${JSON.stringify([d.nat.visible, d.visible])}`);
+        }
+        ok(new Set(d.lines.slice(1).map(l => l.color)).size === 3 && d.lines[0].color !== d.lines[1].color, tg + ': три цветные линии и нейтральный уровень ' + d.lines.map(l => l.color));
+        {   // окно при открытии — своё у каждого таймфрейма: 1м вход−1 ч…выход+1 ч, 5м ±6 ч, 15м ±1 сут., 1ч и 4ч — всё загруженное окно
+          const PAD = {'1m': 3600, '5m': 21600, '15m': 86400}[tf], f0 = got[0].time, f1 = got[got.length - 1].time;
+          const wf = Math.max(PAD == null ? f0 : x.entry_ms / 1000 + GMT4 - PAD, f0), wt = Math.min(PAD == null ? f1 : x.exit_ms / 1000 + GMT4 + PAD, f1);
+          ok(Math.abs(d.visible.from - wf) <= 2 * tfs + 1 && Math.abs(d.visible.to - wt) <= 2 * tfs + 1, `${tg}: окно по умолчанию [${fmtT(d.visible.from)} … ${fmtT(d.visible.to)}] ≠ [${fmtT(wf)} … ${fmtT(wt)}]`);
+        }
         const mid = (x.entry_ms + x.exit_ms) / 2000 + GMT4;
         ok(d.visible && d.visible.from <= mid && d.visible.to >= mid, tg + ': сделка в видимом окне');
         if (tf === '1m') { // открывается по центру сделки (если окно данных не обрезало края)
@@ -176,11 +203,23 @@ const close = (a, b, eps) => Math.abs(a - b) <= eps;
         const cb = await page.locator('#tr-detail [data-chart="trade"]').boundingBox();
         ok(cE && cL && cX && cE.x >= 0 && cE.x <= cb.width && cL.y >= 0 && cL.y <= cb.height && cX.x >= 0 && cX.x <= cb.width, tg + ': вход, уровень и выход в области графика ' + JSON.stringify([cE, cL, cX]));
         if (cE && cL && cX) {
-          const lvl = await page.evaluate(([w, y, a]) => window.P42Trades.pix(0, y - 2, w - 75, 5, a, 40), [cb.width, cL.y, acc]);
-          ok(lvl >= 0.12 * (cb.width - 75), `${tg}: линия уровня на холсте (${lvl} точек акцента)`);
-          const ent = await page.evaluate(([x0, y0, a]) => window.P42Trades.pix(x0 - 14, y0 - 46, 28, 46, a, 40), [cE.x, cE.y, acc]);
+          const lc = Object.fromEntries(d.lines.map(l => [l.k, hex(l.color)]));
+          const lvl = await page.evaluate(([w, y, a]) => window.P42Trades.pix(0, y - 2, w - 75, 5, a, 12), [cb.width, cL.y, mfgc]);
+          const near = [x.entry_px, x.exit_px, x.be_px].map(pp => ({pp, c: null}));
+          for (const o of near) o.c = await page.evaluate(([t, p]) => window.P42Trades.coord(t, p), [eT, o.pp]);
+          const hidden = near.some(o => o.c && Math.abs(o.c.y - cL.y) < 5);      // линию уровня закрывает ближняя цветная линия (шорт: уровень рядом со входом)
+          ok(hidden || lvl >= 0.12 * (cb.width - 75), `${tg}: линия уровня на холсте (${lvl} точек нейтрального цвета)`);
+          // три сплошные линии на холсте своими цветами (если до соседней ≥ 5 px; иначе они сливаются)
+          const ys = {entry: (await page.evaluate(([t, p]) => window.P42Trades.coord(t, p), [eT, x.entry_px])), exit: (await page.evaluate(([t, p]) => window.P42Trades.coord(t, p), [eT, x.exit_px])), breakeven: (await page.evaluate(([t, p]) => window.P42Trades.coord(t, p), [eT, x.be_px]))};
+          for (const k of ['entry', 'exit', 'breakeven']) {
+            const y = ys[k] && ys[k].y; if (y == null || y < 4 || y > cb.height - 30) continue;
+            if (Object.entries(ys).some(([o, v]) => o !== k && v && Math.abs(v.y - y) < 5)) continue;
+            const n = await page.evaluate(([w, yy, a]) => window.P42Trades.pix(0, yy - 1, w - 75, 3, a, 14), [cb.width, y, lc[k]]);
+            ok(n >= 0.5 * 3 * (cb.width - 75) * 0.5, `${tg}: линия «${k}» на холсте своим цветом (${n} точек)`);
+          }
+          const ent = await page.evaluate(([x0, y0, a]) => window.P42Trades.pix(x0 - 14, y0 - 46, 28, 46, a, 22), [cE.x, cE.y, lc.entry]);
           ok(ent >= 8, `${tg}: стрелка входа на холсте (${ent})`);
-          const exi = await page.evaluate(([x0, y0, a]) => window.P42Trades.pix(x0 - 14, y0, 28, 46, a, 22), [cX.x, cX.y, fgc]);
+          const exi = await page.evaluate(([x0, y0, a]) => window.P42Trades.pix(x0 - 14, y0, 28, 46, a, 22), [cX.x, cX.y, lc.exit]);
           ok(exi >= 8, `${tg}: стрелка выхода на холсте (${exi})`);
           const vol = await page.evaluate(([w, h]) => window.P42Trades.pix(0, h * 0.84, w - 75, h * 0.10, null, 28), [cb.width, cb.height - 26]);
           ok(vol >= 30, `${tg}: столбики оборота на холсте (${vol})`);
@@ -204,6 +243,16 @@ const close = (a, b, eps) => Math.abs(a - b) <= eps;
               ok(close(num(tip.open), eb.open, eps) && close(num(tip.high), eb.high, eps) && close(num(tip.low), eb.low, eps) && close(num(tip.close), eb.close, eps), `${tg}: O/H/L/C подсказки ${JSON.stringify(tip)} ≠ ${JSON.stringify([eb.open, eb.high, eb.low, eb.close])}`);
               ok(close(num(tip.q), Math.round(eb.q), 0.5), `${tg}: оборот подсказки ${tip.q} ≠ ${Math.round(eb.q)}`);
             }
+            ok(/%$|—$/.test(await page.evaluate(() => document.querySelector('#tr-detail [data-chart="trade.tip"] [data-k="natr"]').textContent)), tg + ': NATR в подсказке свечи');
+            const dd = await page.evaluate(() => window.P42Trades.debug());
+            ok(hb && dd.nat.cross === hb.time, `${tg}: перекрестие NATR на времени свечи ${dd.nat.cross} ≠ ${hb && hb.time}`);
+            const dashc = hex(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--dash')));
+            {   // вертикаль перекрестия на панели NATR (по снимку страницы: takeScreenshot перекрестие не рисует) — в той же колонке, что у свечей
+              const nb = await page.locator('#tr-detail [data-chart="trade.natr"]').boundingBox();
+              const shot = await page.screenshot({clip: {x: Math.round(cb.x + cc.x) - 3, y: nb.y + 1, width: 7, height: nb.height - 2}});
+              const nd = await page.evaluate(async ([b64, c]) => { const im = await createImageBitmap(await (await fetch('data:image/png;base64,' + b64)).blob()); const cv = new OffscreenCanvas(im.width, im.height), g = cv.getContext('2d'); g.drawImage(im, 0, 0); const px = g.getImageData(0, 0, im.width, im.height).data; let n = 0; for (let q = 0; q < px.length; q += 4) if (Math.abs(px[q] - c[0]) <= 14 && Math.abs(px[q + 1] - c[1]) <= 14 && Math.abs(px[q + 2] - c[2]) <= 14) n++; return n; }, [shot.toString('base64'), dashc]);
+              ok(nd >= 8, `${tg}: вертикаль перекрестия на панели NATR в колонке свечи (${nd} точек)`);
+            }
             ok(ppp > 0 && close(num(tip.px), eB.close, 2.5 / ppp + 0.6 * Math.pow(10, -Math.max(0, Math.ceil(-Math.log10(raw.tick / 1e8) - 1e-9)))), `${tg}: цена под курсором ${tip.px} ≠ ${eB.close} (±${(2.5 / ppp).toExponential(1)})`);
           }
           if (firstShot) { const f = `${out}/tk742-${W}-${theme}-crosshair-${tf}.png`; await page.screenshot({path: f}); rep.shots.push(f); }
@@ -222,6 +271,7 @@ const close = (a, b, eps) => Math.abs(a - b) <= eps;
       await page.mouse.wheel(0, -500); await page.waitForTimeout(250); await page.mouse.wheel(0, -500); await page.waitForTimeout(250);
       const v1 = await vis(); const s1 = v1.to - v1.from;
       ok(s1 < s0 * 0.95, `${tag}: колесо вперёд приближает (${Math.round(s0)} → ${Math.round(s1)} с)`);
+      { const nv1 = await page.evaluate(() => window.P42Trades.debug().nat.visible); ok(nv1 && Math.abs(nv1.from - v1.from) <= 61 && Math.abs(nv1.to - v1.to) <= 61, `${tag}: после масштаба окно NATR == окно свечей ${JSON.stringify([nv1, v1])}`); }
       await page.mouse.wheel(0, 1500); await page.waitForTimeout(300);
       const v2 = await vis(); const s2 = v2.to - v2.from;
       ok(s2 > s1 * 1.05, `${tag}: колесо назад отдаляет (${Math.round(s1)} → ${Math.round(s2)} с)`);
