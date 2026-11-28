@@ -447,6 +447,10 @@ def cmd_run(a):
                             sxf = os.path.join(out, "k%d" % c["cid"], p8.ENG[ho.SIDE_LETTER[side]] + "-sigsx.csv")      # TK-741: сигналы потока с ценой уровня (дамп `P42_SIGSX`; только если задан в окружении)
                             if os.path.exists(sxf):
                                 shutil.copyfile(sxf, os.path.join(kd, "%d-sigsx.csv" % c["cid"]))
+                            for suf in ("orders", "setup"):                  # TK-743: журнал заявок и уровни сетапа (`--keep-orders`, только при `TK743_ORDERS`)
+                                f3 = os.path.join(out, "k%d" % c["cid"], p8.ENG[ho.SIDE_LETTER[side]] + "-%s.csv" % suf)
+                                if os.path.exists(f3):
+                                    shutil.copyfile(f3, os.path.join(kd, "%d-%s.csv" % (c["cid"], suf)))
                         t0p = os.path.join(a.keep_trades, a.run_id, "t0.json")
                         t0d = json.load(open(t0p, encoding="utf-8")) if os.path.exists(t0p) else {}
                         t0d[w.name] = int(w.t0_ms)

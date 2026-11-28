@@ -15,6 +15,11 @@ use super::data::{
 };
 use super::levels::{build_levels_far, Level};
 use super::memo::{MoveKey, MoveMemo};
+use super::orders::{
+    cancel_open, push_reprice, OrdEv, EV_CANCEL, EV_FILL, EV_PLACE, EV_REPRICE, OID_E1, OID_E2,
+    OID_EXIT, OID_NX, OID_RT, OID_STOP, OID_TRL, OID_TU, OID_TX, TY_COND, TY_LIMIT, TY_MARKET,
+    TY_STOP,
+};
 use super::params::{ExitCfg, LevelCfg, PortCfg, SigCfg};
 use super::portfolio::Settled;
 use super::store::{DayHead, DayTrades, QtyRaw, SrcMeta, TickStore};
@@ -894,6 +899,21 @@ pub fn candidates_group(
     outs: &mut [Vec<Cand>],
     fgc: &mut [[u64; 4]],
 ) {
+    candidates_group_tr(sym, levels, cfgs, side, outs, fgc, None);
+}
+
+/// `candidates_group` с журналом запретов уровней (TK-743): `trace` получает `(номер уровня, минута, причина)` — первую причину запрета (`ban`, `pk`, `pb`) каждого
+/// перехода уровня в «запрещён»; на кандидатов и счётчики не влияет.
+#[allow(clippy::needless_range_loop)] // t индексирует сразу несколько рядов монеты
+pub fn candidates_group_tr(
+    sym: &Sym,
+    levels: &[Level],
+    cfgs: &[&SigCfg],
+    side: Side,
+    outs: &mut [Vec<Cand>],
+    fgc: &mut [[u64; 4]],
+    mut trace: Option<&mut Vec<(u32, u32, &'static str)>>,
+) {
     let s = side.s();
     let Some(&cfg) = cfgs.first() else {
         return;
@@ -1046,6 +1066,11 @@ pub fn candidates_group(
                     susp = Some(t);
                     fg[2] += 1;
                 }
+                if !forbidden {
+                    if let Some(tr) = trace.as_mut() {
+                        tr.push((li as u32, t as u32, "ban"));
+                    }
+                }
                 forbidden = true;
             }
             // §13.11 (`pk`): прокол цены версии больше чем на τ убивает уровень навсегда, со следующей минуты
@@ -1053,6 +1078,9 @@ pub fn candidates_group(
                 pk_dead = true;
                 if !forbidden {
                     PK_MINUTE_KILLED.fetch_add(n_jobs, Ordering::Relaxed);
+                    if let Some(tr) = trace.as_mut() {
+                        tr.push((li as u32, t as u32, "pk"));
+                    }
                 }
                 if cfg.fg_m > 0 && susp.is_none() {
                     susp = Some(t);
@@ -1064,6 +1092,9 @@ pub fn candidates_group(
             if cfg.pb && hi >= lp {
                 if !forbidden {
                     PB_KILLED.fetch_add(n_jobs, Ordering::Relaxed);
+                    if let Some(tr) = trace.as_mut() {
+                        tr.push((li as u32, t as u32, "pb"));
+                    }
                 }
                 if cfg.fg_m > 0 && susp.is_none() {
                     susp = Some(t);
@@ -1295,6 +1326,8 @@ pub struct TickOut {
     pub tl: Option<(i64, i64)>,
     /// TK-681 (`sm`): стоп от уровня (`sl`, `cw`) или порог `nx` на входе — [сдвинут нижним зажимом `sm`, прежний зажим `вход − 1e-8` сработал бы].
     pub floor: [bool; 2],
+    /// TK-743 (`--keep-orders`): журнал заявок лота — поставлена / сдвинута / исполнена / снята; без ключа пуст (память не выделяется).
+    pub ord: Vec<OrdEv>,
 }
 
 /// Множитель ступени `i` лестницы тейков в тысячных NATR (§13.12): `t_low + (t_high − t_low)·(i/(n−1))^γ`; γ = 1 — прежняя
@@ -1556,6 +1589,12 @@ struct Pos {
     trp: bool,
     /// TK-681 (`sm`): см. `TickOut::floor`.
     floor: [bool; 2],
+    /// TK-743: журнал заявок лота (`ExitCfg::keep_orders`); выключен — пуст, память не выделяется.
+    ord: Vec<OrdEv>,
+    ord_on: bool,
+    /// Последняя записанная цена действующего стопа (рама) и остаток, под который он стоит.
+    ord_stop: i64,
+    ord_rem: i64,
 }
 
 impl Pos {
@@ -1675,7 +1714,7 @@ impl Pos {
             Some(pl) => (pl.tps, pl.lots),
             None => (ladder, tp_lots_n(ex, notional)),
         };
-        Pos {
+        let mut pos = Pos {
             e,
             tps,
             lots,
@@ -1717,7 +1756,204 @@ impl Pos {
             step,
             lim: false,
             floor,
+            ord: Vec::new(),
+            ord_on: false,
+            ord_stop: i64::MIN,
+            ord_rem: 0,
+        };
+        if ex.keep_orders {
+            pos.ord_init(entry_ms);
         }
+        pos
+    }
+
+    /// TK-743: действующий стоп лота (рама) на сделке в `ms` — «самый плотный» из жёсткого, безубытка, трейла и NATR-стопа (та же формула, что в `on_trade`).
+    fn eff_stop(&self, ms: i64) -> i64 {
+        let trail_lvl = if self.armed && !self.lim {
+            self.trail
+        } else {
+            i64::MIN
+        };
+        let natr_lvl = self
+            .natr_stop
+            .as_ref()
+            .map_or(i64::MIN, |n| self.e - n.dist(ms, self.next_tp));
+        self.stop_base.max(trail_lvl).max(natr_lvl)
+    }
+
+    /// TK-743: заявки лота на входе — лестница тейков (лимитки), стоп и условные выходы до касания (`nx`, `tu`).
+    fn ord_init(&mut self, entry_ms: i64) {
+        self.ord_on = true;
+        self.ord = Vec::with_capacity(64);
+        let s = self.s;
+        for (i, (&tp, &lot)) in self.tps.iter().zip(&self.lots).enumerate() {
+            self.ord.push(OrdEv::new(
+                entry_ms,
+                EV_PLACE,
+                i as u8,
+                TY_LIMIT,
+                s * tp,
+                lot,
+                "ladder",
+            ));
+        }
+        let sp = self.eff_stop(entry_ms);
+        self.ord_stop = sp;
+        self.ord_rem = self.rem;
+        self.ord.push(OrdEv::new(
+            entry_ms,
+            EV_PLACE,
+            OID_STOP,
+            TY_STOP,
+            s * sp,
+            self.rem,
+            "entry",
+        ));
+        if self.nx_lvl != i64::MIN {
+            self.ord.push(OrdEv::new(
+                entry_ms,
+                EV_PLACE,
+                OID_NX,
+                TY_COND,
+                s * self.nx_lvl,
+                self.rem,
+                "until touch",
+            ));
+        }
+        if self.tu_due != i64::MAX {
+            let mut e = OrdEv::new(
+                entry_ms,
+                EV_PLACE,
+                OID_TU,
+                TY_COND,
+                0,
+                self.rem,
+                "until touch",
+            );
+            e.aux = self.tu_due;
+            self.ord.push(e);
+        }
+    }
+
+    /// TK-743: сдвиг действующего стопа после сделки в `ms` (безубыток, трейл, NATR-стоп, остаток после тейков) — одно событие на мс.
+    fn log_stop(&mut self, ms: i64) {
+        let sp = self.eff_stop(ms);
+        if sp != self.ord_stop || self.rem != self.ord_rem {
+            let note = if self.armed && !self.lim && self.trail >= sp {
+                "trail"
+            } else if self.be_on {
+                "be"
+            } else {
+                "rest"
+            };
+            self.ord_stop = sp;
+            self.ord_rem = self.rem;
+            push_reprice(
+                &mut self.ord,
+                OrdEv::new(
+                    ms,
+                    EV_REPRICE,
+                    OID_STOP,
+                    TY_STOP,
+                    self.s * sp,
+                    self.rem,
+                    note,
+                ),
+            );
+        }
+    }
+
+    /// TK-743: первое касание уровня в `ms` — снимаются условия «до касания», ставятся условия «после касания» (возврат, выход по времени).
+    fn ord_touch(&mut self, ms: i64) {
+        let s = self.s;
+        if self.nx_lvl != i64::MIN {
+            self.ord.push(OrdEv::new(
+                ms,
+                EV_CANCEL,
+                OID_NX,
+                TY_COND,
+                s * self.nx_lvl,
+                self.rem,
+                "touched",
+            ));
+        }
+        if self.tu_due != i64::MAX {
+            let mut e = OrdEv::new(ms, EV_CANCEL, OID_TU, TY_COND, 0, self.rem, "touched");
+            e.aux = self.tu_due;
+            self.ord.push(e);
+        }
+        if self.rt_d > 0 {
+            let mut e = OrdEv::new(
+                ms,
+                EV_PLACE,
+                OID_RT,
+                TY_COND,
+                s * (self.lp - self.rt_d),
+                self.rem,
+                "touched",
+            );
+            e.aux = self.rt_ms;
+            self.ord.push(e);
+        }
+        if self.tx_ms > 0 {
+            let mut e = OrdEv::new(ms, EV_PLACE, OID_TX, TY_COND, 0, self.rem, "touched");
+            e.aux = ms + self.tx_ms;
+            self.ord.push(e);
+        }
+    }
+
+    /// TK-743: лимитный трейл встал на биржу (`tl`) — оставшиеся тейки сняты в `ms`.
+    fn ord_cancel_takes(&mut self, ms: i64) {
+        for i in self.next_tp..self.tps.len() {
+            self.ord.push(OrdEv::new(
+                ms,
+                EV_CANCEL,
+                i as u8,
+                TY_LIMIT,
+                self.s * self.tps[i],
+                self.lots[i],
+                "trail limit set",
+            ));
+        }
+    }
+
+    /// TK-743: конец лота — исполнение выходной заявки по виду выхода и снятие всех остальных заявок. `xm`, `px` — время и цена последней ноги, `trig` — время срабатывания
+    /// (отличается от `xm` при задержке выхода), `limit` — выход лимитным приказом трейла, `trl` — выход трейлом-лимиткой.
+    fn ord_close(&mut self, xm: i64, px: i64, kind: ExitKind, trig: i64, limit: bool, trl: bool) {
+        let rem = self.rem;
+        let (oid, typ, note) = match kind {
+            ExitKind::Takes => {
+                cancel_open(&mut self.ord, xm, "all takes filled");
+                return;
+            }
+            ExitKind::Trail if trl => (
+                OID_TRL,
+                if limit { TY_LIMIT } else { TY_MARKET },
+                if limit {
+                    "trail limit"
+                } else {
+                    "trail limit, marketable at arrival"
+                },
+            ),
+            ExitKind::HardStop => (OID_STOP, TY_STOP, "stop"),
+            ExitKind::BreakEven => (OID_STOP, TY_STOP, "be"),
+            ExitKind::Trail => (OID_STOP, TY_STOP, "trail"),
+            ExitKind::Return => (OID_RT, TY_COND, "rt"),
+            ExitKind::TimeExit => (OID_TX, TY_COND, "tx"),
+            ExitKind::NoTouch => (OID_NX, TY_COND, "nx"),
+            ExitKind::TimeNoTouch => (OID_TU, TY_COND, "tu"),
+            ExitKind::Forced => (OID_EXIT, TY_MARKET, "forced: end of data"),
+        };
+        if !self.ord.iter().any(|e| e.oid == oid) {
+            self.ord
+                .push(OrdEv::new(trig, EV_PLACE, oid, typ, 0, rem, note));
+        }
+        let mut f = OrdEv::new(xm, EV_FILL, oid, typ, px, rem, note);
+        if trig != xm {
+            f.aux = trig;
+        }
+        self.ord.push(f);
+        cancel_open(&mut self.ord, xm, "position closed");
     }
 
     /// Тейки-лимитки, пройденные сделкой `p` строго насквозь.
@@ -1731,6 +1967,17 @@ impl Pos {
                 u: lot,
                 maker: true,
             });
+            if self.ord_on {
+                self.ord.push(OrdEv::new(
+                    ms,
+                    EV_FILL,
+                    self.next_tp as u8,
+                    TY_LIMIT,
+                    self.s * self.tps[self.next_tp],
+                    lot,
+                    "",
+                ));
+            }
             self.rem -= lot;
             if self.be_cfg {
                 // §13.19 `bm`: 0 — стоп в цену входа после 1-го тейка; 1 — выкл; 2 — после 2-го; 3 — за уровнем
@@ -1749,12 +1996,23 @@ impl Pos {
         if self.next_tp > filled0 {
             if let Some(st) = &self.step {
                 let f = 1000 + i128::from(st.delta_m) * self.next_tp as i128;
-                let rest = self.tps[self.next_tp..]
-                    .iter_mut()
-                    .zip(&st.mults[self.next_tp..]);
-                for (tp, &m) in rest {
+                let nt = self.next_tp;
+                let rest = self.tps[nt..].iter_mut().zip(&st.mults[nt..]).enumerate();
+                for (k, (tp, &m)) in rest {
+                    let old = *tp;
                     *tp = self.e
                         + (st.unit * i128::from(m) * f / (i128::from(SCALE) * 1_000_000)) as i64;
+                    if self.ord_on && *tp != old {
+                        self.ord.push(OrdEv::new(
+                            ms,
+                            EV_REPRICE,
+                            (nt + k) as u8,
+                            TY_LIMIT,
+                            self.s * *tp,
+                            self.lots[nt + k],
+                            "tj",
+                        ));
+                    }
                 }
             }
         }
@@ -1762,6 +2020,14 @@ impl Pos {
 
     /// Сделка с ценой `p` (рама) в момент `ms`. `Some(вид)` — стоп сработал на этой сделке (исполнение по `p`).
     fn on_trade(&mut self, ms: i64, p: i64) -> Option<ExitKind> {
+        let r = self.on_trade_inner(ms, p);
+        if self.ord_on && r.is_none() {
+            self.log_stop(ms);
+        }
+        r
+    }
+
+    fn on_trade_inner(&mut self, ms: i64, p: i64) -> Option<ExitKind> {
         let trail_lvl = if self.armed && !self.lim {
             self.trail
         } else {
@@ -1818,6 +2084,9 @@ impl Pos {
     fn level_exit(&mut self, ms: i64, p: i64) -> Option<ExitKind> {
         if self.touched_ms == NONE_MS && p >= self.lp {
             self.touched_ms = ms;
+            if self.ord_on {
+                self.ord_touch(ms);
+            }
         }
         if self.touched_ms == NONE_MS {
             // §13.31 (`nx`): до касания цена ушла от уровня против позиции на X·NATR — сценарий отменён
@@ -1829,6 +2098,11 @@ impl Pos {
         }
         if !self.broke && p >= self.lp + self.tx_x {
             self.broke = true;
+            if self.ord_on && self.tx_ms > 0 {
+                self.ord.push(OrdEv::new(
+                    ms, EV_CANCEL, OID_TX, TY_COND, 0, self.rem, "broke",
+                ));
+            }
         }
         if self.tx_ms > 0 && !self.broke && ms >= self.touched_ms + self.tx_ms {
             return Some(ExitKind::TimeExit);
@@ -2164,6 +2438,9 @@ fn sim_tail_e(
                 break;
             }
             lim = Some((lpx, live, i64::MIN));
+            if pos.ord_on && !pos.lim {
+                pos.ord_cancel_takes(ms);
+            }
             pos.lim = true;
             if let Some((due, kind)) = pending {
                 if ms >= due {
@@ -2200,6 +2477,19 @@ fn sim_tail_e(
             if ex.tl > 0 && kind == ExitKind::Trail {
                 lim = Some((pos.trail, ms + ex.lat_exit_ms, p));
                 tl_info = Some((ms, s * pos.trail));
+                if pos.ord_on {
+                    let mut e = OrdEv::new(
+                        ms,
+                        EV_PLACE,
+                        OID_TRL,
+                        TY_LIMIT,
+                        s * pos.trail,
+                        pos.rem,
+                        "trail",
+                    );
+                    e.aux = ms + ex.lat_exit_ms;
+                    pos.ord.push(e);
+                }
                 continue;
             }
             // TK-669: «всё взято» — лимитки уже исполнены, выхода (и его задержки) нет
@@ -2218,6 +2508,18 @@ fn sim_tail_e(
     } else {
         xp - frac(xp.abs(), ex.slip_bps, 10_000)
     };
+    if pos.ord_on {
+        // TK-743: срабатывание выхода — момент ухода сделки в задержку (`pending`), для трейла-лимитки — момент постановки приказа
+        let trl = tl_info.is_some() && kind == ExitKind::Trail;
+        let trig = match (pending, tl_info) {
+            (Some((due, _)), _) => due - ex.lat_exit_ms,
+            (None, Some((m, _))) if trl => m,
+            _ => xm,
+        };
+        let px = s * px_frame;
+        pos.ord_close(xm, px, kind, trig, maker_exit, trl);
+    }
+    let ord = std::mem::take(&mut pos.ord);
     let mut legs = pos.legs;
     if kind != ExitKind::Takes {
         legs.push(TLeg {
@@ -2237,6 +2539,7 @@ fn sim_tail_e(
         marks,
         tl: tl_info,
         floor: pos.floor,
+        ord,
     }
 }
 
@@ -2449,13 +2752,33 @@ pub fn lot2_decision_d(
     lot1_exit_ms: i64,
     d: i64,
 ) -> Lot2Dec {
+    lot2_trace(src, sym, side, sig, ex, lot1, lot1_exit_ms, d).0
+}
+
+/// `lot2_decision_d` с пометкой для журнала заявок (TK-743): момент события и его причина — срабатывание условия входа (исполнение / отказ), снятие заявки
+/// (лот 1 закрыт / цена дошла до уровня раньше подхода на `d`).
+#[allow(clippy::too_many_arguments)]
+pub fn lot2_trace(
+    src: &dyn TradeSrc,
+    sym: &Sym,
+    side: Side,
+    sig: &TSig,
+    ex: &ExitCfg,
+    lot1: (i64, i64),
+    lot1_exit_ms: i64,
+    d: i64,
+) -> (Lot2Dec, i64, &'static str) {
     let (ms1, p1) = lot1;
     if p1 >= sig.lp - d {
-        return Lot2Dec::Fill {
-            ms: ms1,
-            p0: p1,
-            immediate: true,
-        };
+        return (
+            Lot2Dec::Fill {
+                ms: ms1,
+                p0: p1,
+                immediate: true,
+            },
+            ms1,
+            "immediate: lot 1 entry already inside the e2 distance",
+        );
     }
     let s = side.s();
     let mut cur = Cursor::new(src, &sym.name, usize::from(sig.day), sig.idx as usize + 1);
@@ -2464,28 +2787,40 @@ pub fn lot2_decision_d(
             continue;
         }
         if ms >= lot1_exit_ms {
-            return Lot2Dec::Cancel;
+            return (Lot2Dec::Cancel, lot1_exit_ms, "lot 1 closed first");
         }
         let p = s * px;
         if p >= sig.lp {
-            return Lot2Dec::Cancel;
+            return (
+                Lot2Dec::Cancel,
+                ms,
+                "price reached the level before the e2 distance",
+            );
         }
         if p >= sig.lp - d {
             let t2 = ms + ex.lat_ms;
             if t2 >= lot1_exit_ms {
-                return Lot2Dec::Cancel;
+                return (
+                    Lot2Dec::Cancel,
+                    lot1_exit_ms,
+                    "lot 1 closed before the entry",
+                );
             }
             return match entry_at(src, sym, side, (t2 / DAY_MS) as usize, t2, sig.lp, ex) {
-                EntryDec::Fill { ms, p0 } => Lot2Dec::Fill {
+                EntryDec::Fill { ms: m2, p0 } => (
+                    Lot2Dec::Fill {
+                        ms: m2,
+                        p0,
+                        immediate: false,
+                    },
                     ms,
-                    p0,
-                    immediate: false,
-                },
-                _ => Lot2Dec::Reject,
+                    "later: price came within the e2 distance",
+                ),
+                _ => (Lot2Dec::Reject, ms, "rejected: no tape or beyond the level"),
             };
         }
     }
-    Lot2Dec::Cancel
+    (Lot2Dec::Cancel, lot1_exit_ms, "lot 1 closed first")
 }
 
 // ───────────────────────────── TK-660: вход по подтверждению E(k), опция `ek` ─────────────────────────────
@@ -3194,6 +3529,8 @@ pub struct TickTrade {
     pub vd_pm: i64,
     /// TK-677: чистый P&L лота 1 при включённом втором входе (лот 2 — `net − net1`); `None` — позиция одним лотом.
     pub net1: Option<f64>,
+    /// TK-743 (`--keep-orders`): все заявки сделки — входы (`e1`, `e2`) и выходы лотов (тейки, стоп, правила); без ключа пуст.
+    pub ord: Vec<OrdEv>,
 }
 
 #[derive(Debug, Clone)]
@@ -3272,6 +3609,79 @@ pub fn late_entry(
     }
     let t = t_dec + ex.lat_ms;
     entry_at(src, sym, side, (t / DAY_MS) as usize, t, sig.lp, ex)
+}
+
+/// TK-743: заявки сделки — входы лотов и выходы лотов из `TickOut::ord`. Вход лота 1 — рыночная заявка (лимитная у мейкера), поставлена в момент сигнала, исполнена в момент входа;
+/// второй вход (`e2`) — условная заявка на цене `уровень − d`, поставлена в момент входа лота 1, исполнена / снята по решению `lot2_trace`.
+#[allow(clippy::too_many_arguments)]
+fn entry_orders(
+    sg: &TSig,
+    ex: &ExitCfg,
+    side: Side,
+    tr: &TickOut,
+    tr2: Option<&TickOut>,
+    lots: (i64, i64),
+    plan: (bool, i64),
+    l2: Option<(i64, Lot2Dec, i64, &'static str)>,
+) -> Vec<OrdEv> {
+    let s = side.s();
+    let (maker, plan_px) = plan;
+    let typ = if maker { TY_LIMIT } else { TY_MARKET };
+    let note = if maker {
+        "maker entry"
+    } else if ex.tape_entry() {
+        "ew proxy price"
+    } else {
+        "next side trade"
+    };
+    let mut v = Vec::with_capacity(tr.ord.len() + tr2.map_or(0, |t| t.ord.len()) + 8);
+    let px0 = if plan_px != 0 { plan_px } else { tr.entry_px };
+    v.push(OrdEv::new(sg.ms, EV_PLACE, OID_E1, typ, px0, lots.0, note));
+    v.push(OrdEv::new(
+        tr.entry_ms,
+        EV_FILL,
+        OID_E1,
+        typ,
+        tr.entry_px,
+        lots.0,
+        "",
+    ));
+    if let Some((trig, dec, ms, why)) = l2 {
+        let mut p = OrdEv::new(
+            tr.entry_ms,
+            EV_PLACE,
+            OID_E2,
+            TY_COND,
+            s * trig,
+            lots.1,
+            "e2 at level - d",
+        );
+        p.lot = 1;
+        v.push(p);
+        let mut e = match (dec, tr2) {
+            (Lot2Dec::Fill { .. }, Some(t2)) => {
+                let mut f = OrdEv::new(
+                    t2.entry_ms,
+                    EV_FILL,
+                    OID_E2,
+                    TY_COND,
+                    t2.entry_px,
+                    lots.1,
+                    why,
+                );
+                f.aux = ms;
+                f
+            }
+            _ => OrdEv::new(ms, EV_CANCEL, OID_E2, TY_COND, s * trig, lots.1, why),
+        };
+        e.lot = 1;
+        v.push(e);
+    }
+    v.extend(tr.ord.iter().copied());
+    if let Some(t2) = tr2 {
+        v.extend(t2.ord.iter().map(|e| OrdEv { lot: 1, ..*e }));
+    }
+    v
 }
 
 struct Open {
@@ -3497,6 +3907,9 @@ pub fn run_tick_xb(
         let (lot_n, lot2_n) = ex.lots(NOTIONAL_U);
         let mut ek_end: Option<i64> = None;
         let mut xb_end: Option<i64> = None;
+        // TK-743: решение о втором входе для журнала заявок — (цена условия, вердикт, момент события, причина)
+        let mut l2_ord: Option<(i64, Lot2Dec, i64, &'static str)> = None;
+        let mut plan_px = 0i64;
         let tr = if natr > 0 {
             dec = if ex.e1t != 0 {
                 let mut tick_of = |t: i64| tick_at(src, &sym.name, sg.sym, t, &mut tick_cache);
@@ -3526,6 +3939,7 @@ pub fn run_tick_xb(
             match dec {
                 EntryDec::Next => simulate_tick(src, sym, side, sg, natr, ex),
                 EntryDec::Fill { ms, p0 } => {
+                    plan_px = side.s() * p0;
                     let t1 = sim_fill_mem(
                         src, &sym.name, ms, p0, side, natr, ex, lc, lot_n, entry_slip, None,
                     );
@@ -3565,7 +3979,10 @@ pub fn run_tick_xb(
                                 )
                             }
                             Some(d2) => {
-                                lot2_decision_d(src, sym, side, sg, ex, (ms, p0), t1.exit_ms, d2)
+                                let (l, m, why) =
+                                    lot2_trace(src, sym, side, sg, ex, (ms, p0), t1.exit_ms, d2);
+                                l2_ord = Some((sg.lp - d2, l, m, why));
+                                l
                             }
                         };
                         // TK-677 (`s2`): общий стоп позиции — лот 2 наследует цену жёсткого стопа лота 1
@@ -3586,6 +4003,15 @@ pub fn run_tick_xb(
                             }
                             Lot2Dec::Cancel => res.lot2[2] += 1,
                             Lot2Dec::Reject => res.lot2[3] += 1,
+                        }
+                        if maker && ex.keep_orders {
+                            // заявки мейкера (`mk`, `e1t`) в журнале — без подробностей: условие и причина не восстанавливаются
+                            l2_ord = Some((
+                                sg.lp - d2.unwrap_or(0),
+                                l2,
+                                t1.exit_ms,
+                                "maker lot 2: untraced",
+                            ));
                         }
                     }
                     Some(t1)
@@ -3675,6 +4101,20 @@ pub fn run_tick_xb(
             res.daily[*d] += v;
             *res.coinday.entry((sg.sym, *d)).or_insert(0.0) += v;
         }
+        let ord = if ex.keep_orders {
+            entry_orders(
+                sg,
+                ex,
+                side,
+                &tr,
+                tr2.as_ref(),
+                (lot_n, lot2_n),
+                (maker, plan_px),
+                l2_ord,
+            )
+        } else {
+            Vec::new()
+        };
         res.trades.push(TickTrade {
             sym: sg.sym,
             level: sg.level,
@@ -3704,6 +4144,7 @@ pub fn run_tick_xb(
             lot2: tr2,
             vd_pm: volstop::stop_pm(ex, lc.vol, lc.volz).unwrap_or(-1),
             net1,
+            ord,
         });
     }
     res

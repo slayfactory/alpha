@@ -398,6 +398,7 @@ fn out_manual(entry_ms: i64, exit_ms: i64, exit_px: f64, marks: Vec<(usize, i64)
         takes: 0,
         marks,
         floor: [false; 2],
+        ord: Vec::new(),
         tl: None,
     }
 }
@@ -993,6 +994,7 @@ fn fresh_world() -> (Sym, Level, i64) {
         first_bar: 10,
         mem: Vec::new(),
         src: 0,
+        why: 0,
     };
     (sym(c), lv, px(101.0))
 }
@@ -6170,3 +6172,6 @@ fn tick_is_12_bytes_and_keeps_off_and_bm() {
     }
     assert_ne!(Tick::new(1, 5, false), Tick::new(1, 5, true));
 }
+
+// TK-743: журнал заявок сделки (`--keep-orders`) — отдельным файлом
+mod orders_tests;

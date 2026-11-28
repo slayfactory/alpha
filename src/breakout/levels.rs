@@ -35,6 +35,8 @@ pub struct Level {
     pub mem: Vec<Vec<(u32, i64)>>,
     /// Источник уровня (TK-668): 0 — пивоты; иначе значение `LevelCfg::lx` (1 `D`, 2 `W`, 3 `P`). Уровень источника «свежий» по построению: `fresh_ok` его пропускает.
     pub src: u8,
+    /// TK-743: чем кончился уровень пивотов (`end`): 0 — не кончился или источник / линия; 1 — членов стало меньше `n` (старше `l` суток); 2 — прокол `pk`; 3 — закрытие бара за уровнем.
+    pub why: u8,
 }
 
 #[derive(Clone, Copy)]
@@ -234,6 +236,7 @@ fn build_levels_impl(
             let id = live[li].id;
             if live[li].members.len() < cfg.n {
                 levels[id].end = now as u32;
+                levels[id].why = 1;
                 live.remove(li);
                 continue;
             }
@@ -250,6 +253,7 @@ fn build_levels_impl(
                             PK_RETRO_KILLED.fetch_add(1, Ordering::Relaxed);
                         }
                         levels[id].end = now as u32;
+                        levels[id].why = 2;
                         live.remove(li);
                         continue;
                     }
@@ -257,6 +261,7 @@ fn build_levels_impl(
             }
             if bars.ok[b] && f.cl(b) > mean {
                 levels[id].end = now as u32;
+                levels[id].why = 3;
                 live.remove(li);
                 continue;
             }
@@ -286,6 +291,7 @@ fn build_levels_impl(
                                 PK_RETRO_KILLED.fetch_add(1, Ordering::Relaxed);
                             }
                             levels[id].end = now as u32;
+                            levels[id].why = 2;
                             live.remove(li);
                         }
                     }
@@ -341,6 +347,7 @@ fn build_levels_impl(
                         Vec::new()
                     },
                     src: 0,
+                    why: 0,
                 });
                 live.push(Live {
                     id: levels.len() - 1,
@@ -403,6 +410,7 @@ fn build_source_levels(sym: &Sym, cfg: &LevelCfg, side: Side) -> Vec<Level> {
                 first_bar: first_bar as u32,
                 mem: Vec::new(),
                 src: cfg.lx,
+                why: 0,
             });
         }
         a += step;
@@ -667,5 +675,6 @@ fn line_level(
         first_bar,
         mem: Vec::new(),
         src: 4,
+        why: 0,
     })
 }

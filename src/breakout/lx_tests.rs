@@ -378,6 +378,7 @@ fn plain_level(src: u8) -> Level {
         first_bar: 10,
         mem: Vec::new(),
         src,
+        why: 0,
     }
 }
 
