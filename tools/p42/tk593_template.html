@@ -171,6 +171,11 @@ section.ft-set{margin-top:22px}
 .trt th[data-sort]{cursor:pointer;user-select:none}
 .tr-x{border:0;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:var(--z500);padding:0 4px;margin-left:auto}
 #tr-detail .card-h{flex-wrap:wrap}
+.tr-feats{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 16px;margin-top:6px}
+.tr-feats div{display:flex;flex-direction:column}
+.tr-fh{margin-top:12px}
+.tr-note{margin-top:6px}
+@media(max-width:640px){.trt thead{display:block}.trt thead tr{display:flex;flex-wrap:wrap;gap:4px 14px;padding:0 0 8px}.trt th{padding:0;font-size:12px;border:0}.trt td.tf{display:none}.tr-feats{grid-template-columns:1fr 1fr}}      /* TK-741: на узком экране заголовки столбцов остаются — по ним задаётся порядок; числа сетапа — в карточке сделки */
 </style>
 </head>
 <body>

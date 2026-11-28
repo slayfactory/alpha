@@ -61,7 +61,7 @@ function trSummary(rows) {
 }
 
 function trTable(rows) {
-  const I = TR.idx, cols = [['time', 'Время (GMT+4)'], ['sym', 'Монета'], ['ep', 'Вход'], ['xp', 'Выход'], ['kind', 'Как вышли'], ['pnl', '$'], ['cl', 'Кластер'], ...TR_F.map(f => [f[0], f[1]])];
+  const I = TR.idx, cols = [['time', 'Время (GMT+4)'], ['sym', 'Монета'], ['ep', 'Вход'], ['xp', 'Выход (ср.)'], ['kind', 'Как вышли'], ['pnl', '$'], ['cl', 'Кластер'], ...TR_F.map(f => [f[0], f[1]])];
   const dir = TR.sd === 'a' ? 1 : -1, ix = k => I.feats.indexOf(k);
   const sorted = rows.slice().sort((a, b) => { const x = trSortVal(a, TR.sk), y = trSortVal(b, TR.sk); return (x < y ? -1 : x > y ? 1 : 0) * dir || a.entry_ms - b.entry_ms; });
   const tb = h('table', {class: 'eqt trt', 'data-trt': '1'});
@@ -73,7 +73,7 @@ function trTable(rows) {
       h('td', {class: 'num', 'data-f': 'ep', 'data-lab': 'Вход'}, trPx(x.entry_px)), h('td', {class: 'num', 'data-f': 'xp', 'data-lab': 'Выход'}, trPx(x.exit_px)),
       h('td', {'data-f': 'kind', 'data-lab': 'Как вышли'}, I.kinds[x.kind] || x.kind), h('td', {class: 'num', 'data-f': 'pnl', 'data-lab': '$'}, money(x.pnl, 2)),
       h('td', {class: 'num', 'data-f': 'cl', 'data-lab': 'Кластер'}, x.cluster ? 'К' + x.cluster : '—'),
-      ...TR_F.map(([k, t, f]) => h('td', {class: 'num', 'data-f': k, 'data-lab': t}, x.f[ix(k)] == null ? '—' : f(x.f[ix(k)])))]);
+      ...TR_F.map(([k, t, f]) => h('td', {class: 'num tf', 'data-f': k, 'data-lab': t}, x.f[ix(k)] == null ? '—' : f(x.f[ix(k)])))]);
     tr.onclick = () => { TR.open = x.i; setHash(); renderTrades(); const d = document.getElementById('tr-detail'); if (d) d.scrollIntoView({block: 'start', behavior: 'auto'}); };
     body.append(tr);
   });
@@ -97,7 +97,7 @@ function trChart(x, cd, w) {
   const X = k => m.l + (k + 0.5) / n * (w - m.l - m.r), Y = sc(lo, hi, hh - m.b, m.t), bw = Math.max(1, (w - m.l - m.r) / n * 0.7);
   const svg = el('svg', {viewBox: `0 0 ${w} ${hh}`, width: '100%', role: 'img', 'data-chart': 'trade'});
   ticks(lo, hi, 5).forEach(v => { svg.append(el('line', {x1: m.l, x2: w - m.r, y1: Y(v), y2: Y(v), stroke: '#efeff1'})); svg.append(el('text', {x: m.l - 7, y: Y(v) + 3.5, 'text-anchor': 'end'}, trPx(v))); });
-  const step = n > 360 ? 60 : 30, first = Math.ceil((cd.t0 + 4 * 3600e3) / 60000 / step) * step - (cd.t0 + 4 * 3600e3) / 60000;
+  const step = [30, 60, 120, 180, 240].find(s => s * (w - m.l - m.r) / n >= 62) || 240, first = Math.ceil((cd.t0 + 4 * 3600e3) / 60000 / step) * step - (cd.t0 + 4 * 3600e3) / 60000;
   for (let k = Math.round(first); k < n; k += step) svg.append(el('text', {x: X(k), y: hh - m.b + 15, 'text-anchor': 'middle'}, trHM(cd.t0 + k * 60000)));
   svg.append(el('line', {x1: m.l, x2: w - m.r, y1: hh - m.b, y2: hh - m.b, stroke: '#d4d4d8'}));
   for (let k = 0; k < n; k++) {
@@ -107,14 +107,14 @@ function trChart(x, cd, w) {
     svg.append(el('rect', {x: X(k) - bw / 2, y: Math.min(Y(o), Y(c)), width: bw, height: Math.max(1, Math.abs(Y(o) - Y(c))), fill: up ? '#fff' : col, stroke: col, 'stroke-width': 1}));
   }
   svg.append(el('line', {x1: m.l, x2: w - m.r, y1: Y(x.lvl), y2: Y(x.lvl), stroke: '#2563eb', 'stroke-width': 1.4, 'stroke-dasharray': '6 4', 'data-chart': 'trade.level'}));
-  svg.append(el('text', {x: w - m.r - 2, y: Y(x.lvl) - 5, 'text-anchor': 'end', style: 'fill:#2563eb'}, 'уровень ' + trPx(x.lvl)));
-  const ex = (x.entry_ms - cd.t0) / 60000, xx = (x.exit_ms - cd.t0) / 60000;
+  const ex = (x.entry_ms - cd.t0) / 60000, xx = (x.exit_ms - cd.t0) / 60000, left = ex / n > 0.5;      // подпись уровня — с той стороны, где нет отметок сделки
+  svg.append(el('text', {x: left ? m.l + 4 : w - m.r - 2, y: Y(x.lvl) - 5, 'text-anchor': left ? 'start' : 'end', style: 'fill:#2563eb'}, 'уровень ' + trPx(x.lvl)));
   const XE = m.l + ex / n * (w - m.l - m.r), XX = m.l + xx / n * (w - m.l - m.r), ye = Y(x.entry_px), yx = Y(x.exit_px);
   svg.append(el('line', {x1: XE, x2: XX, y1: ye, y2: yx, stroke: '#18181b', 'stroke-width': 1, 'stroke-dasharray': '2 3'}));
   svg.append(el('path', {d: `M${XE - 7} ${ye - 11}L${XE + 7} ${ye - 11}L${XE} ${ye}Z`, fill: '#2563eb', stroke: '#fff', 'stroke-width': 1.2, 'data-chart': 'trade.entry'}));
   svg.append(el('text', {x: XE, y: ye - 15, 'text-anchor': XE > w - 90 ? 'end' : 'middle', class: 'k'}, 'вход'));
   svg.append(el('path', {d: `M${XX} ${yx - 7}L${XX + 7} ${yx}L${XX} ${yx + 7}L${XX - 7} ${yx}Z`, fill: '#18181b', stroke: '#fff', 'stroke-width': 1.2, 'data-chart': 'trade.exit'}));
-  svg.append(el('text', {x: XX, y: yx + 21, 'text-anchor': XX > w - 90 ? 'end' : 'middle', class: 'k'}, 'выход'));
+  svg.append(el('text', {x: XX, y: yx + 21, 'text-anchor': XX > w - 90 ? 'end' : 'middle', class: 'k'}, 'выход (ср.)'));
   const r = el('rect', {x: m.l, y: m.t, width: w - m.l - m.r, height: hh - m.t - m.b, fill: 'transparent', 'data-chart': 'trade.hover'});
   svg.append(r);
   const show = ev => {
@@ -129,16 +129,18 @@ async function trDetail(box, w) {
   const x = TR.rows.find(r => r.i === TR.open);
   if (!x) { box.replaceChildren(); return; }
   const cl = TR.idx.clusters.find(c => c.id === x.cluster);
-  const head = h('div', {class: 'card-h'}, [h('b', {'data-f': 'title'}, `${x.sym} · ${trDT(x.entry_ms)} GMT+4`), h('span', {'data-f': 'sub'}, `вход ${trPx(x.entry_px)} · выход ${trPx(x.exit_px)} (${TR.idx.kinds[x.kind] || x.kind}) · ${money(x.pnl, 2)} $ · ${cl ? 'К' + cl.id + ' · ' + cl.name : 'без кластера'} · уровень ${trPx(x.lvl)}`)]);
+  const head = h('div', {class: 'card-h'}, [h('b', {'data-f': 'title'}, `${x.sym} · ${trDT(x.entry_ms)} GMT+4`), h('span', {'data-f': 'sub'}, `вход ${trPx(x.entry_px)} · выход (ср.) ${trPx(x.exit_px)} (${TR.idx.kinds[x.kind] || x.kind}) · ${money(x.pnl, 2)} $ · ${cl ? 'К' + cl.id + ' · ' + cl.name : 'без кластера'} · уровень ${trPx(x.lvl)}`)]);
   const close = h('button', {class: 'tr-x', title: 'закрыть'}, '×'); close.onclick = () => { TR.open = null; setHash(); renderTrades(); };
   head.append(close);
-  const body = h('div', {class: 'card-b', 'data-f': 'chart'}, h('div', {class: 'fan-msg'}, 'загрузка минуток…'));
-  box.replaceChildren(h('div', {class: 'card eq-card', id: 'tr-detail', 'data-i': x.i}, [head, body]));
+  const ix = k => TR.idx.feats.indexOf(k);
+  const chart = h('div', {'data-f': 'chart'}, h('div', {class: 'fan-msg'}, 'загрузка минуток…'));
+  const feats = h('div', {class: 'tr-feats', 'data-f': 'setup'}, TR_F.map(([k, t, f]) => h('div', {'data-f': k}, [h('span', {class: 'muted small'}, t), h('b', {}, x.f[ix(k)] == null ? '—' : f(x.f[ix(k)]))])));
+  box.replaceChildren(h('div', {class: 'card eq-card', id: 'tr-detail', 'data-i': x.i}, [head, h('div', {class: 'card-b'}, [chart, h('div', {class: 'muted small tr-note'}, 'Выход — средняя цена всех частей выхода (тейки и остаток) по итоговому результату; отметка стоит на минуте последнего выхода.'), h('div', {class: 'muted small tr-fh'}, 'Картина до сигнала (только прошлое, минуты до входа)'), feats])]));
   try {
     const cd = await trCandles(x.i);
     if (TR.open !== x.i) return;
-    body.replaceChildren(trChart(x, cd, Math.max(300, Math.floor(w - (w < 520 ? 22 : 42)))));
-  } catch (e) { body.replaceChildren(h('div', {class: 'fan-msg'}, 'минутки не загрузились: ' + (e.message || e))); }
+    chart.replaceChildren(trChart(x, cd, Math.max(300, Math.floor(w - (w < 520 ? 22 : 42)))));
+  } catch (e) { chart.replaceChildren(h('div', {class: 'fan-msg'}, 'минутки не загрузились: ' + (e.message || e))); }
 }
 function renderTrades() {
   const root = document.getElementById('trades');
