@@ -1,0 +1,13 @@
+# TK-736 шаг 7 (§13.80.3): шаги прохода; формат — как tk728_causal.steps (имя, выход, входы, команда)
+g-src	/data/p42-tk736/res/gsrc.json	/data/p42-tk718/trades:/data/p42-tk726/trades	/data/tk592/venv/bin/python tk736_an.py gsrc
+run-v0-long	/data/p42-tk736/trades/tk736-v0long-h1/t0.json	/data/p42-tk736/mass736.sqlite	bash tk736_run.sh v0long
+g-v	/data/p42-tk736/trades/tk736-gv-h1/t0.json	/data/p42-tk736/mass736.sqlite	bash tk736_run.sh gv
+g-adv	/data/p42-tk736/res/gadv.json	/data/p42-tk726/exits-report.txt	/data/tk592/venv/bin/python tk736_an.py gadv
+ctl	/data/p42-tk736/trades/tk736-kinf-h1/t0.json	/data/p42-tk736/mass736.sqlite	bash tk736_run.sh ctl kinf
+kest	/data/p42-tk736/tk736-frozen.json	/data/p42-tk736/res/gsrc.json:/data/p42-tk736/trades/tk736-gv-h1/t0.json	/data/tk592/venv/bin/python tk736_an.py kest
+g-pow	/data/p42-tk736/res/gpow.json	/data/p42-tk736/tk736-frozen.json	/data/tk592/venv/bin/python tk736_an.py gpow
+run-v2-A	/data/p42-tk736/trades/tk736-v2fj-sel/t0.json	/data/p42-tk736/tk736-frozen.json	bash tk736_run.sh v2fj
+run-v2-B	/data/p42-tk736/trades/tk736-v2sel-h1/t0.json	/data/p42-tk736/tk736-frozen.json	bash tk736_run.sh v2sel
+run-pool	/data/p42-tk736/trades/tk736-v2pool-n1/t0.json	/data/p42-tk736/tk736-frozen.json	bash tk736_run.sh v2pool
+judge	/data/p42-tk736/res/judge.json	/data/p42-tk736/trades	/data/tk592/venv/bin/python tk736_an.py judge
+report	/data/p42-tk736/res/report.txt	/data/p42-tk736/res/judge.json	/data/tk592/venv/bin/python tk736_an.py report

@@ -441,6 +441,9 @@ def cmd_run(a):
                         os.makedirs(kd, exist_ok=True)
                         for c in cur:
                             shutil.copyfile(os.path.join(out, "k%d" % c["cid"], p8.ENG[ho.SIDE_LETTER[side]] + "-trades.csv"), os.path.join(kd, "%d-trades.csv" % c["cid"]))
+                            vsf = os.path.join(out, "k%d" % c["cid"], p8.ENG[ho.SIDE_LETTER[side]] + "-vstop.csv")      # TK-736: расстояние стопа от волатильности по сделкам (только при vf > 0)
+                            if os.path.exists(vsf):
+                                shutil.copyfile(vsf, os.path.join(kd, "%d-vstop.csv" % c["cid"]))
                         t0p = os.path.join(a.keep_trades, a.run_id, "t0.json")
                         t0d = json.load(open(t0p, encoding="utf-8")) if os.path.exists(t0p) else {}
                         t0d[w.name] = int(w.t0_ms)
