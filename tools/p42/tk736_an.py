@@ -249,10 +249,140 @@ def cmd_kest(a):
     return 0
 
 
+# ───────────────────────────── G-pow и суд ─────────────────────────────
+
+HALF = {"FJ": (FJ, 31, 180), "SEL": (SEL, 181, 316)}                       # окна и сутки (от 01.01.2026) половины
+S_CAP = L.S_CAP
+
+
+def period_labels(lo, hi):
+    """Метка периода (0…4) по суткам половины: месяцы PERIODS из `tk726_exits` (FJ: фев…июн; SEL: июл…окт, 1–13.11)."""
+    import tk726_exits as ex
+    days = np.arange(lo, hi + 1)
+    lab = np.full(len(days), -1)
+    ids = [i for i, (nm, a_, b_) in enumerate(ex.PERIODS) if sm.day_of(a_) >= lo and sm.day_of(b_) <= hi and nm not in ("Jan", "N1")]
+    for j, i in enumerate(ids):
+        lab[(days >= sm.day_of(ex.PERIODS[i][1])) & (days <= sm.day_of(ex.PERIODS[i][2]))] = j
+    assert (lab >= 0).all() and len(ids) == 5, (lo, hi, ids)
+    return lab, len(ids)
+
+
+def day_series(a, lo, hi):
+    nd = hi - lo + 1
+    d = (a["eday"] - lo).astype(np.int64)
+    return np.bincount(d, weights=a["pnl"], minlength=nd)[:nd], np.bincount(d, minlength=nd)[:nd].astype(np.float64)
+
+
+def cells_v0(side, half):
+    """[сделки клетки на половине] — V0: шорт B9 с диска (9 клеток), лонг — прогон v0long (1 клетка)."""
+    wins = HALF[half][0]
+    if side == "short":
+        return [concat([disk_v0(cid, w) for w in wins]) for _, cid in b9_cids()]
+    return [concat([run_cell("v0long", 7361001, w) for w in wins])]
+
+
+def cells_v2(side, half, stage):
+    wins = HALF[half][0]
+    base = 7360000 + 1000 * STAGE_NO[stage]
+    if side == "short":
+        return [concat([run_cell(stage, base + 1 + j, w) for w in wins]) for j in range(9)]
+    return [concat([run_cell(stage, base + 10, w) for w in wins])]
+
+
+def eq_series(cells, half):
+    """Равновесный суточный ряд: среднее суточного P&L и числа сделок по клеткам."""
+    _, lo, hi = HALF[half]
+    ps, ns = zip(*[day_series(c, lo, hi) for c in cells])
+    return np.mean(ps, axis=0), np.mean(ns, axis=0)
+
+
+def cmd_gpow(a):
+    fr = json.load(open(FREEZE, encoding="utf-8"))
+    out = {}
+    for side in ("short", "long"):
+        out[side] = {}
+        for dirn, (ek, half) in {"A": ("k_FJ", "SEL"), "B": ("k_SEL", "FJ")}.items():
+            k = fr[side][ek]
+            if k is None:
+                out[side][dirn] = dict(note="k не определён (O4)")
+                continue
+            _, lo, hi = HALF[half]
+            cells = cells_v0(side, half)
+            d_list, g_list, s0_list, n0_list = [], [], [], []
+            for c in cells:
+                V, A, _, _ = v_and_adverse(c, side)
+                r2, cut = L.replay(c["pnl"], c["fees"], A, V, k, S_CAP[side])
+                d_list.append(day_series(dict(eday=c["eday"], pnl=r2 - c["pnl"]), lo, hi)[0])
+                g_list.append(L.gmax(c["pnl"], c["fees"]))
+                s0_list.append(float(c["pnl"].sum()))
+                n0_list.append(day_series(c, lo, hi)[1])
+            delta = np.mean(d_list, axis=0)
+            sigma0, gmax = float(np.mean(s0_list)), float(np.mean(g_list))
+            mde = L.mde_c1(delta, sigma0)
+            pnl0, n0 = eq_series(cells, half)
+            lab, nper = period_labels(lo, hi)
+            c2 = L.c2_p(pnl0 + delta, n0, pnl0, n0, lab, nper)
+            stops = [(int((c["kind"] == "stop").sum()), float(c["pnl"][c["kind"] == "stop"].sum())) for c in cells]
+            out[side][dirn] = dict(k=k, half=half, sigma0=sigma0, s5=L.s5(delta), mde_c1=mde, gmax=gmax, mde_c2=c2["se"], o6=bool(mde > gmax),
+                                   stops_mean_n=float(np.mean([s[0] for s in stops])), stops_mean_sum=float(np.mean([s[1] for s in stops])))
+        out[side]["O6"] = any(v.get("o6") for v in out[side].values() if isinstance(v, dict))
+    jwrite(RES + "/gpow.json", out)
+    print(json.dumps(out, ensure_ascii=False))
+    return 0
+
+
+def cmd_judge(a):
+    fr = json.load(open(FREEZE, encoding="utf-8"))
+    gp = json.load(open(RES + "/gpow.json", encoding="utf-8"))
+    res, ps = {}, {}
+    for side in ("short", "long"):
+        if gp[side]["O6"]:
+            res[side] = dict(outcome="O6")
+            continue
+        dirs = {}
+        for dirn, (stage, half) in {"A": ("v2fj", "SEL"), "B": ("v2sel", "FJ")}.items():
+            _, lo, hi = HALF[half]
+            c0, c2 = cells_v0(side, half), cells_v2(side, half, stage)
+            p0, n0 = eq_series(c0, half)
+            p2, n2 = eq_series(c2, half)
+            lab, nper = period_labels(lo, hi)
+            r1 = L.c1(p2 - p0, float(np.mean([c["pnl"].sum() for c in c0])))
+            r2 = L.c2_p(p2, n2, p0, n0, lab, nper)
+            key0, key2 = [], []
+            r0a, r2a, k0a, k2a, dl = [], [], [], [], []
+            for j, (x0, x2) in enumerate(zip(c0, c2)):
+                key0 += [(j, s, m, lv) for s, m, lv in zip(x0["sym"], x0["sig_ms"], x0["level"])]
+                key2 += [(j, s, m, lv) for s, m, lv in zip(x2["sym"], x2["sig_ms"], x2["level"])]
+                r0a.append(x0["pnl"]); r2a.append(x2["pnl"]); k0a.append(x0["kind"]); k2a.append(x2["kind"])
+            # d < s по строкам V2′: vstop.csv (vd_pm < s_pm; −1 → нет)
+            s_pm = 4000 if side == "short" else 3000
+            base = 7360000 + 1000 * STAGE_NO[stage]
+            for j in range(len(c2)):
+                for w in HALF[half][0]:
+                    pv = os.path.join(run_dir(stage, w), w, "%d-vstop.csv" % (base + (1 + j if side == "short" else 10)))
+                    with open(pv, encoding="utf-8", newline="") as f:
+                        dl += [0 <= int(r["vd_pm"]) < s_pm for r in csv.DictReader(f)]
+            rc3 = L.c3(np.concatenate(r0a), np.concatenate(r2a), key0, key2, np.concatenate(k2a), dl, np.concatenate(k0a))
+            dirs[dirn] = dict(c1=r1["verdict"], c1_lo={str(k): v for k, v in r1["lo"].items()}, c1_thr=r1["thr"], delta=r1["delta"], c2p=r2["p"], sigma2=r2["sigma2"], sigma0=r2["sigma0"], c3=rc3)
+        res[side] = dirs
+        ps[side] = max(dirs["A"]["c2p"], dirs["B"]["c2p"])
+    sides = [s for s in ("short", "long") if s in ps]
+    adj = dict(zip(sides, L.holm([ps[s] for s in sides]))) if sides else {}
+    for s in sides:
+        k_fj, k_sel = fr[s]["k_FJ"], fr[s]["k_SEL"]
+        c3ok = all(res[s][d]["c3"]["ok"] for d in "AB")
+        res[s]["outcome"] = L.outcome(k_fj, k_sel, dict(c1=res[s]["A"]["c1"], c2p=res[s]["A"]["c2p"]), dict(c1=res[s]["B"]["c1"], c2p=res[s]["B"]["c2p"]), adj[s], c3ok)
+        res[s]["p_holm"] = adj[s]
+        res[s]["k_ratio"] = k_fj / k_sel
+    jwrite(RES + "/judge.json", res)
+    print(json.dumps({s: res[s].get("outcome") for s in res}, ensure_ascii=False))
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
-    for n, f in (("gsrc", cmd_gsrc), ("gv", cmd_gv), ("kest", cmd_kest)):
+    for n, f in (("gsrc", cmd_gsrc), ("gv", cmd_gv), ("kest", cmd_kest), ("gpow", cmd_gpow), ("judge", cmd_judge)):
         sp.add_parser(n).set_defaults(fn=f)
     a = ap.parse_args(argv)
     return a.fn(a)

@@ -146,7 +146,7 @@ def c2_p(pnl2, n2, pnl0, n0, lab, nper, nboot=NBOOT, seed=SEED):
         return np.std(np.where(sn > 0, sp / np.where(sn > 0, sn, 1), 0.0), axis=1, ddof=1)
     diff = sig(pnl2, n2) - sig(pnl0, n0)
     obs = month_sigma(pnl2, n2, lab, nper) - month_sigma(pnl0, n0, lab, nper)
-    return dict(p=float((diff >= 0).mean()), obs_diff=float(obs), sigma2=month_sigma(pnl2, n2, lab, nper), sigma0=month_sigma(pnl0, n0, lab, nper))
+    return dict(p=float((diff >= 0).mean()), obs_diff=float(obs), se=float(diff.std(ddof=1)), sigma2=month_sigma(pnl2, n2, lab, nper), sigma0=month_sigma(pnl0, n0, lab, nper))
 
 
 def holm(p):
