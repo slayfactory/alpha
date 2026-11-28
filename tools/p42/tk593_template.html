@@ -258,6 +258,9 @@ function renderEquity() {
   tip.style.display = 'none';
   const width = Math.max(300, Math.floor(view.clientWidth - (view.clientWidth < 520 ? 22 : 42)));
   view.replaceChildren(fan ? fanView(ST.eq, width) : variantsView(ST.eq, width));
+  // окно подписи (TK-696): веер — с 01.01 по 24.11, у части клеток уже; «Варианты» — окно по выбранным клеткам (ось vAxis)
+  const ax = vAxis(fan ? [] : ['long', 'short'].map(vPick).filter(Boolean)), win = fan && FAN.index && FAN.index.off ? '01.01–24.11.2026 (у клеток без рядов января–июня — с 01.07, без 14–24.11 — по 13.11)' : fday(ax.start) + '–' + fday(ax.start + ax.days * 86400e3 - 1) + '.2026';
+  document.getElementById('eq-sub').textContent = 'после комиссий, без фандинга · 500 $ на сделку · ' + win;
 }
 function initEquity() {
   const vs = document.getElementById('eq-views');
@@ -281,25 +284,49 @@ function vAgg(p) {
   const w = p.v.filter(x => x > 0), l = p.v.filter(x => x < 0), s = a => a.reduce((x, y) => x + y, 0);
   return {n: p.v.length, sum: s(p.v), nw: w.length, sw: s(w), nl: l.length, sl: s(l), worst: p.v.length ? p.v.reduce((a, b) => Math.min(a, b)) : null};
 }
+// ось вида «Варианты» (TK-696, веер с 01.01): окно вариантов — 136 суток от 01.07; клетка веера с рядом января–июня (ext) тянет начало к 01.01, с хвостом (tail) — конец к 24.11; first — сутки начала оси в осях веера (у старого каталога — 0),
+// shift — сутки варианта (от 01.07) → сутки оси, сутки клетки веера (от 01.01, у старого каталога — от 01.07) → сутки оси: d − first
+const vAxis = parts => {
+  const I = FAN.index, o = fanOff(), fx = parts.some(p => p.ext), ft = parts.some(p => p.tail);
+  if (!fx && !ft) return {days: V.days, start: V.start_ms, first: o, shift: 0};
+  const first = fx ? 0 : o, last = ft ? I.days : I.tail_from;
+  return {days: last - first, start: I.start_ms + first * 86400e3, first, shift: o - first};
+};
+const vDay = (p, d, ax) => p.fan ? d - ax.first : d + ax.shift;
 function vStats(parts) {
   if (parts.length === 1 && parts[0].m) return parts[0].m;
-  const S = new Array(V.days).fill(0), A = parts.map(vAgg), tot = k => A.reduce((a, x) => a + x[k], 0);
-  parts.forEach(p => p.d.forEach((d, i) => { S[d] += p.v[i]; }));
-  const n = tot('n'), sum = tot('sum'), nw = tot('nw'), nl = tot('nl'), mean = S.reduce((a, b) => a + b, 0) / V.days;
+  const ax = vAxis(parts), S = new Array(ax.days).fill(0), A = parts.map(vAgg), tot = k => A.reduce((a, x) => a + x[k], 0), noTr = parts.some(p => p.ext || p.tail);      // у клетки с рядом января–июня или хвостом нет сделок — R:R и худшая сделка «—»
+  parts.forEach(p => p.d.forEach((d, i) => { S[vDay(p, d, ax)] += p.v[i]; }));
+  const n = tot('n'), sum = tot('sum'), nw = tot('nw'), nl = tot('nl'), mean = S.reduce((a, b) => a + b, 0) / ax.days;
   let ss = 0; S.forEach(x => { ss += (x - mean) * (x - mean); });
-  const sd = Math.sqrt(ss / (V.days - 1));
+  const sd = Math.sqrt(ss / (ax.days - 1));
   let c = 0, pk = 0, dd = 0, hi = 0, last = -1, gap = 0;
   S.forEach((x, i) => { c += x; pk = Math.max(pk, c); dd = Math.max(dd, pk - c); if (c > hi + 1e-9) { gap = Math.max(gap, i - last); last = i; hi = c; } });
-  gap = Math.max(gap, V.days - 1 - last);
+  gap = Math.max(gap, ax.days - 1 - last);
   const worst = A.map(x => x.worst).filter(x => x != null && !Number.isNaN(x));
   return {n, sum, mean: n ? sum / n : null, sharpe: sd > 0 ? mean / sd * Math.sqrt(365) : null, dd, ddp: dd / (V.margin * parts.length) * 100, gap,
-    rr: nw && nl ? (tot('sw') / nw) / Math.abs(tot('sl') / nl) : null, worst: worst.length ? Math.min(...worst) : null};
+    rr: nw && nl && !noTr ? (tot('sw') / nw) / Math.abs(tot('sl') / nl) : null, worst: worst.length && !noTr ? Math.min(...worst) : null};
+}
+// дни вперёд (TK-696, чтение «по вчера»): метрики линии или суммы за V.forward.days суток — суточный ряд по дню входа, перехай как в describe_rows (первые сутки — максимум); tk684_metrics.fwd_metrics
+function vFwdStats(parts) {
+  const D = V.forward.days, S = new Array(D).fill(0), vals = [], s = a => a.reduce((x, y) => x + y, 0);
+  parts.forEach(p => p.fwd.d.forEach((d, i) => { S[d] += p.fwd.v[i]; vals.push(p.fwd.v[i]); }));
+  const n = vals.length, sum = s(vals), mean = sum / D, w = vals.filter(x => x > 0), l = vals.filter(x => x < 0);
+  let ss = 0; S.forEach(x => { ss += (x - mean) * (x - mean); });
+  const sd = Math.sqrt(ss / (D - 1));
+  let c = 0, pk = 0, dd = 0, peak = null, since = 0, gap = 0;
+  S.forEach(x => { c += x; pk = Math.max(pk, c); dd = Math.max(dd, pk - c); if (peak === null || c > peak) { peak = c; since = 0; } else since++; gap = Math.max(gap, since); });
+  return {n, sum, mean: n ? sum / n : null, sharpe: sd > 0 ? mean / sd * Math.sqrt(365) : null, dd, ddp: dd / (V.margin * parts.length) * 100, gap, rr: w.length && l.length ? (s(w) / w.length) / Math.abs(s(l) / l.length) : null, worst: n ? Math.min(...vals) : null};
 }
 function vLines(side) {
   const L = vPick('long'), S = vPick('short'), out = [];
   const mk = (k, parts, name, main) => {
     const ev = parts.flatMap(p => p.t.map((t, i) => [t, p.v[i]])); if (parts.length > 1) ev.sort((a, b) => a[0] - b[0]);
-    let c = 0; return {k, name, main, parts, t: ev.map(e => e[0]), y: ev.map(e => (c += e[1]))};
+    let c = 0; const t = ev.map(e => e[0]), y = ev.map(e => (c += e[1]));
+    // дни вперёд — только если они есть у всех частей линии (у суммы «шорт + лонг» — у обеих), иначе сумма за эти дни была бы неполной
+    const fw = V.forward && parts.every(p => p.fwd), fev = fw ? parts.flatMap(p => p.fwd.t.map((t, i) => [t, p.fwd.v[i]])) : []; if (fw && parts.length > 1) fev.sort((a, b) => a[0] - b[0]);
+    const ft = fev.map(e => e[0]), fy = fev.map(e => (c += e[1]));
+    return {k, name, main, parts, t, y, fw: !!fw, ft, fy, ta: t.concat(ft), ya: y.concat(fy)};
   };
   if (L && S && side === 'both') out.push(mk('both', [L, S], V_SIDE.both, true));
   if (L && side !== 'short') out.push(mk('long', [L], 'Лонг · ' + L.label, !(S && side === 'both')));
@@ -307,15 +334,23 @@ function vLines(side) {
   return out;
 }
 function vChart(lines, w) {
-  const hh = w < 520 ? 360 : 432, DAYMS = 86400e3, x0 = V.start_ms, x1 = Math.max(V.end_ms, x0 + V.days * DAYMS);
-  const [ylo, yhi] = rng(lines.flatMap(l => l.y).concat([0]), .08);
-  const stepD = w < 560 ? 28 : 7, xt = []; for (let t = x0; t <= x1; t += stepD * DAYMS) xt.push(t);
+  const hh = w < 520 ? 360 : 432, DAYMS = 86400e3, ax = vAxis(lines.flatMap(l => l.parts)), x0 = ax.start, xw = Math.max(V.end_ms, x0 + ax.days * DAYMS), xe = l => Math.max(V.end_ms, vAxis(l.parts).start + vAxis(l.parts).days * DAYMS),      // xe — конец данных линии (у линии без хвоста — 13.11)
+    x1 = lines.some(l => l.fw) ? Math.max(xw, V.forward.end_ms) : xw;      // xw — конец окна, x1 — с днями вперёд у выбранных линий
+  const [ylo, yhi] = rng(lines.flatMap(l => l.ya).concat([0]), .08);
+  const stepD = ax.days > 200 ? (w < 560 ? 56 : 28) : (w < 560 ? 28 : 7), xt = []; for (let t = x0; t <= x1; t += stepD * DAYMS) xt.push(t);
   const p = plot({id: 'var', w, h: hh, xd: [x0, x1], yd: [ylo, yhi], xt, xf: fday, yf: v => num(v, 0), ylab: 'накопленная прибыль, $', m: {l: 50, r: 14, t: 22, b: 30}});
   const {X, Y} = p;
   p.svg.append(el('line', {x1: X(x0), x2: X(x1), y1: Y(0), y2: Y(0), stroke: '#a1a1aa', 'stroke-dasharray': '3 3'}));
-  const path = l => { let d = `M${X(x0).toFixed(1)} ${Y(0).toFixed(1)}`, prev = 0; for (let i = 0; i < l.t.length; i++) { const xx = X(l.t[i]).toFixed(1); d += `L${xx} ${Y(prev).toFixed(1)}L${xx} ${Y(l.y[i]).toFixed(1)}`; prev = l.y[i]; } return d + `L${X(x1).toFixed(1)} ${Y(prev).toFixed(1)}`; };
+  const path = l => { let d = `M${X(x0).toFixed(1)} ${Y(0).toFixed(1)}`, prev = 0; for (let i = 0; i < l.t.length; i++) { const xx = X(l.t[i]).toFixed(1); d += `L${xx} ${Y(prev).toFixed(1)}L${xx} ${Y(l.y[i]).toFixed(1)}`; prev = l.y[i]; } return d + `L${X(xe(l)).toFixed(1)} ${Y(prev).toFixed(1)}`; };
+  // дни вперёд: от конца окна по последнему значению линии (сутки между окном и чтением не торговались) и дальше по сделкам чтения; перед ними — вертикальная черта «вперёд»
+  const fpath = l => { let prev = l.y.length ? l.y[l.y.length - 1] : 0, d = `M${X(xe(l)).toFixed(1)} ${Y(prev).toFixed(1)}`; for (let i = 0; i < l.ft.length; i++) { const xx = X(l.ft[i]).toFixed(1); d += `L${xx} ${Y(prev).toFixed(1)}L${xx} ${Y(l.fy[i]).toFixed(1)}`; prev = l.fy[i]; } return d + `L${X(x1).toFixed(1)} ${Y(prev).toFixed(1)}`; };
+  if (x1 > xw) {
+    const xf = X(V.forward.start_ms);
+    p.svg.append(el('line', {x1: xf, x2: xf, y1: p.m.t, y2: hh - p.m.b, stroke: '#a1a1aa', 'stroke-dasharray': '2 4', 'data-chart': 'fwd.mark'}), el('text', {x: xf - 5, y: hh - p.m.b - 8, 'text-anchor': 'end', fill: '#71717a', 'font-size': 11, 'data-chart': 'fwd.label'}, 'вперёд ' + V.forward.label));
+  }
+  lines.slice().reverse().forEach(l => { if (l.fw) p.svg.append(el('path', {d: fpath(l), fill: 'none', stroke: V_COL[l.k], 'stroke-width': l.main ? 2.6 : 1.3, 'stroke-linejoin': 'round', 'data-chart': 'fwd.' + l.k, 'data-final': l.fy.length ? l.fy[l.fy.length - 1] : l.y[l.y.length - 1]})); });
   lines.slice().reverse().forEach(l => p.svg.append(el('path', {d: path(l), fill: 'none', stroke: V_COL[l.k], 'stroke-width': l.main ? 2.6 : 1.3, 'stroke-linejoin': 'round', 'data-chart': 'var.' + l.k, 'data-final': l.y.length ? l.y[l.y.length - 1] : 0})));
-  const at = (l, tx) => { let lo = 0, hi = l.t.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (l.t[mid] <= tx) lo = mid + 1; else hi = mid; } return lo ? l.y[lo - 1] : 0; };
+  const at = (l, tx) => { let lo = 0, hi = l.ta.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (l.ta[mid] <= tx) lo = mid + 1; else hi = mid; } return lo ? l.ya[lo - 1] : 0; };
   const vl = el('line', {y1: p.m.t, y2: hh - p.m.b, stroke: '#a1a1aa', 'stroke-dasharray': '3 3', visibility: 'hidden'});
   const dots = lines.map(l => el('circle', {r: 4, fill: V_COL[l.k], stroke: '#fff', 'stroke-width': 1.5, visibility: 'hidden'}));
   const r = el('rect', {x: p.m.l, y: p.m.t, width: w - p.m.l - p.m.r, height: hh - p.m.t - p.m.b, fill: 'transparent', 'data-chart': 'var.hover'});
@@ -323,8 +358,9 @@ function vChart(lines, w) {
   const show = ev => {
     const b = p.svg.getBoundingClientRect(), x = (ev.clientX - b.left) / b.width * w, tx = Math.max(x0, Math.min(x1, x0 + (x - p.m.l) / (w - p.m.l - p.m.r) * (x1 - x0))), xx = X(tx);
     vl.setAttribute('x1', xx); vl.setAttribute('x2', xx); vl.setAttribute('visibility', 'visible');
-    dots.forEach((d, k) => { d.setAttribute('cx', xx); d.setAttribute('cy', Y(at(lines[k], tx))); d.setAttribute('visibility', 'visible'); });
-    tip.innerHTML = `<div class="t">${fdt(tx)} UTC</div>` + lines.map(l => `<div class="r"><span><span style="display:inline-block;width:12px;border-top:${l.main ? 4 : 2}px solid ${V_COL[l.k]};vertical-align:middle;margin-right:6px"></span>${l.name}</span><span>${money(at(l, tx))} $</span></div>`).join('');
+    const live = l => tx <= xe(l) || l.fw;      // после конца окна значение есть только у линий с днями вперёд
+    dots.forEach((d, k) => { d.setAttribute('cx', xx); d.setAttribute('cy', Y(at(lines[k], tx))); d.setAttribute('visibility', live(lines[k]) ? 'visible' : 'hidden'); });
+    tip.innerHTML = `<div class="t">${fdt(tx)} UTC</div>` + lines.map(l => `<div class="r"><span><span style="display:inline-block;width:12px;border-top:${l.main ? 4 : 2}px solid ${V_COL[l.k]};vertical-align:middle;margin-right:6px"></span>${l.name}</span><span>${live(l) ? money(at(l, tx)) + ' $' : '—'}</span></div>`).join('');
     tip.style.display = 'block'; moveTip(ev);
   };
   r.addEventListener('mouseenter', show); r.addEventListener('mousemove', show);
@@ -343,6 +379,12 @@ function vTable() {
   rows.forEach(([k, name, parts]) => {
     const st = vStats(parts);
     body.append(h('tr', {'data-line': k, 'data-ids': parts.map(p => p.id).join('|'), class: k === 'both' ? 'base' : ''}, [h('td', {'data-f': 'name', title: parts.map(p => p.key).join(' + ')}, [h('span', {class: 'sw', style: `border-color:${V_COL[k]}`}), name]), h('td', {class: 'vst', 'data-f': 'status'}, stOf(parts)),
+      ...V_COLS.map(([c, lab]) => h('td', {class: 'num', 'data-f': c, 'data-lab': lab, 'data-v': st[c] == null ? '' : st[c]}, st[c] == null ? '—' : V_FMT[c](st[c])))]));
+  });
+  // дни вперёд (чтение «по вчера»): отдельные строки для линий, у которых они есть (у суммы — у обеих)
+  if (V.forward) rows.filter(([, , parts]) => parts.every(p => p.fwd)).forEach(([k, name, parts]) => {
+    const st = vFwdStats(parts);
+    body.append(h('tr', {'data-line': k + '-fwd', 'data-ids': parts.map(p => p.id).join('|'), class: 'fwd'}, [h('td', {'data-f': 'name', title: parts.map(p => p.key).join(' + ')}, [h('span', {class: 'sw', style: `border-color:${V_COL[k]}`}), name]), h('td', {class: 'vst', 'data-f': 'status'}, 'вперёд ' + V.forward.label),
       ...V_COLS.map(([c, lab]) => h('td', {class: 'num', 'data-f': c, 'data-lab': lab, 'data-v': st[c] == null ? '' : st[c]}, st[c] == null ? '—' : V_FMT[c](st[c])))]));
   });
   tb.append(body);
