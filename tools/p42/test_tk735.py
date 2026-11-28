@@ -238,3 +238,32 @@ def test_p4_shrink_pulls_to_market_and_undefined():
     adm2[:50] = False
     ph2, _ = PR.p4_shrink(k, n, adm2)
     assert np.isnan(ph2[:50]).all() and np.isfinite(ph2[50:]).all()
+
+
+def test_eval_split_planted_edge():
+    import tk735_run as RN
+
+    rng = np.random.default_rng(5)
+    n, nd = 3000, 60
+    day = rng.integers(0, nd, n)
+    coin = rng.integers(0, 40, n)
+    X = rng.normal(0, 1, (n, T.NPHI))
+    X[:, T.HOUR_J] = rng.integers(0, 6, n)
+    r = rng.normal(0, 3, n) + 3.0 * (X[:, 0] >= 0.5)                        # правдивый край: V (φ1) ≥ порога
+    th = T.thresholds(X)
+    M = T.cond_masks(X, th)
+    rules = T.rule_space()
+    pos = {ru: i for i, ru in enumerate(rules)}
+    B = np.where(coin < 10)[0]
+    W = np.where((coin >= 10) & (coin < 20))[0]
+    C = np.where(coin >= 20)[0]
+    o = RN.eval_split(M, r, day, nd, B, W, C, 3.0, "L40", rules, pos)
+    assert o["rule"] and int(T.COND_FEAT[o["rule"][0]]) == 0                  # первым выбран признак V
+    same = o["same"]
+    assert abs(same["A"].sum() - r[W][SR.rule_mask(M[:, W], o["rule"])].sum()) < 1e-9
+    assert same["N"].sum() == SR.rule_mask(M[:, W], o["rule"]).sum() and same["E"].sum() == len(W)
+    assert abs(same["C"].sum() - r[W].sum()) < 1e-9
+    assert o["pbo_adm"] and 0 < o["pbo_rank"] <= 1
+    assert set(o["cross"]) <= {0, 1} and RN.canon(o["rule"]) in pos
+    # нуль А: если правило выбирает случайную половину суток, Σ n_отб · m̄ ≈ Σ r отобранных в среднем — формула не падает на пустых сутках
+    assert np.isfinite(same["Bn"]).all()

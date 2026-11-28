@@ -2,6 +2,7 @@
 """TK-735, §13.79 п. 6, п. 8: счёт шага 9в — этапы. Запускается юнитом на srv (`/data/tk592/venv/bin/python`, PYTHONPATH=/data/p42-tk735/code:/data/p42-tk728/code).
 
   tk735_run.py prep      # база режимов (результат r, сутки режима, тип, признаки) → res/base-{FJ,SEL}.npz; G-join, G-day; σ̂, σ̂_t, MDE(f) → res/g_prep.json. Правила не читаются.
+  tk735_run.py search    # поиск на 100 сплитах × тип × настройка (3 запуска), оценка на W_s и C_s → res/search-{режим}-{настройка}.npz (суточные массивы для бутстрепа, правила, PBO-ранги). Читает P&L правил.
 
 Этап `prep` читает P&L только всей базы (σ̂, MDE — разброс базы, не результат правила; §13.79 п. 6). Поиск и оценка правил — следующие этапы (ещё не написаны).
 """
@@ -113,6 +114,94 @@ def mde_table(b, reg):
     return out
 
 
+# ───────────────────────────── поиск и оценка на сплитах (§13.79.2–§13.79.3) ─────────────────────────────
+
+def day_arrays(M, r, day, nd, idx, rule):
+    """Суточные массивы набора сделок `idx` (индексы в базе режима) под правилом: A = Σ r отобранных, N = их число, Bn = Σ n_отб · m̄_все(сутки) (нуль А), C = Σ r всех, E = число всех."""
+    idx = np.asarray(idx, np.int64)
+    mask = SR.rule_mask(M[:, idx], rule)
+    E, C = SR.agg_days(day[idx], r[idx], np.ones(len(idx), bool), nd)
+    N, A = SR.agg_days(day[idx], r[idx], mask, nd)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mbar = np.where(E > 0, C / E, 0.0)
+    return dict(A=A, N=N, Bn=N * mbar, C=C, E=E)
+
+
+def canon(rule):
+    """Правило в порядке пространства процедуры (по номеру признака)."""
+    return tuple(sorted(rule, key=lambda ci: (int(T.COND_FEAT[ci]), ci)))
+
+
+def eval_split(M, r, day, nd, B, W, Cc, sigma_t, setting, rules, rule_pos):
+    """Один (тип, сплит, настройка): три запуска поиска на B_s (все / чётные / нечётные сутки), оценка R_s на W_s и случайных монетах C_s, перекрёстный двойник, ранг PBO.
+    Чётность — по номеру суток режима (первые = 1): чётные номера — индексы суток 1, 3, … (day % 2 == 1)."""
+    even = (day % 2 == 1)
+    R = SR.search(M, r, day, B, sigma_t, setting)
+    Be, Bo = B[even[B]], B[~even[B]]
+    Re = SR.search(M, r, day, Be, sigma_t, setting) if len(Be) else ()
+    Ro = SR.search(M, r, day, Bo, sigma_t, setting) if len(Bo) else ()
+    out = dict(rule=R, rule_even=Re, rule_odd=Ro, n_B=int(len(B)), n_W=int(len(W)))
+    if R:
+        out["same"] = day_arrays(M, r, day, nd, W, R)
+        out["c"] = day_arrays(M, r, day, nd, Cc, R)                         # нуль Б: те же правило и пороги на случайных монетах
+        RM = T.rule_matrix(M[:, W], rules)
+        rank, adm = SR.pbo_rank(RM, r[W], day[W], nd, sigma_t, setting, len(W), rule_pos[canon(R)])
+        out["pbo_rank"], out["pbo_adm"] = rank, bool(adm)
+    cross = {}
+    for j, (rule_x, par) in enumerate(((Re, even), (Ro, ~even))):          # правило чётных суток — на нечётных сутках W_s (j = 0) и наоборот (j = 1)
+        if rule_x:
+            Wx = W[~par[W]]
+            cross[j] = day_arrays(M, r, day, nd, Wx, rule_x)
+    out["cross"] = cross
+    return out
+
+
+def cmd_search(a):
+    """Поиск и оценка: для каждого режима, настройки, типа, 100 сплитов → суточные массивы (по типам и пулом), правила, PBO. Файл на (режим, настройка)."""
+    fz = json.load(open(FREEZE, encoding="utf-8"))
+    rules = T.rule_space()
+    assert len(rules) == T.EXPECT_RULES, len(rules)
+    rule_pos = {ru: i for i, ru in enumerate(rules)}
+    g = json.load(open(os.path.join(RES, "g_prep.json"), encoding="utf-8"))
+    for reg in ("FJ", "SEL"):
+        z = np.load(os.path.join(RES, "base-%s.npz" % reg), allow_pickle=False)
+        r, day, typ, coin, X, nd = z["r"], z["day"], z["typ"], z["coin"], z["X"], int(z["nd"])
+        sp = np.load(os.path.join(RES, "splits-%s.npz" % reg), allow_pickle=False)
+        info = fz["regimes"][reg]
+        if "stop" in info:
+            continue
+        for setting in ("L40", "LF"):
+            t0 = time.time()
+            res = dict(nd=nd, K=info["K"])
+            for t in range(info["K"]):
+                th = np.array([[np.nan if v is None else v for v in row] for row in info["thresholds"][str(t)]])
+                M = T.cond_masks(X, th)
+                sig_t = g["sigma"][reg]["type_%d" % t]["sigma_t"]
+                keys = [("same", k) for k in ("A", "N", "Bn", "C", "E")] + [("c", k) for k in ("A", "N", "Bn")] + [("x", k) for k in ("A", "N", "Bn", "C", "E")]
+                arr = {kk: np.zeros((T.NSPLIT, nd)) for kk in keys}
+                arr_x = {k: np.zeros((2 * T.NSPLIT, nd)) for k in ("A", "N", "Bn", "C", "E")}
+                rr, nsel, pbo = [], [], []
+                for s in range(T.NSPLIT):
+                    Bc, Wc, Cc_ = (sp["t%d_%s" % (t, k)][s] for k in ("B", "W", "C"))
+                    B, W, Cc = (np.where(np.isin(coin, c))[0] for c in (Bc, Wc, Cc_))
+                    o = eval_split(M, r, day, nd, B, W, Cc, sig_t, setting, rules, rule_pos)
+                    rr.append([list(o["rule"]), list(o["rule_even"]), list(o["rule_odd"])])
+                    if o["rule"]:
+                        for k in ("A", "N", "Bn", "C", "E"):
+                            arr[("same", k)][s] = o["same"][k]
+                        for k in ("A", "N", "Bn"):
+                            arr[("c", k)][s] = o["c"][k]
+                        pbo.append((s, o["pbo_rank"], o["pbo_adm"]))
+                        nsel.append(int(o["same"]["N"].sum()))
+                    for j, cx in o["cross"].items():
+                        for k in cx:
+                            arr_x[k][2 * s + j] = cx[k]
+                res["t%d" % t] = dict(rules=rr, pbo=pbo, nsel=nsel, **{"%s_%s" % kk: v for kk, v in arr.items() if kk[0] != "x"}, **{"x_%s" % k: v for k, v in arr_x.items()})
+                print(reg, setting, "тип", t, "правил найдено %d / %d, медиана отобранных %s" % (len(pbo), T.NSPLIT, int(np.median(nsel)) if nsel else "-"), flush=True)
+            np.save(os.path.join(RES, "search-%s-%s.npy" % (reg, setting)), np.array([res], dtype=object), allow_pickle=True)
+            print(reg, setting, "готово за %.0f с" % (time.time() - t0), flush=True)
+
+
 def cmd_prep(a):
     t0 = time.time()
     base, join = build_base()
@@ -145,9 +234,9 @@ def main():
     import argparse
 
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("cmd", choices=("prep",))
+    ap.add_argument("cmd", choices=("prep", "search"))
     a = ap.parse_args()
-    {"prep": cmd_prep}[a.cmd](a)
+    {"prep": cmd_prep, "search": cmd_search}[a.cmd](a)
 
 
 if __name__ == "__main__":
