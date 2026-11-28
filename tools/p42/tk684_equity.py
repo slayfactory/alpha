@@ -120,7 +120,7 @@ for v in SRC["variants"]:
     order = np.lexsort((ser.t_in, ser.t_out))
     one = {"id": v["id"], "side": v["side"], "group": v["group"], "label": v["label"], "status": v.get("status", ""), "key": v["key"],
            "t": [int(ser.t_out[i]) for i in order], "d": [int(ser.day[i]) for i in order], "v": [round(float(ser.val[i]), 6) for i in order]}
-    assert min(int(x) for x in ser.t_in) >= D0_MS and max(int(x) for x in ser.t_in) < st.LAST_MS, v["id"] + ": вход вне 01.07–13.11"
+    assert not len(ser.t_in) or (min(int(x) for x in ser.t_in) >= D0_MS and max(int(x) for x in ser.t_in) < st.LAST_MS), v["id"] + ": вход вне 01.07–13.11"   # TK-744: у варианта может не быть сделок в окне
     m = mt.metrics(one["d"], one["v"])
     if "chron" in v:
         bad += compare(v["id"], m, want, 1e-5, "летопись, metric «%s»" % v["chron"])
@@ -136,14 +136,14 @@ for v in SRC["variants"]:
         fsingle[v["id"]] = fm
     out.append(one)
     print("%-6s %-5s %4d сд., Σ %+9.2f $, Шарп %5.2f, просадка %6.2f $ (%4.1f %%), перехай %3d сут., R:R %.2f, худшая %+.2f $  %s" % (
-        v["id"], v["side"], m["n"], m["sum"], m["sharpe"] or float("nan"), m["dd"], m["ddp"], m["gap"], m["rr"] or float("nan"), m["worst"], v["key"]))
+        v["id"], v["side"], m["n"], m["sum"], m["sharpe"] or float("nan"), m["dd"], m["ddp"], m["gap"], m["rr"] or float("nan"), m["worst"] or 0.0, v["key"]))
 if bad:
     print("TK-684: линии не равны принятым числам:\n  " + "\n  ".join(bad), file=sys.stderr)
     sys.exit(1)
 both = {"%s|%s" % (a["id"], b["id"]): mt.combine(a, b) for a in out if a["side"] == "long" for b in out if b["side"] == "short"}
 fboth = {"%s|%s" % (a["id"], b["id"]): mt.fwd_combine(a["fwd"], b["fwd"], FW_DAYS) for a in out if a["side"] == "long" and "fwd" in a for b in out if b["side"] == "short" and "fwd" in b}
 fwd_end = max([max(x["fwd"]["t"]) for x in out if "fwd" in x] + [int(dt.datetime.combine(dt.date.fromisoformat(FW["to"]) + dt.timedelta(days=1), dt.time(), dt.timezone.utc).timestamp() * 1000)]) if FW else None
-page = {"d0": str(st.D0), "days": st.NDAYS, "stake": mt.STAKE, "margin": mt.MARGIN, "start_ms": D0_MS, "end_ms": max(max(x["t"]) for x in out),
+page = {"d0": str(st.D0), "days": st.NDAYS, "stake": mt.STAKE, "margin": mt.MARGIN, "start_ms": D0_MS, "end_ms": max(max(x["t"]) for x in out if x["t"]),
         "groups": SRC["groups"], "default": SRC["default"], "variants": out}
 if FW:
     page["forward"] = {"read": FW["read"], "label": "%s–%s.%s" % (FW["from"][8:], FW["to"][8:], FW["to"][5:7]), "days": FW_DAYS,

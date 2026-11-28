@@ -361,7 +361,7 @@ function vLines(side) {
 function vChart(lines, w) {
   const hh = w < 520 ? 360 : 432, DAYMS = 86400e3, ax = vAxis(lines.flatMap(l => l.parts)), x0 = ax.start, xw = Math.max(V.end_ms, x0 + ax.days * DAYMS), xe = l => Math.max(V.end_ms, vAxis(l.parts).start + vAxis(l.parts).days * DAYMS),      // xe — конец данных линии (у линии без хвоста — 13.11)
     x1 = lines.some(l => l.fw) ? Math.max(xw, V.forward.end_ms) : xw;      // xw — конец окна, x1 — с днями вперёд у выбранных линий
-  const [ylo, yhi] = rng(lines.flatMap(l => l.ya).concat([0]), .08);
+  let [ylo, yhi] = rng(lines.flatMap(l => l.ya).concat([0]), .08); if (yhi - ylo < 1) { ylo = -5; yhi = 5; }      // TK-744: все линии без сделок — ось ±5 $, не ряд нулей
   const stepD = ax.days > 200 ? (w < 560 ? 56 : 28) : (w < 560 ? 28 : 7), xt = []; for (let t = x0; t <= x1; t += stepD * DAYMS) xt.push(t);
   const p = plot({id: 'var', w, h: hh, xd: [x0, x1], yd: [ylo, yhi], xt, xf: fday, yf: v => num(v, 0), ylab: 'накопленная прибыль, $', m: {l: 50, r: 14, t: 22, b: 30}});
   const {X, Y} = p;

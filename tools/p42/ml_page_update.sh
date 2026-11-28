@@ -10,6 +10,7 @@
 #   пересчитать после новых клеток: REBUILD_FAN=1 bash tools/p42/ml_page_update.sh; готовый каталог (после пробной сборки) выложить без пересчёта: FAN_FROM=/data/p42-tk696/stage/site/data/fan bash tools/p42/ml_page_update.sh
 #   TK-696 (25.11): веер с 01.01.2026 — готовый каталог v2 (136 суток) + массовый прогон TK-700: <venv>/bin/python $CODE/tk684_fan_ext.py <каталог v2> /data/p42-tk700/mass/mass.sqlite <каталог выхода> (systemd-run, Nice 19, ≤ 16 ГБ, ≈ 30 мин), затем FAN_FROM=<каталог выхода>.
 # Пробная копия (TK-696): STAGE=1 — всё то же в /data/p42-tk696/stage (страница на :8095, живую :8090 не трогает; копия живой страницы создаётся при первом запуске): STAGE=1 REBUILD_FAN=1 bash tools/p42/ml_page_update.sh
+# «Эквити», вариант V1 (TK-744, В-195) — каталоги /data/p42-tk744/page/{wa,wb,wc} (tk744_pagedata.py equity); вкладку «Сделки» не трогает.
 #   своя пробная копия (TK-741): STAGE=1 STAGE_BASE=/data/p42-tk741/stage STAGE_PORT=8096 STAGE_UNIT=tk741-stage bash tools/p42/ml_page_update.sh
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/../_ssh.sh"
@@ -27,6 +28,7 @@ tar -c -C trades-app/dist . | ssh "${KEY[@]}" "$HOST" "mkdir -p $ROOT/trades-app
 tar -c ml_features.schema.json tk593_page.py tk593_template.html tk684_fan.js tk741_trades.js ml_page_server.py | ssh "${KEY[@]}" "$HOST" "tar -x -C $SRCD"
 tar -c tk684_equity.py tk684_metrics.py tk684_variants.json tk684_fan.py tk684_fan_ext.py | ssh "${KEY[@]}" "$HOST" "tar -x -C $CODE"
 tar -c tk741_pagedata.py tk741_cluster.py tk741_lib.py tk741_trades.js tk736_an.py tk736_lib.py tk726_seam.py tk727_lib.py | ssh "${KEY[@]}" "$HOST" 'mkdir -p /data/p42-tk741/code && tar -x -C /data/p42-tk741/code'
+tar -c tk744_pagedata.py tk744_lib.py tk741_lib.py tk736_an.py tk736_lib.py tk726_seam.py | ssh "${KEY[@]}" "$HOST" 'mkdir -p /data/p42-tk744/code && tar -x -C /data/p42-tk744/code'
 # TK-684 / TK-680: не затирать опись признаков, выложенную из другой ветки и более новую (22.11: выкладка из ветки без TK-681 откатила вкладку «Признаки»;
 # охрана по наибольшему № не ловила ветку с пропуском № 252–307) — заливаем, только если все имена живого файла есть в локальном
 FT_NAMES='import json,sys; print(" ".join(x["name"] for s in json.load(open(sys.argv[1], encoding="utf-8"))["sets"] for g in s["groups"] for x in g["features"]))'
@@ -41,6 +43,8 @@ set -e
 [ -s /data/p42-tk696/engine/tk625_run.py ] || { mkdir -p /data/p42-tk696/engine /data/p42-tk696/cells && cp /data/p42-tk674c/code/*.py /data/p42-tk696/engine/; }
 # TK-741: каталоги сделок варианта «база, без выхода по времени» (из прогона TK-741, движок не запускается)
 systemd-run --quiet --wait --pipe -p Nice=19 -p MemoryMax=8G -p CPUQuota=200% -E PYTHONDONTWRITEBYTECODE=1 /opt/venv/bin/python /data/p42-tk741/code/tk741_pagedata.py equity
+# TK-744: каталоги сделок варианта V1 «база, свежесть по наторговке» (из прогона TK-744, движок не запускается)
+systemd-run --quiet --wait --pipe -p Nice=19 -p MemoryMax=8G -p CPUQuota=200% -E PYTHONDONTWRITEBYTECODE=1 /opt/venv/bin/python /data/p42-tk744/code/tk744_pagedata.py equity
 systemd-run --quiet --wait --pipe -p Nice=19 -p MemoryMax=6G -p CPUQuota=200% -E PYTHONDONTWRITEBYTECODE=1 /opt/venv/bin/python $CODE/tk684_equity.py /data/p42-tk696/engine $CODE/tk684_variants.json /data/chron/chron.sqlite $ROOT/data/variants.json $ROOT/data/variants_check.json   # TK-684: варианты для выбора (только чтение, сверка с летописью)
 if [ -n "$FAN_FROM" ]; then
   test -s $FAN_FROM/index.json && rm -rf $ROOT/data/fan.new && cp -a $FAN_FROM $ROOT/data/fan.new
