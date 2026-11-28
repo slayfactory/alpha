@@ -3,6 +3,7 @@
 
   tk735_run.py prep      # база режимов (результат r, сутки режима, тип, признаки) → res/base-{FJ,SEL}.npz; G-join, G-day; σ̂, σ̂_t, MDE(f) → res/g_prep.json. Правила не читаются.
   tk735_run.py decide    # бутстреп по суткам (блоки ⌈nd^{1/3}⌉ и 21, 20 000): Δ_A, Δ_D, Δ_X, Δ_{D,X}, Δ_Б, M, PBO — пул и по типам → res/decide-{L40,LF}.json (до исходов).
+  tk735_run.py outcomes  # Холм 4 / 16, условия (i), (ii), (v), (vii), исходы O1–O7, R*, метрики, якорь, чувствительность, DSR → res/outcomes.json, t735_outcome (tk735_out.py).
   tk735_run.py search    # поиск на 100 сплитах × тип × настройка (3 запуска), оценка на W_s и C_s → res/search-{режим}-{настройка}.npz (суточные массивы для бутстрепа, правила, PBO-ранги). Читает P&L правил.
 
 Этап `prep` читает P&L только всей базы (σ̂, MDE — разброс базы, не результат правила; §13.79 п. 6). Поиск и оценка правил — следующие этапы (ещё не написаны).
@@ -293,13 +294,19 @@ def cmd_prep(a):
     print("prep готово за %d с" % rep["seconds"])
 
 
+def cmd_outcomes(a):
+    import tk735_out
+
+    tk735_out.run()
+
+
 def main():
     import argparse
 
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("cmd", choices=("prep", "search", "decide"))
+    ap.add_argument("cmd", choices=("prep", "search", "decide", "outcomes"))
     a = ap.parse_args()
-    {"prep": cmd_prep, "search": cmd_search, "decide": cmd_decide}[a.cmd](a)
+    {"prep": cmd_prep, "search": cmd_search, "decide": cmd_decide, "outcomes": cmd_outcomes}[a.cmd](a)
 
 
 if __name__ == "__main__":

@@ -294,3 +294,56 @@ def test_delta_block_point_matches_manual():
     assert abs(out["M"] - np.mean(m)) < 1e-9 and out["n_splits_rule"] == S
     pb = RN.pbo_share(res, [0])
     assert pb["n"] == 3 and abs(pb["share"] - 2 / 3) < 1e-12                     # ранг 0,9 и недопустимое — нижняя половина
+
+
+def test_holm_by_block_and_top2():
+    import tk735_out as OU
+
+    tests = {("FJ", "pool", "dA"): {"6": 0.01, "21": 0.04}, ("FJ", "pool", "dDX"): {"6": 0.30, "21": 0.02}, ("SEL", "pool", "dA"): {"6": 0.02, "21": None}}
+    h = OU.holm_by_block(tests)
+    assert abs(h[("FJ", "pool", "dA")]["6"] - 0.03) < 1e-12 and abs(h[("SEL", "pool", "dA")]["6"] - 0.04) < 1e-12 and abs(h[("FJ", "pool", "dDX")]["6"] - 0.30) < 1e-12
+    assert abs(h[("FJ", "pool", "dDX")]["21"] - 0.06) < 1e-12 and h[("SEL", "pool", "dA")]["21"] == 1.0           # nan / None → p = 1
+    assert abs(OU.top2_share(np.array([5.0, 3.0, 1.0, 1.0])) - 0.8) < 1e-12 and np.isnan(OU.top2_share(np.array([-1.0, 2.0, -3.0])))
+
+
+def test_classify_outcome_table():
+    import tk735_out as OU
+
+    base = dict(i=True, pbo=0.1, v=True, vii=True, dA=0.3, dB=0.1, ub_a=[0.6, 0.7], dDX_ok=False, dDX_pt=0.1)
+    assert OU.classify(base) == "O2"
+    assert OU.classify(dict(base, dB=0.3)) == "O1" and OU.classify(dict(base, dB=0.5)) == "O1"
+    assert OU.classify(dict(base, vii=False)) == "O3"
+    assert OU.classify(dict(base, v=False, ub_a=[0.6, 0.7])) == "O7"                                          # (v) не выполнено, PBO в норме, границы широки
+    assert OU.classify(dict(base, i=False, dDX_ok=True)) == "O4" and OU.classify(dict(base, pbo=0.6, dDX_ok=True)) == "O4"
+    assert OU.classify(dict(base, i=False, pbo=0.6, dDX_pt=-0.1)) == "O5" and OU.classify(dict(base, i=False, ub_a=[-0.1, 0.0], dDX_pt=float("nan"))) == "O5"
+    assert OU.classify(dict(base, i=False, ub_a=[0.2, 0.3])) == "O6" and OU.classify(dict(base, i=False, pbo=0.3, ub_a=[0.2, 0.6])) == "O7"
+    assert OU.classify(dict(base, i=False, pbo=float("nan"), ub_a=[0.2, 0.3])) == "O6"                          # PBO не определён: (ii) не выполнено, но не O5
+
+
+def test_scope_arrays_exclude_coin_and_anchor():
+    import tk735_out as OU
+
+    rng = np.random.default_rng(5)
+    n, nd = 200, 10
+
+    class C:
+        pass
+
+    c = C()
+    c.r, c.day, c.nd = rng.normal(0, 1, n), rng.integers(0, nd, n), nd
+    c.coin = rng.integers(0, 8, n)
+    c.in_anchor = rng.random(n) < 0.5
+    c.M = {0: rng.random((T.NCOND, n)) < 0.5}
+    W = np.arange(n)
+    rule = (0, 7)
+    sel = SR.rule_mask(c.M[0][:, W], rule)
+    items = [dict(t=0, s=0, W=W, sel=sel, rule=rule)]
+    a = OU.scope_arrays(c, items, [0])
+    assert abs(a["N"].sum() - sel.sum()) < 1e-9 and abs(a["A"].sum() - c.r[sel].sum()) < 1e-9 and abs(a["E"].sum() - n) < 1e-9
+    b = OU.scope_arrays(c, items, [0], exclude_coin=3)
+    assert abs(b["N"].sum() - (sel & (c.coin != 3)).sum()) < 1e-9 and abs(b["E"].sum() - (c.coin != 3).sum()) < 1e-9
+    q = OU.scope_arrays(c, items, [0], anchor=True)
+    assert abs(q["N"].sum() - (sel & c.in_anchor).sum()) < 1e-9 and abs(q["E"].sum() - c.in_anchor.sum()) < 1e-9
+    bc, bs = OU.best_coin(c, items, [0])
+    tot = np.bincount(c.coin[sel], weights=c.r[sel], minlength=8)
+    assert bc == int(np.argmax(tot)) and abs(bs - tot.max()) < 1e-9
