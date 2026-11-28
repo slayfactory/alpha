@@ -45,8 +45,8 @@ def check_variants(v):
     for s in ("long", "short"):
         assert v["default"][s] in [x["id"] for x in v["variants"] if x["side"] == s], f"variants.json: default {s}"
     for x in v["variants"]:
-        assert x["group"] in [g["id"] for g in v["groups"]] and x["t"] and len(x["t"]) == len(x["d"]) == len(x["v"]), f"variants.json: {x['id']}"
-        assert x["t"] == sorted(x["t"]) and min(x["d"]) >= 0 and max(x["d"]) < v["days"], f"variants.json: {x['id']} — порядок закрытий или сутки вне окна"
+        assert x["group"] in [g["id"] for g in v["groups"]] and len(x["t"]) == len(x["d"]) == len(x["v"]), f"variants.json: {x['id']}"   # TK-744: вариант без сделок в окне допустим
+        assert x["t"] == sorted(x["t"]) and min(x["d"], default=0) >= 0 and max(x["d"], default=0) < v["days"], f"variants.json: {x['id']} — порядок закрытий или сутки вне окна"
 
 
 def blob(x):
