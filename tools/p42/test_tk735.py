@@ -267,3 +267,30 @@ def test_eval_split_planted_edge():
     assert set(o["cross"]) <= {0, 1} and RN.canon(o["rule"]) in pos
     # нуль А: если правило выбирает случайную половину суток, Σ n_отб · m̄ ≈ Σ r отобранных в среднем — формула не падает на пустых сутках
     assert np.isfinite(same["Bn"]).all()
+
+
+def test_delta_block_point_matches_manual():
+    import tk735_run as RN
+
+    rng = np.random.default_rng(11)
+    S, nd = 30, 40
+    t = {}
+    for pre, rows in (("same", S), ("x", 2 * S), ("c", S)):
+        N = rng.integers(0, 4, (rows, nd)).astype(float)
+        E = N + rng.integers(1, 6, (rows, nd))
+        A = rng.normal(0.5, 1, (rows, nd)) * N
+        C = rng.normal(0.0, 1, (rows, nd)) * E
+        Bn = N * (C / E)
+        for k, v in (("A", A), ("N", N), ("Bn", Bn), ("C", C), ("E", E)):
+            t["%s_%s" % (pre, k)] = v
+    t["pbo"] = [(0, 0.3, True), (1, 0.9, True), (2, 0.2, False)]
+    res = {"t0": t}
+    out = RN.delta_block(res, [0], nd, 3, nboot=300, seed=1)
+    m = t["same_A"].sum(1) / t["same_N"].sum(1)
+    ma = t["same_Bn"].sum(1) / t["same_N"].sum(1)
+    mall = t["same_C"].sum(1) / t["same_E"].sum(1)
+    assert abs(out["dA"]["point"] - np.mean(m - ma)) < 1e-6 and abs(out["dD"]["point"] - np.mean(ma - mall)) < 1e-6
+    assert out["dA"]["lo"] < out["dA"]["point"] < out["dA"]["hi"] and 0 <= out["dA"]["p"] <= 1
+    assert abs(out["M"] - np.mean(m)) < 1e-9 and out["n_splits_rule"] == S
+    pb = RN.pbo_share(res, [0])
+    assert pb["n"] == 3 and abs(pb["share"] - 2 / 3) < 1e-12                     # ранг 0,9 и недопустимое — нижняя половина

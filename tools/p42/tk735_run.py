@@ -2,6 +2,7 @@
 """TK-735, §13.79 п. 6, п. 8: счёт шага 9в — этапы. Запускается юнитом на srv (`/data/tk592/venv/bin/python`, PYTHONPATH=/data/p42-tk735/code:/data/p42-tk728/code).
 
   tk735_run.py prep      # база режимов (результат r, сутки режима, тип, признаки) → res/base-{FJ,SEL}.npz; G-join, G-day; σ̂, σ̂_t, MDE(f) → res/g_prep.json. Правила не читаются.
+  tk735_run.py decide    # бутстреп по суткам (блоки ⌈nd^{1/3}⌉ и 21, 20 000): Δ_A, Δ_D, Δ_X, Δ_{D,X}, Δ_Б, M, PBO — пул и по типам → res/decide-{L40,LF}.json (до исходов).
   tk735_run.py search    # поиск на 100 сплитах × тип × настройка (3 запуска), оценка на W_s и C_s → res/search-{режим}-{настройка}.npz (суточные массивы для бутстрепа, правила, PBO-ранги). Читает P&L правил.
 
 Этап `prep` читает P&L только всей базы (σ̂, MDE — разброс базы, не результат правила; §13.79 п. 6). Поиск и оценка правил — следующие этапы (ещё не написаны).
@@ -202,6 +203,68 @@ def cmd_search(a):
             print(reg, setting, "готово за %.0f с" % (time.time() - t0), flush=True)
 
 
+# ───────────────────────────── оценки с бутстрепом по суткам (§13.79.3) ─────────────────────────────
+
+def pooled(res, types, prefix, keys):
+    """Сумма массивов по типам `types` (сплит-тип без правила — нули: не входит ни в числитель, ни в m^{все})."""
+    return {k: sum(res["t%d" % t]["%s_%s" % (prefix, k)] for t in types) for k in keys}
+
+
+def delta_block(res, types, nd, block, nboot=20000, seed=T.SEED):
+    """Δ_A, Δ_D (W_s, те же сутки), Δ_X, Δ_{D,X} (перекрёстный двойник) для набора типов: точка, интервал и односторонний p блочного бутстрепа; Δ_Б — точка; M — среднее m_s."""
+    W = SR.day_weights(nd, block, nboot, seed)
+    one = np.ones((1, nd), np.float32)
+    same = pooled(res, types, "same", ("A", "N", "Bn", "C", "E"))
+    x = pooled(res, types, "x", ("A", "N", "Bn", "C", "E"))
+    out = {}
+    for name, d in (("same", same), ("x", x)):
+        args = (d["A"], d["N"], d["Bn"], d["C"], d["E"])
+        rep_a, rep_d = SR.delta_rep(W, *args)
+        pt_a, pt_d = (float(v[0]) for v in SR.delta_rep(one, *args))
+        key_a, key_d = ("dA", "dD") if name == "same" else ("dX", "dDX")
+        out[key_a] = dict(SR.interval(rep_a, pt_a), p=SR.p_one_sided(rep_a, pt_a), ub_bonf4=float(np.nanpercentile(rep_a, 100 * (1 - 0.05 / 4))), ub_bonf16=float(np.nanpercentile(rep_a, 100 * (1 - 0.05 / 16))))
+        out[key_d] = dict(SR.interval(rep_d, pt_d), p=SR.p_one_sided(rep_d, pt_d))
+    c = pooled(res, types, "c", ("A", "N", "Bn"))
+    nb = c["N"].sum(1)
+    ok = nb > 0
+    out["dB"] = float(np.mean((c["A"].sum(1)[ok] - c["Bn"].sum(1)[ok]) / nb[ok])) if ok.any() else float("nan")
+    nn = same["N"].sum(1)
+    okm = nn > 0
+    out["M"] = float(np.mean(same["A"].sum(1)[okm] / nn[okm])) if okm.any() else float("nan")
+    out["n_splits_rule"] = int(okm.sum())
+    return out
+
+
+def pbo_share(res, types):
+    """PBO: доля пар (сплит, тип) с правилом, где ранг R_s в нижней половине (ранг / допустимых > 0,5) или правило недопустимо на W_s (L-525 п. 2)."""
+    n = bad = 0
+    for t in types:
+        for _s, rank, adm in res["t%d" % t]["pbo"]:
+            n += 1
+            bad += int((not adm) or rank > 0.5)
+    return dict(share=bad / n if n else float("nan"), n=n)
+
+
+def cmd_decide(a):
+    """Бутстреп и оценки по (режим, настройка): пул и по типам, оба блока → res/decide-{настройка}.json. Исходы O1–O7 — отдельным этапом (читать после этого)."""
+    for setting in ("L40", "LF"):
+        rep = {}
+        for reg in ("FJ", "SEL"):
+            path = os.path.join(RES, "search-%s-%s.npy" % (reg, setting))
+            if not os.path.exists(path):
+                continue
+            res = np.load(path, allow_pickle=True)[0]
+            nd, K = int(res["nd"]), int(res["K"])
+            rep[reg] = dict(nd=nd, K=K, blocks={})
+            for blk in BLOCKS(nd):
+                t0 = time.time()
+                rep[reg]["blocks"][str(blk)] = dict(pool=delta_block(res, list(range(K)), nd, blk), types={str(t): delta_block(res, [t], nd, blk) for t in range(K)})
+                print(reg, setting, "блок", blk, "готово за %.0f с" % (time.time() - t0), flush=True)
+            rep[reg]["pbo"] = dict(pool=pbo_share(res, list(range(K))), types={str(t): pbo_share(res, [t]) for t in range(K)})
+        json.dump(rep, open(os.path.join(RES, "decide-%s.json" % setting), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        print("decide", setting, "записано")
+
+
 def cmd_prep(a):
     t0 = time.time()
     base, join = build_base()
@@ -234,9 +297,9 @@ def main():
     import argparse
 
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("cmd", choices=("prep", "search"))
+    ap.add_argument("cmd", choices=("prep", "search", "decide"))
     a = ap.parse_args()
-    {"prep": cmd_prep, "search": cmd_search}[a.cmd](a)
+    {"prep": cmd_prep, "search": cmd_search, "decide": cmd_decide}[a.cmd](a)
 
 
 if __name__ == "__main__":
