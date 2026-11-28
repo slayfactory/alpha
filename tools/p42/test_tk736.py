@@ -1,4 +1,5 @@
 """Тесты tk736_lib (TK-736): ход против позиции, k, реплей, G_max, C1 / C2 / C3, исходы. Синтетика, без данных srv."""
+import math
 import os
 import sys
 
@@ -78,3 +79,15 @@ def test_outcomes():
 def test_dedup_first():
     m = L.dedup_first(["A", "A", "B"], [1, 1, 1], [2, 2, 2], [3, 3, 3], [1.5, 1.5, 1.5])
     assert m.tolist() == [True, False, True]
+
+
+def test_uw_sharpe_rr_delta_ci():
+    x = np.array([1.0, -2.0, 1.0, 3.0, -1.0, 0.0])           # накопл. 1, −1, 0, 3, 2, 2 → максимумы на сутках 0 и 3
+    u = L.uw_stats(x)
+    assert abs(u["dd"] - 2.0) < 1e-12 and u["gap_longest"] == 3 and u["tail"] == 2 and abs(u["gap_mean"] - 2.0) < 1e-12
+    assert L.sharpe([1.0, 1.0, 1.0]) is None and abs(L.sharpe([1.0, 3.0]) - (2.0 / math.sqrt(2.0) * math.sqrt(365))) < 1e-9
+    assert abs(L.rr([2.0, 4.0, -1.0, -3.0]) - 1.5) < 1e-12 and L.rr([1.0, 2.0]) is None
+    ci = L.delta_ci(np.ones(30), (6,), nboot=200)
+    assert ci[6] == (30.0, 30.0)
+    ms = L.month_stats(np.array([1.0, 1.0, -2.0, 1.0]), np.array([1.0, 1.0, 1.0, 2.0]), np.array([0, 0, 1, 1]), 2)
+    assert ms["m1"] == 1 and abs(ms["per_trade"][0] - 1.0) < 1e-12 and abs(ms["per_trade"][1] + 1.0 / 3.0) < 1e-12

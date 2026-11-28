@@ -3,6 +3,7 @@
 
   python3 tk736_an.py gsrc            # G-src: ключи B9, наличие файлов, строки / уникальные сделки, повторы, стопы, якорь s4 = 465 / 17 → res/gsrc.json
   python3 tk736_an.py gv              # G-V: V_i (numpy RV60) против vd_pm/1000/k по незажатым строкам vstop.csv (k = 1); P&L не читается
+  python3 tk736_an.py gctl | gkinf | gday | gpow | judge | store   # ворота после заморозки, суд, запись результатов в БД (`tk736_desc.py` — описательные таблицы)
   python3 tk736_an.py kest            # k_FJ, k_SEL, k_pool (q₀,₉₅ κ выигрышных; шорт — уникальные сделки B9), таблица q → заморозка
 
 Порядок ворот — §13.80.3; `kest` отказывает без `res/gsrc.json` и `res/gv.json` (ворота пройдены).
@@ -63,6 +64,7 @@ def read_cell(path, t0_ms, win):
     for k in ("sig_min", "entry_min", "exit_min"):
         a[k] = np.array([int(rows[i][k]) for i in keep], np.int64)
     a["win"] = np.array([win] * len(keep), dtype=object)
+    a["row"] = keep.astype(np.int64)
     return a
 
 
@@ -81,12 +83,24 @@ def run_cell(stage, cid, win):
     if not os.path.exists(p):
         return None
     t0 = json.load(open(os.path.join(d, "t0.json"), encoding="utf-8"))[win]
-    return read_cell(p, t0, win)
+    a = read_cell(p, t0, win)
+    pv = os.path.join(d, win, "%d-vstop.csv" % cid)
+    if os.path.exists(pv):                                   # расстояние стопа по строкам сделок (строки vstop.csv = строки trades.csv, G-V)
+        with open(pv, encoding="utf-8", newline="") as f:
+            vd = [int(r["vd_pm"]) for r in csv.DictReader(f)]
+        a["vd"] = np.array([vd[i] for i in a["row"]], np.int64)
+    return a
 
 
 def concat(parts):
-    parts = [p for p in parts if p is not None and len(p["pnl"])]
-    return {k: np.concatenate([p[k] for p in parts]) for k in parts[0]} if parts else None
+    """Склейка частей (окна): пустые части отбрасываются; все пусты — пустая структура; нет ни одного файла — None."""
+    ne = [p for p in parts if p is not None]
+    if not ne:
+        return None
+    nz = [p for p in ne if len(p["pnl"])]
+    if not nz:
+        return {k: v[:0] for k, v in ne[0].items()}
+    return {k: np.concatenate([p[k] for p in nz]) for k in nz[0]}
 
 
 _candle_cache = {}
@@ -364,14 +378,8 @@ def cmd_judge(a):
                 key0 += [(j, s, m, lv) for s, m, lv in zip(x0["sym"], x0["sig_ms"], x0["level"])]
                 key2 += [(j, s, m, lv) for s, m, lv in zip(x2["sym"], x2["sig_ms"], x2["level"])]
                 r0a.append(x0["pnl"]); r2a.append(x2["pnl"]); k0a.append(x0["kind"]); k2a.append(x2["kind"])
-            # d < s по строкам V2′: vstop.csv (vd_pm < s_pm; −1 → нет)
-            s_pm = 4000 if side == "short" else 3000
-            base = 7360000 + 1000 * STAGE_NO[stage]
-            for j in range(len(c2)):
-                for w in HALF[half][0]:
-                    pv = os.path.join(run_dir(stage, w), w, "%d-vstop.csv" % (base + (1 + j if side == "short" else 10)))
-                    with open(pv, encoding="utf-8", newline="") as f:
-                        dl += [0 <= int(r["vd_pm"]) < s_pm for r in csv.DictReader(f)]
+            dl = np.concatenate([x2["vd"] for x2 in c2])
+            dl = (dl >= 0) & (dl < (4000 if side == "short" else 3000))          # d < s (vd_pm = −1 — нет V → жёсткий s)
             rc3 = L.c3(np.concatenate(r0a), np.concatenate(r2a), key0, key2, np.concatenate(k2a), dl, np.concatenate(k0a))
             dirs[dirn] = dict(c1=r1["verdict"], c1_lo={str(k): v for k, v in r1["lo"].items()}, c1_thr=r1["thr"], delta=r1["delta"], c2p=r2["p"], sigma2=r2["sigma2"], sigma0=r2["sigma0"], c3=rc3)
         res[side] = dirs
@@ -422,10 +430,113 @@ def cmd_gadv(a):
     return 0 if ok else 1
 
 
+# ───────────────────────────── G-ctl, G-k∞, G-day ─────────────────────────────
+
+def _sha(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def _disk_path(cid, win):
+    return os.path.join(sm.WINDOWS[win][2], win, "%d-trades.csv" % cid)
+
+
+def cmd_gctl(a):
+    """G-ctl: перепрогон V0 шорта B9 на m02 и wa (этап ctl, cid 7363001…9) = файлы сделок на диске побайтно (sha256) и t0 окна."""
+    rows, ok = [], True
+    for j, (name, cid) in enumerate(b9_cids()):
+        for w in ("m02", "wa"):
+            d = run_dir("ctl", w)
+            p = os.path.join(d, w, "%d-trades.csv" % (7363001 + j))
+            same = _sha(p) == _sha(_disk_path(cid, w)) and json.load(open(os.path.join(d, "t0.json")))[w] == json.load(open(os.path.join(sm.WINDOWS[w][2], "t0.json")))[w]
+            rows.append(dict(cell=name, disk_cid=cid, run_cid=7363001 + j, win=w, sha=_sha(p)[:12], equal=bool(same)))
+            ok &= same
+    jwrite(RES + "/gctl.json", dict(ok=bool(ok), n=len(rows), rows=rows))
+    print("G-ctl: %d / %d файлов побайтно равны диску" % (sum(r["equal"] for r in rows), len(rows)), "ПРОЙДЕН" if ok else "ПРОВАЛЕН")
+    return 0 if ok else 1
+
+
+def cmd_gkinf(a):
+    """G-k∞: `vf=1 vs=8 va=1000000` на m02 (этап kinf): шорт 9 клеток (cid 7364001…9) = V0 с диска, лонг (7364010) = V0 лонга (этап v0long, 7361001) побайтно."""
+    rows, ok = [], True
+    d = run_dir("kinf", "m02")
+    for j, (name, cid) in enumerate(b9_cids()):
+        p = os.path.join(d, "m02", "%d-trades.csv" % (7364001 + j))
+        same = _sha(p) == _sha(_disk_path(cid, "m02"))
+        rows.append(dict(cell=name, ref="disk %d" % cid, run_cid=7364001 + j, equal=bool(same)))
+        ok &= same
+    p = os.path.join(d, "m02", "7364010-trades.csv")
+    q = os.path.join(run_dir("v0long", "m02"), "m02", "7361001-trades.csv")
+    same = _sha(p) == _sha(q)
+    rows.append(dict(cell="long s3", ref="v0long 7361001", run_cid=7364010, equal=bool(same)))
+    ok &= same
+    jwrite(RES + "/gkinf.json", dict(ok=bool(ok), n=len(rows), rows=rows))
+    print("G-k∞: %d / %d файлов побайтно равны V0" % (sum(r["equal"] for r in rows), len(rows)), "ПРОЙДЕН" if ok else "ПРОВАЛЕН")
+    return 0 if ok else 1
+
+
+def cmd_gday(a):
+    """G-day: суточные ряды V0 B9 (склейка окон по дням входа) = `tk726_day` до микродоллара: SEL (wa + wb + wc, run tk726-sel-A) и N1 (tk726-n1-A). Для FJ и января таблицы нет (§13.80.3 п. 5)."""
+    import sqlite3
+    con = sqlite3.connect("file:%s?mode=ro" % TK726, uri=True)
+    out, ok = {}, True
+    for label, wins in (("sel", SEL), ("n1", ("n1",))):
+        maxd, nbad, nmiss, nkeys = 0.0, 0, 0, 0
+        for name, cid in b9_cids():
+            c = concat([disk_v0(cid, w) for w in wins])
+            mine = {}
+            for d, p in (zip(c["eday"], c["pnl"]) if c is not None else ()):
+                s_, n_ = mine.get(int(d), (0.0, 0))
+                mine[int(d)] = (s_ + float(p), n_ + 1)
+            ref = {int(d): (float(p), int(n)) for d, p, n in con.execute("SELECT day, pnl, n FROM tk726_day WHERE win=? AND cid=?", (label, cid))}
+            keys = set(mine) | set(ref)
+            nkeys += len(keys)
+            maxd = max([maxd] + [abs(mine.get(k, (0.0, 0))[0] - ref.get(k, (0.0, 0))[0]) for k in keys])
+            nbad += sum(1 for k in keys if mine.get(k, (0, 0))[1] != ref.get(k, (0, 0))[1])
+            nmiss += sum(1 for k in keys if (k in mine) != (k in ref))
+        out[label] = dict(cell_days=nkeys, max_abs_diff_usd=maxd, n_count_mismatch=nbad, n_missing=nmiss, passed=bool(maxd < 1e-6 and nbad == 0 and nmiss == 0))
+        ok &= out[label]["passed"]
+    out["passed"] = bool(ok)
+    jwrite(RES + "/gday.json", out)
+    print(json.dumps(out, ensure_ascii=False), "G-day", "ПРОЙДЕН" if ok else "ПРОВАЛЕН")
+    return 0 if ok else 1
+
+
+def cmd_store(a):
+    """Результаты шага → БД `/data/p42-tk736/tk736.sqlite` (В-179): t736_check (ворота), t736_k (заморозка), t736_pow (G-pow), t736_run (суд и описательные: плоские пары «путь → число / текст»). Сделки — на диске (`trades/`), не в БД."""
+    import sqlite3
+
+    def flat(prefix, o, out):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                flat(prefix + [str(k)], v, out)
+        elif isinstance(o, (list, tuple)):
+            for i, v in enumerate(o):
+                flat(prefix + [str(i)], v, out)
+        else:
+            out.append((".".join(prefix), o))
+    db = sqlite3.connect(ROOT + "/tk736.sqlite")
+    db.executescript("DROP TABLE IF EXISTS t736_check; DROP TABLE IF EXISTS t736_k; DROP TABLE IF EXISTS t736_pow; DROP TABLE IF EXISTS t736_run;"
+                     "CREATE TABLE t736_check(gate TEXT, key TEXT, num REAL, txt TEXT); CREATE TABLE t736_k(key TEXT, num REAL, txt TEXT);"
+                     "CREATE TABLE t736_pow(key TEXT, num REAL, txt TEXT); CREATE TABLE t736_run(src TEXT, key TEXT, num REAL, txt TEXT);")
+
+    def put(table, pre, name):
+        out = []
+        flat([], json.load(open("%s/%s.json" % (RES, name), encoding="utf-8")) if name != "frozen" else json.load(open(FREEZE, encoding="utf-8")), out)
+        rows = [(*pre, k, float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None, str(v) if not (isinstance(v, (int, float)) and not isinstance(v, bool)) else None) for k, v in out]
+        db.executemany("INSERT INTO %s VALUES(%s)" % (table, ",".join("?" * (len(pre) + 3))), rows)
+        return len(rows)
+    n = sum(put("t736_check", (g,), g) for g in ("gsrc", "gv", "gadv", "gctl", "gkinf", "gday"))
+    n += put("t736_k", (), "frozen") + put("t736_pow", (), "gpow") + put("t736_run", ("judge",), "judge") + put("t736_run", ("desc",), "desc")
+    db.commit()
+    print("в БД %d строк" % n)
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
-    for n, f in (("gsrc", cmd_gsrc), ("gv", cmd_gv), ("kest", cmd_kest), ("gpow", cmd_gpow), ("judge", cmd_judge), ("gadv", cmd_gadv)):
+    for n, f in (("gsrc", cmd_gsrc), ("gv", cmd_gv), ("kest", cmd_kest), ("gpow", cmd_gpow), ("judge", cmd_judge), ("gadv", cmd_gadv), ("gctl", cmd_gctl), ("gkinf", cmd_gkinf), ("gday", cmd_gday), ("store", cmd_store)):
         sp.add_parser(n).set_defaults(fn=f)
     a = ap.parse_args(argv)
     return a.fn(a)

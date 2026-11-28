@@ -196,3 +196,64 @@ def outcome(k_fj, k_sel, res_a, res_b, p_side_holm, c3_ok, powered=True, defined
     if "unclear" in c1v or not ok_ratio:
         return "O3"
     return "O1"
+
+
+# ───────────────────────────── метрики описательных таблиц (В-169) ─────────────────────────────
+
+MARGIN = 250.0           # $ на линию (В-169)
+
+
+def sharpe(x):
+    """Годовой Шарп суточного ряда (среднее / σ, ddof = 1, × √365; нулевые сутки входят); None — σ = 0 или < 2 суток."""
+    x = np.asarray(x, np.float64)
+    if len(x) < 2:
+        return None
+    sd = float(x.std(ddof=1))
+    return float(x.mean() / sd * math.sqrt(365)) if sd > 0 else None
+
+
+def uw_stats(x):
+    """Просадка и перехай суточного ряда: максимальная просадка $ от пика накопленного ряда (старт 0); перехай — зазор между новыми максимумами, сутки: самый длинный (хвост считается),
+    средний, p90 числа суток с последнего максимума. Правила — `tk684_metrics` / `tk663_shape.uw`."""
+    x = np.asarray(x, np.float64)
+    n = len(x)
+    if n == 0:
+        return dict(dd=0.0, gap_longest=0, gap_mean=float("nan"), gap_p90=float("nan"), tail=0)
+    cum = np.cumsum(x)
+    peak = np.maximum.accumulate(np.concatenate([[0.0], cum]))[1:]
+    prev = np.concatenate([[0.0], peak[:-1]])
+    new = cum > prev + 1e-9
+    last, gaps, since = -1, [], np.zeros(n)
+    for i in range(n):
+        if new[i]:
+            gaps.append(i - last)
+            last = i
+        since[i] = i - last
+    tail = n - 1 - last
+    return dict(dd=float((peak - cum).max()), gap_longest=int(max(gaps + [tail])), gap_mean=float(np.mean(gaps)) if gaps else float("nan"), gap_p90=float(np.percentile(since, 90)), tail=int(tail))
+
+
+def rr(v):
+    """R:R = средний выигрыш ÷ |средний проигрыш| по сделкам; None — нет тех или других."""
+    v = np.asarray(v, np.float64)
+    w, l = v[v > 0], v[v < 0]
+    return float(w.mean() / abs(l.mean())) if len(w) and len(l) else None
+
+
+def delta_ci(delta, blocks, nboot=NBOOT, seed=SEED):
+    """Двусторонний 95 % интервал Σ суточных разностей: блочный бутстреп, блоки из `blocks`."""
+    delta = np.asarray(delta, np.float64)
+    out = {}
+    for b in blocks:
+        s = boot_sums(delta, b, nboot, seed)
+        out[int(b)] = (float(np.percentile(s, 2.5)), float(np.percentile(s, 97.5)))
+    return out
+
+
+def month_stats(pnl, n, lab, nper):
+    """По периодам: Σ $, сделок, $ на сделку; σ (ddof = 1) и среднее месячного $ на сделку; число периодов с Σ > 0 (M1)."""
+    sp = np.bincount(lab, weights=pnl, minlength=nper)
+    sn = np.bincount(lab, weights=n, minlength=nper)
+    per = np.where(sn > 0, sp / np.where(sn > 0, sn, 1), 0.0)
+    sd = float(per.std(ddof=1)) if nper > 1 else float("nan")
+    return dict(sum=[float(x) for x in sp], n=[float(x) for x in sn], per_trade=[float(x) for x in per], sigma=sd, mean=float(per.mean()), m1=int((sp > 0).sum()), nper=int(nper))
