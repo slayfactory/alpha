@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Сброс только внутри приложения (preflight выключен, чтобы не задеть остальную страницу). */
+#trades-root, #trades-root *, #trades-root ::before, #trades-root ::after { box-sizing: border-box; border: 0 solid var(--border); }
+#trades-root { color: var(--fg); }
+#trades-root :is(h2, h3, p) { margin: 0; }
+#trades-root button { font: inherit; color: inherit; background: transparent; padding: 0; margin: 0; cursor: pointer; text-align: inherit; }
+#trades-root :is(th, td) { padding: 0; border: 0 solid var(--border); font: inherit; text-align: inherit; vertical-align: middle; min-width: 0; }
+#trades-root table { width: 100%; border-collapse: collapse; }
+#trades-root svg { display: inline-block; overflow: visible; }
+#trades-root [hidden] { display: none !important; }

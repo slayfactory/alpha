@@ -11,7 +11,7 @@ const FAN_SL = [['dd', 'Просадка ≤, $', F_DD, 'max', 1], ['gap', 'Пе
 const FAN_TOP = [0, 20, 50, 100, 500], FAN_ROWS = 30, FAN_LINES = 300, FAN_DENS_MAX = 12000, FAN_SIM_N = 50, FAN_NEAR_MAX = 100000;
 // число линий в кадре и под курсором — по бюджету работы «линии × сутки»: при оси длиннее 136 суток (TK-696, 328) выборка короче, кадр остаётся в прежних 250 мс
 const fanBudget = n => Math.round(n * Math.min(1, 136 / FAN.index.days));
-const FAN_COL = {anchor: '#18181b', pin: '#c0265b', fav: ['#1baf7a', '#6250d6', '#b8860b', '#0e7490', '#a3369c', '#008300']};
+const FAN_COL = {get anchor() { return cssv('--fg'); }, pin: '#c0265b', fav: ['#1baf7a', '#6250d6', '#b8860b', '#0e7490', '#a3369c', '#008300']};
 const FAN_DEF = () => ({lv: '2', ax: null, top: 0, by: 'sh', dd: null, gap: null, n: null, sum: null, sh: null, pin: null, sim: false, sk: null, sd: 'd'});
 // порядок таблицы по столбцу (клик по заголовку, повторный клик — наоборот): ключи — «Линия», столбцы V_COLS, «Сходство»; первый клик: имя и «меньше — лучше» (просадка, перехай) — по возрастанию, остальные — по убыванию
 const FAN_SORT_KEYS = ['name', ...V_COLS.map(c => c[0]), 'sim'], FAN_SORT_ASC = new Set(['name', 'dd', 'ddp', 'gap']);
@@ -223,7 +223,7 @@ function fanDraw() {
   const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, hh);
   const Y = v => m.t + (hi - v) / (hi - lo) * ph, Xd = d => m.l + d / D * pw;
   Object.assign(X, {lo, hi, m, pw, ph, Y, Xd});
-  g.font = '11px Inter,ui-sans-serif,system-ui,sans-serif'; g.fillStyle = '#71717a'; g.strokeStyle = '#efeff1'; g.lineWidth = 1;
+  g.font = '11px Inter,ui-sans-serif,system-ui,sans-serif'; g.fillStyle = cssv('--mfg'); g.strokeStyle = cssv('--grid'); g.lineWidth = 1;
   ticks(lo, hi, 5).forEach(v => { g.beginPath(); g.moveTo(m.l, Y(v) + .5); g.lineTo(w - m.r, Y(v) + .5); g.stroke(); g.textAlign = 'right'; g.fillText(num(v, 0), m.l - 7, Y(v) + 3.5); });
   g.textAlign = 'center'; for (let d = 0; d <= D; d += (w < 560 ? 28 : 14) * (D > 200 ? 2 : 1)) g.fillText(fday(fanStart() + d * 86400e3), Xd(d), hh - m.b + 15);
   const base = fanRGB(V_COL[side]), axv = sel.axi >= 0 ? I.axes[sel.axi].vals.length : 0;
@@ -267,7 +267,7 @@ function fanDraw() {
     sel.shown.forEach(j => { const c = colOf(j); g.strokeStyle = `rgb(${c[0]},${c[1]},${c[2]})`; fanPath(g, X, {P: S.sp[j], i: S.si[j]}); });
     g.globalAlpha = 1;
   }
-  g.strokeStyle = '#a1a1aa'; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(m.l, Y(0) + .5); g.lineTo(w - m.r, Y(0) + .5); g.stroke(); g.setLineDash([]);
+  g.strokeStyle = cssv('--dash'); g.setLineDash([3, 3]); g.beginPath(); g.moveTo(m.l, Y(0) + .5); g.lineTo(w - m.r, Y(0) + .5); g.stroke(); g.setLineDash([]);
   fanOverlay();
   cv.dataset.n = sel.shown.length; cv.dataset.pass = sel.pass; cv.dataset.total = S.n; cv.dataset.mode = sel.shown.length > FAN_LINES ? 'density' : 'lines';
 }
@@ -278,7 +278,7 @@ function fanPath(g, X, c) {
 function fanOverlay() {
   const X = FAN.view, g = X.ov.getContext('2d'), dpr = X.ov.width / X.w;
   g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, X.w, X.h); g.lineJoin = 'round';
-  const line = (c, col, lw) => { g.strokeStyle = '#fff'; g.lineWidth = lw + 2; fanPath(g, X, c); g.strokeStyle = col; g.lineWidth = lw; fanPath(g, X, c); };
+  const line = (c, col, lw) => { g.strokeStyle = cssv('--card'); g.lineWidth = lw + 2; fanPath(g, X, c); g.strokeStyle = col; g.lineWidth = lw; fanPath(g, X, c); };
   fanFavs(X.side).forEach((t, k) => { const c = fanCell(t); if (c) line(c, FAN_COL.fav[k % FAN_COL.fav.length], 1.8); });
   if (X.anchor) line(X.anchor, FAN_COL.anchor, 2.6);
   if (X.sel.pin) line(X.sel.pin, FAN_COL.pin, 2.6);
