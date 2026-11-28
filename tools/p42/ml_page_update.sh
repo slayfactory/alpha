@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Обновить страницу П-42 (srv:8090; вкладки «Эквити», «Признаки»):
 #   bash tools/p42/ml_page_update.sh
-# Заливает данные и исходники генератора на srv и пересобирает /data/pages/ml/index.html (tk593_page.py; JSON проверяется по схемам до записи страницы).
+# Собирает приложение «Сделки» (София), заливает его, данные и исходники генератора на srv и пересобирает /data/pages/ml/index.html (tk593_page.py; JSON проверяется по схемам до записи страницы).
 # «Признаки» (TK-606) — tools/p42/ml_features.json (схема ml_features.schema.json).
 # «Эквити» (TK-684) — tools/p42/tk684_variants.json (вариант = одна запись + каталоги его сделок на srv); tk684_equity.py читает готовые сделки,
 #   сверяет каждую линию с летописью (/data/chron/chron.sqlite) и принятыми числами — расхождение останавливает выкладку.
-# «Сделки» (TK-741, В-192) — вкладка по сделкам базы шорта без выхода по времени и кластерам сетапа: данные data/trades/ строит tk741_pagedata.py из /data/p42-tk741 (БД, res/*.json, кэш минуток окон); вариант «база, без выхода по времени» в «Эквити» — каталоги /data/p42-tk741/page/{wa,wb,wc} (tk741_pagedata.py equity).
+# «Сделки» (TK-741, В-192; TK-742) — вкладка по сделкам базы шорта без выхода по времени и кластерам сетапа: интерфейс — приложение trades-app (React, shadcn/ui, Tailwind, lightweight-charts; build.sh на Софии → <страница>/trades-app/trades.js, trades.css); данные data/trades/ строит tk741_pagedata.py из /data/p42-tk741 (БД, res/*.json, кэш минуток окон; на сделку — файл <№>.json: минутки от 3 суток до входа до 1 суток после выхода); вариант «база, без выхода по времени» в «Эквити» — каталоги /data/p42-tk741/page/{wa,wb,wc} (tk741_pagedata.py equity).
 # Вид «Веер» — data/fan/ (tk684_fan.py: все клетки перебора c539 из летописи; TK-696 25.11: с четвёрками шорта ≈ 1,4 млн клеток — десятки минут, юнит Nice 19, память ≤ 16 ГБ); строится, если каталога ещё нет,
 #   пересчитать после новых клеток: REBUILD_FAN=1 bash tools/p42/ml_page_update.sh; готовый каталог (после пробной сборки) выложить без пересчёта: FAN_FROM=/data/p42-tk696/stage/site/data/fan bash tools/p42/ml_page_update.sh
 #   TK-696 (25.11): веер с 01.01.2026 — готовый каталог v2 (136 суток) + массовый прогон TK-700: <venv>/bin/python $CODE/tk684_fan_ext.py <каталог v2> /data/p42-tk700/mass/mass.sqlite <каталог выхода> (systemd-run, Nice 19, ≤ 16 ГБ, ≈ 30 мин), затем FAN_FROM=<каталог выхода>.
@@ -20,9 +20,13 @@ if [ "${STAGE:-0}" = 1 ]; then SB=${STAGE_BASE:-/data/p42-tk696/stage}; ROOT=$SB
 else ROOT=/data/pages/ml; SRCD=/data/pages/_src; CODE=/data/p42-tk624/code; PORT=8090; UNIT=ml-page-8090; fi
 python -c "import json,sys; json.load(open('ml_features.json', encoding='utf-8'))" || { echo "ml_features.json — не JSON"; exit 2; }
 ssh "${KEY[@]}" "$HOST" "mkdir -p $SRCD $CODE && { [ '$ROOT' = /data/pages/ml ] || [ -d $ROOT ] || cp -a /data/pages/ml $ROOT; }"
+# TK-742: вкладка «Сделки» — приложение React + shadcn/ui (trades-app): сборка на Софии (TRADES_BUILD=0 — взять готовый trades-app/dist), файлы → <страница>/trades-app/
+[ "${TRADES_BUILD:-1}" = 0 ] || bash trades-app/build.sh
+[ -s trades-app/dist/trades.js ] && [ -s trades-app/dist/trades.css ] || { echo "нет trades-app/dist: bash tools/p42/trades-app/build.sh"; exit 2; }
+tar -c -C trades-app/dist . | ssh "${KEY[@]}" "$HOST" "mkdir -p $ROOT/trades-app && rm -f $ROOT/trades-app/* && tar -x -C $ROOT/trades-app"
 tar -c ml_features.schema.json tk593_page.py tk593_template.html tk684_fan.js tk741_trades.js ml_page_server.py | ssh "${KEY[@]}" "$HOST" "tar -x -C $SRCD"
 tar -c tk684_equity.py tk684_metrics.py tk684_variants.json tk684_fan.py tk684_fan_ext.py | ssh "${KEY[@]}" "$HOST" "tar -x -C $CODE"
-tar -c tk741_pagedata.py tk741_cluster.py tk741_lib.py tk741_trades.js tk736_an.py tk736_lib.py tk726_seam.py | ssh "${KEY[@]}" "$HOST" 'mkdir -p /data/p42-tk741/code && tar -x -C /data/p42-tk741/code'
+tar -c tk741_pagedata.py tk741_cluster.py tk741_lib.py tk741_trades.js tk736_an.py tk736_lib.py tk726_seam.py tk727_lib.py | ssh "${KEY[@]}" "$HOST" 'mkdir -p /data/p42-tk741/code && tar -x -C /data/p42-tk741/code'
 # TK-684 / TK-680: не затирать опись признаков, выложенную из другой ветки и более новую (22.11: выкладка из ветки без TK-681 откатила вкладку «Признаки»;
 # охрана по наибольшему № не ловила ветку с пропуском № 252–307) — заливаем, только если все имена живого файла есть в локальном
 FT_NAMES='import json,sys; print(" ".join(x["name"] for s in json.load(open(sys.argv[1], encoding="utf-8"))["sets"] for g in s["groups"] for x in g["features"]))'
