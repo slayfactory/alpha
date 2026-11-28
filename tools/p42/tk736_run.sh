@@ -26,7 +26,8 @@ for ST in "$@"; do
   H=$(echo "$WINS" | tr ',' '\n' | grep -E '^m0' | paste -sd,); S=$(echo "$WINS" | tr ',' '\n' | grep -E '^w[abc]$' | paste -sd,); N=$(echo "$WINS" | tr ',' '\n' | grep -E '^n1$' | paste -sd,)
   [ -n "$H" ] && { mass "tk736-$ST-h1" --cellset "tk736-$ST" --wins "$H" --sides "$SIDES" || exit 3; }
   [ -n "$S" ] && { mass "tk736-$ST-sel" --cellset "tk736-$ST" --dry --wins "$S" --sides "$SIDES" || exit 3; }
-  [ -n "$N" ] && { TK700_WINSET=n1 mass "tk736-$ST-n1" --cellset "tk736-$ST" --wins "$N" --sides "$SIDES" || exit 3; }
+  # n1: таблиц лонга нет (`n1-long.parquet`, как в TK-718 — N1 только шорт): лонг на n1 не считается (отступление, описательно)
+  [ -n "$N" ] && case "$SIDES" in *short*) TK700_WINSET=n1 mass "tk736-$ST-n1" --cellset "tk736-$ST" --wins "$N" --sides short || exit 3;; *) say "n1: лонг не считается (нет таблицы)";; esac
   say "этап $ST готов"
 done
 touch "/data/p42-tk736/ENGINE-DONE-$(echo "$*" | tr ' ' '-')"
