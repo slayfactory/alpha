@@ -34,7 +34,7 @@ def test_counts_and_known_names():
     f = load("ml_features.json")
     n = {s["id"]: sum(len(g["features"]) for g in s["groups"]) for s in f["sets"]}
     assert n == {"pcoins": 5, "plevel": 11, "pfresh": 11, "pentry": 13, "psplit": 4, "pstop": 14, "pvol": 9, "pexit": 23, "pport": 11, "pexec": 7,
-                 "f12": 12, "flow": 30, "setup": 47, "toxic": 13, "breakability": 6, "history": 8, "impulse": 6, "coin": 10, "tcount": 9, "windows": 20, "fast": 50, "trader": 43}, n
+                 "f12": 12, "flow": 30, "setup": 47, "toxic": 13, "breakability": 6, "history": 8, "impulse": 6, "coin": 10, "tcount": 9, "windows": 20, "fast": 50, "trader": 43, "time": 6}, n
     names = {x["name"] for s in f["sets"] for g in s["groups"] for x in g["features"]}
     assert {"lturn24", "bd_thin30", "mk60_1800", "bk60", "SHARP"} <= names
 
@@ -60,7 +60,7 @@ def test_engine_keys_base_and_search():
     hist = next(s for s in f["sets"] if s["id"] == "history")
     assert {"ok10_d7", "ok10_d14"} <= {x["name"] for g in hist["groups"] for x in g["features"]}
     assert all((x["search"] != "нет") == (x["name"] in ok10) for g in hist["groups"] for x in g["features"])
-    assert sorted(x["n"] for s, x in feats) == list(range(1, 363))
+    assert sorted(x["n"] for s, x in feats) == list(range(1, 369))
     bad = [x["name"] for s, x in feats if len(x["what"].split()) > 12 or re.search(r"TK-|docs/|бп|ключ пула|столбец таблицы", x["what"] + x["base"] + x["search"])]
     assert not bad, bad
 
