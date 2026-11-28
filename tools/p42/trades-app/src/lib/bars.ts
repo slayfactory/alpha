@@ -1,11 +1,12 @@
 // Минутки сделки: data/trades/<№>.json (tk741_pagedata.py, pack_bars) → свечи любого таймфрейма (сбор на клиенте из минут).
 // Время на графике — секунды UTC + 4 ч, чтобы оси lightweight-charts (они показывают UTC) показывали GMT+4.
+import {decodeLevels, decodeOrders, type Lv, type Ord} from './orders';
 export const GMT4 = 4 * 3600;
 
-export type Raw = {v: number; n: number; tick: number; o: number[]; h: number[]; l: number[]; c: number[]; q: number[]; g: number[]; t0: number; nat: number[]; sg: number};
+export type Raw = {v: number; n: number; tick: number; o: number[]; h: number[]; l: number[]; c: number[]; q: number[]; g: number[]; t0: number; nat: number[]; sg: number; ord?: any[]; lv?: any[]};
 export type Bar = {time: number; open: number; high: number; low: number; close: number; q: number};          // q — оборот, $
 // nat[k] — NATR30, %, известный на минуте k (NATR30 закрытой минуты k − 1, как у движка), null — нет значения; sig — время минуты сигнала (сек, GMT+4-ось)
-export type Minutes = {t0: number; step: number; bars: (Bar | null)[]; nat: (number | null)[]; sig: number};
+export type Minutes = {t0: number; step: number; bars: (Bar | null)[]; nat: (number | null)[]; sig: number; ords: Ord[]; lvs: Lv[]};      // ords / lvs — заявки и уровни сетапа (TK-745)
 
 export const TFS: [string, string, number][] = [['1m', '1м', 60], ['5m', '5м', 300], ['15m', '15м', 900], ['1h', '1ч', 3600], ['4h', '4ч', 14400]];
 
@@ -19,7 +20,7 @@ export function decode(j: Raw): Minutes {
     prev = c;
     bars[k] = {time: j.t0 / 1000 + k * 60 + GMT4, open: o * step, high: hi * step, low: lo * step, close: c * step, q: j.q[k] / 100};
   }
-  return {t0: j.t0, step, bars, nat: j.nat.map(v => v < 0 ? null : v / 1000), sig: j.t0 / 1000 + j.sg * 60 + GMT4};
+  return {t0: j.t0, step, bars, nat: j.nat.map(v => v < 0 ? null : v / 1000), sig: j.t0 / 1000 + j.sg * 60 + GMT4, ords: decodeOrders(j.ord, j.t0), lvs: decodeLevels(j.lv, j.t0)};
 }
 
 /** Сбор минут в свечи таймфрейма tf (сек): бакеты по часам GMT+4 (сдвиг кратен 4 ч, поэтому границы 5м…4ч те же, что по UTC). Пустые бакеты — null. */

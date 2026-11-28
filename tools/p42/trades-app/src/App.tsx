@@ -4,7 +4,9 @@ import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from '@/components/ui/table';
 import {Tabs, TabsList, TabsTrigger} from '@/components/ui/tabs';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
-import {BE_TIP, TradeChart, lineColors, type Order} from '@/components/TradeChart';
+import {BE_TIP, TradeChart, lineColors} from '@/components/TradeChart';
+import {ovColors} from '@/components/overlay';
+import {GRPS, GRP_RU, GRP_TIP, type Grp} from '@/lib/orders';
 import {TFS, decode, type Minutes} from '@/lib/bars';
 import {ints, money, num, trDT, trPx} from '@/lib/fmt';
 import {cn} from '@/lib/utils';
@@ -15,7 +17,7 @@ const TR_F: [string, string, (v: number) => string][] = [
   ['r15', 'За 15 мин, %', v => num(v, 1, true)], ['r60', 'За час, %', v => num(v, 1, true)], ['r240', 'За 4 ч, %', v => num(v, 1, true)], ['rv60', 'Размах за час, %', v => num(v, 1)],
   ['near', 'У уровня, % минут', v => num(v * 100, 0)], ['touch', 'Касаний за 4 ч', v => String(v)], ['age', 'Возраст уровня, ч', v => num(v, 0)], ['turn', 'Оборот к обычному, ×', v => num(v, 1)],
   ['stab', 'Проколов за час', v => String(v)], ['hi24', 'До максимума суток, %', v => num(v, 1)], ['lo24', 'До минимума суток, %', v => num(v, 1)], ['btc60', 'BTC за час, %', v => num(v, 2, true)]];
-const TR_PER: [string, string, string[]][] = [['main', 'фев–13.11', ['FJ', 'SEL']], ['JAN', 'январь', ['JAN']], ['N1', '14–24.11', ['N1']], ['all', 'все', ['FJ', 'SEL', 'JAN', 'N1']]];
+const TR_PER: [string, string, string[]][] = [['d30', '30 дней', ['D30']], ['main', 'фев–13.11', ['FJ', 'SEL']], ['JAN', 'январь', ['JAN']], ['N1', '14–24.11', ['N1']], ['all', 'все', ['FJ', 'SEL', 'JAN', 'N1']]];
 
 const SUB = 'шорт, база без выхода по времени · после комиссий · 500 $ на сделку · время GMT+4 · кластеры найдены на этих данных';
 type Row = Record<string, any>;
@@ -110,8 +112,30 @@ async function loadMinutes(i: number, v: number): Promise<Minutes> {
   return m;
 }
 
-// заявки движка по сделке (TK-743): пока источника нет — null; когда появятся data/trades/<№>.orders.json, подгружать здесь (по образцу loadMinutes) и отдавать графику
-const useOrders = (_i: number): Order[] | null => null;
+// заявки и уровни сетапа (TK-745): видимость групп переживает смену сделки; данные — в файле сделки (`ord`, `lv`)
+const SHOW: Record<string, boolean> = {e1: true, e2: true, take: true, stop: true, rt: true, other: true, lv: true};
+
+function OrdLegend({m, dark, show, onToggle}: {m: Minutes | null; dark: boolean; show: Record<string, boolean>; onToggle: (k: string) => void}) {
+  if (!m) return null;
+  const c = ovColors(dark), n = (g: Grp) => m.ords.filter(o => o.grp === g).length;
+  const btn = (k: string, label: string, color: string, count: number, tip: string, dash?: boolean) => (
+    <Tooltip key={k}>
+      <TooltipTrigger asChild>
+        <button data-og={k} data-n={count} aria-pressed={!!show[k]} onClick={() => onToggle(k)}
+          className={cn('inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs transition-colors', show[k] ? 'bg-hi text-foreground' : 'text-muted-foreground opacity-60')}>
+          <i className="inline-block w-5" style={dash ? {borderTop: `2px dashed ${color}`} : {height: 2, background: color}} />{label} <b>{count}</b>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[300px]">{tip}</TooltipContent>
+    </Tooltip>);
+  return (
+    <div data-f="olegend" className="mb-1.5 flex flex-wrap items-center gap-1.5">
+      <span className="text-xs text-muted-foreground">заявки:</span>
+      {GRPS.filter(g => g !== 'other' || n(g) > 0).map(g => btn(g, GRP_RU[g], c.grp[g], n(g), GRP_TIP[g]))}
+      {btn('lv', 'уровни сетапа', c.pivot, m.lvs.length, 'Торгуемый уровень и версии его цены, зона входа, каждый пивот-член (своя цена, от времени пивота), следующий уровень и прочие уровни монеты на сигнале с причиной (жив / убит проколом, сделкой на уровне, запретом / уже торговался).', true)}
+    </div>
+  );
+}
 
 function Legend({x, dark}: {x: Row; dark: boolean}) {
   const c = lineColors(dark), sw = (color: string, dash?: boolean) => <i className="mr-1.5 inline-block w-6 align-middle" style={dash ? {borderTop: `2px dashed ${color}`} : {height: 2, background: color}} />;
@@ -129,7 +153,7 @@ function Legend({x, dark}: {x: Row; dark: boolean}) {
 }
 
 function Detail({idx, x, dark}: {idx: any; x: Row; dark: boolean}) {
-  const orders = useOrders(x.i);
+  const [, bump2] = useState(0), show = SHOW;
   const [tf, setTf] = useState(TF), [reset, setReset] = useState(0), [mins, setMins] = useState<Minutes | null>(null), [err, setErr] = useState('');
   const cl = idx.clusters.find((c: any) => c.id === x.cluster), ix = (k: string) => idx.feats.indexOf(k), kind = idx.kinds[x.kind] || x.kind;
   useEffect(() => {
@@ -161,7 +185,8 @@ function Detail({idx, x, dark}: {idx: any; x: Row; dark: boolean}) {
           </Tooltip>
         </div>
         <Legend x={x} dark={dark} />
-        {mins ? <TradeChart key={x.i} x={x as any} minutes={mins} tf={tf} dark={dark} resetKey={reset} kindLabel={kind} orders={orders} />
+        <OrdLegend m={mins} dark={dark} show={show} onToggle={k => { SHOW[k] = !SHOW[k]; bump2(v => v + 1); }} />
+        {mins ? <TradeChart key={x.i} x={x as any} minutes={mins} tf={tf} dark={dark} resetKey={reset} kindLabel={kind} show={{...show}} />
           : <div className="my-4 text-[13px] text-muted-foreground" data-f="chart">{err ? 'минутки не загрузились: ' + err : 'загрузка минуток…'}</div>}
         <div className="mt-1.5 text-xs text-muted-foreground">Выход — средняя цена всех частей выхода (тейки и остаток) по итоговому результату; отметка стоит на минуте последнего выхода. Свечи собираются из минут; график — TradingView Lightweight Charts™. {BE_TIP} Внизу — NATR30, %: на минуте стоит значение закрытой предыдущей минуты (как у движка), на старших таймфреймах — последней минуты свечи; точка и линия «сигнал» — значение на минуте сигнала.</div>
         <div className="mt-3 text-xs text-muted-foreground">Картина до сигнала (только прошлое, минуты до входа)</div>
@@ -187,6 +212,7 @@ export function App() {
     wasOpen.current = S.open;
   });
   if (!idx) return <div className="my-4 text-[13px] text-muted-foreground"><div className="flex flex-wrap items-baseline justify-between gap-x-2.5 gap-y-1"><h2 className="text-xl font-bold tracking-tight text-foreground">Сделки</h2><span className="text-xs">{SUB}</span></div><div className="mt-4">{err ? 'не загрузилось: ' + err : 'загрузка…'}</div></div>;
+  if (S.per === 'd30' && !rows.some(r => r.per === 'D30')) S.per = 'main';      // нет прогона «30 дней» — прежний набор
   const per = rows.filter(x => (TR_PER.find(p => p[0] === S.per) as any)[2].includes(x.per)), view = S.cl ? per.filter(x => x.cluster === S.cl) : per;
   if (S.open != null && !rows.some(r => r.i === S.open)) S.open = null;
   const open = S.open != null ? rows.find(r => r.i === S.open) : null;

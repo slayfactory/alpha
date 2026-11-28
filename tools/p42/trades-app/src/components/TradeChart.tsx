@@ -2,12 +2,9 @@ import {useEffect, useLayoutEffect, useRef} from 'react';
 import {ColorType, CrosshairMode, LineStyle, createChart, type IChartApi, type IPriceLine, type ISeriesApi, type SeriesMarker, type Time, type UTCTimestamp} from 'lightweight-charts';
 import {GMT4, TFS, aggregate, aggregateNat, bucket, type Bar, type Minutes} from '@/lib/bars';
 import {ints, num, pad2, trPx} from '@/lib/fmt';
+import {Overlay, ovColors} from '@/components/overlay';
 
 export type Trade = {i: number; sym: string; entry_ms: number; exit_ms: number; entry_px: number; exit_px: number; lvl: number; kind: string; be_px: number};
-
-// Заявки движка (TK-743) — будущий источник: data/trades/<№>.orders.json. Каждая заявка — ценовая линия от выставления до исполнения/отмены и отметка исполнения.
-// role: entry — заявка входа, exit — заявка выхода (тейк, стоп, трейл); status: filled — исполнена (отметка на end_ms по fill_px), cancelled — снята, open — жила до конца сделки.
-export type Order = {id: string; role: 'entry' | 'exit'; px: number; placed_ms: number; end_ms: number; status: 'filled' | 'cancelled' | 'open'; fill_px?: number; qty?: number};
 
 // цвета трёх линий: вход / выход / безубыток (уровень и график — нейтральные)
 export const lineColors = (dark: boolean) => dark ? {entry: '#60a5fa', exit: '#fb923c', be: '#c084fc'} : {entry: '#2563eb', exit: '#ea580c', be: '#9333ea'};
@@ -45,16 +42,17 @@ const setView = (s: Ser, mid: number, span: number) => s.chart.timeScale().setVi
 const setRange = (s: Ser, from: number, to: number) => setView(s, (from + to) / 2, to - from);
 
 export type ChartApi = {
-  tf: string; bars: (Bar | null)[]; markers: any[]; lines: {k: string; price: number; color: string}[]; orders: number; visible: () => {from: number; to: number} | null;
+  tf: string; bars: (Bar | null)[]; markers: any[]; lines: {k: string; price: number; color: string}[]; orders: Record<string, number>;
+  ov: {counts: () => ReturnType<Overlay['counts']>; drawn: () => Overlay['drawn']; hit: (px: number, py: number) => string[][]; prices: () => number[]; coord: (t: number, price: number) => {x: number; y: number} | null}; visible: () => {from: number; to: number} | null;
   nat: {values: (number | null)[]; sig: {time: number; value: number} | null; cross: () => number | null; visible: () => {from: number; to: number} | null; pix: (x: number, y: number, w: number, h: number, rgb: number[] | null, tol: number) => number; box: () => {w: number; h: number}};
   coord: (t: number, price: number) => {x: number; y: number} | null; ready: boolean;
   pix: (x: number, y: number, w: number, h: number, rgb: number[] | null, tol: number) => number;      // для клик-теста: сколько точек цвета rgb в прямоугольнике снимка графика
 };
 export const chartRef: {cur: ChartApi | null} = {cur: null};
 
-export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, orders}: {x: Trade; minutes: Minutes; tf: string; dark: boolean; resetKey: number; kindLabel: string; orders?: Order[] | null}) {
+export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, show}: {x: Trade; minutes: Minutes; tf: string; dark: boolean; resetKey: number; kindLabel: string; show: Record<string, boolean>}) {
   const box = useRef<HTMLDivElement>(null), nbox = useRef<HTMLDivElement>(null), tipRef = useRef<HTMLDivElement>(null);
-  const st = useRef<{chart: IChartApi; candles: ISeriesApi<'Candlestick'>; vol: ISeriesApi<'Histogram'>; link: ISeriesApi<'Line'>; lines: IPriceLine[]; ord: ISeriesApi<'Line'>[]; nchart: IChartApi; nat: ISeriesApi<'Line'>; natv: (number | null)[]; natLine: IPriceLine | null; natXT: number | null; xsync: boolean; mk: SeriesMarker<Time>[]; bars: (Bar | null)[]; tfSec: number; b0: number; view: {mid: number; span: number} | null; inited: boolean} | null>(null);
+  const st = useRef<{chart: IChartApi; candles: ISeriesApi<'Candlestick'>; vol: ISeriesApi<'Histogram'>; link: ISeriesApi<'Line'>; lines: IPriceLine[]; ov: Overlay; nchart: IChartApi; nat: ISeriesApi<'Line'>; natv: (number | null)[]; natLine: IPriceLine | null; natXT: number | null; xsync: boolean; mk: SeriesMarker<Time>[]; bars: (Bar | null)[]; tfSec: number; b0: number; view: {mid: number; span: number} | null; inited: boolean} | null>(null);
   const tfSec = TFS.find(t => t[0] === tf)![2];
   // окно по умолчанию для таймфрейма: [вход − запас, выход + запас] или всё загруженное
   const defRange = (s: {b0: number; tfSec: number; bars: unknown[]}, tfk: string) => {
@@ -78,16 +76,17 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, orders}: 
       kineticScroll: {touch: true, mouse: false},
     } as any);
     const pf = {type: 'custom' as const, formatter: (v: number) => fixed(v, prec), minMove: step};
-    const extra = [x.lvl, x.entry_px, x.exit_px, x.be_px];
+    const extra = [x.lvl, x.entry_px, x.exit_px, x.be_px], ov = new Overlay();
     const candles = chart.addCandlestickSeries({
       upColor: p.card, downColor: p.z600, borderUpColor: p.z600, borderDownColor: p.z600, wickUpColor: p.z600, wickDownColor: p.z600, priceFormat: pf, lastValueVisible: false, priceLineVisible: false,
       autoscaleInfoProvider: (orig: () => any) => {
         const r = orig(); if (!r) return r;
         const vr = chart.timeScale().getVisibleRange(), a = x.entry_ms / 1000 + GMT4, b = x.exit_ms / 1000 + GMT4;
-        if (!vr || (+vr.from <= b && +vr.to >= a)) { r.priceRange.minValue = Math.min(r.priceRange.minValue, ...extra); r.priceRange.maxValue = Math.max(r.priceRange.maxValue, ...extra); }
+        if (!vr || (+vr.from <= b && +vr.to >= a)) { const ex = extra.concat(ov.prices()); r.priceRange.minValue = Math.min(r.priceRange.minValue, ...ex); r.priceRange.maxValue = Math.max(r.priceRange.maxValue, ...ex); }
         return r;
       },
     });
+    candles.attachPrimitive(ov);
     chart.priceScale('right').applyOptions({scaleMargins: {top: 0.07, bottom: 0.2}});
     const vol = chart.addHistogramSeries({priceFormat: {type: 'volume'}, priceScaleId: 'vol', lastValueVisible: false, priceLineVisible: false});
     chart.priceScale('vol').applyOptions({scaleMargins: {top: 0.84, bottom: 0}});
@@ -115,7 +114,7 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, orders}: 
     let rs = false;
     const linkRange = (a: IChartApi, b: IChartApi) => a.timeScale().subscribeVisibleLogicalRangeChange(r => { if (rs || !r) return; rs = true; try { b.timeScale().setVisibleLogicalRange(r); } finally { rs = false; } });
     linkRange(chart, nchart); linkRange(nchart, chart);
-    st.current = {chart, candles, vol, link, lines, ord: [], nchart, nat, natv: [], natLine: null, natXT: null, xsync: false, mk: [], bars: [], tfSec: 0, b0: 0, view: null, inited: false};
+    st.current = {chart, candles, vol, link, lines, ov, nchart, nat, natv: [], natLine: null, natXT: null, xsync: false, mk: [], bars: [], tfSec: 0, b0: 0, view: null, inited: false};
     nchart.subscribeCrosshairMove(param => {      // перекрестие с NATR → на свечи (цена — закрытие свечи под курсором)
       const s = st.current;
       if (!s || s.xsync) return;
@@ -145,6 +144,13 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, orders}: 
       tip.querySelector('[data-none]')!.toggleAttribute('hidden', !!b);
       const nv = s.natv[k]; set('natr', nv == null ? '—' : fixed(nv, 2) + ' %');
       if (b) { set('open', fixed(b.open, prec)); set('high', fixed(b.high, prec)); set('low', fixed(b.low, prec)); set('close', fixed(b.close, prec)); set('q', ints(Math.round(b.q)) + ' $'); }
+      {      // заявки и уровни сетапа под курсором (TK-745)
+        const box2 = tip.querySelector('[data-ord]') as HTMLElement, hs = s.ov.hit(param.point.x, param.point.y);
+        box2.textContent = '';
+        hs.slice(0, 6).forEach(h => { const d = document.createElement('div'); d.className = 'mt-1 border-t pt-1'; h.title.forEach((t, k) => { const r = document.createElement('div'); r.textContent = t; if (k === 0) r.className = 'font-semibold'; d.appendChild(r); }); box2.appendChild(d); });
+        if (hs.length > 6) { const d = document.createElement('div'); d.className = 'mt-1 text-muted-foreground'; d.textContent = 'ещё ' + (hs.length - 6); box2.appendChild(d); }
+        box2.toggleAttribute('hidden', !hs.length);
+      }
       tip.style.display = 'block';
       const W = el.clientWidth, H = el.clientHeight, tw = tip.offsetWidth, th = tip.offsetHeight;
       let lx = param.point.x + 14, ly = param.point.y + 14;
@@ -168,21 +174,11 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, orders}: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [x.i]);
 
-  // заявки движка (TK-743): линия цены заявки от выставления до исполнения/отмены, отметка исполнения; времена — на свечи текущего таймфрейма
-  function drawOrders(s: NonNullable<typeof st.current>) {
-    s.ord.forEach(l => s.chart.removeSeries(l)); s.ord = [];
-    const mk = s.mk.slice();
-    if (orders && s.bars.length) {
-      const lc = lineColors(dark), snap = (ms: number) => Math.min(s.b0 + (s.bars.length - 1) * s.tfSec, Math.max(s.b0, bucket(ms, s.tfSec))) as UTCTimestamp;
-      for (const o of orders) {
-        const col = o.role === 'entry' ? lc.entry : lc.exit, t0 = snap(o.placed_ms), t1 = snap(o.end_ms);
-        const l = s.chart.addLineSeries({color: col, lineWidth: 1, lineStyle: LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false});
-        l.setData(t0 < t1 ? [{time: t0, value: o.px}, {time: t1, value: o.px}] : [{time: t0, value: o.px}]); s.ord.push(l);
-        if (o.status === 'filled') mk.push({time: t1, position: o.role === 'entry' ? 'aboveBar' : 'belowBar', color: col, shape: 'circle', text: (o.role === 'entry' ? 'вход ' : 'выход ') + trPx(o.fill_px ?? o.px)});
-      }
-      mk.sort((a, b) => +a.time - +b.time);
-    }
-    s.candles.setMarkers(mk);
+  // заявки движка и уровни сетапа (TK-745): примитив на холсте графика; цвета — по теме, видимость групп — из легенды
+  function paintOv(s: NonNullable<typeof st.current>) {
+    const p = palette(), c = ovColors(dark);
+    s.ov.set({ords: minutes.ords, lvs: minutes.lvs, show, b0: s.b0, tfSec: s.tfSec, exitMs: x.exit_ms, colors: {...c, setup: p.mfg || c.setup, card: p.card, fg: p.fg}});
+    s.chart.priceScale('right').applyOptions({autoScale: true});
   }
 
   // NATR: линия сигнала (значение движка на минуте сигнала) и отметка на свече сигнала текущего таймфрейма
@@ -217,7 +213,7 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, orders}: 
     if (te != null) mk.push({time: te as UTCTimestamp, position: 'aboveBar', color: lc.entry, shape: 'arrowDown', text: 'вход ' + trPx(x.entry_px)});
     if (tx != null) mk.push({time: tx as UTCTimestamp, position: 'belowBar', color: lc.exit, shape: 'arrowUp', text: 'выход (ср.) ' + trPx(x.exit_px) + ' · ' + kindLabel});
     mk.sort((a, b) => +a.time - +b.time);
-    s.mk = mk; drawOrders(s);
+    s.mk = mk; paintOv(s);
     s.natv = aggregateNat(minutes, tfSec, b0, bars.length);
     s.nat.setData(s.natv.map((v, k) => v == null ? {time: (b0 + k * tfSec) as UTCTimestamp} : {time: (b0 + k * tfSec) as UTCTimestamp, value: v}) as any);
     paintNat(s);
@@ -228,7 +224,8 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, orders}: 
       const cx = s.chart.timeScale().timeToCoordinate(t as UTCTimestamp), cy = s.candles.priceToCoordinate(price);
       return cx == null || cy == null ? null : {x: cx, y: cy};
     };
-    chartRef.cur = {tf, bars, markers: mk.map(m => ({time: +m.time, position: m.position, shape: m.shape, text: m.text})), lines: [{k: 'level', price: x.lvl, color: p.mfg}, {k: 'entry', price: x.entry_px, color: lc.entry}, {k: 'exit', price: x.exit_px, color: lc.exit}, {k: 'breakeven', price: x.be_px, color: lc.be}], orders: s.ord.length,
+    chartRef.cur = {tf, bars, markers: mk.map(m => ({time: +m.time, position: m.position, shape: m.shape, text: m.text})), lines: [{k: 'level', price: x.lvl, color: p.mfg}, {k: 'entry', price: x.entry_px, color: lc.entry}, {k: 'exit', price: x.exit_px, color: lc.exit}, {k: 'breakeven', price: x.be_px, color: lc.be}], orders: s.ov.counts().seg,
+      ov: {counts: () => s.ov.counts(), drawn: () => s.ov.drawn, hit: (px: number, py: number) => s.ov.hit(px, py).map(h => h.title), prices: () => s.ov.prices(), coord: ca},
       visible: () => { const r = s.chart.timeScale().getVisibleRange(); return r ? {from: +r.from, to: +r.to} : null; }, coord: ca, ready: true,
       nat: {values: s.natv, sig: natSig(s), cross: () => s.natXT, visible: () => { const r = s.nchart.timeScale().getVisibleRange(); return r ? {from: +r.from, to: +r.to} : null; }, box: () => ({w: nbox.current!.clientWidth, h: nbox.current!.clientHeight}),
         pix: (x0, y0, w0, h0, rgb, tol) => {
@@ -247,7 +244,14 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, orders}: 
       }};
     box.current!.dataset.ready = '1'; box.current!.dataset.tf = tf; box.current!.dataset.n = String(bars.filter(b => b).length);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tf, minutes, orders]);
+  }, [tf, minutes]);
+
+  // видимость групп заявок и уровней (легенда)
+  useEffect(() => {
+    const s = st.current; if (!s || !s.inited) return;
+    paintOv(s);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show]);
 
   // «К сделке»: центр и масштаб как при открытии
   useEffect(() => {
@@ -272,7 +276,7 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, orders}: 
     const lc = lineColors(dark);
     s.lines[0].applyOptions({color: p.mfg}); s.lines[1].applyOptions({color: lc.entry}); s.lines[2].applyOptions({color: lc.exit}); s.lines[3].applyOptions({color: lc.be});
     s.mk = s.mk.map(m => ({...m, color: m.shape === 'arrowDown' ? lc.entry : lc.exit}));
-    drawOrders(s);
+    paintOv(s);
   }, [dark]);
 
   return (
@@ -282,7 +286,7 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, orders}: 
         <div ref={nbox} data-chart="trade.natr" className="h-[92px] w-full overflow-hidden rounded-md border mob:h-[80px]" />
         <span data-f="natr-label" className="pointer-events-none absolute left-2 top-1 z-10 text-[11px] text-muted-foreground">NATR30, %</span>
       </div>
-      <div ref={tipRef} data-chart="trade.tip" style={{display: 'none'}} className="pointer-events-none absolute z-10 min-w-[150px] rounded-md border bg-popover px-2.5 py-1.5 text-xs leading-snug text-popover-foreground shadow-md">
+      <div ref={tipRef} data-chart="trade.tip" style={{display: 'none'}} className="pointer-events-none absolute z-10 min-w-[150px] max-w-[min(340px,86vw)] rounded-md border bg-popover px-2.5 py-1.5 text-xs leading-snug text-popover-foreground shadow-md">
         <div data-k="time" className="font-semibold" />
         <div className="flex justify-between gap-4"><span className="text-muted-foreground">цена</span><span data-k="px" /></div>
         <div data-none hidden className="text-muted-foreground">нет сделок</div>
@@ -291,6 +295,7 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, orders}: 
             <div key={k} className="flex justify-between gap-4"><span className="text-muted-foreground">{t}</span><span data-k={k} /></div>
           ))}
         </div>
+        <div data-ord hidden className="mt-1 max-w-[320px] text-[11px] leading-snug" />
       </div>
     </div>
   );
