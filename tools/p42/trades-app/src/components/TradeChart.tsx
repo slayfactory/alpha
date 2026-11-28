@@ -43,7 +43,7 @@ const setRange = (s: Ser, from: number, to: number) => setView(s, (from + to) / 
 
 export type ChartApi = {
   tf: string; bars: (Bar | null)[]; markers: any[]; lines: {k: string; price: number; color: string}[]; orders: Record<string, number>;
-  ov: {counts: () => ReturnType<Overlay['counts']>; drawn: () => Overlay['drawn']; hit: (px: number, py: number) => string[][]; prices: () => number[]; coord: (t: number, price: number) => {x: number; y: number} | null}; visible: () => {from: number; to: number} | null;
+  ov: {xms: (ms: number) => number | null; counts: () => ReturnType<Overlay['counts']>; drawn: () => Overlay['drawn']; hit: (px: number, py: number) => string[][]; prices: () => number[]; coord: (t: number, price: number) => {x: number; y: number} | null}; visible: () => {from: number; to: number} | null;
   nat: {values: (number | null)[]; sig: {time: number; value: number} | null; cross: () => number | null; visible: () => {from: number; to: number} | null; pix: (x: number, y: number, w: number, h: number, rgb: number[] | null, tol: number) => number; box: () => {w: number; h: number}};
   coord: (t: number, price: number) => {x: number; y: number} | null; ready: boolean;
   pix: (x: number, y: number, w: number, h: number, rgb: number[] | null, tol: number) => number;      // для клик-теста: сколько точек цвета rgb в прямоугольнике снимка графика
@@ -52,7 +52,7 @@ export const chartRef: {cur: ChartApi | null} = {cur: null};
 
 export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, show}: {x: Trade; minutes: Minutes; tf: string; dark: boolean; resetKey: number; kindLabel: string; show: Record<string, boolean>}) {
   const box = useRef<HTMLDivElement>(null), nbox = useRef<HTMLDivElement>(null), tipRef = useRef<HTMLDivElement>(null);
-  const st = useRef<{chart: IChartApi; candles: ISeriesApi<'Candlestick'>; vol: ISeriesApi<'Histogram'>; link: ISeriesApi<'Line'>; lines: IPriceLine[]; ov: Overlay; nchart: IChartApi; nat: ISeriesApi<'Line'>; natv: (number | null)[]; natLine: IPriceLine | null; natXT: number | null; xsync: boolean; mk: SeriesMarker<Time>[]; bars: (Bar | null)[]; tfSec: number; b0: number; view: {mid: number; span: number} | null; inited: boolean} | null>(null);
+  const st = useRef<{chart: IChartApi; candles: ISeriesApi<'Candlestick'>; vol: ISeriesApi<'Histogram'>; link: ISeriesApi<'Line'>; mkE: ISeriesApi<'Line'>; mkX: ISeriesApi<'Line'>; lines: IPriceLine[]; ov: Overlay; nchart: IChartApi; nat: ISeriesApi<'Line'>; natv: (number | null)[]; natLine: IPriceLine | null; natXT: number | null; xsync: boolean; mk: SeriesMarker<Time>[]; bars: (Bar | null)[]; tfSec: number; b0: number; view: {mid: number; span: number} | null; inited: boolean} | null>(null);
   const tfSec = TFS.find(t => t[0] === tf)![2];
   // окно по умолчанию для таймфрейма: [вход − запас, выход + запас] или всё загруженное
   const defRange = (s: {b0: number; tfSec: number; bars: unknown[]}, tfk: string) => {
@@ -91,6 +91,9 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, show}: {x
     const vol = chart.addHistogramSeries({priceFormat: {type: 'volume'}, priceScaleId: 'vol', lastValueVisible: false, priceLineVisible: false});
     chart.priceScale('vol').applyOptions({scaleMargins: {top: 0.84, bottom: 0}});
     const link = chart.addLineSeries({color: p.mfg, lineWidth: 1, lineStyle: LineStyle.Dotted, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false});
+    // стрелки входа и выхода — на своих рядах, созданных позже свечей: маркеры рядов рисуются поверх примитива заявок (одна точка на ряд — вход у максимума свечи, выход у минимума)
+    const mkOpt = {color: p.mfg, lineWidth: 1 as const, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false};
+    const mkE = chart.addLineSeries(mkOpt), mkX = chart.addLineSeries(mkOpt);
     const lc = lineColors(dark);
     const lines = [      // порядок = chartRef.lines
       candles.createPriceLine({price: x.lvl, color: p.mfg, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'уровень'}),
@@ -114,7 +117,7 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, show}: {x
     let rs = false;
     const linkRange = (a: IChartApi, b: IChartApi) => a.timeScale().subscribeVisibleLogicalRangeChange(r => { if (rs || !r) return; rs = true; try { b.timeScale().setVisibleLogicalRange(r); } finally { rs = false; } });
     linkRange(chart, nchart); linkRange(nchart, chart);
-    st.current = {chart, candles, vol, link, lines, ov, nchart, nat, natv: [], natLine: null, natXT: null, xsync: false, mk: [], bars: [], tfSec: 0, b0: 0, view: null, inited: false};
+    st.current = {chart, candles, vol, link, mkE, mkX, lines, ov, nchart, nat, natv: [], natLine: null, natXT: null, xsync: false, mk: [], bars: [], tfSec: 0, b0: 0, view: null, inited: false};
     nchart.subscribeCrosshairMove(param => {      // перекрестие с NATR → на свечи (цена — закрытие свечи под курсором)
       const s = st.current;
       if (!s || s.xsync) return;
@@ -147,12 +150,14 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, show}: {x
       {      // заявки и уровни сетапа под курсором (TK-745)
         const box2 = tip.querySelector('[data-ord]') as HTMLElement, hs = s.ov.hit(param.point.x, param.point.y);
         box2.textContent = '';
-        hs.slice(0, 6).forEach(h => { const d = document.createElement('div'); d.className = 'mt-1 border-t pt-1'; h.title.forEach((t, k) => { const r = document.createElement('div'); r.textContent = t; if (k === 0) r.className = 'font-semibold'; d.appendChild(r); }); box2.appendChild(d); });
-        if (hs.length > 6) { const d = document.createElement('div'); d.className = 'mt-1 text-muted-foreground'; d.textContent = 'ещё ' + (hs.length - 6); box2.appendChild(d); }
+        hs.slice(0, el.clientWidth <= 640 ? 3 : 6).forEach(h => { const d = document.createElement('div'); d.className = 'mt-1 border-t pt-1'; h.title.forEach((t, k) => { const r = document.createElement('div'); r.textContent = t; if (k === 0) r.className = 'font-semibold'; d.appendChild(r); }); box2.appendChild(d); });
+        if (hs.length > (el.clientWidth <= 640 ? 3 : 6)) { const d = document.createElement('div'); d.className = 'mt-1 text-muted-foreground'; d.textContent = 'ещё ' + (hs.length - (el.clientWidth <= 640 ? 3 : 6)); box2.appendChild(d); }
         box2.toggleAttribute('hidden', !hs.length);
       }
       tip.style.display = 'block';
-      const W = el.clientWidth, H = el.clientHeight, tw = tip.offsetWidth, th = tip.offsetHeight;
+      const W = el.clientWidth, H = el.clientHeight;
+      tip.style.maxHeight = Math.max(80, H - 8) + 'px'; tip.style.overflow = 'hidden';      // подсказка с заявками не выходит за график (на узком экране — не закрывает панель NATR)
+      const tw = tip.offsetWidth, th = tip.offsetHeight;
       let lx = param.point.x + 14, ly = param.point.y + 14;
       if (lx + tw > W - 60) lx = param.point.x - tw - 14;
       if (ly + th > H - 24) ly = Math.max(4, param.point.y - th - 14);
@@ -178,6 +183,7 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, show}: {x
   function paintOv(s: NonNullable<typeof st.current>) {
     const p = palette(), c = ovColors(dark);
     s.ov.set({ords: minutes.ords, lvs: minutes.lvs, show, b0: s.b0, tfSec: s.tfSec, exitMs: x.exit_ms, colors: {...c, setup: p.mfg || c.setup, card: p.card, fg: p.fg}});
+    s.mkE.setMarkers(s.mk.filter(m => m.shape === 'arrowDown')); s.mkX.setMarkers(s.mk.filter(m => m.shape === 'arrowUp'));      // стрелки входа и выхода сделки (прежние, поверх заявок)
     s.chart.priceScale('right').applyOptions({autoScale: true});
   }
 
@@ -213,6 +219,9 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, show}: {x
     if (te != null) mk.push({time: te as UTCTimestamp, position: 'aboveBar', color: lc.entry, shape: 'arrowDown', text: 'вход ' + trPx(x.entry_px)});
     if (tx != null) mk.push({time: tx as UTCTimestamp, position: 'belowBar', color: lc.exit, shape: 'arrowUp', text: 'выход (ср.) ' + trPx(x.exit_px) + ' · ' + kindLabel});
     mk.sort((a, b) => +a.time - +b.time);
+    const barAt = (t: number | null) => t == null ? undefined : bars.find(b => b && b.time === t);
+    s.mkE.setData(te != null && barAt(te) ? [{time: te as UTCTimestamp, value: barAt(te)!.high}] : []);
+    s.mkX.setData(tx != null && barAt(tx) ? [{time: tx as UTCTimestamp, value: barAt(tx)!.low}] : []);
     s.mk = mk; paintOv(s);
     s.natv = aggregateNat(minutes, tfSec, b0, bars.length);
     s.nat.setData(s.natv.map((v, k) => v == null ? {time: (b0 + k * tfSec) as UTCTimestamp} : {time: (b0 + k * tfSec) as UTCTimestamp, value: v}) as any);
@@ -225,7 +234,7 @@ export function TradeChart({x, minutes, tf, dark, resetKey, kindLabel, show}: {x
       return cx == null || cy == null ? null : {x: cx, y: cy};
     };
     chartRef.cur = {tf, bars, markers: mk.map(m => ({time: +m.time, position: m.position, shape: m.shape, text: m.text})), lines: [{k: 'level', price: x.lvl, color: p.mfg}, {k: 'entry', price: x.entry_px, color: lc.entry}, {k: 'exit', price: x.exit_px, color: lc.exit}, {k: 'breakeven', price: x.be_px, color: lc.be}], orders: s.ov.counts().seg,
-      ov: {counts: () => s.ov.counts(), drawn: () => s.ov.drawn, hit: (px: number, py: number) => s.ov.hit(px, py).map(h => h.title), prices: () => s.ov.prices(), coord: ca},
+      ov: {xms: (ms: number) => s.ov.xms(ms), counts: () => s.ov.counts(), drawn: () => s.ov.drawn, hit: (px: number, py: number) => s.ov.hit(px, py).map(h => h.title), prices: () => s.ov.prices(), coord: ca},
       visible: () => { const r = s.chart.timeScale().getVisibleRange(); return r ? {from: +r.from, to: +r.to} : null; }, coord: ca, ready: true,
       nat: {values: s.natv, sig: natSig(s), cross: () => s.natXT, visible: () => { const r = s.nchart.timeScale().getVisibleRange(); return r ? {from: +r.from, to: +r.to} : null; }, box: () => ({w: nbox.current!.clientWidth, h: nbox.current!.clientHeight}),
         pix: (x0, y0, w0, h0, rgb, tol) => {

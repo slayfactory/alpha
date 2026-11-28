@@ -19,6 +19,7 @@ let root: Root | null = null;
     return c ? {tf: c.tf, bars: c.bars, markers: c.markers, lines: c.lines, visible: c.visible(), ready: c.ready, nat: {values: c.nat.values, sig: c.nat.sig, cross: c.nat.cross(), visible: c.nat.visible(), box: c.nat.box()}, ov: c.ov.counts(), drawn: c.ov.drawn(), ovPrices: c.ov.prices()} : null;
   },
   ovHit(px: number, py: number) { return chartRef.cur ? chartRef.cur.ov.hit(px, py) : null; },
+  ovX(ms: number) { return chartRef.cur ? chartRef.cur.ov.xms(ms) : null; },
   ovCoord(t: number, price: number) { return chartRef.cur ? chartRef.cur.ov.coord(t, price) : null; },
   coord(t: number, price: number) { return chartRef.cur ? chartRef.cur.coord(t, price) : null; },
   pix(x: number, y: number, w: number, h: number, rgb: number[] | null, tol: number) { return chartRef.cur ? chartRef.cur.pix(x, y, w, h, rgb, tol) : -1; },

@@ -15,7 +15,7 @@ export const GRP_TIP: Record<Grp, string> = {
 };
 
 export type Seg = {t0: number; t1: number; px: number; why: number};      // t1 = NaN — до выхода сделки
-export type Ord = {role: string; grp: Grp; lot: number; type: string; pm: number; kind: 'f' | 'c' | 'o'; end: number; endPx: number; note: string; trig: number; segs: Seg[]};
+export type Ord = {role: string; grp: Grp; lot: number; type: string; pm: number; fpm: number; kind: 'f' | 'c' | 'o'; end: number; endPx: number; note: string; trig: number; segs: Seg[]};
 export type LvKind = 'L' | 'V' | 'Z' | 'T' | 'G' | 'X' | 'O';
 export type Lv = {k: LvKind; px: number; a: number | null; b: number | null; x?: any};      // a / b — мс, null — «с начала / до конца данных»
 
@@ -23,10 +23,10 @@ export const grpOf = (role: string): Grp => role === 'e1' || role === 'e2' || ro
 
 export function decodeOrders(raw: any[] | undefined, t0: number): Ord[] {
   return (raw || []).map(r => {
-    const [role, lot, type, pm, kind, end, endPx, note, trig, path] = r as [string, number, string, number, 'f' | 'c' | 'o', number, number, string, number, number[]];
+    const [role, lot, type, pm, kind, end, endPx, note, trig, path, fpm] = r as [string, number, string, number, 'f' | 'c' | 'o', number, number, string, number, number[], number];
     const segs: Seg[] = [], n = path.length / 3;
     for (let i = 0; i < n; i++) segs.push({t0: t0 + path[3 * i], t1: i + 1 < n ? t0 + path[3 * i + 3] : kind === 'o' ? NaN : t0 + end, px: path[3 * i + 1] / 1e8, why: path[3 * i + 2]});
-    return {role, grp: grpOf(role), lot, type, pm, kind, end: kind === 'o' ? NaN : t0 + end, endPx: endPx / 1e8, note, trig: trig ? t0 + trig : 0, segs};
+    return {role, grp: grpOf(role), lot, type, pm, fpm: fpm || 0, kind, end: kind === 'o' ? NaN : t0 + end, endPx: endPx / 1e8, note, trig: trig ? t0 + trig : 0, segs};
   });
 }
 
@@ -85,7 +85,7 @@ export const lvTip = (l: Lv): string[] => {
 };
 export const ordTip = (o: Ord, s: Seg, si: number, fill: boolean): string[] => {
   const a = [`${ROLE_RU(o.role)} · ${TYPE_RU[o.type] || o.type} · лот ${o.lot + 1} · ${share(o.pm)} ставки`];
-  if (fill) { a.push(`исполнена по ${trPx(o.endPx)} в ${fmtMs(o.end)}${o.note ? ' (' + noteRu(o.note) + ')' : ''}`); if (o.trig) a.push('условие сработало в ' + fmtMs(o.trig)); return a; }
+  if (fill) { a.push(`исполнено ${share(o.fpm)} ставки по ${trPx(o.endPx)} в ${fmtMs(o.end)}${o.note ? ' (' + noteRu(o.note) + ')' : ''}`); if (o.trig) a.push('условие сработало в ' + fmtMs(o.trig)); return a; }
   a.push(`цена ${trPx(s.px)} · ${WHY_RU[s.why] || 'пересчёт'} (отрезок ${si + 1} из ${o.segs.length})`);
   a.push(`с ${fmtMs(s.t0)} до ${Number.isNaN(s.t1) ? 'конца сделки' : fmtMs(s.t1)}`);
   if (si === o.segs.length - 1 && o.kind !== 'f') a.push(`${END_RU[o.kind]}${o.note ? ': ' + noteRu(o.note) : ''}`);

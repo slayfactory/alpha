@@ -41,13 +41,18 @@ export class Overlay implements ISeriesPrimitive<Time> {
   paneViews() { return this.views; }
   set(d: OvData | null) { this.data = d; this.p?.requestUpdate(); }
 
+  /** x по времени в мс. `logicalToCoordinate` (lightweight-charts 4.2.3) даёт 0 для нецелого индекса — берём два соседних целых и интерполируем */
   private x(ms: number | null, edge: number): number {
     const d = this.data!, ts = this.p!.chart.timeScale();
     if (ms == null) return edge;
-    const c = ts.logicalToCoordinate(((ms / 1000 + GMT4 - d.b0) / d.tfSec - 0.5) as Logical);
-    return c == null ? edge : (c as number);
+    const lg = (ms / 1000 + GMT4 - d.b0) / d.tfSec - 0.5, k = Math.floor(lg);
+    const a = ts.logicalToCoordinate(k as Logical), b = ts.logicalToCoordinate((k + 1) as Logical);
+    return a == null || b == null ? edge : (a as number) + (lg - k) * ((b as number) - (a as number));
   }
   private y(px: number): number | null { const c = this.series!.priceToCoordinate(px); return c == null ? null : (c as number); }
+
+  /** x (пиксели области цены) для времени в мс эпохи — для клик-теста; null — вне данных */
+  xms(ms: number): number | null { return this.data && this.p ? this.x(ms, NaN) : null; }
 
   /** все цены видимых групп — для автомасштаба цены */
   prices(): number[] {
@@ -70,7 +75,7 @@ export class Overlay implements ISeriesPrimitive<Time> {
       });
       if (o.kind === 'f' || o.kind === 'c') {
         const y = this.y(o.kind === 'f' ? o.endPx : o.segs[o.segs.length - 1].px);
-        if (y != null) (o.kind === 'f' ? fills : ends).push({o, x: this.x(o.end, 0), y, r: o.kind === 'f' ? R_FILL(o.pm) : 3});
+        if (y != null) (o.kind === 'f' ? fills : ends).push({o, x: this.x(o.end, 0), y, r: o.kind === 'f' ? R_FILL(o.fpm) : 3});
       }
     }
     if (d.show.lv) {
@@ -107,7 +112,7 @@ export class Overlay implements ISeriesPrimitive<Time> {
       const k = n.l.k; inc(dr.lv, k);
       if (k === 'Z') continue;
       const color = k === 'T' || k === 'G' ? col.pivot : col.setup;
-      c.strokeStyle = k === 'L' ? rgba(col.fg, 0.85) : rgba(color, k === 'O' ? 0.45 : 0.9);
+      c.strokeStyle = k === 'L' ? col.setup : rgba(color, k === 'O' ? 0.45 : 0.9);      // торгуемый уровень — цветом прежней линии «уровень» (та же цена, не перекрашивает её)
       c.lineWidth = k === 'L' ? 2 : 1;
       c.setLineDash(k === 'L' ? [7, 3] : k === 'T' ? [1, 3] : k === 'G' ? [4, 3] : k === 'X' ? [1, 4] : k === 'V' ? [3, 3] : [2, 2]);
       c.beginPath(); c.moveTo(n.x0, n.y); c.lineTo(n.x1, n.y); c.stroke(); c.setLineDash([]);
@@ -134,9 +139,13 @@ export class Overlay implements ISeriesPrimitive<Time> {
     for (const e of L.ends) {      // снятие — короткая засечка
       inc(dr.cancel, e.o.grp); c.strokeStyle = col.grp[e.o.grp]; c.lineWidth = 1.2; c.beginPath(); c.moveTo(e.x, e.y - 4); c.lineTo(e.x, e.y + 4); c.stroke();
     }
-    for (const f of L.fills) {      // исполнение — круг, размер по доле ставки
-      inc(dr.fill, f.o.grp); c.fillStyle = col.grp[f.o.grp]; c.strokeStyle = col.card; c.lineWidth = 1.5;
-      c.beginPath(); c.arc(f.x, f.y, f.r, 0, Math.PI * 2); c.fill(); c.stroke();
+    // исполнение — круг, размер по доле исполненного; второй вход e2 — кольцо вокруг (e1 и e2 исполняются в секундах друг от друга у одной цены), мелкие сверху
+    const fills = L.fills.slice().sort((a, b) => (a.o.grp === 'e2' ? 0 : 1) - (b.o.grp === 'e2' ? 0 : 1) || b.r - a.r);
+    for (const f of fills) {
+      inc(dr.fill, f.o.grp); const color = col.grp[f.o.grp];
+      c.beginPath();
+      if (f.o.grp === 'e2') { c.fillStyle = rgba(color, 0.15); c.strokeStyle = color; c.lineWidth = 2.5; c.arc(f.x, f.y, f.r + 2.5, 0, Math.PI * 2); c.fill(); c.stroke(); }
+      else { c.fillStyle = color; c.strokeStyle = col.card; c.lineWidth = 1.5; c.arc(f.x, f.y, f.r, 0, Math.PI * 2); c.fill(); c.stroke(); }
     }
     // подписи уровней: справа, без наложения по высоте
     labels.sort((a, b) => a.y - b.y);

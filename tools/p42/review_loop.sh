@@ -31,7 +31,7 @@ fi
 # код на srv (LF; каталоги и архивы не берём)
 tar -cz *.py *.sh *.json *.js 2>/dev/null | ssh "${KEY[@]}" "$HOST" 'mkdir -p /data/p42-review/code && tar -xz -C /data/p42-review/code && cd /data/p42-review/code && sed -i "s/\r$//" *.py *.sh'
 lap "код выложен"
-ssh "${KEY[@]}" "$HOST" "systemd-run --quiet --wait --pipe --unit rv-run -p MemoryMax=40G -p CPUQuota=490% -p Nice=10 -E THR=${THR:-7} bash /data/p42-review/code/review_srv.sh '$TAG' '$BIN' '$KEYS' '$LO' '$HI'" 2>&1 | tee /tmp/review-loop.log
+ssh "${KEY[@]}" "$HOST" "systemctl reset-failed rv-run 2>/dev/null; systemd-run --quiet --wait --pipe --unit rv-run -p MemoryMax=40G -p CPUQuota=490% -p Nice=10 -E THR=${THR:-7} bash /data/p42-review/code/review_srv.sh '$TAG' '$BIN' '$KEYS' '$LO' '$HI'" 2>&1 | tee /tmp/review-loop.log
 rc=${PIPESTATUS[0]}
 lap "готово (rc=$rc): http://5.231.25.224:8090/#trades — вкладка «30 дней»"
 exit "$rc"
