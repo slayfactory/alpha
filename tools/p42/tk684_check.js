@@ -177,8 +177,8 @@ const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'Н
   for (const [hsh, side] of [['#equity/short/where', 'short'], ['#equity/long/bases', 'long'], ['#equity/short/shape', 'short'], ['#equity/both/curve', 'both'], ['#equity/long/comp/dep=7000', 'long']]) {
     await page.goto('about:blank'); await page.goto(base + hsh, {waitUntil: 'load'}); await page.waitForSelector('table[data-vtable]'); await state(side, dl, ds, 'прежний вид ' + hsh);
   }
-  // верхние вкладки — ровно две (TK-696: «Цели TK-598» убрана); прежние хеши убранных вкладок (#live, #progress, #model, …) и пустой хеш открывают «Эквити» · «Варианты» без ошибок консоли
-  eq(await page.evaluate(() => [...document.querySelectorAll('#toptabs button')].map(b => b.innerText)), ['Эквити', 'Признаки'], 'верхние вкладки');
+  // верхние вкладки — ровно три (TK-696: «Цели TK-598» убрана; TK-741: «Сделки»); прежние хеши убранных вкладок (#live, #progress, #model, …) и пустой хеш открывают «Эквити» · «Варианты» без ошибок консоли
+  eq(await page.evaluate(() => [...document.querySelectorAll('#toptabs button')].map(b => b.innerText)), ['Эквити', 'Сделки', 'Признаки'], 'верхние вкладки');
   for (const hsh of ['#live', '#progress', '#model', '#model/long', '#long', '#short', '#targets', '']) {
     const e0 = errs.length;
     await page.goto('about:blank'); await page.goto(base + hsh, {waitUntil: 'load'}); await page.waitForSelector('table[data-vtable]');
@@ -192,7 +192,7 @@ const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'Н
     const d = await page.evaluate(() => ({pane: [...document.querySelectorAll('.pane')].filter(p => !p.hidden).map(p => p.id).join(), h: [...document.querySelectorAll('.pane')].filter(p => !p.hidden)[0].innerText.length}));
     ok(d.pane === 'pane-' + k && d.h > 40, 'вкладка ' + k + ': ' + JSON.stringify(d));
     const ww = await page.evaluate(() => [document.querySelector('.wrap').getBoundingClientRect().width, document.documentElement.clientWidth]);      // остальные вкладки — прежней ширины (не шире 1180 + поля)
-    ok(k === 'equity' ? Math.abs(ww[0] - ww[1]) <= 1 : ww[0] <= 1180 + 1 && Math.abs(ww[0] - Math.min(1180, ww[1])) <= 1, 'ширина листа вкладки ' + k + ': ' + JSON.stringify(ww));
+    ok(k === 'equity' || k === 'trades' ? Math.abs(ww[0] - ww[1]) <= 1 : ww[0] <= 1180 + 1 && Math.abs(ww[0] - Math.min(1180, ww[1])) <= 1, 'ширина листа вкладки ' + k + ': ' + JSON.stringify(ww));
   }
   await page.click('#toptabs button[data-tab="equity"]'); await page.waitForSelector('table[data-vtable]');
   await clickSide('both'); await state('both', dl, ds, 'возврат на «Эквити»');

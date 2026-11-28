@@ -163,6 +163,19 @@ section.ft-set{margin-top:22px}
 }
 .badge.fail{background:var(--fg);border-color:var(--fg);color:#fff}
 .tabs[hidden]{display:none}
+/* TK-741: вкладка «Сделки» */
+.eqt.trs tbody tr,.eqt.trt tbody tr{cursor:pointer}
+.eqt tr.sel{background:#eff6ff}
+.eqt.trs td[data-f=name]{white-space:normal;min-width:260px}
+.eqt.trs td[data-f=name] .muted{white-space:normal}
+.trt th[data-sort]{cursor:pointer;user-select:none}
+.tr-x{border:0;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:var(--z500);padding:0 4px;margin-left:auto}
+#tr-detail .card-h{flex-wrap:wrap}
+.tr-feats{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 16px;margin-top:6px}
+.tr-feats div{display:flex;flex-direction:column}
+.tr-fh{margin-top:12px}
+.tr-note{margin-top:6px}
+@media(max-width:640px){.trt thead{display:block}.trt thead tr{display:flex;flex-wrap:wrap;gap:4px 14px;padding:0 0 8px}.trt th{padding:0;font-size:12px;border:0}.trt td.tf{display:none}.tr-feats{grid-template-columns:1fr 1fr}}      /* TK-741: на узком экране заголовки столбцов остаются — по ним задаётся порядок; числа сетапа — в карточке сделки */
 </style>
 </head>
 <body>
@@ -175,6 +188,7 @@ section.ft-set{margin-top:22px}
       <div id="eq-view"></div>
     </div>
   </div>
+  <div class="pane" id="pane-trades" hidden><div class="prog" id="trades"></div></div>
   <div class="pane" id="pane-features" hidden><div class="prog" id="features"></div></div>
 </div>
 <div id="tip"></div>
@@ -471,13 +485,15 @@ function renderFeatures() {
 }
 
 /*__FANJS__*/
+/*__TRADESJS__*/
 // ── вкладки верхнего уровня: хеш #equity[/short|long|both[/<лонг>/<шорт>]] (TK-684: id варианта, токен клетки веера или «-») | #equity/fan/<short|long>/<параметры веера> (+ /f=<избранное через точку>) | #features[/<набор>[/<№>]]; всё прочее — «Эквити»
-const TABS = [['equity', 'Эквити'], ['features', 'Признаки']];
+const TABS = [['equity', 'Эквити'], ['trades', 'Сделки'], ['features', 'Признаки']];
 const ST = {tab: 'equity', ft: null, fn: null, eq: 'short', view: 'var', vl: V.default.long, vs: V.default.short, fan: FAN_DEF(), fav: []};
 function parseHash() {
   const [a, b, c, d] = location.hash.replace(/^#/, '').split('/');
   ST.tab = TABS.some(t => t[0] === a) ? a : 'equity';
   ST.ft = a === 'features' && FEAT.sets.some(s => s.id === b) ? b : null;
+  if (ST.tab === 'trades') trParse(b, c, d);      // TK-741: #trades/<период: main|JAN|N1|all>/<кластер, 0 — все>[/<№ сделки>]
   ST.fn = ST.ft && FT_BY_N.get(+c) === ST.ft ? +c : null;      // TK-678: #features/<набор>/<№> — строка признака
   // TK-684: прежние ссылки (#equity/<сторона>/where|bases|shape|curve|comp, #live, #progress, #model) открывают «Варианты» с базами
   const eqv = a === 'equity', seg = location.hash.split('/'), fv = eqv && seg.find(x => x.startsWith('f='));
@@ -490,13 +506,14 @@ function parseHash() {
 }
 function setHash() {
   const eq = ST.view === 'fan' ? '/fan/' + ST.eq + '/' + fanHash() : '/' + ST.eq + '/' + (ST.vl || '-') + '/' + (ST.vs || '-');
-  history.replaceState(null, '', '#' + ST.tab + (ST.tab === 'equity' ? eq + (ST.fav.length ? '/f=' + ST.fav.join('.') : '') : ST.tab === 'features' && ST.ft ? '/' + ST.ft + (ST.fn ? '/' + ST.fn : '') : ''));
+  history.replaceState(null, '', '#' + ST.tab + (ST.tab === 'equity' ? eq + (ST.fav.length ? '/f=' + ST.fav.join('.') : '') : ST.tab === 'features' && ST.ft ? '/' + ST.ft + (ST.fn ? '/' + ST.fn : '') : ST.tab === 'trades' ? trHash() : ''));
 }
 function route() {
   TABS.forEach(([k]) => { document.getElementById('pane-' + k).hidden = k !== ST.tab; });
-  document.querySelector('.wrap').classList.toggle('wide', ST.tab === 'equity');      // «Эквити» — на всю ширину окна (боковые поля те же)
+  document.querySelector('.wrap').classList.toggle('wide', ST.tab === 'equity' || ST.tab === 'trades');      // «Эквити» — на всю ширину окна (боковые поля те же)
   document.querySelectorAll('#toptabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === ST.tab));
   if (ST.tab === 'equity') renderEquity();
+  if (ST.tab === 'trades') renderTrades();
   if (ST.tab === 'features') { renderFeatures(); if (ST.ft) setTimeout(ftGo, 0); }
   setHash();
 }
@@ -507,7 +524,7 @@ function initTabs() {
   parseHash();
   route();
   window.addEventListener('hashchange', () => { parseHash(); route(); });
-  let rt, lastW = innerWidth; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (innerWidth !== lastW) { lastW = innerWidth; if (ST.tab === 'equity') renderEquity(); } }, 150); });
+  let rt, lastW = innerWidth; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (innerWidth !== lastW) { lastW = innerWidth; if (ST.tab === 'equity') renderEquity(); if (ST.tab === 'trades') renderTrades(); } }, 150); });
 }
 
 function init() {

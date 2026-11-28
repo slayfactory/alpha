@@ -1,4 +1,4 @@
-"""П-42 TK-593: сборка страницы П-42 :8090 (один HTML, данные внутри). Вкладки: «Эквити» (виды «Варианты» и «Веер»), «Признаки».
+"""П-42 TK-593: сборка страницы П-42 :8090 (один HTML, данные внутри). Вкладки: «Эквити» (виды «Варианты» и «Веер»), «Сделки» (TK-741), «Признаки».
 
 Использование: <venv>/bin/python tk593_page.py <template.html> <выход: каталог страницы> [features.json] [variants.json]
 Пишет <каталог>/index.html (страница статическая: после правки JSON — запустить сборку ещё раз).
@@ -63,7 +63,8 @@ def main():
     fan_idx = f"{out_dir}/data/fan/index.json"      # версия данных веера — адреса пакетов с ?v=<время каталога> (кэш браузера)
     fan_v = str(int(os.path.getmtime(fan_idx))) if os.path.exists(fan_idx) else ""
     fan_js = open(os.path.join(HERE, "tk684_fan.js"), encoding="utf-8").read().replace("/*__FANV__*/''", repr(fan_v))
-    parts = {"/*__FANJS__*/": fan_js, "/*__FEATURES__*/": blob(features), "/*__VARIANTS__*/": blob(variants)}
+    trades_js = open(os.path.join(HERE, "tk741_trades.js"), encoding="utf-8").read()
+    parts = {"/*__FANJS__*/": fan_js, "/*__TRADESJS__*/": trades_js, "/*__FEATURES__*/": blob(features), "/*__VARIANTS__*/": blob(variants)}
     assert all(tpl.count(k) == 1 for k in parts), "шаблон: метки данных"
     html = tpl
     for k, v in parts.items():

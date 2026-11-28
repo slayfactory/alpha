@@ -444,6 +444,9 @@ def cmd_run(a):
                             vsf = os.path.join(out, "k%d" % c["cid"], p8.ENG[ho.SIDE_LETTER[side]] + "-vstop.csv")      # TK-736: расстояние стопа от волатильности по сделкам (только при vf > 0)
                             if os.path.exists(vsf):
                                 shutil.copyfile(vsf, os.path.join(kd, "%d-vstop.csv" % c["cid"]))
+                            sxf = os.path.join(out, "k%d" % c["cid"], p8.ENG[ho.SIDE_LETTER[side]] + "-sigsx.csv")      # TK-741: сигналы потока с ценой уровня (дамп `P42_SIGSX`; только если задан в окружении)
+                            if os.path.exists(sxf):
+                                shutil.copyfile(sxf, os.path.join(kd, "%d-sigsx.csv" % c["cid"]))
                         t0p = os.path.join(a.keep_trades, a.run_id, "t0.json")
                         t0d = json.load(open(t0p, encoding="utf-8")) if os.path.exists(t0p) else {}
                         t0d[w.name] = int(w.t0_ms)
