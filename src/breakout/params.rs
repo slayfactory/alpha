@@ -282,6 +282,8 @@ pub struct ExitCfg {
     pub tn_pct: i64,
     /// TK-697 (`tno`): отступ тейка `tn` от следующего уровня внутрь, NATR ×1000 (0 — ровно на уровне, по умолчанию; перебор 0 / 0,1 / 0,25); значим только при `tn > 0`.
     pub tno_m: i64,
+    /// TK-743 (`--keep-orders`, не ключ строки варианта): вести журнал заявок сделки (`TickOut::ord`); на счёт и `trades.csv` не влияет. В `Debug` не входит (meta.json прежний).
+    pub keep_orders: bool,
 }
 
 /// Ручной `Debug`: при выключенных ключах §13.31 строка `params` в meta.json — та же, что у производного `Debug` до §13.31.
@@ -657,6 +659,7 @@ impl Params {
                 e1t: 0,
                 tn_pct: 0,
                 tno_m: 0,
+                keep_orders: false,
             },
             port: PortCfg {
                 cool_min: 5,

@@ -6,6 +6,7 @@ use super::data::{self, Sym, HALF_DAYS, MIN_MS, SCALE, START_DAY};
 use super::ftab::{filter_sigs, FeatTab};
 use super::levels::build_levels_tracked;
 use super::memo::MoveMemo;
+use super::orders::{write_orders_rows, SetupCtx, ORDERS_HEADER, SETUP_HEADER};
 use super::params::ExitCfg;
 use super::params::{parse_variant, Params, SigCfg};
 use super::sigcache::{SigCache, SigCacheOpts};
@@ -100,6 +101,34 @@ fn write_outputs(dir: &Path, syms: &[Sym], side: Side, r: &TickResult) -> Result
         let _ = writeln!(cd, "{},{day},{v:.6}", syms[*si as usize].name);
     }
     fs::write(dir.join(format!("{}-coinday.csv", side.name())), cd)?;
+    Ok(())
+}
+
+/// TK-743 (`--keep-orders`): все заявки сделок — `<side>-orders.csv` (формат — `docs/COMMANDS.md`, «Журнал заявок»); строки сделок в порядке `trades.csv`.
+fn write_orders(dir: &Path, syms: &[Sym], side: Side, r: &TickResult) -> Result<()> {
+    let mut t = String::from(ORDERS_HEADER);
+    for x in &r.trades {
+        write_orders_rows(&mut t, syms, x);
+    }
+    fs::write(dir.join(format!("{}-orders.csv", side.name())), t)?;
+    Ok(())
+}
+
+/// TK-743 (`--keep-orders`): уровни сетапа каждой сделки — `<side>-setup.csv`.
+fn write_setup(
+    dir: &Path,
+    syms: &[Sym],
+    side: Side,
+    p: &Params,
+    sigs: &[TSig],
+    r: &TickResult,
+) -> Result<()> {
+    let mut ctx = SetupCtx::new(syms, side, p, sigs);
+    let mut t = String::from(SETUP_HEADER);
+    for i in 0..r.trades.len() {
+        ctx.rows(&mut t, &r.trades, i);
+    }
+    fs::write(dir.join(format!("{}-setup.csv", side.name())), t)?;
     Ok(())
 }
 
@@ -498,6 +527,7 @@ pub fn run(
     ftab: Option<&Path>,
     store: Option<StoreOpts>,
     sig_cache: Option<SigCacheOpts>,
+    keep_orders: bool,
 ) -> Result<()> {
     let t0 = Instant::now();
     let only: Option<Vec<String>> = symbols.map(|s| s.split(',').map(str::to_string).collect());
@@ -538,6 +568,12 @@ pub fn run(
     }
     if vs.is_empty() {
         bail!("нет вариантов");
+    }
+    if keep_orders {
+        // TK-743: журнал заявок — для всех вариантов задания; счёт и `trades.csv` от ключа не зависят
+        for (_, p) in &mut vs {
+            p.exit.keep_orders = true;
+        }
     }
     // §13.21: таблица признаков кандидатов — один раз, только столбцы, названные в `fa`; ошибка таблицы — до тяжёлой фазы 1
     let mut want: Vec<&str> = vs
@@ -818,6 +854,10 @@ pub fn run(
                 t_write.elapsed().as_nanos() as u64,
                 std::sync::atomic::Ordering::Relaxed,
             );
+            if p.exit.keep_orders {
+                write_orders(&dir, &syms, side, &r)?;
+                write_setup(&dir, &syms, side, p, &sigs[j], &r)?;
+            }
             if p.exit.tape_entry() {
                 write_entry_rej(&dir, &syms, side, &r)?;
             }

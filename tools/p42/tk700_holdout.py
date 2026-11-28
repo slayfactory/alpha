@@ -230,6 +230,8 @@ def engine(m, w, side, variants, out, ftab, env_extra, binary, threads, cap_gb, 
     cmd = [binary, "breakout", "tick", "--cache", d + "/cache", "--trades", d + "/aggtrades", "--variants", vf, "--symbols", coins, "--out", out, "--threads", str(threads), "--cap-gb", str(cap_gb)] + TICK_STORE
     if ftab:
         cmd += ["--ftab", ftab]
+    if os.environ.get("TK743_ORDERS"):                                      # TK-743: журнал заявок сделок и уровни сетапа (`<сторона>-orders.csv`, `<сторона>-setup.csv`); счёт и сделки те же
+        cmd += ["--keep-orders"]
     env = dict(os.environ)
     env.update({"P42_T0": w.t0, "P42_SIDES": side})
     env.update(env_extra)

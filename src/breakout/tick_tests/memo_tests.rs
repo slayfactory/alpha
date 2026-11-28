@@ -135,6 +135,7 @@ fn get_or_compute_computes_each_key_once_and_the_key_includes_every_argument() {
         marks: Vec::new(),
         tl: None,
         floor: [false, false],
+        ord: Vec::new(),
     };
     let key = |entry_ms: i64, stop_px: Option<i64>| MoveKey {
         coin: "TEST".into(),

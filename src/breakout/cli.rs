@@ -81,6 +81,10 @@ pub enum BreakoutCommand {
         /// все суточные zip окна). Запись прекращается при свободном месте < `--tick-store-min-free-gb`.
         #[arg(long)]
         sig_cache: Option<PathBuf>,
+        /// TK-743: журнал заявок сделок — рядом с `<side>-trades.csv` файлы `<side>-orders.csv` (все заявки входа и выхода: поставлена / сдвинута / исполнена / снята) и
+        /// `<side>-setup.csv` (уровни сетапа каждой сделки). Сделки и деньги те же байт в байт; без ключа файлов нет.
+        #[arg(long)]
+        keep_orders: bool,
     },
     /// TK-607: однократное заполнение склада суточных сделок по каталогам zip (разжатие в процессе с проверкой CRC32 zip, один разбор
     /// движка, запись). `P42_T0` — не позже самой ранней даты. Лежащие файлы пропускаются.
@@ -159,6 +163,7 @@ pub fn dispatch(cmd: BreakoutCommand) -> Result<()> {
             tick_store_cap_gb,
             tick_store_min_free_gb,
             sig_cache,
+            keep_orders,
         } => super::tick_cli::run(
             &cache,
             &trades,
@@ -177,6 +182,7 @@ pub fn dispatch(cmd: BreakoutCommand) -> Result<()> {
                 dir,
                 min_free_gb: tick_store_min_free_gb,
             }),
+            keep_orders,
         ),
         BreakoutCommand::StoreFill {
             trades,

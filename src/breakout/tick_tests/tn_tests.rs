@@ -17,6 +17,7 @@ fn lvl(born: u32, end: u32, segs: &[(u32, f64)]) -> Level {
         first_bar: 0,
         mem: Vec::new(),
         src: 0,
+        why: 0,
     }
 }
 
