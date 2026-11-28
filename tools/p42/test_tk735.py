@@ -196,3 +196,45 @@ def test_run_metrics():
     m = T.run_metrics(day, r, np.array(["stop", "x", "x", "x", "x", "stop"]), 5)
     assert m["n"] == 6 and math.isclose(m["sum"], 3.0) and m["n_stop"] == 2 and m["n_small"]
     assert m["dd"] == 1.0 and m["gap_longest"] >= 1
+
+
+def test_p4_counts_and_shrink():
+    import pandas as pd
+
+    import tk735_props as PR
+
+    lo = 1781654400000
+    day = PR.DAY_MS
+    rows = []
+    for sym, per_day in (("AAA", [(1, 1), (1, 0), (2, 1), (3, 1)]), ("BBB", [(1, 0), (2, 0), (2, 0)])):
+        for d, y in per_day:
+            rows.append(dict(sym=sym, level=1, sig_abs_ms=lo + (d - 1) * day + 1000, ok_t60=1, y_n_rv60=y, rv_e8=1, lp_e8=1))
+    rows.append(dict(sym="AAA", level=1, sig_abs_ms=lo + 1000, ok_t60=0, y_n_rv60=np.nan, rv_e8=1, lp_e8=1))   # без метки — не считается
+    rows.append(dict(sym="ZZZ", level=1, sig_abs_ms=lo + 1000, ok_t60=1, y_n_rv60=1, rv_e8=1, lp_e8=1))        # монеты нет в списке — игнор
+    C = PR.p4_counts(pd.DataFrame(rows), ["AAA", "BBB", "CCC"], lo)
+    assert C["all"][1].tolist() == [4, 3, 0] and C["all"][0].tolist() == [3, 0, 0]
+    assert C["odd"][1].tolist() == [3, 1, 0] and C["even"][1].tolist() == [1, 2, 0]      # сутки 1, 3 — нечётные; 2 — чётные
+    assert C["odd"][0].tolist() == [2, 0, 0] and C["even"][0].tolist() == [1, 0, 0]
+
+
+def test_p4_shrink_pulls_to_market_and_undefined():
+    import tk735_props as PR
+
+    rng = np.random.default_rng(3)
+    true = rng.beta(2, 5, 200)                       # реальная разнородность монет → сверхдисперсия
+    n = rng.integers(5, 40, 200)
+    k = rng.binomial(n, true)
+    adm = np.ones(200, bool)
+    ph, info = PR.p4_shrink(k, n, adm)
+    assert info["defined"] and info["m"] > 0 and 0 < info["p0"] < 1
+    raw = k / n
+    assert ph.std() < raw.std()                      # усадка сжимает разброс
+    ph0, i0 = PR.p4_shrink(np.zeros(200, np.int64), n, adm)
+    assert not i0["defined"] and np.isnan(ph0).all()
+    nb = np.full(200, 20)
+    kb = rng.binomial(nb, 0.3)                       # нет разнородности → rho <= 0 в части выборок; не падает
+    PR.p4_shrink(kb, nb, adm)
+    adm2 = adm.copy()
+    adm2[:50] = False
+    ph2, _ = PR.p4_shrink(k, n, adm2)
+    assert np.isnan(ph2[:50]).all() and np.isfinite(ph2[50:]).all()

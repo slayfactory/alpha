@@ -2,7 +2,9 @@
 """TK-735, §13.79.1: свойства монет P1…P4, ворота G-prop, типы (k-means), деления «корзина / двойник», случайные монеты (нуль Б). P&L не читается.
 
   tk735_props.py extract          # по каждой монете c539: суточные ряды → res/daily.npz; признаки φ на моментах сделок базы → res/trade_feat.npz (P&L не читается)
-  tk735_props.py props            # P1–P3 (+ P4 SEL, если есть метки), G-prop, типы, сплиты → БД, заморозка
+  tk735_props.py props            # P1–P3, G-prop
+  tk735_props.py p4               # P4 (метки y_n в RV60, L-526 / L-527): усадка, G-prop → res/props_p4.npz
+  tk735_props.py types            # типы по годным свойствам, сплиты → БД, заморозка
   tk735_props.py join             # признаки φ1…φ11 на моментах сделок базы (после заморозки корзин)
 
 Свойства — на первый день режима 00:00 UTC по 30 суткам до него (FJ: 02.01–31.01, SEL: 01.06–30.06); окна G-prop — §13.79.1.
@@ -22,6 +24,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import tk727_lib as L  # noqa: E402
+import tk728_lib as K8  # noqa: E402  (mom_beta_binomial, shrunk_share: усадка P4)
 import tk735_lib as T  # noqa: E402
 
 RES = os.path.join(T.ROOT, "res")
@@ -186,9 +189,77 @@ def cmd_props(a):
     np.savez(os.path.join(RES, "props_p123.npz"), syms=np.array(syms), **{"%s_%s" % (reg, k): out[reg]["P"][k] for reg in out for k in ("P1", "P2", "P3", "tick_bp")})
 
 
+# ───────────────────────────── P4: доля пробоев с усадкой (поправки L-526, L-527) ─────────────────────────────
+
+DAY_MS = 86_400_000
+P4_WIN = {"SEL": ("lab-rv60-w0.csv", 1781654400000), "FJ": ("lab-rv60-m01.csv", 1767312000000)}   # файл меток, начало окна (SEL 17.06, FJ 02.01 00:00 UTC)
+
+
+def p4_counts(lab, syms, lo_ms):
+    """k, n по монетам (порядок `syms`) за всё окно, нечётные и чётные сутки окна (первые сутки = 1, дата UTC `sig_abs`). Берутся подходы с `ok_t60 = 1` и непустой меткой."""
+    ok = (lab["ok_t60"].to_numpy() == 1) & np.isfinite(lab["y_n_rv60"].to_numpy(dtype=np.float64))
+    sym = lab["sym"].to_numpy()[ok]
+    y = lab["y_n_rv60"].to_numpy(dtype=np.float64)[ok].astype(np.int64)
+    day = (lab["sig_abs_ms"].to_numpy(dtype=np.int64)[ok] - lo_ms) // DAY_MS + 1
+    pos = {s_: i for i, s_ in enumerate(syms)}
+    out = {}
+    for name, sel in (("all", np.ones(len(y), bool)), ("odd", day % 2 == 1), ("even", day % 2 == 0)):
+        k, n = np.zeros(len(syms), np.int64), np.zeros(len(syms), np.int64)
+        for s_, yy in zip(sym[sel], y[sel]):
+            i = pos.get(str(s_))
+            if i is not None:
+                n[i] += 1
+                k[i] += int(yy)
+        out[name] = (k, n)
+    return out
+
+
+def p4_shrink(k, n, adm):
+    """p̂ = (k + m·p₀)/(n + m) по допущенным монетам; p₀, m — метод моментов по монетам с n ≥ 1 (L-527 п. 3). Нет сверхдисперсии (ρ ≤ 0 или не определено) → `defined = False`, p̂ = nan."""
+    use = adm & (n >= 1)
+    info = dict(n_coins_adm=int(adm.sum()), n_coins_n1=int(use.sum()), k_sum=int(k[use].sum()), n_sum=int(n[use].sum()))
+    if use.sum() < 3 or info["k_sum"] == 0 or info["k_sum"] == info["n_sum"]:
+        return np.full(len(k), np.nan), dict(info, defined=False, why="мало монет или все доли 0 / 1")
+    mm = K8.mom_beta_binomial(k[use], n[use])
+    info.update(p0=mm["p0"], rho=mm["rho"], m=mm["m"])
+    if not (np.isfinite(mm["rho"]) and mm["rho"] > 0):
+        return np.full(len(k), np.nan), dict(info, defined=False, why="нет сверхдисперсии (rho <= 0)")
+    ph = np.where(adm, K8.shrunk_share(k, n, mm["p0"], mm["m"]), np.nan)
+    return ph, dict(info, defined=True)
+
+
+def cmd_p4(a):
+    """P4 по окнам формирования: p̂ за окно, ворота G-prop (нечётные / чётные сутки, Спирмен–Браун ≥ 0,5). Метки — res/lab-rv60-{w0,m01}.csv; P&L не читается."""
+    import pandas as pd
+
+    z = np.load(os.path.join(RES, "props_p123.npz"), allow_pickle=False)
+    syms = [str(x) for x in z["syms"]]
+    gp, arr = {}, {"syms": np.array(syms)}
+    for reg, (fn, lo_ms) in P4_WIN.items():
+        lab = pd.read_csv(os.path.join(RES, fn), dtype={"sym": str})
+        adm = np.isfinite(z["%s_P1" % reg])
+        C = p4_counts(lab, syms, lo_ms)
+        ph, info = p4_shrink(*C["all"], adm)
+        po, io = p4_shrink(*C["odd"], adm)
+        pe, ie = p4_shrink(*C["even"], adm)
+        g = dict(window=info, odd=io, even=ie, n_labelled=int(C["all"][1].sum()), n_approaches=int(len(lab)))
+        if io["defined"] and ie["defined"]:
+            r, n_ = spearman(po[adm], pe[adm])
+            g.update(rho_half=r, rho_sb=sb(r), n=n_, passed=bool(info["defined"] and np.isfinite(r) and sb(r) >= 0.5))
+        else:
+            g.update(rho_half=float("nan"), rho_sb=float("nan"), n=0, passed=False)
+        gp[reg] = g
+        arr[reg + "_P4"] = ph if g["passed"] else np.full(len(syms), np.nan)
+        arr[reg + "_P4_all"] = ph
+        arr[reg + "_k"], arr[reg + "_n"] = C["all"]
+        print(reg, json.dumps(dict(window=info, rho_half=g["rho_half"], rho_sb=g["rho_sb"], passed=g["passed"], n_labelled=g["n_labelled"], n_approaches=g["n_approaches"]), ensure_ascii=False))
+    np.savez(os.path.join(RES, "props_p4.npz"), **arr)
+    json.dump(gp, open(os.path.join(RES, "g_prop_p4.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+
+
 # ───────────────────────────── типы, сплиты, пороги ─────────────────────────────
 
-FREEZE = os.path.join(T.ROOT, "freeze", "tk735-frozen.json")
+FREEZE =os.path.join(T.ROOT, "freeze", "tk735-frozen.json")
 KSIZE_MIN = 60
 
 
@@ -209,25 +280,30 @@ def cmd_types(a):
     z = np.load(os.path.join(RES, "props_p123.npz"), allow_pickle=False)
     syms = [str(x) for x in z["syms"]]
     gp = json.load(open(os.path.join(RES, "g_prop_p123.json"), encoding="utf-8"))
+    z4 = np.load(os.path.join(RES, "props_p4.npz"), allow_pickle=False)
+    g4 = json.load(open(os.path.join(RES, "g_prop_p4.json"), encoding="utf-8"))
     if os.path.exists(T.DB):
         os.remove(T.DB)
     db = sqlite3.connect(T.DB)
-    db.executescript("""CREATE TABLE t735_prop (regime TEXT, sym TEXT, p1 REAL, p2 REAL, p3 REAL, r1 REAL, r2 REAL, r3 REAL, typ INTEGER);
+    db.executescript("""CREATE TABLE t735_prop (regime TEXT, sym TEXT, p1 REAL, p2 REAL, p3 REAL, p4 REAL, r1 REAL, r2 REAL, r3 REAL, r4 REAL, typ INTEGER);
         CREATE TABLE t735_centroid (regime TEXT, typ INTEGER, props TEXT, centroid TEXT, n_coins INTEGER);
-        CREATE TABLE t735_basket (regime TEXT, typ INTEGER, n_coins INTEGER, p1_mean REAL, p2_mean REAL, p3_mean REAL);
+        CREATE TABLE t735_basket (regime TEXT, typ INTEGER, n_coins INTEGER, p1_mean REAL, p2_mean REAL, p3_mean REAL, p4_mean REAL);
         CREATE TABLE t735_split (regime TEXT, typ INTEGER, s INTEGER, n_b INTEGER, n_w INTEGER, n_c INTEGER, bal_maxabs REAL, bal_ks REAL)""")
     frozen = dict(version="TK-735 v1", seed=T.SEED, regimes={})
     out_files = []
     for reg in ("FJ", "SEL"):
-        good = [k for k in ("P1", "P2", "P3") if gp[reg]["gprop"][k]["passed"]]
-        info = dict(passed_props=good, gprop=gp[reg]["gprop"],
-                    note="P4 нет: метки y_n начинаются в день 14 сетки окна (01.07) — до момента формирования SEL меток нет; P4 снят")
+        gate_all = dict(gp[reg]["gprop"])
+        gate_all["P4"] = dict(rho_half=g4[reg]["rho_half"], rho_sb=g4[reg]["rho_sb"], n=g4[reg]["n"], passed=g4[reg]["passed"])
+        good = [k for k in ("P1", "P2", "P3", "P4") if gate_all[k]["passed"]]
+        info = dict(passed_props=good, gprop=gate_all, p4=g4[reg],
+                    note="P4 - метки y_n в RV60 (поправки L-526, L-527): SEL - окно 17-30.06 (w0), FJ - 02-31.01 (m01); k-means по рангам годных свойств")
         if len(good) < 2:
             info["stop"] = "годных свойств < 2: корзины не определены (§13.79.1 п. 2)"
             frozen["regimes"][reg] = info
             print(reg, "СТОП:", info["stop"])
             continue
         P = {k: z["%s_%s" % (reg, k)] for k in ("P1", "P2", "P3")}
+        P["P4"] = z4["%s_P4_all" % reg]
         ok = np.ones(len(syms), bool)
         for k in good:
             ok &= np.isfinite(P[k])
@@ -249,12 +325,13 @@ def cmd_types(a):
         info.update(K=K, inertia=float(ine), sizes=[int((typ == t).sum()) for t in range(K)], n_eligible=int(ok.sum()),
                     no_type=[syms[i] for i in range(len(syms)) if not ok[i]], centroids=[[float(x) for x in cen[order[t]]] for t in range(K)], props=good)
         for i, sy in enumerate(syms):
-            rr = [float(R[pos[i], good.index(k)]) if (i in pos and k in good) else float("nan") for k in ("P1", "P2", "P3")]
-            db.execute("INSERT INTO t735_prop VALUES (?,?,?,?,?,?,?,?,?)", (reg, sy, float(P["P1"][i]), float(P["P2"][i]), float(P["P3"][i]), *rr, int(typ[i])))
+            rr = [float(R[pos[i], good.index(k)]) if (i in pos and k in good) else float("nan") for k in ("P1", "P2", "P3", "P4")]
+            db.execute("INSERT INTO t735_prop VALUES (?,?,?,?,?,?,?,?,?,?,?)", (reg, sy, float(P["P1"][i]), float(P["P2"][i]), float(P["P3"][i]), float(P["P4"][i]), *rr, int(typ[i])))
         for t in range(K):
             db.execute("INSERT INTO t735_centroid VALUES (?,?,?,?,?)", (reg, t, ",".join(good), json.dumps(info["centroids"][t]), info["sizes"][t]))
             m = typ == t
-            db.execute("INSERT INTO t735_basket VALUES (?,?,?,?,?,?)", (reg, t, int(m.sum()), float(np.nanmean(P["P1"][m])), float(np.nanmean(P["P2"][m])), float(np.nanmean(P["P3"][m]))))
+            db.execute("INSERT INTO t735_basket VALUES (?,?,?,?,?,?,?)", (reg, t, int(m.sum()), float(np.nanmean(P["P1"][m])), float(np.nanmean(P["P2"][m])), float(np.nanmean(P["P3"][m])),
+                                                                         float(np.nanmean(P["P4"][m])) if np.isfinite(P["P4"][m]).any() else float("nan")))
         # сплиты: B_s / W_s — случайные половины монет типа; C_s — случайные монеты c539 вне B_s ∪ W_s того же размера, что W_s
         sp = {}
         ncoin = len(syms)
@@ -284,7 +361,7 @@ def cmd_types(a):
         frozen["regimes"][reg] = info
         print(reg, "K=%d размеры %s, годные свойства %s" % (K, info["sizes"], good))
     db.commit()
-    out_files += [os.path.join(RES, "props_p123.npz"), os.path.join(RES, "g_prop_p123.json")]
+    out_files += [os.path.join(RES, f) for f in ("props_p123.npz", "g_prop_p123.json", "props_p4.npz", "g_prop_p4.json")]
     frozen["files"] = {os.path.basename(p): sha256_file(p) for p in out_files}
     os.makedirs(os.path.dirname(FREEZE), exist_ok=True)
     json.dump(frozen, open(FREEZE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
@@ -324,10 +401,10 @@ def main():
     import argparse
 
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("cmd", choices=("extract", "props", "types", "thresholds"))
+    ap.add_argument("cmd", choices=("extract", "props", "p4", "types", "thresholds"))
     ap.add_argument("--procs", type=int, default=6)
     a = ap.parse_args()
-    {"extract": cmd_extract, "props": cmd_props, "types": cmd_types, "thresholds": cmd_thresholds}[a.cmd](a)
+    {"extract": cmd_extract, "props": cmd_props, "p4": cmd_p4, "types": cmd_types, "thresholds": cmd_thresholds}[a.cmd](a)
 
 
 if __name__ == "__main__":
