@@ -48,7 +48,7 @@ const PER = [['main', 'фев–13.11'], ['JAN', 'январь'], ['N1', '14–2
   await go('#trades/main/0');
   let d = await dom();
   eq(d.tab, 'trades', 'вкладка'); eq(d.pane, 'pane-trades', 'панель');
-  eq(d.per.map(p => p.k), PER.map(p => p[0]), 'кнопки периодов');
+  eq(d.per.map(p => p.k), ['d30'].concat(PER.map(p => p[0])), 'кнопки периодов (TK-745: «30 дней» первой)');
   // периоды: кнопка, сводка, таблица == БД
   for (const [k, lab] of PER) {
     await page.click(`#tr-per button[data-per="${k}"]`); rep.clicks++;
@@ -68,6 +68,17 @@ const PER = [['main', 'фев–13.11'], ['JAN', 'январь'], ['N1', '14–2
     ok(Math.abs(s - chk.clusters[k + '/0'].sum) < 0.006 * d.rows.length + 0.01, `Σ $ таблицы ${k}: ${s.toFixed(2)} ≠ ${chk.clusters[k + '/0'].sum.toFixed(2)}`);
     const sub = d.rows.every(r => PERSET[k].includes(T[r.i].per));
     ok(sub, 'строки не из периода ' + k);
+  }
+  {   // TK-745: набор «30 дней» (свежий прогон review_loop.sh) — в БД его нет: число и Σ $ из index.json
+    const dd = Object.values(T).filter(r => r.per === 'D30');
+    await page.click('#tr-per button[data-per="d30"]'); rep.clicks++;
+    d = await dom();
+    eq(d.hash, '#trades/d30/0', 'хеш периода d30'); eq(d.per.filter(p => p.sel).map(p => p.k), ['d30'], 'выбран период d30');
+    eq(d.per.find(p => p.k === 'd30').t, `30 дней · ${dd.length}`, 'число сделок на кнопке d30');
+    eq(d.rows.length, dd.length, 'строк таблицы d30');
+    const s30 = d.rows.reduce((a, r) => a + parse(r.t.pnl), 0), w30 = dd.reduce((a, r) => a + r.pnl, 0);
+    ok(Math.abs(s30 - w30) < 0.006 * d.rows.length + 0.01, `Σ $ таблицы d30: ${s30.toFixed(2)} ≠ ${w30.toFixed(2)}`);
+    ok(d.rows.every(r => T[r.i].per === 'D30'), 'строки d30 — только набор «30 дней»');
   }
   // фильтр по кластеру (основной период)
   await page.click('#tr-per button[data-per="main"]'); rep.clicks++;

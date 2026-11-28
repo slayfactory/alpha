@@ -1,13 +1,13 @@
 // ── «Сделки» (TK-741, В-192; TK-742): вкладка — приложение React + shadcn/ui (tools/p42/trades-app), собранное в trades-app/trades.js и trades.css рядом со страницей.
-// Здесь только мост: подгрузка файлов при первом входе на вкладку и общее состояние TR (период, кластер, открытая сделка) с хешем #trades/<период: main|JAN|N1|all>/<кластер, 0 — все>[/<№ сделки>].
+// Здесь только мост: подгрузка файлов при первом входе на вкладку и общее состояние TR (период, кластер, открытая сделка) с хешем #trades/<период: d30|main|JAN|N1|all>/<кластер, 0 — все>[/<№ сделки>].
 // Вставляется в tk593_template.html сборкой (tk593_page.py, метка __TRADESJS__). Данные — data/trades/ (tk741_pagedata.py): index.json и <№>.json (минутки сделки).
-const TR = {per: 'main', cl: 0, open: null};
+const TR = {per: 'd30', cl: 0, open: null};
 const TR_SUB = 'шорт, база без выхода по времени · после комиссий · 500 $ на сделку · время GMT+4 · кластеры найдены на этих данных';
-const TR_PER_IDS = ['main', 'JAN', 'N1', 'all'], TR_APP_V = /*__TRADESV__*/'';
+const TR_PER_IDS = ['d30', 'main', 'JAN', 'N1', 'all'], TR_APP_V = /*__TRADESV__*/'';
 let trMounted = false, trBoot = null;
 function trHash() { return '/' + TR.per + '/' + TR.cl + (TR.open != null ? '/' + TR.open : ''); }
 function trParse(b, c, d) {
-  TR.per = TR_PER_IDS.includes(b) ? b : 'main';
+  TR.per = TR_PER_IDS.includes(b) ? b : 'd30';
   TR.cl = /^\d+$/.test(c || '') ? +c : 0;
   TR.open = /^\d+$/.test(d || '') ? +d : null;
 }
