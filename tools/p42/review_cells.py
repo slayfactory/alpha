@@ -35,9 +35,11 @@ def row_for(tag, keys):
     import tk718_cells as c
     keys0, _ = c.split_ckey(c.ANCHOR["short"])
     assert float(keys0["tt"]) == 20, keys0
-    unknown = [k for k in keys if k not in keys0]
+    import tk674_axes as ax
+    known = set(keys0) | set(ax.DEFAULTS)        # TK-747: ключи движка вне якоря (`lm`, `lz`, `pp`, `li`, `fw`, `ban`, …) — по оси DEFAULTS; их нет в якоре, значит клетка берёт их умолчание, пока не заданы
+    unknown = [k for k in keys if k not in known]
     if unknown:
-        raise SystemExit("нет такого ключа в якоре s4: %s (есть: %s)" % (",".join(unknown), ",".join(sorted(keys0))))
+        raise SystemExit("нет такого ключа в якоре s4 и в осях: %s (в якоре: %s)" % (",".join(unknown), ",".join(sorted(keys0))))
     keys0 = dict(keys0, tt="0", **keys)
     ckey = c.ckey_of("short", keys0, [])
     r = c.cell_row("x", 0, "short", ckey)[1:]
