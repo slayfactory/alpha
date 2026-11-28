@@ -71,8 +71,8 @@ const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'Н
     eq(d.head, HEAD, m + ' шапка');
     eq(d.rows.map(r => [r.line, r.ids, r.name, r.title, r.status]), want.map(w => [w[0], w[1], w[2], w[4], stOf(w[1].split('|'))]), m + ' строки');
     want.forEach((w, i) => { const r = d.rows[i]; if (!r) return; COLS.forEach(c => {
-      ok(w[3][c] != null && close(+r.v[c], w[3][c]), `${m} ${w[0]} ${c}: ${r.v[c]} ≠ ${w[3][c]}`);
-      eq(r.t[c], FMT[c](w[3][c]), `${m} ${w[0]} ${c} текст`);
+      ok(w[3][c] == null ? (r.v[c] === '' || r.v[c] == null) : close(+r.v[c], w[3][c]), `${m} ${w[0]} ${c}: ${r.v[c]} ≠ ${w[3][c]}`);      // TK-744: у линии без сделок (sv1) Шарп, на сделку, R:R, худшая — null, на странице «—»
+      eq(r.t[c], w[3][c] == null ? '—' : FMT[c](w[3][c]), `${m} ${w[0]} ${c} текст`);
     }); });
     const wf = want.filter(w => fwdIds(w[1]));      // строки «вперёд» — у линий, где дни вперёд есть у всех частей
     eq(d.fwdRows.map(r => [r.line, r.ids, r.name, r.status]), wf.map(w => [w[0] + '-fwd', w[1], w[2], 'вперёд ' + J.forward.label]), m + ' строки «вперёд»');
@@ -87,11 +87,11 @@ const HEAD = ['Линия', 'Статус', 'Сделок', 'Сумма, $', 'Н
   // график: линии вида и их итог == сумма сделок линии
   const checkChart = (d, side, l, s, m) => {
     const want = [];
-    if (side === 'both' && l && s) want.push(['both', K.both[l + '|' + s].sum, 2.6]);
-    if (side !== 'short' && l) want.push(['long', K.single[l].sum, side === 'both' && s ? 1.3 : 2.6]);
-    if (side !== 'long' && s) want.push(['short', K.single[s].sum, side === 'both' && l ? 1.3 : 2.6]);
+    if (side === 'both' && l && s) want.push(['both', K.both[l + '|' + s].sum, 2.6, K.both[l + '|' + s].n]);
+    if (side !== 'short' && l) want.push(['long', K.single[l].sum, side === 'both' && s ? 1.3 : 2.6, K.single[l].n]);
+    if (side !== 'long' && s) want.push(['short', K.single[s].sum, side === 'both' && l ? 1.3 : 2.6, K.single[s].n]);
     eq(d.paths.map(p => p.k).sort(), want.map(w => w[0]).sort(), m + ' линии графика');
-    want.forEach(w => { const p = d.paths.find(x => x.k === w[0]); if (p) ok(close(p.fin, w[1]) && p.w === w[2] && p.len > 50, `${m} линия ${w[0]}: итог ${p.fin} ≠ ${w[1]} или толщина ${p.w} ≠ ${w[2]}`); });
+    want.forEach(w => { const p = d.paths.find(x => x.k === w[0]); if (p) ok(close(p.fin, w[1]) && p.w === w[2] && p.len > (w[3] ? 50 : 10), `${m} линия ${w[0]}: итог ${p.fin} ≠ ${w[1]} или толщина ${p.w} ≠ ${w[2]}`); });
     eq(d.legend.length, want.length, m + ' легенда');
     const wf = want.filter(w => w[0] === 'both' ? fwdIds(l + '|' + s) : fwdIds(w[0] === 'long' ? l : s));      // дни вперёд: свой путь у линий, где они есть; итог = итог окна + сделки чтения
     eq(d.fwdPaths.map(p => p.k).sort(), wf.map(w => w[0]).sort(), m + ' пути «вперёд»');
