@@ -29,6 +29,7 @@ RES = ROOT + "/res"
 TRADES = ROOT + "/trades"
 TK726 = "/data/p42-tk726/tk726.sqlite"
 FREEZE = ROOT + "/tk736-frozen.json"
+GV_TOL = 0.505          # пм: округление d до 0,001 % (±0,5) + запас 0,005 на целое V ×1e8 движка (первый прогон: все 30 расхождений на границе округления, |Δ| ≤ 0,502; amend)
 B_NAMES = ("BS-l14-tf240", "BS-l14-tf30", "BS-l14-tf60", "BS-l3-tf240", "BS-l3-tf30", "BS-l3-tf60", "BS-l7-tf240", "BS-l7-tf30", "BS-l7-tf60")
 FJ, SEL = ("m02", "m03", "m04", "m05", "m06"), ("wa", "wb", "wc")
 TREES = {"m01": "/data/p42-tk695/jan", "m02": "/data/p42-tk695/feb", "m03": "/data/p42-tk695/mar", "m04": "/data/p42-tk695/apr", "m05": "/data/p42-tk695/may", "m06": "/data/p42-tk686/wj",
@@ -177,8 +178,10 @@ def cmd_gv(a):
     """G-V: V_i (numpy) против vd_pm / 1000 / k по незажатым строкам (vm < d_pm < s_pm); k = 1; без чтения P&L (берутся только sym, level, sig_ms из vstop.csv и sig_min из trades для минуты V)."""
     bad = tot = clamped = nov = 0
     per = {}
+    bad_rows = []
     for side, s_pm in (("short", 4000), ("long", 3000)):
         n_all = n_unc = n_bad = n_nov = n_cl = 0
+        maxd = 0.0
         ids = [cid for _, cid in b9_cids()] if side == "short" else [None]
         for j, _ in enumerate(ids):
             cid = 7360000 + 1000 * STAGE_NO["gv"] + (1 + j if side == "short" else 10)
@@ -205,13 +208,18 @@ def cmd_gv(a):
                         n_cl += 1
                         continue
                     n_unc += 1
+                    ti0 = int(t["sig_min"]) - 1
+                    if cd is not None and 0 <= ti0 < len(cd[4]) and np.isfinite(cd[4][ti0]):
+                        maxd = max(maxd, abs(cd[4][ti0] * 1e5 - vd))
                     ti = int(t["sig_min"]) - 1
                     Vi = cd[4][ti] if cd is not None and 0 <= ti < len(cd[4]) else float("nan")
-                    if not np.isfinite(Vi) or abs(Vi * 100.0 * 1000 / 1 - vd) > 0.5 + 1e-9:     # vd_pm — тысячные процента: V·100·1000; допуск ±0,0005 п.п. = ±0,5 пм
+                    if not np.isfinite(Vi) or abs(Vi * 1e5 - vd) > GV_TOL:     # vd_pm — тысячные процента: V·100·1000; допуск ±0,0005 п.п. = ±0,5 пм
                         n_bad += 1
-        per[side] = dict(rows=n_all, unclamped=n_unc, mismatch=n_bad, clamped=n_cl, no_v=n_nov)
+                        bad_rows.append([side, w, v["sym"], int(t["sig_min"]), vd, float(Vi) * 1e5 if np.isfinite(Vi) else None])
+        per[side] = dict(rows=n_all, unclamped=n_unc, mismatch=n_bad, clamped=n_cl, no_v=n_nov, max_abs_diff_pm=round(maxd, 4))
     ok = all(v["mismatch"] == 0 and v["unclamped"] > 0 for v in per.values())
-    jwrite(RES + "/gv.json", dict(per=per, ok=ok))
+    jwrite(RES + "/gv.json", dict(per=per, ok=ok, bad=bad_rows[:100]))
+    print("несовпадения (сторона, окно, монета, sig_min, vd_pm, V·1e5):", bad_rows[:12])
     print(json.dumps(per, ensure_ascii=False), "G-V", "ПРОЙДЕН" if ok else "ПРОВАЛЕН")
     return 0 if ok else 1
 
