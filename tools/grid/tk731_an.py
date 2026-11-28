@@ -181,7 +181,7 @@ def write_sqlite(out, D, M, vs):
     CREATE TABLE tk731_coin(run TEXT, half TEXT, sym TEXT, usd REAL, cycles INT, entries INT);
     """)
     for (nm, h), m in M.items():
-        db.execute("INSERT INTO tk731_run VALUES(%s)" % ",".join("?" * 44), (nm, h, m["usd"], m["margin"], m["sharpe"], m["dd"], m["dd_pct"], m["hw_max"], m["hw_mean"], m["hw_p90"], m["under"], m["cycles"], m["cyc_win"], m["cyc_flag"], m["win_share"],
+        db.execute("INSERT INTO tk731_run VALUES(%s)" % ",".join("?" * 45), (nm, h, m["usd"], m["margin"], m["sharpe"], m["dd"], m["dd_pct"], m["hw_max"], m["hw_mean"], m["hw_p90"], m["under"], m["cycles"], m["cyc_win"], m["cyc_flag"], m["win_share"],
                    m["avg_win"], m["avg_loss"], m["rr"], m["be_share"], m["entries"], m["laps"], m["laps_usd"], m["edge_grid_n"], m["edge_grid_usd"], m["stop_n"], m["stop_usd"], m["edge_ab_n"], m["edge_ab_usd"], m["gap_fills"], m["g2a"], m["a2g"],
                    m["min_ab"], m["min_gr"], m["funding_signed_usd"], m["coins_active"], m["coins_plus"], m["best10"], m["worst10"], m["ex_best10"], m["months_plus"], m["months_n"], m["boot"][7]["lo"], m["boot"][7]["hi"], m["boot"][21]["lo"], m["boot"][21]["hi"]))
         for mo, v in m["months"].items():
