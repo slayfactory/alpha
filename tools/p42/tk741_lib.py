@@ -32,14 +32,16 @@ def run_dir(stage, win):
     return "%s/tk741-%s-%s" % (TRADES, stage, part)
 
 
-def read_win(stage, win):
-    """Сделки клетки этапа в зачётных сутках окна + цена уровня и данные уровня из `*-sigsx.csv` (ключ — монета, номер уровня, сигнал)."""
-    d = run_dir(stage, win)
-    p = os.path.join(d, win, "%d-trades.csv" % CID[stage])
+def read_win(stage, win, d=None, cid=None):
+    """Сделки клетки этапа в зачётных сутках окна + цена уровня и данные уровня из `*-sigsx.csv` (ключ — монета, номер уровня, сигнал).
+    `d`, `cid` (TK-745) — каталог прогона и номер клетки другого прогона (`review_loop.sh`); по умолчанию — этапы TK-741."""
+    d = d or run_dir(stage, win)
+    cid = cid or CID[stage]
+    p = os.path.join(d, win, "%d-trades.csv" % cid)
     t0 = json.load(open(os.path.join(d, "t0.json"), encoding="utf-8"))[win]
     a = A.read_cell(p, t0, win)
     sx = {}
-    with open(os.path.join(d, win, "%d-sigsx.csv" % CID[stage]), encoding="utf-8", newline="") as f:
+    with open(os.path.join(d, win, "%d-sigsx.csv" % cid), encoding="utf-8", newline="") as f:
         for r in csv.DictReader(f):
             sx[(r["sym"], int(r["level"]), int(r["sig_ms"]))] = r
     n = len(a["pnl"])

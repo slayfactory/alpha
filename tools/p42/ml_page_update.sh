@@ -27,7 +27,7 @@ ssh "${KEY[@]}" "$HOST" "mkdir -p $SRCD $CODE && { [ '$ROOT' = /data/pages/ml ] 
 tar -c -C trades-app/dist . | ssh "${KEY[@]}" "$HOST" "mkdir -p $ROOT/trades-app && rm -f $ROOT/trades-app/* && tar -x -C $ROOT/trades-app"
 tar -c ml_features.schema.json tk593_page.py tk593_template.html tk684_fan.js tk741_trades.js ml_page_server.py | ssh "${KEY[@]}" "$HOST" "tar -x -C $SRCD"
 tar -c tk684_equity.py tk684_metrics.py tk684_variants.json tk684_fan.py tk684_fan_ext.py | ssh "${KEY[@]}" "$HOST" "tar -x -C $CODE"
-tar -c tk741_pagedata.py tk741_cluster.py tk741_lib.py tk741_trades.js tk736_an.py tk736_lib.py tk726_seam.py tk727_lib.py | ssh "${KEY[@]}" "$HOST" 'mkdir -p /data/p42-tk741/code && tar -x -C /data/p42-tk741/code'
+tar -c tk741_pagedata.py tk745_orders.py tk741_cluster.py tk741_lib.py tk741_trades.js tk736_an.py tk736_lib.py tk726_seam.py tk727_lib.py | ssh "${KEY[@]}" "$HOST" 'mkdir -p /data/p42-tk741/code && tar -x -C /data/p42-tk741/code'
 tar -c tk744_pagedata.py tk744_lib.py tk741_lib.py tk736_an.py tk736_lib.py tk726_seam.py | ssh "${KEY[@]}" "$HOST" 'mkdir -p /data/p42-tk744/code && tar -x -C /data/p42-tk744/code'
 # TK-684 / TK-680: не затирать опись признаков, выложенную из другой ветки и более новую (22.11: выкладка из ветки без TK-681 откатила вкладку «Признаки»;
 # охрана по наибольшему № не ловила ветку с пропуском № 252–307) — заливаем, только если все имена живого файла есть в локальном
@@ -37,7 +37,7 @@ LOCAL_NAMES=$(python -c "$FT_NAMES" ml_features.json)
 MISSING=$(python -c "import sys; print(' '.join(sorted(set(sys.argv[1].split()) - set(sys.argv[2].split()))))" "$LIVE_NAMES" "$LOCAL_NAMES")
 if [ -n "$MISSING" ]; then echo "ml_features.json: на srv есть признаки, которых нет здесь ($(echo $MISSING | wc -w): $(echo $MISSING | cut -c1-80)…) — не заливаю, вкладка «Признаки» остаётся как есть"
 else scp "${KEY[@]}" -q ml_features.json "$HOST:$ROOT/data/features.json"; fi
-ssh "${KEY[@]}" "$HOST" "ROOT=$ROOT SRCD=$SRCD CODE=$CODE PORT=$PORT UNIT=$UNIT REBUILD_FAN=${REBUILD_FAN:-0} FAN_FROM=${FAN_FROM:-} bash -s" <<'REMOTE'
+ssh "${KEY[@]}" "$HOST" "ROOT=$ROOT SRCD=$SRCD CODE=$CODE PORT=$PORT UNIT=$UNIT REBUILD_FAN=${REBUILD_FAN:-0} FAN_FROM=${FAN_FROM:-} REVIEW_TAG=${REVIEW_TAG:-d30} bash -s" <<'REMOTE'
 set -e
 # TK-696: код чтения сделок — снимок кода TK-674 (вселенная c539 есть только там), берётся один раз; файлы TK-674 не трогаются (без .pyc)
 [ -s /data/p42-tk696/engine/tk625_run.py ] || { mkdir -p /data/p42-tk696/engine /data/p42-tk696/cells && cp /data/p42-tk674c/code/*.py /data/p42-tk696/engine/; }
@@ -55,7 +55,9 @@ if [ -s $ROOT/data/fan.new/index.json ]; then
   rm -rf $ROOT/data/fan.old && { [ ! -d $ROOT/data/fan ] || mv $ROOT/data/fan $ROOT/data/fan.old; } && mv $ROOT/data/fan.new $ROOT/data/fan && rm -rf $ROOT/data/fan.old
 fi
 # TK-741: вкладка «Сделки» — data/trades/ (сделки, кластеры, минутки ±2 ч; из БД и прогона TK-741)
-systemd-run --quiet --wait --pipe -p Nice=19 -p MemoryMax=8G -p CPUQuota=200% -E PYTHONDONTWRITEBYTECODE=1 /opt/venv/bin/python /data/p42-tk741/code/tk741_pagedata.py trades $ROOT
+# TK-745: набор «30 дней» — последний прогон review_loop.sh (/data/p42-review/<метка>), если он есть; заявки и уровни сетапа — из журнала движка (TK-743)
+RV=/data/p42-review/${REVIEW_TAG:-d30}; [ -s $RV/meta.json ] && RVENV="-E TK745_REVIEW=$RV" || RVENV=""
+systemd-run --quiet --wait --pipe -p Nice=19 -p MemoryMax=8G -p CPUQuota=200% -E PYTHONDONTWRITEBYTECODE=1 $RVENV /opt/venv/bin/python /data/p42-tk741/code/tk741_pagedata.py trades $ROOT
 # TK-696: сервер страницы — ml_page_server.py (Cache-Control: страница и описи no-cache, пакеты веера с ?v= — на год); перезапуск, если файл изменился или юнит не работает
 M=$(md5sum $SRCD/ml_page_server.py | cut -d' ' -f1)
 if [ "$(cat $SRCD/.server.md5 2>/dev/null)" != "$M" ] || ! systemctl is-active -q $UNIT; then

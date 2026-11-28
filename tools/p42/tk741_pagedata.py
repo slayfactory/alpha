@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """TK-741 (В-192): данные страницы :8090 — вкладка «Сделки» и вариант «база без выхода по времени» в «Эквити». Только srv; движок не запускает.
 
-  python3 tk741_pagedata.py trades <каталог страницы /data/pages/ml>   # data/trades/index.json (сделки, кластеры, описание), data/trades/<i>.json (минутки сделки: 3 суток до входа … 1 сутки после выхода, целые столбцы; TK-742), data/trades/check.json (числа из БД для клик-теста)
+  python3 tk741_pagedata.py trades <каталог страницы /data/pages/ml>   # data/trades/index.json (сделки, кластеры, описание), data/trades/<i>.json (минутки сделки: 3 суток до входа … 1 сутки после выхода, целые столбцы; TK-742;
+                                                                       #   TK-745: + все заявки `ord` и уровни сетапа `lv` из журнала движка TK-743, формат — tk745_orders.py), data/trades/check.json (числа из БД и счёт заявок по CSV для клик-теста);
+                                                                       #   TK745_REVIEW=<каталог прогона review_loop.sh> добавляет набор «30 дней» (период D30, № сделок с 1000)
   python3 tk741_pagedata.py equity                                      # /data/p42-tk741/page/{wa,wb,wc}/short-{trades,daily}.csv для варианта s4nt (tk684_variants.json)
 
 Входы — res/trades.json, res/cluster.json (`tk741_cluster.py run`) и БД /data/p42-tk741/tk741.sqlite.
@@ -21,13 +23,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import tk741_lib as T  # noqa: E402
 import tk741_cluster as C  # noqa: E402
+import tk745_orders as O  # noqa: E402
 import tk727_lib as L727  # noqa: E402      # natr(): формула NATR30 движка (data.rs natr_of), сверена с natr_bp на 100 из 100 (TK-727)
 
+TK743 = os.environ.get("TK743_ROOT", "/data/p42-tk743/trades")
 PRE_MIN, POST_MIN = 3 * 1440, 1440   # TK-742: минутки от 3 суток до входа до 1 суток после выхода
 RES = T.RES
 DB = T.ROOT + "/tk741.sqlite"
 KIND_RU = {"stop": "стоп", "trail": "трейл", "rt": "возврат за уровень", "tx": "по времени"}
-PERIOD_RU = {"FJ": "фев–июн", "SEL": "июл–13.11", "JAN": "январь", "N1": "14–24.11"}
+PERIOD_RU = {"D30": "30 дней", "FJ": "фев–июн", "SEL": "июл–13.11", "JAN": "январь", "N1": "14–24.11"}
 
 
 def r(x, d):
@@ -63,13 +67,24 @@ def pack_bars(b, m0, m1):
 def build_trades(page):
     rows = json.load(open(RES + "/trades.json", encoding="utf-8"))
     cl = json.load(open(RES + "/cluster.json", encoding="utf-8"))
-    out = os.path.join(page, "data", "trades")
+    out0 = os.path.join(page, "data", "trades")
+    out = out0 + ".new"                       # сборка рядом, потом подмена каталога (страница не остаётся без данных)
     shutil.rmtree(out, ignore_errors=True)
     os.makedirs(out)
     a = T.load("nt", T.ALLW, with_sigsx=True)
     t0 = {w: int(a["t0"][np.nonzero(a["win"] == w)[0][0]]) for w in T.ALLW}
-    trades, sizes = [], []
-    for rw in rows:
+    # TK-745: заявки и уровни сетапа — из журнала движка TK-743 (V0nt на всех окнах, сделки те же байт в байт)
+    srcs = [(rows, O.load_orderlog(TK743, "tk743-nt", T.CID["nt"], t0, T.ALLW))]
+    # TK-745: набор «30 дней» — свежий прогон `review_loop.sh` (res/trades.json прогона + его журнал); его сделки идут в index.json после прежних (№ с 1000), период D30
+    rv = os.environ.get("TK745_REVIEW", "")
+    rv_meta = None
+    if rv:
+        rv_meta = json.load(open(rv + "/meta.json", encoding="utf-8"))
+        rows2 = json.load(open(rv + "/res/trades.json", encoding="utf-8"))
+        srcs.append((rows2, O.load_orderlog(rv + "/trades", rv_meta["prefix"], rv_meta["cid"], t0, rv_meta["wins"])))
+    allrows = [(rw, lg) for rows_, lg in srcs for rw in rows_]
+    trades, sizes, ocheck, nord, nlv = [], [], {}, 0, 0
+    for rw, lg in allrows:
         w, sym = rw["win"], rw["sym"]
         b = C.bars(w, sym)
         n = len(b[0])
@@ -84,6 +99,13 @@ def build_trades(page):
         pk["sg"] = int(rw["sig_min"] - m0)
         nsg = known[rw["sig_min"]]
         assert np.isfinite(nsg) and abs(nsg - rw["natr"]) <= 3e-8, ("NATR30 сигнала не совпал с движком", rw["i"], nsg, rw["natr"])
+        # TK-745: все заявки и уровни сетапа сделки из журнала движка (ключ как в tk741_lib.read_win)
+        orows, srows = lg[(w, sym, int(rw["level"]), int(rw["sig_ms"]) - t0[w])]
+        off = t0[w] - pk["t0"]
+        pk["ord"], pk["lv"] = O.pack_orders(orows, off), O.pack_setup(srows, off)
+        nord += len(pk["ord"])
+        nlv += len(pk["lv"])
+        ocheck[str(rw["i"])] = O.count_orderlog(orows, srows)
         fn = "%s/%d.json" % (out, rw["i"])
         json.dump(pk, open(fn, "w"), separators=(",", ":"))
         sizes.append(os.path.getsize(fn))
@@ -92,6 +114,8 @@ def build_trades(page):
                        [r(f[k], 4) for k in C.FEATS], t0[w] + m0 * 60000, m1 - m0 + 1,
                        r(rw["entry_px"] * (1.0 - rw["fees"] / C.STAKE), 8)])      # be_px: безубыток — цена выхода шорта, при которой P&L после комиссий = 0 (gross = STAKE·(1 − выход/вход) = fees)
     ver = int(os.path.getmtime(RES + "/trades.json"))
+    if rv_meta:
+        ver = max(ver, int(os.path.getmtime(rv + "/res/trades.json")))
     index = dict(v=ver, feats=C.FEATS, kinds=KIND_RU, periods=PERIOD_RU, k=cl["k"], silhouette=cl["silhouette"], margin=250,
                  clusters=[dict(id=c["id"], name=c["name"], med={k: r(v, 3) for k, v in c["med"].items()}) for c in cl["clusters"]],
                  cols=["i", "per", "sym", "entry_ms", "exit_ms", "entry_px", "exit_px", "lvl", "kind", "pnl", "cluster", "f", "c_t0", "c_n", "be_px"], trades=trades)
@@ -109,8 +133,15 @@ def build_trades(page):
             w_, l_ = pn[pn > 0], pn[pn < 0]
             chk["clusters"]["%s/%d" % (key, cid)] = dict(n=len(pn), sum=float(pn.sum()), mean=float(pn.mean()) if len(pn) else None, rr=float(w_.mean() / abs(l_.mean())) if len(w_) and len(l_) else None,
                                                          stops=int(st.sum()), loss_per_stop=float(pn[st].mean()) if st.any() else None)
+    chk["orders"] = ocheck
     json.dump(chk, open(out + "/check.json", "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
-    print("data/trades: сделок %d, кластеров %d, минутки %.1f МБ всего (на сделку: среднее %d КБ, макс %d КБ), index.json %d КБ, v=%d" % (len(trades), cl["k"], sum(sizes) / 1e6, sum(sizes) / len(sizes) / 1024, max(sizes) / 1024, os.path.getsize(out + "/index.json") // 1024, ver))
+    shutil.rmtree(out0 + ".old", ignore_errors=True)      # подмена каталога: прежний — в .old, новый на его место
+    if os.path.isdir(out0):
+        os.rename(out0, out0 + ".old")
+    os.rename(out, out0)
+    shutil.rmtree(out0 + ".old", ignore_errors=True)
+    out = out0
+    print("data/trades: сделок %d, заявок %d, строк уровней %d, кластеров %d, файлы сделок %.1f МБ (на сделку: среднее %d КБ, макс %d КБ), index.json %d КБ, v=%d" % (len(trades), nord, nlv, cl["k"], sum(sizes) / 1e6, sum(sizes) / len(sizes) / 1024, max(sizes) / 1024, os.path.getsize(out + "/index.json") // 1024, ver))
     return 0
 
 
