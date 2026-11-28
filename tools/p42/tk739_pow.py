@@ -35,6 +35,7 @@ ROOT = os.environ.get("TK739_ROOT", "/data/p42-tk739")
 RES = ROOT + "/res"
 NLIN = len(dz.LIN_NAMES)
 DELTA_XI = 0.2
+MPCTX = "fork" if "fork" in mp.get_all_start_methods() else "spawn"   # srv — fork; ПК (Windows) — spawn, только отладка
 FJ_DAYS = 150
 
 
@@ -71,7 +72,7 @@ def build_design(S, procs=6, gm=None):
     pts = [p for p in cells.stage_points("design", gm, S) if p[0] in ("R", "OAT")]
     coords = [p[3] for p in pts]
     F = np.array([dz.features(c) for c in coords])
-    with mp.get_context("fork").Pool(procs, initializer=_init_gm, initargs=("",)) as pool:
+    with mp.get_context(MPCTX).Pool(procs, initializer=_init_gm, initargs=("",)) as pool:
         res = pool.map(_nb_one, coords, chunksize=16)
     NB = np.stack([r[0] for r in res])
     NBm = np.stack([r[1] for r in res])
@@ -288,7 +289,7 @@ def cmd_run(a):
     jobs = [(k, A * mB, wm, s) for k, A, wm, s in jobs]
     out = []
     t0 = time.time()
-    with mp.get_context("fork").Pool(a.procs, initializer=_w_init, initargs=(a.S,)) as pool:
+    with mp.get_context(MPCTX).Pool(a.procs, initializer=_w_init, initargs=(a.S,)) as pool:
         for i, r in enumerate(pool.imap_unordered(_w_run, jobs)):
             out.append(r)
             if (i + 1) % 10 == 0:

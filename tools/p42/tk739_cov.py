@@ -54,11 +54,27 @@ def family():
     return out
 
 
+def expand_axes(axes):
+    """Метка оси может быть составной («k=1,nf=1» — правило RULES свело несколько ключей в одну ось): раскрыть в {ключ: значение}; None — если не разобрать."""
+    out = {}
+    for name, val in axes.items():
+        if name.startswith("F:") or "=" not in str(val):
+            out[name] = val
+            continue
+        for part in str(val).split(","):
+            k, sep, v = part.partition("=")
+            if not sep:
+                return None
+            out[k] = v
+    return out
+
+
 def axis_xi(axes, gm):
     """Координаты клетки карты в нормированном пространстве поверхности (линейная часть `features`) или None, если у клетки есть ось вне пространства шага 8."""
     import tk739_design as dz
     ok = {"n_bounce", "k", "natr_min", "nf", "lx", "tf", "F:sharp", "F:n60"}
-    if set(axes) - ok:
+    axes = expand_axes(axes)                                        # составные метки «natr_min=0.19,nf=1» → отдельные ключи
+    if axes is None or set(axes) - ok:
         return None
     c = dict(LS=(int(float(axes.get("lx", 0))), int(float(axes.get("tf", 60)))), n_bounce=int(float(axes.get("n_bounce", 2))), k=int(float(axes.get("k", 2))), nf=int(float(axes.get("nf", 0))),
              u_lo=0.0, q_hi=None, n60=None, sharp=("F:sharp" in axes), phi=None, w=None)
@@ -150,8 +166,8 @@ def cmd_gcov(a):
     pts = {gname: [] for gname in cols}
     for j, i in enumerate(idx):
         ax = fam[i][1]
-        if len(ax) != 1:
-            continue
+        if len(ax) != 1 or "=" in str(next(iter(ax.values()))):
+            continue                                                # составная ось (несколько ключей сразу) в оценку ℓ по одной оси не идёт
         name = next(iter(ax))
         gname = {"n_bounce": "n_bounce", "k": "k", "natr_min": "u_lo", "nf": "nf", "lx": "LS", "tf": "LS", "F:sharp": "sharp", "F:n60": "n60"}.get(name)
         if gname is None:

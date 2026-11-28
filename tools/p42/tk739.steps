@@ -1,0 +1,11 @@
+# TK-739 шаг 8 (§13.81.4 п. 4, 6): шаги прохода (G-cost → … → report); формат — как tk736.steps (имя, выход, входы, команда)
+g-cost	/data/p42-tk739/res/gcost.json	/data/p42-tk739/mass739.sqlite	bash tk739_run.sh cost && /data/tk592/venv/bin/python tk739_ingest.py cost
+freeze	/data/p42-tk739/tk739-frozen.json	/data/p42-tk739/res/gcost.json:/data/p42-tk739/res/gcount.json	/data/tk592/venv/bin/python tk739_ingest.py freeze
+g-pow8	/data/p42-tk739/res/gpow8.json	/data/p42-tk739/tk739-frozen.json	/data/tk592/venv/bin/python tk739_pow.py run --S S --worlds 100 --kinds n0,nB,A --wmult 1,2,4
+design	/data/p42-tk739/res/design-S.npz	/data/p42-tk739/tk739-frozen.json	/data/tk592/venv/bin/python tk739_pow.py design --S S
+run-design	/data/p42-tk739/ENGINE-DONE-design	/data/p42-tk739/tk739-frozen.json	bash tk739_run.sh design
+g-ctl	/data/p42-tk739/ENGINE-DONE-ctl	/data/p42-tk739/ENGINE-DONE-design	bash tk739_run.sh ctl
+nested	/data/p42-tk739/res/nested.json	/data/p42-tk739/tk739.sqlite	/data/tk592/venv/bin/python tk739_proc.py nested
+paths	/data/p42-tk739/res/paths.json	/data/p42-tk739/tk739.sqlite	/data/tk592/venv/bin/python tk739_proc.py paths
+box	/data/p42-tk739/ENGINE-DONE-box	/data/p42-tk739/res/nested.json	bash tk739_run.sh box
+desc	/data/p42-tk739/ENGINE-DONE-desc	/data/p42-tk739/ENGINE-DONE-box	bash tk739_run.sh desc
