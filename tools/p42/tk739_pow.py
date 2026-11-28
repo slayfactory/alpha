@@ -288,6 +288,12 @@ def cmd_run(a):
     mB = gs["m_bstar_usd_per_day"]
     jobs = [(k, A * mB, wm, s) for k, A, wm, s in jobs]
     out = []
+    pf = RES + "/gpow8-S%d.partial.json" % a.S
+    if a.resume and os.path.exists(pf):                                 # продолжение после остановки: готовые миры (kind, Amp, wmult, seed) не пересчитываются
+        out = json.load(open(pf))
+        done = {(r["kind"], round(r["Amp"], 9), r["wmult"], r["seed"]) for r in out}
+        jobs = [j for j in jobs if (j[0], round(j[1], 9), j[2], j[3]) not in done]
+        print("продолжение: готово %d, осталось %d" % (len(out), len(jobs)), flush=True)
     t0 = time.time()
     with mp.get_context(MPCTX).Pool(a.procs, initializer=_w_init, initargs=(a.S,)) as pool:
         for i, r in enumerate(pool.imap_unordered(_w_run, jobs)):
@@ -366,6 +372,7 @@ def main(argv=None):
         s.add_argument("--wmult", default="2")
         s.add_argument("--amps", default="1")
         s.add_argument("--tag", default="")
+        s.add_argument("--resume", action="store_true")
         s.set_defaults(fn=fn)
     a = ap.parse_args(argv)
     return a.fn(a)
