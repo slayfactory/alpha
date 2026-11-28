@@ -303,7 +303,7 @@ def test_status_priority_and_time_set(tmp_path):
     cl = dict(features=[dict(n=2, name="x1", is_rep=1, rep_n=2, cluster=1, rep_name="x1"), dict(n=3, name="x2", is_rep=0, rep_n=2, cluster=1, rep_name="x1"),
                         dict(n=1, name="IMP", is_rep=0, rep_n=2, cluster=1, rep_name="x1")])
     (tmp_path / "cluster.json").write_text(json.dumps(cl), encoding="utf-8")
-    (tmp_path / "events.json").write_text(json.dumps(dict(rule_memory=False, main=dict(or_lo=0.9))), encoding="utf-8")
+    (tmp_path / "events.json").write_text(json.dumps(dict(rule_memory=False, main=dict(or_mh=0.945, or_lo=0.9, perm_or_mean=0.835))), encoding="utf-8")
     (tmp_path / "oi.json").write_text(json.dumps(dict(rule_triggered=[])), encoding="utf-8")
     (tmp_path / "causal.json").write_text(json.dumps(dict(lookahead={"IMP": "ранг по окну"})), encoding="utf-8")
     assert S.add_time_set(d) and not S.add_time_set(d)
@@ -312,4 +312,4 @@ def test_status_priority_and_time_set(tmp_path):
     out, summ = S.decide(d, str(tmp_path))
     assert out["IMP"][0] == "с заглядыванием"          # заглядывание сильнее «копии»
     assert out["x1"][0] == "в работе" and out["x2"][0] == "копия № 2"
-    assert out["bk20"][0] == "убран" and out["oi_c1"][0] == "в работе"
+    assert out["bk20"][0] == "в работе" and "L-521" in out["bk20"][1] and out["oi_c1"][0] == "в работе"     # поправка L-521: семейство истории не убирается
