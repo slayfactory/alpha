@@ -82,12 +82,15 @@ class GMap:
         self.natr30 = np.sort(np.asarray(natr30, float))
         self.rv60 = np.sort(np.asarray(rv60, float))
         self.n60 = np.sort(np.asarray(n60, float))
+        self._ub = None
 
     def q(self, arr, u):
         return float(np.quantile(arr, min(max(u, 0.0), 1.0)))
 
     def thr_natr(self, nf, u):
         """Порог `natr_min`, %: квантиль u распределения источника фильтра живости (NATR30 для nf 0 / 3, RV60 для nf 8); округление 0,001 %."""
+        if nf != 8 and abs(u - self.u_base()) < 1e-12:             # точка базы — точно строка B* (natr_min = 0,4)
+            return BASE_NATR
         return round(self.q(self.rv60 if nf == 8 else self.natr30, u), 3)
 
     def thr_vx(self, q):
@@ -98,7 +101,9 @@ class GMap:
 
     def u_base(self):
         """Ранг 0,4 % в распределении NATR30 на сигнальных минутах B* (доля значений ниже 0,4 %)."""
-        return float((self.natr30 < BASE_NATR).mean())
+        if self._ub is None:
+            self._ub = float((self.natr30 < BASE_NATR).mean())
+        return self._ub
 
 
 def ls_eff(c):
@@ -324,6 +329,7 @@ def near_border(c, gm):
 
 LIN_NAMES = ("n_bounce", "k", "u_lo", "q_hi", "n60", "w", "phi_s", "phi_c", "LS0", "LS1", "LS2", "LS3", "LS4", "nf8", "sharp", "q_off", "n60_off", "w_off")
 QUAD_NAMES = ("n_bounce", "k", "u_lo", "q_hi", "n60", "w")
+_IU = np.triu_indices(len(LIN_NAMES), 1)
 
 
 def features(c):
@@ -331,8 +337,9 @@ def features(c):
     lin = np.zeros(len(LIN_NAMES))
     li = {n: i for i, n in enumerate(LIN_NAMES)}
     sc = lambda x, lo, hi: 2.0 * (x - lo) / (hi - lo) - 1.0       # noqa: E731
-    lin[li["n_bounce"]] = sc(c["n_bounce"], *NB_RANGE)
-    lin[li["k"]] = sc(c["k"], *K_RANGE)
+    nb_e, k_e = ls_eff(c)                                          # при lx = 1, 3 `n_bounce`, `k` не действуют — значения базы (amend L-546)
+    lin[li["n_bounce"]] = sc(nb_e, *NB_RANGE)
+    lin[li["k"]] = sc(k_e, *K_RANGE)
     lin[li["u_lo"]] = sc(c["u_lo"], *U_LO)
     if c["q_hi"] is None:
         lin[li["q_off"]] = 1.0
@@ -352,8 +359,8 @@ def features(c):
     lin[li["nf8"]] = 1.0 if c["nf"] == 8 else 0.0
     lin[li["sharp"]] = 1.0 if c["sharp"] else 0.0
     quad = np.array([lin[li[n]] ** 2 for n in QUAD_NAMES])
-    iu = np.triu_indices(len(lin), 1)
-    pair = (lin[:, None] * lin[None, :])[iu]
+    iu = _IU
+    pair = lin[iu[0]] * lin[iu[1]]
     return np.concatenate([lin, quad, pair])
 
 

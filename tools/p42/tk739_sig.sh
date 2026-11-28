@@ -12,7 +12,7 @@ STORE="--tick-store /data/p42-tk599/tick-store --tick-store-cap-gb 0 --tick-stor
 SIGCACHE=/data/p42-tk739/gmap/sigcache-$WIN
 mkdir -p "$OUT" "$SIGCACHE"
 LINE=$(python3 "$HERE/tk739_gates.py" bstar-line)
-echo "BSX $LINE natr_min=0" > "$OUT/variants.txt"
+echo "BSX $LINE natr_min=${NATR_MIN:-0}" > "$OUT/variants.txt"
 S=$(date +%s)
 P42_T0=$T0 P42_SIGSX_ONLY=1 P42_SIGSX=$SIGSX "$BIN" breakout tick --cache "$TREE/cache" --trades "$TREE/aggtrades" --variants "$OUT/variants.txt" --symbols "$COINS" --out "$OUT/dumps" \
   --threads "$THR" --cap-gb 4 --sig-cache "$SIGCACHE" $STORE > "$OUT/sig.log" 2>&1
