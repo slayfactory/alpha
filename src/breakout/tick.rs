@@ -13,7 +13,7 @@ use super::data::{
     day_string, parse_dec, Sym, COUNT_DAYS, DAYS_TOTAL, HALF_DAYS, MIN_MS, N_MIN, SCALE, START_DAY,
     START_MIN,
 };
-use super::levels::{build_levels_far, Level};
+use super::levels::{build_levels_far, pierce_tol, Level};
 use super::memo::{MoveKey, MoveMemo};
 use super::orders::{
     cancel_open, push_reprice, OrdEv, EV_CANCEL, EV_FILL, EV_PLACE, EV_REPRICE, OID_E1, OID_E2,
@@ -38,6 +38,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 /// Счётчик опции `pk` (§13.11, диагностика): уровни, убитые минутным проколом > τ, которых запрет ложного пробоя к этой минуте не убил.
 pub static PK_MINUTE_KILLED: AtomicU64 = AtomicU64::new(0);
+/// TK-747 (`fw`): отсев кандидат-минут по шагам свежести — [ожидание `fw` после постановки, нет касания, проторговка]; диагностика (печать в `breakout tick`).
+pub static FW_REJECT: [AtomicU64; 3] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
 
 /// Счётчик правила §13.14 (диагностика): кандидаты (уровень, минута), прошедшие прежние условия и отвергнутые правилом «свежий уровень».
 pub static FR_REJECTED: AtomicU64 = AtomicU64::new(0);
@@ -808,39 +810,51 @@ pub fn fresh_ok(sym: &Sym, cfg: &SigCfg, lv: &Level, s: i64, lp: i64, t: usize) 
     false
 }
 
-/// TK-747 (`fw`, `fz`, В-195, В-196) свежесть по владельцу: допуск кандидата пивотного уровня (`fresh` — (постановка, разрыв) версии цены, `Level::fresh_at`; минута `t`), цена версии `lp` в длинной раме (`s` — сторона), `touched` —
-/// после постановки уровня была минута с high не ниже `lp − τ` (по минутам ≤ `t−1`, ведёт `candidates_group_tr`). Допуск — все условия сразу: (1) `t − постановка ≥ fw`; (2) `fz = 0` или
-/// разрыв версии ≥ `fz`; (3) было касание; (4) проторговка в окне `[max(постановка, t − fk), t)`: не меньше `доля fm` закрытий строго ниже `lp` и не дальше `fb` от него, ни одного закрытия
+/// TK-747 (`fw`, В-195, В-196, В-197) свежесть по владельцу: допуск кандидата пивотного уровня (`set` — минута постановки версии цены, `Level::fresh_at`; минута `t`), цена версии `lp` в длинной раме (`s` — сторона), `touched` —
+/// после постановки уровня была минута с high не ниже `lp − допуск прокола` (по минутам ≤ `t−1`, ведёт `candidates_group_tr`). Постановка — подтверждение последнего присоединившегося (нового) пивота:
+/// без нового пивота, «заметившего» старые (в окне `l` суток) пивоты, уровня и постановки нет. Допуск — все условия сразу: (1) `t − постановка ≥ fw`; (2) было касание; (3) проторговка в окне `[max(постановка, t − fk), t)`: не меньше `доля fm` закрытий строго ниже `lp` и не дальше `fb` от него, ни одного закрытия
 /// на уровне или за ним (минуты без данных пропускаются, как в `fresh_ok`). Уровни источника (`src ≠ 0`) допущены всегда — вызывающий их не проверяет.
 pub fn fresh_fw_ok(
     sym: &Sym,
     cfg: &SigCfg,
-    (set, gap): (usize, usize),
+    set: usize,
     s: i64,
     lp: i64,
     touched: bool,
     t: usize,
 ) -> bool {
-    if t < set + cfg.fw_min || gap < cfg.fz_min || !touched {
+    if t < set + cfg.fw_min {
+        FW_REJECT[0].fetch_add(1, Ordering::Relaxed);
+        return false;
+    }
+    if !touched {
+        FW_REJECT[1].fetch_add(1, Ordering::Relaxed);
         return false;
     }
     let lim = mul_div(lp.abs(), cfg.fr_b_pm, 100_000) as i64;
-    let from = set.max(t.saturating_sub(cfg.fr_k));
-    let need = (t - from) * cfg.fr_share / 100;
-    let mut n_in = 0usize;
+    // окно `[t − fk, t)` (критик 15, В-197): допуск пересчитывается на каждой минуте — повторный подход через сутки заново набирает проторговку и касание
+    let from = t.saturating_sub(cfg.fr_k);
+    let (mut n_in, mut n_data) = (0usize, 0usize);
     for m in from..t {
         if sym.o[m] == 0 {
             continue;
         }
+        n_data += 1;
         let c = s * sym.c[m];
         if c >= lp {
+            FW_REJECT[2].fetch_add(1, Ordering::Relaxed);
             return false;
         }
         if lp - c <= lim {
             n_in += 1;
         }
     }
-    n_in >= need
+    // доля — от минут с данными (пустые минуты долю не занижают)
+    let ok = n_data > 0 && n_in * 100 >= n_data * cfg.fr_share;
+    if !ok {
+        FW_REJECT[2].fetch_add(1, Ordering::Relaxed);
+    }
+    ok
 }
 
 /// Кандидаты (§13.2 п. 1): состояние уровня (запрет, ложный пробой) — по закрытиям минут ≤ `t−1`; пул — по
@@ -891,7 +905,6 @@ pub fn level_state_key(cfg: &SigCfg) -> SigCfg {
         fr_share: 0,
         fr_b_pm: 0,
         fw_min: 0,
-        fz_min: 0,
         nf: 0,
         ev: 0,
         ea_m: 0,
@@ -998,6 +1011,8 @@ pub fn candidates_group_tr(
     let n_jobs = em.len() as u64;
     let mut fg = [0u64; 4];
     let zone_lo_of = |lp: i64, dmax: i64| lp - mul_div(lp.abs(), dmax + 1, SCALE) as i64 - 1;
+    // TK-747 (`pp`): шаг цены монеты для допуска прокола (1 шаг ≤ 0,05 % цены)
+    let tick = if cfg.lv.pp { sym.tick() } else { 0 };
     // пороги, зависящие только от цены версии уровня, считаются при смене версии, а не на каждой минуте:
     // нижние границы зон входа заданий (возвращается наименьшая), порог возврата `ban`, порог прокола `pk`
     let marks = |lp: i64, em: &mut [Emit]| {
@@ -1009,7 +1024,11 @@ pub fn candidates_group_tr(
         (
             zone_min,
             lp - mul_div(lp.abs(), cfg.f_pm, 100_000) as i64,
-            lp + mul_div(lp.abs(), cfg.lv.tau_pm, 100_000) as i64,
+            lp + if cfg.lv.pp {
+                pierce_tol(tick, lp)
+            } else {
+                mul_div(lp.abs(), cfg.lv.tau_pm, 100_000) as i64
+            },
         )
     };
     for (li, lv) in levels.iter().enumerate() {
@@ -1023,7 +1042,9 @@ pub fn candidates_group_tr(
         let mut pk_dead = false;
         // TK-747 (`fw`): после постановки версии цены была минута с high не ниже `lp − τ` (по минутам < t); при смене версии пересчитывается по окну `[постановка, t)`
         let fw_on = em.iter().any(|e| e.cfg.fw_min > 0);
-        let touch_band = |lp: i64| lp - mul_div(lp.abs(), cfg.lv.tau_pm, 100_000) as i64;
+        // TK-747 (В-197, критик б): касание — подход к самой цене уровня: high не ниже `lp − допуск прокола` (1 шаг цены, если он ≤ 0,05 % цены; иначе нужен high ≥ lp)
+        let ftick = if fw_on { sym.tick() } else { 0 };
+        let touch_band = |lp: i64| lp - pierce_tol(ftick, lp);
         let touch_hi = |m: usize| {
             if s > 0 {
                 sym.h[m]
@@ -1031,7 +1052,17 @@ pub fn candidates_group_tr(
                 -sym.l[m]
             }
         };
-        let mut touched = false;
+        // TK-747 (`fw`): минута последнего касания (по минутам < t); допуск требует касания в последних `fk` минутах
+        let fk_max = em.iter().map(|e| e.cfg.fr_k).max().unwrap_or(0);
+        let last_before = |t: usize, band: i64| -> Option<usize> {
+            (t.saturating_sub(fk_max)..t)
+                .rev()
+                .find(|&m| sym.o[m] != 0 && touch_hi(m) >= band)
+        };
+        let mut last_touch: Option<usize> = None;
+        if fw_on {
+            last_touch = last_before(lv.born as usize, touch_band(s * price));
+        }
         // TK-669 (`fg`): минута приостановки уровня
         let mut susp: Option<usize> = None;
         for t in lv.born as usize..end {
@@ -1043,8 +1074,7 @@ pub fn candidates_group_tr(
                 (zone_min, back, pk_thr) = marks(s * price, &mut em);
             }
             if fw_on && seg != seg0 {
-                let (band, set) = (touch_band(s * price), lv.fresh_at(seg).0);
-                touched = (set..t).any(|m| sym.o[m] != 0 && touch_hi(m) >= band);
+                last_touch = last_before(t, touch_band(s * price));
             }
             if sym.o[t] == 0 {
                 continue;
@@ -1081,7 +1111,15 @@ pub fn candidates_group_tr(
                     {
                         let fresh = if e.cfg.fw_min > 0 {
                             lv.src != 0
-                                || fresh_fw_ok(sym, e.cfg, lv.fresh_at(seg), s, lp, touched, t)
+                                || fresh_fw_ok(
+                                    sym,
+                                    e.cfg,
+                                    lv.fresh_at(seg),
+                                    s,
+                                    lp,
+                                    last_touch.is_some_and(|m| m + e.cfg.fr_k >= t),
+                                    t,
+                                )
                         } else {
                             fresh_ok(sym, e.cfg, lv, s, lp, t)
                         };
@@ -1098,8 +1136,8 @@ pub fn candidates_group_tr(
                     }
                 }
             }
-            if fw_on && !touched && hi >= touch_band(lp) {
-                touched = true;
+            if fw_on && hi >= touch_band(lp) {
+                last_touch = Some(t);
             }
             // TK-669 (`fg`): откат на X NATR за уровень на минуте после приостановки — уровень возвращается к сигналам со следующей минуты
             if let Some(ts) = susp {
@@ -1136,12 +1174,13 @@ pub fn candidates_group_tr(
                 forbidden = true;
             }
             // §13.11 (`pk`): прокол цены версии больше чем на τ убивает уровень навсегда, со следующей минуты
-            if cfg.lv.pk && !pk_dead && hi > pk_thr {
+            // TK-747 (`pp`, В-197): любой минутный прокол дальше допуска (1 шаг ≤ 0,05 %) — то же убийство, порог `lp + допуск`
+            if (cfg.lv.pk || cfg.lv.pp) && !pk_dead && hi > pk_thr {
                 pk_dead = true;
                 if !forbidden {
                     PK_MINUTE_KILLED.fetch_add(n_jobs, Ordering::Relaxed);
                     if let Some(tr) = trace.as_mut() {
-                        tr.push((li as u32, t as u32, "pk"));
+                        tr.push((li as u32, t as u32, if cfg.lv.pp { "pp" } else { "pk" }));
                     }
                 }
                 if cfg.fg_m > 0 && susp.is_none() {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# TK-747: гейт «ключи lm / lz / fw / fz выключены — сделки побайтно прежние». База шорта V0nt (TK-741, этап `nt`) на 10 окнах движком этой ветки (с `--keep-orders`, как TK-743)
+# TK-747: гейт «ключи lm / lz / pp / fw выключены — сделки побайтно прежние». База шорта V0nt (TK-741, этап `nt`) на 10 окнах движком этой ветки (с `--keep-orders`, как TK-743)
 # против файлов прогона TK-743 (бинарь /data/p42-tk743/bin/alpha-tk743): trades, orders, setup — `cmp`, все окна. Только srv, один движок за раз:
 #   systemd-run --unit tk747-gate -p MemoryMax=40G -p CPUQuota=490% -p Nice=10 -p WorkingDirectory=/data/p42-tk747/code bash /data/p42-tk747/code/tk747_gate.sh <бинарь> <md5> [окна]
 # Код — копия `tools/p42` в /data/p42-tk747/code (LF); результат — /data/p42-tk747/trades/tk747-nt-{h1,sel,n1}/<окно>/; итог — строка «гейт: …» в /data/p42-tk747/log/gate.log.

@@ -412,6 +412,13 @@ fn rv_of(co: &[i64], cc: &[i64], p: usize) -> Vec<i32> {
     out
 }
 
+fn gcd(mut a: i64, mut b: i64) -> i64 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
+}
+
 pub struct Sym {
     pub name: String,
     pub o: Vec<i64>,
@@ -426,6 +433,8 @@ pub struct Sym {
     bars: [OnceLock<Bars>; 3],
     /// TK-676: NATR 5 баров (код 1) и реализованная волатильность 5 / 15 / 30 / 60 минут (коды 5–8); считаются при первом обращении.
     vol: [OnceLock<Vec<i32>>; 5],
+    /// TK-747 (`pp`): шаг цены монеты ×1e8 — наибольший общий делитель всех цен минуток; считается при первом обращении.
+    tick: OnceLock<i64>,
     pub fund: Vec<Fund>,
 }
 
@@ -446,8 +455,25 @@ impl Sym {
             natr: Default::default(),
             bars: Default::default(),
             vol: Default::default(),
+            tick: OnceLock::new(),
             fund,
         }
+    }
+
+    /// TK-747 (`pp`, В-197): шаг цены монеты ×1e8. Биржевых данных об инструменте в кэше минуток нет, шаг берётся из цен: наибольший общий делитель всех открытий, максимумов,
+    /// минимумов и закрытий минут с данными (цены биржи кратны шагу; на сотнях тысяч минут делитель сходится к шагу). Нет данных — 0 (допуск прокола 0).
+    pub fn tick(&self) -> i64 {
+        *self.tick.get_or_init(|| {
+            let mut g = 0i64;
+            for col in [&self.o, &self.h, &self.l, &self.c] {
+                for (&v, &o) in col.iter().zip(&self.o) {
+                    if o != 0 && v > 0 && (g == 0 || v % g != 0) {
+                        g = gcd(g, v);
+                    }
+                }
+            }
+            g
+        })
     }
 
     pub fn valid(&self, t: usize) -> bool {

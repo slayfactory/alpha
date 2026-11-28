@@ -91,7 +91,6 @@ pub fn cfg_key_text(cfg: &SigCfg) -> String {
         hr_min,
         hw_min,
         fw_min,
-        fz_min,
     } = cfg;
     let LevelCfg {
         tf_min,
@@ -108,6 +107,8 @@ pub fn cfg_key_text(cfg: &SigCfg) -> String {
         lsl_m,
         lm,
         lz,
+        pp,
+        li,
     } = lv;
     // TK-669: `fg` — в тексте только при ≠ 0 (текст прежних конфигураций не меняется)
     let fg = if *fg_m != 0 {
@@ -149,13 +150,13 @@ pub fn cfg_key_text(cfg: &SigCfg) -> String {
     } else {
         String::new()
     };
-    // TK-747: `lm`, `lz` (уровни без усреднения, закол) и `fw`, `fz` (свежесть по владельцу) — только при включении (текст прежних конфигураций не меняется)
-    let lmz = match (*lm != 0, *lz) {
-        (false, false) => String::new(),
-        _ => format!(",lm={lm},lz={lz}"),
+    // TK-747: `lm`, `lz`, `pp` (уровни без усреднения, закол, любой прокол) и `fw` (свежесть по владельцу) — только при включении (текст прежних конфигураций не меняется)
+    let lmz = match (*lm != 0, *lz, *pp, *li) {
+        (false, false, false, false) => String::new(),
+        _ => format!(",lm={lm},lz={lz},pp={pp},li={li}"),
     };
     let fws = if *fw_min != 0 {
-        format!(",fw_min={fw_min},fz_min={fz_min}")
+        format!(",fw_min={fw_min}")
     } else {
         String::new()
     };

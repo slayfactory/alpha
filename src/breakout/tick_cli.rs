@@ -684,12 +684,24 @@ pub fn run(
             sort_tsigs(&mut sigs[j]);
         }
     }
-    if vs.iter().any(|(_, p)| p.sig.lv.pk) {
+    if vs.iter().any(|(_, p)| p.sig.lv.pk || p.sig.lv.pp) {
         use std::sync::atomic::Ordering::Relaxed;
         eprintln!(
             "pk (§13.11): не родилось из-за предыстории {}, убито перепроверкой при смене версии {}, убито минутным проколом {}",
             super::levels::PK_BIRTH_BLOCKED.load(Relaxed),
             super::levels::PK_RETRO_KILLED.load(Relaxed),
+            super::tick::PK_MINUTE_KILLED.load(Relaxed)
+        );
+    }
+    if vs.iter().any(|(_, p)| p.sig.lv.lz || p.sig.fw_min > 0) {
+        use std::sync::atomic::Ordering::Relaxed;
+        let r = &super::tick::FW_REJECT;
+        eprintln!(
+            "TK-747: закол отменил пар {}; отсев кандидат-минут: ожидание fw {}, нет касания {}, проторговка {}; убито минутным проколом {}",
+            super::levels::LZ_CANCELLED.load(Relaxed),
+            r[0].load(Relaxed),
+            r[1].load(Relaxed),
+            r[2].load(Relaxed),
             super::tick::PK_MINUTE_KILLED.load(Relaxed)
         );
     }

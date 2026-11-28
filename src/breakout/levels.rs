@@ -15,12 +15,15 @@
 use super::data::{Bars, Sym, N_MIN, SCALE};
 use super::params::LevelCfg;
 use super::Side;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Счётчики опции `pk` (§13.11, диагностика; считаются только в обычной сборке уровней, не в журнале членов): группы,
 /// не родившиеся из-за прокола/закрытия за ценой с первого пивота, и уровни, убитые перепроверкой при смене версии.
 pub static PK_BIRTH_BLOCKED: AtomicU64 = AtomicU64::new(0);
 pub static PK_RETRO_KILLED: AtomicU64 = AtomicU64::new(0);
+/// TK-747 (`lz`): сколько пар отменено заколом (диагностика, как `PK_*`).
+pub static LZ_CANCELLED: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone)]
 pub struct Level {
@@ -37,9 +40,9 @@ pub struct Level {
     pub src: u8,
     /// TK-743: чем кончился уровень пивотов (`end`): 0 — не кончился или источник / линия; 1 — членов стало меньше `n` (старше `l` суток); 2 — прокол `pk`; 3 — закрытие бара за уровнем.
     pub why: u8,
-    /// TK-747 (`fw`, `fz`): для каждой версии цены (параллельно `segs`) — (минута постановки уровня, разрыв, мин): постановка — подтверждение последнего присоединившегося
-    /// пивота версии, разрыв — время между этим пивотом и ближайшим к нему по времени из прочих членов. Пусто у уровней источника и линий — для них не определено.
-    pub fresh: Vec<(u32, u32)>,
+    /// TK-747 (`fw`): для каждой версии цены (параллельно `segs`) — минута постановки уровня: подтверждение последнего присоединившегося пивота версии (новый пивот, «заметивший» старые уровни).
+    /// Пусто у уровней источника и линий — для них не определено.
+    pub fresh: Vec<u32>,
 }
 
 #[derive(Clone, Copy)]
@@ -75,15 +78,15 @@ impl Frame<'_> {
     }
 }
 
-/// (все члены в пределах τ от цены уровня, цена уровня в длинной раме). `lm = 0` — цена уровня среднее членов, τ от среднего; TK-747 `lm = 1` — среднего нет:
-/// цена уровня — крайний пивот по ходу пробоя (рама: наибольшее значение — у шорта самый низкий минимум), τ от его цены (члены не выше него по построению).
+/// (все члены в пределах τ от цены уровня, цена уровня в длинной раме). `lm = 0` — цена уровня среднее членов, τ от среднего; TK-747 `lm = 1` (В-197) — среднего нет:
+/// цена уровня — БЛИЖНИЙ к цене пивот сетапа (рама: наименьшее значение — у шорта самый высокий из минимумов, у лонга самый низкий из максимумов), τ от его цены (прочие члены дальше него по ходу пробоя).
 fn group_ok(ps: &[i64], tau_pm: i64, lm: u8) -> (bool, i64) {
     let px = if lm == 0 {
         let n = ps.len() as i128;
         let sum: i128 = ps.iter().map(|&x| i128::from(x)).sum();
         (sum / n) as i64
     } else {
-        ps.iter().copied().max().unwrap_or(0)
+        ps.iter().copied().min().unwrap_or(0)
     };
     let ok = ps.iter().all(|&x| {
         i128::from((x - px).abs()) * 100_000 <= i128::from(tau_pm) * i128::from(px.abs())
@@ -143,37 +146,122 @@ fn find_pivots(f: &Frame, cfg: &LevelCfg) -> Vec<Pv> {
 struct Live {
     id: usize,
     members: Vec<Pv>,
+    /// Цена основного уровня версии в длинной раме (`lm ≠ 0`): ближний непроколотый пивот; при `lm = 0` — среднее группы.
+    main: i64,
+}
+
+/// TK-747 (`lm`, В-197): статусы пивота — (минута первого прокола, минута выхода из каскада). Прокол: минута после подтверждения пивота (закрытие бара `active`) с максимумом рамы дальше
+/// цены пивота + допуск (`pierce_tol`: 1 шаг цены ≤ 0,05 %, иначе 0). Выход: закрытие часового бара после подтверждения за ценой пивота (+ допуск при `pp`) — минута закрытия этого бара.
+/// `u32::MAX` — не наступило. Бары самих пивотов (до подтверждения) не считаются — члены каскада друг друга «проколами» не убивают.
+struct Pstat<'a> {
+    f: &'a Frame<'a>,
+    sym: &'a Sym,
+    bars: &'a Bars,
+    tfm: usize,
+    tick: i64,
+    pp: bool,
+    memo: HashMap<(u32, i64), (u32, u32)>,
+}
+
+impl Pstat<'_> {
+    fn minute_hi(&self, m: usize) -> i64 {
+        if self.f.s > 0 {
+            self.sym.h[m]
+        } else {
+            -self.sym.l[m]
+        }
+    }
+
+    fn get(&mut self, p: &Pv) -> (u32, u32) {
+        if let Some(&v) = self.memo.get(&(p.bar, p.p)) {
+            return v;
+        }
+        let tol = pierce_tol(self.tick, p.p);
+        let hi_thr = p.p + tol;
+        let cl_thr = p.p + if self.pp { tol } else { 0 };
+        let (mut pierce, mut left) = (u32::MAX, u32::MAX);
+        for bb in p.active as usize + 1..self.bars.ok.len() {
+            if !self.bars.ok[bb] {
+                continue;
+            }
+            if pierce == u32::MAX && self.f.hi(bb) > hi_thr {
+                let from = bb * self.tfm;
+                pierce = (from..from + self.tfm)
+                    .find(|&m| self.sym.o[m] != 0 && self.minute_hi(m) > hi_thr)
+                    .unwrap_or(from) as u32;
+            }
+            if left == u32::MAX && self.f.cl(bb) > cl_thr {
+                left = ((bb + 1) * self.tfm) as u32;
+            }
+            if pierce != u32::MAX && left != u32::MAX {
+                break;
+            }
+        }
+        self.memo.insert((p.bar, p.p), (pierce, left));
+        (pierce, left)
+    }
+
+    /// (все члены в пределах τ от цены основного уровня, цена основного уровня в раме): основной — ближний (наименьшее значение рамы) непроколотый к минуте `now` член; все прокололи — группы нет.
+    fn grp(&mut self, tau_pm: i64, ms: &[Pv], now: u32) -> (bool, i64) {
+        let mut px: Option<i64> = None;
+        for p in ms {
+            if self.get(p).0 >= now {
+                px = Some(px.map_or(p.p, |x| x.min(p.p)));
+            }
+        }
+        let Some(px) = px else {
+            return (false, 0);
+        };
+        let ok = ms.iter().all(|x| {
+            i128::from((x.p - px).abs()) * 100_000 <= i128::from(tau_pm) * i128::from(px.abs())
+        });
+        (ok, px)
+    }
 }
 
 fn prices(m: &[Pv]) -> Vec<i64> {
     m.iter().map(|p| p.p).collect()
 }
 
-/// TK-747 (`lz`, закол): группа ровно из двух пивотов, где более поздний (по бару) пивот дальше раннего по ходу пробоя (рама: строго больше — не меньше шага цены,
-/// цены биржи кратны шагу), — «второй перебивает первый», уровень не рождается. Каскад (≥ 3 пивота) не отменяется.
-fn is_zakol(grp: &[Pv]) -> bool {
+/// TK-747 (`lz`, закол, В-194, В-196, В-197): сетап ровно из двух пивотов, где второй — допускающий (новый) пивот `pv`, позже первого по бару и дальше него по ходу пробоя больше чем на допуск
+/// прокола (`pierce_tol(tick, ..)`: 1 шаг цены ≤ 0,05 %, иначе 0), — «второй перебивает первый», уровень не рождается. Каскад (≥ 3 пивота) не отменяется — перебития в нём нормальны.
+fn is_zakol(grp: &[Pv], pv: Pv, tick: i64) -> bool {
     let [a, b] = grp else {
         return false;
     };
-    let (early, late) = if a.bar <= b.bar { (a, b) } else { (b, a) };
-    early.bar < late.bar && late.p > early.p
+    let first = if a.bar == pv.bar && a.p == pv.p { b } else { a };
+    first.bar < pv.bar && pv.p > first.p + pierce_tol(tick, first.p)
 }
 
-/// TK-747 (`fw`, `fz`): (минута постановки, разрыв в минутах) версии цены с составом `m` и баром `tfm` минут: постановка — подтверждение пивота с наибольшим `active`
-/// (последний присоединившийся), разрыв — расстояние по барам от него до ближайшего по времени из остальных членов.
-fn fresh_of(m: &[Pv], tfm: i64) -> (u32, u32) {
-    let Some(last) = m.iter().max_by_key(|p| (p.active, p.bar)) else {
-        return (0, 0);
-    };
-    let set = (i64::from(last.active) + 1) * tfm;
-    let prev = m
-        .iter()
-        .filter(|p| !(p.bar == last.bar && p.p == last.p))
-        .map(|p| p.bar)
-        .min_by_key(|&b| (i64::from(last.bar) - i64::from(b)).abs());
-    let gap = prev.map_or(0, |b| (i64::from(last.bar) - i64::from(b)).abs() * tfm);
-    (set as u32, gap as u32)
+/// TK-747 (`fw`): минута постановки версии цены с составом `m` и баром `tfm` минут — подтверждение пивота с наибольшим `active` (последний присоединившийся).
+fn fresh_of(m: &[Pv], tfm: i64) -> u32 {
+    m.iter()
+        .max_by_key(|p| (p.active, p.bar))
+        .map_or(0, |last| ((i64::from(last.active) + 1) * tfm) as u32)
 }
+
+/// TK-747 (`kill_from`, В-197): бар, с которого действуют убийцы уровня «закрытие за ценой» / перепроверка: при `lm = 0` — первый пивот группы; при `lm = 1` — пивот, давший цену уровня
+/// (ближний; при равных ценах — более ранний): до него этой цены ещё не было, закрытия прежних баров её не убивают.
+fn kill_from(m: &[Pv], lm: u8) -> usize {
+    if lm == 0 {
+        return m.iter().map(|p| p.bar as usize).min().unwrap_or(0);
+    }
+    m.iter()
+        .min_by_key(|p| (p.p, p.bar))
+        .map_or(0, |p| p.bar as usize)
+}
+
+/// TK-747 (`pp`, В-197): допуск на прокол — 1 шаг цены, если он не больше 0,05 % цены `px` (в тысячных процента — `PP_TOL_MAX_PM`), иначе 0. `tick` — шаг цены монеты ×1e8 (`Sym::tick`).
+pub fn pierce_tol(tick: i64, px: i64) -> i64 {
+    if tick > 0 && i128::from(tick) * 100_000 <= i128::from(PP_TOL_MAX_PM) * i128::from(px.abs()) {
+        tick
+    } else {
+        0
+    }
+}
+
+/// Допуск прокола `pp`: 0,05 % цены в тысячных процента.
+pub const PP_TOL_MAX_PM: i64 = 50;
 
 pub fn build_levels(sym: &Sym, cfg: &LevelCfg, side: Side) -> Vec<Level> {
     build_levels_tracked(sym, cfg, side, false)
@@ -196,11 +284,11 @@ impl Level {
         self.segs[k.saturating_sub(1)].1
     }
 
-    /// TK-747 (`fw`, `fz`): (минута постановки уровня, разрыв, мин) версии цены `seg`; у уровней источника и линий — минута рождения и разрыв 0.
-    pub fn fresh_at(&self, seg: usize) -> (usize, usize) {
+    /// TK-747 (`fw`): минута постановки уровня версии цены `seg`; у уровней источника и линий — минута рождения.
+    pub fn fresh_at(&self, seg: usize) -> usize {
         self.fresh
             .get(seg)
-            .map_or((self.born as usize, 0), |&(s, g)| (s as usize, g as usize))
+            .map_or(self.born as usize, |&s| s as usize)
     }
 
     /// Дальний край зоны версии цены `seg` в длинной раме: минимум цен пивотов (лонг — самый низкий, шорт — минус самый высокий).
@@ -258,23 +346,121 @@ fn build_levels_impl(
         s: side.s(),
     };
     let pivs = find_pivots(&f, cfg);
+    // TK-747 (`lm`, В-197): модель «основной / внутренние уровни каскада» — статусы пивотов (прокол, выход по часовому закрытию) по цене и минутам монеты
+    let owner = cfg.lm != 0;
+    let tick = if cfg.pp || cfg.lz || owner {
+        sym.tick()
+    } else {
+        0
+    };
+    // TK-747 (`pp`): закрытие бара за ценой уровня убивает его, если зашло дальше допуска (1 шаг цены ≤ 0,05 %); без `pp` — любое закрытие за ценой
+    let kill_px = |px: i64| {
+        if cfg.pp {
+            px + pierce_tol(tick, px)
+        } else {
+            px
+        }
+    };
     let nb = bars.ok.len();
     let tfm = cfg.tf_min as i64;
     let lwin = cfg.l_days as i64 * 1440;
+    let mut st = Pstat {
+        f: &f,
+        sym,
+        bars,
+        tfm: cfg.tf_min,
+        tick,
+        pp: cfg.pp,
+        memo: HashMap::new(),
+    };
     let mut levels: Vec<Level> = Vec::new();
     let mut live: Vec<Live> = Vec::new();
     let mut free: Vec<Pv> = Vec::new();
     let mut pi = 0;
     for b in 0..nb {
         let now = (b as i64 + 1) * tfm;
-        free.retain(|p| i64::from(p.bar) * tfm >= now - lwin);
+        let now_u = now as u32;
+        // `li`: свободные пивоты стареют от подтверждения (7 суток до самого позднего члена группы); без `li` — от бара экстремума, как раньше
+        if cfg.li {
+            free.retain(|p| (i64::from(p.active) + 1) * tfm >= now - lwin);
+        } else {
+            free.retain(|p| i64::from(p.bar) * tfm >= now - lwin);
+        }
         let mut li = 0;
         while li < live.len() {
+            let id = live[li].id;
+            if owner {
+                // TK-747 (`lm`, В-197): основной / внутренние уровни каскада. `li` (целостность сетапа): пивоты не стареют по неделе от старшего — сетап отменяется на минуте
+                // «подтверждение последнего присоединившегося пивота + `l` суток» (дальше только присоединение пивота продлевает срок); без `li` — прежнее старение каждого члена по `l` суток от его бара
+                let set = i64::from(levels[id].fresh.last().copied().unwrap_or(0));
+                if cfg.li && now >= set + lwin {
+                    levels[id].end = (set + lwin) as u32;
+                    levels[id].why = 1;
+                    live.remove(li);
+                    continue;
+                }
+                let main = live[li].main;
+                let (mut pierced, mut left) = (true, true);
+                for p in live[li].members.iter().filter(|p| p.p == main) {
+                    let (pm, lm_) = st.get(p);
+                    pierced &= pm < now_u;
+                    left &= lm_ < now_u;
+                }
+                let why = if pierced {
+                    2
+                } else if left {
+                    3
+                } else {
+                    0
+                };
+                if why != 0 {
+                    levels[id].end = now_u;
+                    levels[id].why = why;
+                    live.remove(li);
+                    continue;
+                }
+                let before = live[li].members.len();
+                if !cfg.li {
+                    live[li]
+                        .members
+                        .retain(|p| i64::from(p.bar) * tfm >= now - lwin);
+                    if live[li].members.len() < cfg.n {
+                        levels[id].end = now_u;
+                        levels[id].why = 1;
+                        live.remove(li);
+                        continue;
+                    }
+                }
+                live[li].members.retain(|p| st.get(p).1 >= now_u);
+                if live[li].members.len() != before {
+                    if live[li].members.len() < cfg.n {
+                        levels[id].end = now_u;
+                        levels[id].why = 4;
+                        live.remove(li);
+                        continue;
+                    }
+                    let (ok, mean) = st.grp(cfg.tau_pm, &live[li].members, now_u);
+                    if !ok {
+                        levels[id].end = now_u;
+                        levels[id].why = 4;
+                        live.remove(li);
+                        continue;
+                    }
+                    live[li].main = mean;
+                    levels[id].segs.push((now_u, mean.abs()));
+                    let prev = levels[id].fresh.last().copied().unwrap_or(0);
+                    levels[id].fresh.push(prev);
+                    if track {
+                        levels[id].mem.push(members(&live[li].members));
+                    }
+                }
+                li += 1;
+                continue;
+            }
             let before = live[li].members.len();
             live[li]
                 .members
                 .retain(|p| i64::from(p.bar) * tfm >= now - lwin);
-            let id = live[li].id;
             if live[li].members.len() < cfg.n {
                 levels[id].end = now as u32;
                 levels[id].why = 1;
@@ -284,13 +470,14 @@ fn build_levels_impl(
             let (_, mean) = group_ok(&prices(&live[li].members), cfg.tau_pm, cfg.lm);
             if live[li].members.len() != before {
                 levels[id].segs.push((now as u32, mean.abs()));
-                levels[id].fresh.push(fresh_of(&live[li].members, tfm));
+                let prev = levels[id].fresh.last().copied().unwrap_or(0);
+                levels[id].fresh.push(prev);
                 if track {
                     levels[id].mem.push(members(&live[li].members));
                 }
                 if cfg.pk {
-                    let from = live[li].members.iter().map(|p| p.bar as usize).min();
-                    if from.is_some_and(|from| pk_violated(&f, bars, from, b, mean, cfg.tau_pm)) {
+                    let from = kill_from(&live[li].members, cfg.lm);
+                    if pk_violated(&f, bars, from, b, mean, cfg.tau_pm) {
                         if count {
                             PK_RETRO_KILLED.fetch_add(1, Ordering::Relaxed);
                         }
@@ -301,7 +488,7 @@ fn build_levels_impl(
                     }
                 }
             }
-            if bars.ok[b] && f.cl(b) > mean {
+            if bars.ok[b] && f.cl(b) > kill_px(mean) {
                 levels[id].end = now as u32;
                 levels[id].why = 3;
                 live.remove(li);
@@ -314,12 +501,19 @@ fn build_levels_impl(
             pi += 1;
             let mut joined = false;
             for li in 0..live.len() {
-                let mut cand = prices(&live[li].members);
-                cand.push(pv.p);
-                let (ok, mean) = group_ok(&cand, cfg.tau_pm, cfg.lm);
+                let (ok, mean) = if owner {
+                    let mut cand = live[li].members.clone();
+                    cand.push(pv);
+                    st.grp(cfg.tau_pm, &cand, now_u)
+                } else {
+                    let mut cand = prices(&live[li].members);
+                    cand.push(pv.p);
+                    group_ok(&cand, cfg.tau_pm, cfg.lm)
+                };
                 if ok {
                     let id = live[li].id;
                     live[li].members.push(pv);
+                    live[li].main = mean;
                     levels[id].segs.push((now as u32, mean.abs()));
                     levels[id].fresh.push(fresh_of(&live[li].members, tfm));
                     if track {
@@ -327,9 +521,8 @@ fn build_levels_impl(
                     }
                     joined = true;
                     if cfg.pk {
-                        let from = live[li].members.iter().map(|p| p.bar as usize).min();
-                        if from.is_some_and(|from| pk_violated(&f, bars, from, b, mean, cfg.tau_pm))
-                        {
+                        let from = kill_from(&live[li].members, cfg.lm);
+                        if pk_violated(&f, bars, from, b, mean, cfg.tau_pm) {
                             if count {
                                 PK_RETRO_KILLED.fetch_add(1, Ordering::Relaxed);
                             }
@@ -350,12 +543,22 @@ fn build_levels_impl(
                 .copied()
                 .filter(|q| !(q.bar == pv.bar && q.p == pv.p))
                 .collect();
+            if owner {
+                order.retain(|q| st.get(q).1 >= now_u);
+            }
             order.sort_by_key(|q| ((q.p - pv.p).abs(), std::cmp::Reverse(q.bar)));
             let mut grp = vec![pv];
             for q in order {
-                let mut cand = prices(&grp);
-                cand.push(q.p);
-                if group_ok(&cand, cfg.tau_pm, cfg.lm).0 {
+                let okq = if owner {
+                    let mut cand = grp.clone();
+                    cand.push(q);
+                    st.grp(cfg.tau_pm, &cand, now_u).0
+                } else {
+                    let mut cand = prices(&grp);
+                    cand.push(q.p);
+                    group_ok(&cand, cfg.tau_pm, cfg.lm).0
+                };
+                if okq {
                     grp.push(q);
                 } else {
                     break;
@@ -364,23 +567,31 @@ fn build_levels_impl(
             if grp.len() < cfg.n {
                 continue;
             }
-            // TK-747 (`lz`): закол — пара, где поздний пивот перебил ранний, уровень не рождается; пивоты остаются свободными (с третьим дадут каскад)
-            if cfg.lz && is_zakol(&grp) {
+            // TK-747 (`lz`): закол — пара, где допускающий (новый) пивот перебил ранний больше чем на допуск, уровень не рождается; пивоты остаются свободными (с третьим дадут каскад)
+            if cfg.lz && is_zakol(&grp, pv, tick) {
+                if count {
+                    LZ_CANCELLED.fetch_add(1, Ordering::Relaxed);
+                }
                 continue;
             }
-            let (_, mean) = group_ok(&prices(&grp), cfg.tau_pm, cfg.lm);
+            let mean = if owner {
+                st.grp(cfg.tau_pm, &grp, now_u).1
+            } else {
+                group_ok(&prices(&grp), cfg.tau_pm, cfg.lm).1
+            };
             let first_bar = grp.iter().map(|p| p.bar).min().unwrap_or(pv.bar);
+            let from_bar = kill_from(&grp, cfg.lm);
             free.retain(|p| !grp.iter().any(|q| q.bar == p.bar && q.p == p.p));
-            let dead = if cfg.pk {
-                let d = pk_violated(&f, bars, first_bar as usize, b, mean, cfg.tau_pm);
-                if d && count
-                    && !(first_bar as usize + 1..=b).any(|bb| bars.ok[bb] && f.cl(bb) > mean)
-                {
+            let dead = if owner {
+                false
+            } else if cfg.pk {
+                let d = pk_violated(&f, bars, from_bar, b, mean, cfg.tau_pm);
+                if d && count && !(from_bar + 1..=b).any(|bb| bars.ok[bb] && f.cl(bb) > mean) {
                     PK_BIRTH_BLOCKED.fetch_add(1, Ordering::Relaxed);
                 }
                 d
             } else {
-                (first_bar as usize + 1..=b).any(|bb| bars.ok[bb] && f.cl(bb) > mean)
+                (from_bar + 1..=b).any(|bb| bars.ok[bb] && f.cl(bb) > kill_px(mean))
             };
             if !dead {
                 levels.push(Level {
@@ -400,6 +611,7 @@ fn build_levels_impl(
                 live.push(Live {
                     id: levels.len() - 1,
                     members: grp,
+                    main: mean,
                 });
             }
         }

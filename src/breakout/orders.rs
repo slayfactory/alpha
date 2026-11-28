@@ -178,8 +178,26 @@ fn why_name(w: u8) -> &'static str {
         1 => "aged",
         2 => "pk",
         3 => "close_above",
+        4 => "inner_left",
         _ => "alive",
     }
+}
+
+/// TK-747 (В-197): проколы цены `px` (длинная рама, `s` — сторона) минутами `from..to`: (число минут с максимумом рамы строго за `px`, наибольший заход ×1e8). Минуты без данных пропускаются.
+fn wicks(sym: &Sym, s: i64, px: i64, from: usize, to: usize) -> (usize, i64) {
+    let mut n = 0usize;
+    let mut wick = 0i64;
+    for m in from..to.min(sym.o.len()) {
+        if sym.o[m] == 0 {
+            continue;
+        }
+        let hi = if s > 0 { sym.h[m] } else { -sym.l[m] };
+        if hi > px {
+            n += 1;
+            wick = wick.max(hi - px);
+        }
+    }
+    (n, wick)
 }
 
 /// Уровни сетапа сделки `x`: торгуемый уровень с версиями цены, зона (ближний край — цена версии, нижний край зоны входа, дальний край `P_far`),
@@ -314,6 +332,32 @@ impl<'a> SetupCtx<'a> {
                     p.sig.lv.tf_min
                 ),
             ));
+        }
+        // TK-747 (`lm`, `pp`, В-197): основной уровень — любой прокол убивает (здесь — заходы в пределах допуска с версии цены до сигнала); внутренние уровни каскада (прочие члены версии, дальше основного
+        // по ходу пробоя) колоться могут — число минут с заходом и наибольший заход от конца бара пивота до сигнала; из каскада внутренний уровень выходит только закрытием часового бара за ним (`close_above`)
+        if p.sig.lv.pp {
+            let (n, wick) = wicks(sym, s, s * lv.segs[si].1, lv.segs[si].0 as usize, t);
+            let _ = out.write_str(&key(
+                "main_pierce",
+                lv.segs[si].1,
+                min_ms(lv.segs[si].0),
+                min_ms(sg.t),
+                format!("pierce_minutes={n};max_wick_e8={wick}"),
+            ));
+        }
+        if p.sig.lv.lm != 0 {
+            for (bar, px) in cur.iter().filter(|(_, px)| *px != lv.segs[si].1) {
+                let end_min = (*bar as usize + 1) * p.sig.lv.tf_min;
+                let (n, wick) = wicks(sym, s, s * px, end_min, t);
+                let a = i64::from(*bar) * tf_ms;
+                let _ = out.write_str(&key(
+                    "inner",
+                    *px,
+                    a.to_string(),
+                    (a + tf_ms).to_string(),
+                    format!("inner level of the cascade; pierce_minutes={n};max_wick_e8={wick}"),
+                ));
+            }
         }
         let mut gone: Vec<(u32, i64, usize)> = Vec::new();
         for (k, m) in lv.mem.iter().enumerate().take(si + 1) {

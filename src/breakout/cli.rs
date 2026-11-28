@@ -321,8 +321,8 @@ pub(super) fn reject_tick_only(p: &Params, line: &str) -> Result<()> {
     if p.port.reentry > 0 {
         bail!("reentry считает только `breakout tick`: {line}");
     }
-    if p.sig.lv.pk {
-        bail!("pk считает только `breakout tick`: {line}");
+    if p.sig.lv.pk || p.sig.lv.pp {
+        bail!("pk и pp считает только `breakout tick`: {line}");
     }
     if p.sig.ap != 0 || p.sig.pb {
         bail!("ap и pb считает только `breakout tick`: {line}");
@@ -378,8 +378,8 @@ pub(super) fn reject_tick_only(p: &Params, line: &str) -> Result<()> {
     if p.sig.vx_pm != 0 || p.sig.hw_min != 0 {
         bail!("vx/hr/hw (TK-738) считает только `breakout tick`: {line}");
     }
-    if p.sig.lv.lm != 0 || p.sig.lv.lz || p.sig.fw_min != 0 {
-        bail!("lm/lz/fw/fz (TK-747) считает только `breakout tick`: {line}");
+    if p.sig.lv.lm != 0 || p.sig.lv.lz || p.sig.lv.li || p.sig.fw_min != 0 {
+        bail!("lm/lz/li/fw (TK-747) считает только `breakout tick`: {line}");
     }
     Ok(())
 }
