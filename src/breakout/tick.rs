@@ -808,6 +808,41 @@ pub fn fresh_ok(sym: &Sym, cfg: &SigCfg, lv: &Level, s: i64, lp: i64, t: usize) 
     false
 }
 
+/// TK-747 (`fw`, `fz`, В-195, В-196) свежесть по владельцу: допуск кандидата пивотного уровня (`fresh` — (постановка, разрыв) версии цены, `Level::fresh_at`; минута `t`), цена версии `lp` в длинной раме (`s` — сторона), `touched` —
+/// после постановки уровня была минута с high не ниже `lp − τ` (по минутам ≤ `t−1`, ведёт `candidates_group_tr`). Допуск — все условия сразу: (1) `t − постановка ≥ fw`; (2) `fz = 0` или
+/// разрыв версии ≥ `fz`; (3) было касание; (4) проторговка в окне `[max(постановка, t − fk), t)`: не меньше `доля fm` закрытий строго ниже `lp` и не дальше `fb` от него, ни одного закрытия
+/// на уровне или за ним (минуты без данных пропускаются, как в `fresh_ok`). Уровни источника (`src ≠ 0`) допущены всегда — вызывающий их не проверяет.
+pub fn fresh_fw_ok(
+    sym: &Sym,
+    cfg: &SigCfg,
+    (set, gap): (usize, usize),
+    s: i64,
+    lp: i64,
+    touched: bool,
+    t: usize,
+) -> bool {
+    if t < set + cfg.fw_min || gap < cfg.fz_min || !touched {
+        return false;
+    }
+    let lim = mul_div(lp.abs(), cfg.fr_b_pm, 100_000) as i64;
+    let from = set.max(t.saturating_sub(cfg.fr_k));
+    let need = (t - from) * cfg.fr_share / 100;
+    let mut n_in = 0usize;
+    for m in from..t {
+        if sym.o[m] == 0 {
+            continue;
+        }
+        let c = s * sym.c[m];
+        if c >= lp {
+            return false;
+        }
+        if lp - c <= lim {
+            n_in += 1;
+        }
+    }
+    n_in >= need
+}
+
 /// Кандидаты (§13.2 п. 1): состояние уровня (запрет, ложный пробой) — по закрытиям минут ≤ `t−1`; пул — по
 /// закрытым минутам ≤ `t−1`; минутка по диапазону может дать сделку в зоне входа под уровнем. Затем состояние
 /// обновляется минуткой `t` (как в `signals::scan`).
@@ -855,6 +890,8 @@ pub fn level_state_key(cfg: &SigCfg) -> SigCfg {
         fr_k: 0,
         fr_share: 0,
         fr_b_pm: 0,
+        fw_min: 0,
+        fz_min: 0,
         nf: 0,
         ev: 0,
         ea_m: 0,
@@ -984,14 +1021,30 @@ pub fn candidates_group_tr(
         let mut pend: Option<usize> = None;
         let mut forbidden = false;
         let mut pk_dead = false;
+        // TK-747 (`fw`): после постановки версии цены была минута с high не ниже `lp − τ` (по минутам < t); при смене версии пересчитывается по окну `[постановка, t)`
+        let fw_on = em.iter().any(|e| e.cfg.fw_min > 0);
+        let touch_band = |lp: i64| lp - mul_div(lp.abs(), cfg.lv.tau_pm, 100_000) as i64;
+        let touch_hi = |m: usize| {
+            if s > 0 {
+                sym.h[m]
+            } else {
+                -sym.l[m]
+            }
+        };
+        let mut touched = false;
         // TK-669 (`fg`): минута приостановки уровня
         let mut susp: Option<usize> = None;
         for t in lv.born as usize..end {
+            let seg0 = seg;
             while seg + 1 < lv.segs.len() && lv.segs[seg + 1].0 as usize <= t {
                 seg += 1;
                 price = lv.segs[seg].1;
                 far = lv.far_edge(seg, s);
                 (zone_min, back, pk_thr) = marks(s * price, &mut em);
+            }
+            if fw_on && seg != seg0 {
+                let (band, set) = (touch_band(s * price), lv.fresh_at(seg).0);
+                touched = (set..t).any(|m| sym.o[m] != 0 && touch_hi(m) >= band);
             }
             if sym.o[t] == 0 {
                 continue;
@@ -1026,7 +1079,13 @@ pub fn candidates_group_tr(
                         && sym.pq[t] - sym.pq[t - 60] >= e.cfg.t1h_u
                         && (e.cfg.t24_u == 0 || sym.pq[t] - sym.pq[t - 1440] >= e.cfg.t24_u)
                     {
-                        if fresh_ok(sym, e.cfg, lv, s, lp, t) {
+                        let fresh = if e.cfg.fw_min > 0 {
+                            lv.src != 0
+                                || fresh_fw_ok(sym, e.cfg, lv.fresh_at(seg), s, lp, touched, t)
+                        } else {
+                            fresh_ok(sym, e.cfg, lv, s, lp, t)
+                        };
+                        if fresh {
                             outs[e.k].push(Cand {
                                 t: t as u32,
                                 level: li as u32,
@@ -1038,6 +1097,9 @@ pub fn candidates_group_tr(
                         }
                     }
                 }
+            }
+            if fw_on && !touched && hi >= touch_band(lp) {
+                touched = true;
             }
             // TK-669 (`fg`): откат на X NATR за уровень на минуте после приостановки — уровень возвращается к сигналам со следующей минуты
             if let Some(ts) = susp {

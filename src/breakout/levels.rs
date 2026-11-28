@@ -37,6 +37,9 @@ pub struct Level {
     pub src: u8,
     /// TK-743: чем кончился уровень пивотов (`end`): 0 — не кончился или источник / линия; 1 — членов стало меньше `n` (старше `l` суток); 2 — прокол `pk`; 3 — закрытие бара за уровнем.
     pub why: u8,
+    /// TK-747 (`fw`, `fz`): для каждой версии цены (параллельно `segs`) — (минута постановки уровня, разрыв, мин): постановка — подтверждение последнего присоединившегося
+    /// пивота версии, разрыв — время между этим пивотом и ближайшим к нему по времени из прочих членов. Пусто у уровней источника и линий — для них не определено.
+    pub fresh: Vec<(u32, u32)>,
 }
 
 #[derive(Clone, Copy)]
@@ -72,15 +75,20 @@ impl Frame<'_> {
     }
 }
 
-/// (все члены в пределах τ от среднего, среднее в длинной раме).
-fn group_ok(ps: &[i64], tau_pm: i64) -> (bool, i64) {
-    let n = ps.len() as i128;
-    let sum: i128 = ps.iter().map(|&x| i128::from(x)).sum();
-    let mean = (sum / n) as i64;
+/// (все члены в пределах τ от цены уровня, цена уровня в длинной раме). `lm = 0` — цена уровня среднее членов, τ от среднего; TK-747 `lm = 1` — среднего нет:
+/// цена уровня — крайний пивот по ходу пробоя (рама: наибольшее значение — у шорта самый низкий минимум), τ от его цены (члены не выше него по построению).
+fn group_ok(ps: &[i64], tau_pm: i64, lm: u8) -> (bool, i64) {
+    let px = if lm == 0 {
+        let n = ps.len() as i128;
+        let sum: i128 = ps.iter().map(|&x| i128::from(x)).sum();
+        (sum / n) as i64
+    } else {
+        ps.iter().copied().max().unwrap_or(0)
+    };
     let ok = ps.iter().all(|&x| {
-        i128::from((x - mean).abs()) * 100_000 <= i128::from(tau_pm) * i128::from(mean.abs())
+        i128::from((x - px).abs()) * 100_000 <= i128::from(tau_pm) * i128::from(px.abs())
     });
-    (ok, mean)
+    (ok, px)
 }
 
 /// `pk` (§13.11): среди закрытых баров `from..=to` есть бар с high за ценой `mean` (длинная рама) больше чем на τ или —
@@ -141,6 +149,32 @@ fn prices(m: &[Pv]) -> Vec<i64> {
     m.iter().map(|p| p.p).collect()
 }
 
+/// TK-747 (`lz`, закол): группа ровно из двух пивотов, где более поздний (по бару) пивот дальше раннего по ходу пробоя (рама: строго больше — не меньше шага цены,
+/// цены биржи кратны шагу), — «второй перебивает первый», уровень не рождается. Каскад (≥ 3 пивота) не отменяется.
+fn is_zakol(grp: &[Pv]) -> bool {
+    let [a, b] = grp else {
+        return false;
+    };
+    let (early, late) = if a.bar <= b.bar { (a, b) } else { (b, a) };
+    early.bar < late.bar && late.p > early.p
+}
+
+/// TK-747 (`fw`, `fz`): (минута постановки, разрыв в минутах) версии цены с составом `m` и баром `tfm` минут: постановка — подтверждение пивота с наибольшим `active`
+/// (последний присоединившийся), разрыв — расстояние по барам от него до ближайшего по времени из остальных членов.
+fn fresh_of(m: &[Pv], tfm: i64) -> (u32, u32) {
+    let Some(last) = m.iter().max_by_key(|p| (p.active, p.bar)) else {
+        return (0, 0);
+    };
+    let set = (i64::from(last.active) + 1) * tfm;
+    let prev = m
+        .iter()
+        .filter(|p| !(p.bar == last.bar && p.p == last.p))
+        .map(|p| p.bar)
+        .min_by_key(|&b| (i64::from(last.bar) - i64::from(b)).abs());
+    let gap = prev.map_or(0, |b| (i64::from(last.bar) - i64::from(b)).abs() * tfm);
+    (set as u32, gap as u32)
+}
+
 pub fn build_levels(sym: &Sym, cfg: &LevelCfg, side: Side) -> Vec<Level> {
     build_levels_tracked(sym, cfg, side, false)
 }
@@ -160,6 +194,13 @@ impl Level {
     pub fn price_at(&self, t: usize) -> i64 {
         let k = self.segs.partition_point(|&(from, _)| from as usize <= t);
         self.segs[k.saturating_sub(1)].1
+    }
+
+    /// TK-747 (`fw`, `fz`): (минута постановки уровня, разрыв, мин) версии цены `seg`; у уровней источника и линий — минута рождения и разрыв 0.
+    pub fn fresh_at(&self, seg: usize) -> (usize, usize) {
+        self.fresh
+            .get(seg)
+            .map_or((self.born as usize, 0), |&(s, g)| (s as usize, g as usize))
     }
 
     /// Дальний край зоны версии цены `seg` в длинной раме: минимум цен пивотов (лонг — самый низкий, шорт — минус самый высокий).
@@ -240,9 +281,10 @@ fn build_levels_impl(
                 live.remove(li);
                 continue;
             }
-            let (_, mean) = group_ok(&prices(&live[li].members), cfg.tau_pm);
+            let (_, mean) = group_ok(&prices(&live[li].members), cfg.tau_pm, cfg.lm);
             if live[li].members.len() != before {
                 levels[id].segs.push((now as u32, mean.abs()));
+                levels[id].fresh.push(fresh_of(&live[li].members, tfm));
                 if track {
                     levels[id].mem.push(members(&live[li].members));
                 }
@@ -274,11 +316,12 @@ fn build_levels_impl(
             for li in 0..live.len() {
                 let mut cand = prices(&live[li].members);
                 cand.push(pv.p);
-                let (ok, mean) = group_ok(&cand, cfg.tau_pm);
+                let (ok, mean) = group_ok(&cand, cfg.tau_pm, cfg.lm);
                 if ok {
                     let id = live[li].id;
                     live[li].members.push(pv);
                     levels[id].segs.push((now as u32, mean.abs()));
+                    levels[id].fresh.push(fresh_of(&live[li].members, tfm));
                     if track {
                         levels[id].mem.push(members(&live[li].members));
                     }
@@ -312,7 +355,7 @@ fn build_levels_impl(
             for q in order {
                 let mut cand = prices(&grp);
                 cand.push(q.p);
-                if group_ok(&cand, cfg.tau_pm).0 {
+                if group_ok(&cand, cfg.tau_pm, cfg.lm).0 {
                     grp.push(q);
                 } else {
                     break;
@@ -321,7 +364,11 @@ fn build_levels_impl(
             if grp.len() < cfg.n {
                 continue;
             }
-            let (_, mean) = group_ok(&prices(&grp), cfg.tau_pm);
+            // TK-747 (`lz`): закол — пара, где поздний пивот перебил ранний, уровень не рождается; пивоты остаются свободными (с третьим дадут каскад)
+            if cfg.lz && is_zakol(&grp) {
+                continue;
+            }
+            let (_, mean) = group_ok(&prices(&grp), cfg.tau_pm, cfg.lm);
             let first_bar = grp.iter().map(|p| p.bar).min().unwrap_or(pv.bar);
             free.retain(|p| !grp.iter().any(|q| q.bar == p.bar && q.p == p.p));
             let dead = if cfg.pk {
@@ -348,6 +395,7 @@ fn build_levels_impl(
                     },
                     src: 0,
                     why: 0,
+                    fresh: vec![fresh_of(&grp, tfm)],
                 });
                 live.push(Live {
                     id: levels.len() - 1,
@@ -411,6 +459,7 @@ fn build_source_levels(sym: &Sym, cfg: &LevelCfg, side: Side) -> Vec<Level> {
                 mem: Vec::new(),
                 src: cfg.lx,
                 why: 0,
+                fresh: Vec::new(),
             });
         }
         a += step;
@@ -676,5 +725,6 @@ fn line_level(
         mem: Vec::new(),
         src: 4,
         why: 0,
+        fresh: Vec::new(),
     })
 }

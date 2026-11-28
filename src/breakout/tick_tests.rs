@@ -995,6 +995,7 @@ fn fresh_world() -> (Sym, Level, i64) {
         mem: Vec::new(),
         src: 0,
         why: 0,
+        fresh: Vec::new(),
     };
     (sym(c), lv, px(101.0))
 }
@@ -6175,3 +6176,6 @@ fn tick_is_12_bytes_and_keeps_off_and_bm() {
 
 // TK-743: журнал заявок сделки (`--keep-orders`) — отдельным файлом
 mod orders_tests;
+
+// TK-747: уровни без усреднения, закол, свежесть по владельцу (`lm`, `lz`, `fw`, `fz`) — отдельным файлом
+mod owner_tests;
