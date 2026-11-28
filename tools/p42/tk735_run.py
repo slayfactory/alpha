@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""TK-735, §13.79 п. 6, п. 8: счёт шага 9в — этапы. Запускается юнитом на srv (`/data/tk592/venv/bin/python`, PYTHONPATH=/data/p42-tk735/code:/data/p42-tk728/code).
+
+  tk735_run.py prep      # база режимов (результат r, сутки режима, тип, признаки) → res/base-{FJ,SEL}.npz; G-join, G-day; σ̂, σ̂_t, MDE(f) → res/g_prep.json. Правила не читаются.
+
+Этап `prep` читает P&L только всей базы (σ̂, MDE — разброс базы, не результат правила; §13.79 п. 6). Поиск и оценка правил — следующие этапы (ещё не написаны).
+"""
+from __future__ import annotations
+
+import json
+import math
+import os
+import sqlite3
+import sys
+import time
+
+import numpy as np
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import tk727_s5 as S5  # noqa: E402
+import tk735_lib as T  # noqa: E402
+import tk735_search as SR  # noqa: E402
+
+RES = os.path.join(T.ROOT, "res")
+TK726_DB = "/data/p42-tk726/tk726.sqlite"
+FREEZE = os.path.join(T.ROOT, "freeze", "tk735-frozen.json")
+BLOCKS = lambda nd: (math.ceil(nd ** (1 / 3)), 21)          # блоки бутстрепа: ⌈n^{1/3}⌉ и 21 сутки (§13.79.3)
+MDE_FRACS = (0.05, 0.10, 0.20, 0.40)
+MDE_SAMPLES = 20
+MDE_BOOT = 2000                                              # повторов бутстрепа для MDE (основной бутстреп — 20 000; MDE — ориентир)
+
+
+def build_base():
+    """Уникальные сделки базы + признаки φ (res/trade_feat.npz): склейка по строкам с проверкой (sym, sig_ms, eday) — G-join. → {режим: dict массивов}, отчёт G-join."""
+    u = T.unique_trades()
+    tf = np.load(os.path.join(RES, "trade_feat.npz"), allow_pickle=False)
+    join = dict(n_trades=int(len(u["sym"])), n_feat=int(len(tf["sym"])))
+    ok = join["n_trades"] == join["n_feat"]
+    if ok:
+        ok = bool((u["sym"] == tf["sym"]).all() and (u["sig_ms"] == tf["sig_ms"]).all() and (u["eday"] == tf["eday"]).all() and (u["regime"] == tf["regime"]).all())
+    join["passed"] = bool(ok)
+    if not ok:
+        return None, join
+    X = np.column_stack([tf[k] for k in T.PHI])
+    fz = json.load(open(FREEZE, encoding="utf-8"))
+    base = {}
+    for reg in ("FJ", "SEL"):
+        sp = np.load(os.path.join(RES, "splits-%s.npz" % reg), allow_pickle=False)
+        syms = [str(x) for x in sp["syms"]]
+        sym_typ = {syms[i]: int(sp["typ"][i]) for i in range(len(syms))}
+        m = u["regime"] == reg
+        lo, hi = T.REG[reg]
+        sym = u["sym"][m]
+        base[reg] = dict(sym=sym, day=(u["eday"][m] - lo).astype(np.int64), r=u["pnl"][m].astype(np.float64), kind=u["kind"][m], in_anchor=u["in_anchor"][m],
+                         typ=np.array([sym_typ.get(str(s), -1) for s in sym], np.int64), X=X[m], nd=hi - lo, sig_ms=u["sig_ms"][m],
+                         coin=np.array([syms.index(str(s)) if str(s) in sym_typ else -1 for s in sym], np.int64), syms=np.array(syms))
+        join[reg] = dict(n=int(m.sum()), n_typed=int((base[reg]["typ"] >= 0).sum()), K=fz["regimes"][reg].get("K"))
+    return base, join
+
+
+def g_day():
+    """G-day (§13.79 п. 8): суточные ряды склейки окон = `tk726_day` до микродоллара — по (клетка семейства, сутки): SEL (wa + wb + wc) и N1. Для FJ и января эталонной таблицы нет."""
+    tr = T.load_trades_all(T.FAM)
+    names = S5.WIN_NAMES
+    con = sqlite3.connect("file:%s?mode=ro" % TK726_DB, uri=True)
+    out = {}
+    for label, wins in (("sel", ("wa", "wb", "wc")), ("n1", ("n1",))):
+        wi = np.array([names.index(w) for w in wins])
+        m = np.isin(tr["win"], wi)
+        mine = {}
+        for c, d, p in zip(tr["cid"][m], tr["eday"][m], tr["pnl"][m]):
+            k = (int(c), int(d))
+            s, n = mine.get(k, (0.0, 0))
+            mine[k] = (s + float(p), n + 1)
+        ref = {(int(c), int(d)): (float(p), int(n)) for c, d, p, n in con.execute("SELECT cid, day, pnl, n FROM tk726_day WHERE win=? AND cid IN (%s)" % ",".join(str(c) for c in T.FAM), (label,))}
+        keys = set(mine) | set(ref)
+        maxd = max((abs(mine.get(k, (0.0, 0))[0] - ref.get(k, (0.0, 0))[0]) for k in keys), default=0.0)
+        nbad = sum(1 for k in keys if mine.get(k, (0, 0))[1] != ref.get(k, (0, 0))[1])
+        miss = [k for k in keys if (k in mine) != (k in ref)]
+        out[label] = dict(n_cells_days=len(keys), max_abs_diff_usd=float(maxd), n_count_mismatch=int(nbad), n_missing=len(miss), passed=bool(maxd < 1e-6 and nbad == 0 and not miss))
+    out["passed"] = bool(out["sel"]["passed"] and out["n1"]["passed"])
+    return out
+
+
+def block_half_width(S_d, N_d, nd, block, nboot, seed):
+    """Полуширина 95 %-интервала среднего r подмножества: блочный (круговой) бутстреп по суткам; средний r = Σ r / Σ n по повтору."""
+    W = SR.day_weights(nd, block, nboot, seed)
+    num, den = W @ S_d.astype(np.float32), W @ N_d.astype(np.float32)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        m = num / den
+    m = m[np.isfinite(m)]
+    return float((np.percentile(m, 97.5) - np.percentile(m, 2.5)) / 2.0) if len(m) > 10 else float("nan")
+
+
+def mde_table(b, reg):
+    """MDE(f) по долям f монет базы режима: MDE_SAMPLES случайных подмножеств монет, полуширина по обоим блокам; среднее по выборкам (печать, ворот нет)."""
+    nd = b["nd"]
+    coins = np.unique(b["coin"][b["coin"] >= 0])
+    out = {}
+    for f in MDE_FRACS:
+        hw = {blk: [] for blk in BLOCKS(nd)}
+        ns = []
+        for s in range(MDE_SAMPLES):
+            rng = np.random.default_rng(T.SEED + 1000 * int(f * 100) + s)
+            pick = rng.choice(coins, max(1, int(round(f * len(coins)))), replace=False)
+            m = np.isin(b["coin"], pick)
+            S_d, N_d = T.day_series(b["day"][m], b["r"][m], nd)
+            ns.append(int(m.sum()))
+            for blk in hw:
+                hw[blk].append(block_half_width(S_d, N_d, nd, blk, MDE_BOOT, T.SEED + s))
+        out[str(f)] = dict(n_trades_mean=float(np.mean(ns)), **{"block_%d" % blk: float(np.nanmean(v)) for blk, v in hw.items()})
+    return out
+
+
+def cmd_prep(a):
+    t0 = time.time()
+    base, join = build_base()
+    print("G-join:", json.dumps(join, ensure_ascii=False))
+    if base is None:
+        sys.exit("G-join не пройден: стоп, запись amend (§13.79 п. 8)")
+    gd = g_day()
+    print("G-day:", json.dumps(gd, ensure_ascii=False))
+    if not gd["passed"]:
+        json.dump(dict(join=join, g_day=gd), open(os.path.join(RES, "g_prep.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        sys.exit("G-day не пройден: стоп, запись amend (§13.79 п. 8)")
+    rep = dict(join=join, g_day=gd, sigma={}, mde={})
+    for reg, b in base.items():
+        np.savez_compressed(os.path.join(RES, "base-%s.npz" % reg), **{k: v for k, v in b.items() if k != "nd"}, nd=np.array(b["nd"]))
+        sig = dict(all=float(b["r"].std(ddof=1)), n=int(len(b["r"])))
+        for t in sorted(set(b["typ"].tolist())):
+            if t >= 0:
+                mt = b["typ"] == t
+                sig["type_%d" % t] = dict(sigma_t=float(b["r"][mt].std(ddof=1)), n=int(mt.sum()))
+        rep["sigma"][reg] = sig
+        rep["mde"][reg] = mde_table(b, reg)
+        print(reg, "σ̂ =", json.dumps(sig, ensure_ascii=False))
+        print(reg, "MDE(f) =", json.dumps(rep["mde"][reg], ensure_ascii=False))
+    rep["seconds"] = round(time.time() - t0)
+    json.dump(rep, open(os.path.join(RES, "g_prep.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print("prep готово за %d с" % rep["seconds"])
+
+
+def main():
+    import argparse
+
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("cmd", choices=("prep",))
+    a = ap.parse_args()
+    {"prep": cmd_prep}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    main()
